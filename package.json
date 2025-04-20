@@ -1,0 +1,16 @@
+{
+  "name": "ai-sdk-chat-mml",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^1.2.12",
+    "@ai-sdk/google-vertex": "^2.2.16"
+  }
+}
