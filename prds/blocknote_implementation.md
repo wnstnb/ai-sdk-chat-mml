@@ -41,53 +41,52 @@ Enable seamless interaction between the user, the AI assistant, and the BlockNot
     *   The current text cursor position block ID using `editor.getTextCursorPosition().block.id`. [Ref](https://www.blocknotejs.org/docs/editor-api/cursor-and-selections#getting-text-cursor-position)
     *   The block IDs within the current selection (if any) using `editor.getSelection()?.blocks.map(b => b.id)`. [Ref](https://www.blocknotejs.org/docs/editor-api/cursor-and-selections#getting-selection)
 *   **API Communication:**
-    *   Send the `editor.document` JSON, `messages`, and the captured cursor/selection context (e.g., `currentBlockId`, `selectedBlockIds`) to the backend API endpoint (`/api/chat`).
-    *   Receive responses from the backend containing `chatResponse` (streamed text) and potentially `editorUpdates` (appended JSON data).
-*   **Applying Updates:** Listen for `editorUpdates` appended to the data stream (see Section 3.4). When the stream finishes and `editorUpdates` data is present, iterate through the array and dynamically call the corresponding editor methods: `editor[update.operation](...update.args);`. This handles both block and inline content manipulations.
+    *   Send the `editor.document` JSON, `messages`, and the captured cursor/selection context (e.g., `currentBlockId`, `selectedBlockIds`) within the `data` payload of the `useChat` hook's `handleSubmit` function to the backend API endpoint (`/api/chat`).
+    *   Receive responses from the backend. The `useChat` hook handles the response stream.
+*   **Applying Updates:** Listen for appended data on assistant messages using the `data` property returned by the `useChat` hook. When an assistant message completes and its `data` property contains the `editorUpdates` array, iterate through the array and dynamically call the corresponding editor methods: `editor[update.operation](...update.args);`. This handles both block and inline content manipulations.
     *   Many inline operations (like `addStyles`, `insertInlineContent`) implicitly use the current selection/cursor state managed by BlockNote itself, so the frontend doesn't need complex logic to re-apply selections before these calls.
 *   **Rendering:** Use the `<BlockNoteView>` component to display the editor. [Ref](https://www.blocknotejs.org/docs/editor-basics/setup#rendering-the-editor-with-blocknoteview)
 
 ### 3.2. Backend (API Route - `app/api/chat/route.ts`)
 
-*   **Request Handling:** Modify the `POST` handler to accept `editorDocument` (JSON `Block[]`), `currentBlockId` (string, optional), and `selectedBlockIds` (string[], optional) in the request body alongside `messages`.
+*   **Request Handling:** Modify the `POST` handler to accept `editorDocument` (JSON `Block[]`), `currentBlockId` (string, optional), and `selectedBlockIds` (string[], optional) within the `data` property received from the `useChat` hook.
 *   **Contextual Prompting:**
-    *   Integrate the received `editorDocument` and cursor/selection context (`currentBlockId`, `selectedBlockIds`) into the context provided to the language model.
-    *   Assume sending full `editorDocument` JSON initially. Revisit if necessary for prompt optimization or token limits.
+    *   Integrate the received `editorDocument` and cursor/selection context (`currentBlockId`, `selectedBlockIds`) into the context provided to the language model (e.g., within the system prompt or as a dedicated user message).
+    *   Assume sending full `editorDocument` JSON initially.
 *   **AI Instruction:**
-    *   Enhance the system prompt to explain the BlockNote structure, the provided cursor/selection context, and the task.
+    *   Enhance the system prompt to explain the BlockNote structure, the provided context, and the task.
     *   Instruct the AI on how to interpret user requests relative to the document content, explicit IDs, and cursor/selection context.
     *   **Block Identification Strategy:**
         *   Prefer using explicit `block.id`s when possible (either found in the document or provided via `currentBlockId`/`selectedBlockIds`).
         *   For content-based descriptions (e.g., "the paragraph starting with X"): The AI should attempt to find the corresponding block ID within the provided `editorDocument`. If successful and unambiguous, use the ID. If ambiguous or not found, the AI should ask the user for clarification rather than guessing.
-    *   Define the expected output format: `chatResponse` (string for streaming) and optional `editorUpdates` (array of `EditorUpdateOperation` to be appended).
-*   **Response Structuring:** The text part (`chatResponse`) will be streamed. If modifications are needed, the backend should perform a basic validation check on the AI-generated `editorUpdates`. If valid, it will be appended as a JSON data chunk at the end of the stream using AI SDK utilities (see Section 3.4). If invalid or missing when expected, it should be omitted, and the AI's `chatResponse` should ideally explain the issue (see Section 3.5).
-    *   **Structure (Appended Data):**
+    *   Define the expected AI *text* output format: A standard text response. If modifications are needed, the AI must embed a valid JSON array of `EditorUpdateOperation` objects at the *end* of its text response, enclosed in specific markers (e.g., `[EDITOR_UPDATES_START]` and `[EDITOR_UPDATES_END]`).
+*   **Response Structuring (using `streamText` and `StreamData`):**
+    *   Use the Vercel AI SDK `streamText` function to get the AI response stream.
+    *   Initialize a `StreamData` object (`import { StreamData } from "ai";`).
+    *   Return the result immediately using `result.toDataStreamResponse({ data })`. This starts streaming text to the client.
+    *   Concurrently, `await` the full text response (`result.text`).
+    *   Parse the full text to find the `[EDITOR_UPDATES_START]` and `[EDITOR_UPDATES_END]` markers.
+    *   Extract the JSON string between the markers.
+    *   Parse and validate the JSON against the `EditorUpdateOperation` schema (e.g., using Zod).
+    *   If valid updates are found, `append` them to the `StreamData` instance (`data.append(validatedUpdates)`).
+    *   `close` the `StreamData` instance (`data.close()`) after processing.
+    *   **Structure (Appended Data):** The `data` appended will be the `EditorUpdateOperation[]` array.
         ```typescript
         type EditorUpdateOperation = {
-          // The name of the BlockNote editor method to call
           operation: 
             | "insertBlocks" 
             | "updateBlock" 
             | "removeBlocks" 
             | "replaceBlocks"
-            // Inline Content Ops:
             | "insertInlineContent"
             | "addStyles"
             | "removeStyles"
             | "toggleStyles"
             | "createLink";
-          // Arguments for the method, matching the BlockNote API.
-          // BlockIdentifiers -> string IDs. Block data -> PartialBlock.
           args: any[];
         };
-        
-        type ApiResponse = {
-          chatResponse: string;
-          editorUpdates?: EditorUpdateOperation[];
-        }
-        ```  
-
-    *   **Example `editorUpdates` Value:**  
+        ```
+    *   **Example `editorUpdates` Value (as JSON array):**  
     
         ```json
         [
@@ -137,27 +136,28 @@ Enable seamless interaction between the user, the AI assistant, and the BlockNot
     *   Explanation of the AI's role in interacting with a BlockNote editor.
     *   Description of the `Block`, `InlineContent`, and `PartialBlock` JSON structures.
     *   Explanation of the provided context: `editorDocument`, `currentBlockId`, `selectedBlockIds`.
-    *   Instructions on how to prioritize block identification: explicit IDs > cursor/selection context > content description (with clarification on failure).
-    *   Instructions on how to differentiate between read/evaluate requests and modify/insert requests.
-    *   Specification of the required output format (`ApiResponse` structure, noting that `chatResponse` is for streaming text and `editorUpdates` will be generated for appending if needed).
-    *   Instruction for graceful failure: If the AI cannot confidently fulfill a modification request (e.g., ambiguous target, cannot generate valid operations), it should explain the issue clearly in the `chatResponse` and *not* generate an `editorUpdates` field.
-*   **Few-Shot Examples (Optional but Recommended):** Include examples demonstrating requests related to selection ("bold the selected text"), cursor position ("insert below this block"), and content description ("find the heading 'Conclusion' and add..."), showing the expected `editorUpdates` structure using block IDs. Also include examples of failure messages.
+    *   Instructions on block identification priority.
+    *   Instructions on differentiating read vs. modify requests.
+    *   **Specification of the required output format:** A text response, optionally ending with embedded `editorUpdates` JSON between `[EDITOR_UPDATES_START]` and `[EDITOR_UPDATES_END]` markers if modifications are required.
+    *   Instruction for graceful failure: If the AI cannot confidently fulfill a modification request, it should explain the issue clearly in the text response and *not* include the JSON markers or block.
+*   **Few-Shot Examples (Optional but Recommended):** Include examples showing requests and the expected *full text response*, including the embedded JSON block with markers when appropriate. Also include examples of failure messages without the JSON block.
 
 ### 3.4. Handling Streaming and Editor Updates
 
-*   **Challenge:** The AI SDK's `streamText` function primarily streams text tokens. We need to deliver the structured `editorUpdates` JSON after the AI has finished processing, without sacrificing chat stream responsiveness.
-*   **Solution:** Utilize the AI SDK's data stream capabilities (`DataStream` and utilities like `experimental_appendData`).
-    *   **Backend:** Initiate the response using `streamText`. After the AI finishes generating its full response (including determining any necessary `editorUpdates`), use the SDK's tools to append the `editorUpdates` JSON array as a distinct data object to the end of the stream before finalizing the response.
-    *   **Frontend:** Use the `ai/react` hook (`useChat`) which handles both streamed text and appended data. Display streamed text as it arrives. After the stream completes, check the hook's `data` property (or equivalent) for the appended `editorUpdates` array. If present, parse and apply the updates to the BlockNote editor.
+*   **Challenge:** We need to stream text immediately while also delivering structured `editorUpdates` data if generated.
+*   **Solution:** Utilize the AI SDK's `streamText` function combined with `StreamData` for appending.
+    *   **Backend:** Uses `streamText`. Returns `result.toDataStreamResponse({ data })` promptly. Asynchronously awaits the full text, parses the embedded JSON (between markers), validates it, and appends the `editorUpdates` array to the `StreamData` object.
+    *   **Frontend:** Uses the `ai/react` hook (`useChat`). Displays streamed text as it arrives. After the stream completes for a message, checks the hook's `data` property on that message for the appended `editorUpdates` array. If present, parses and applies the updates to the BlockNote editor.
 
 ### 3.5. Basic Error Handling (V1)
 
 *   **Goal:** Provide basic resilience against common issues without implementing complex recovery mechanisms initially.
 *   **Backend Responsibilities:**
-    *   Perform basic validation on AI-generated `editorUpdates` before appending (e.g., check if it's an array if expected).
-    *   If validation fails or `editorUpdates` are missing when expected, do not append data.
-    *   Rely on the AI's prompted graceful failure message in the `chatResponse` to inform the user.
-    *   Log backend errors (e.g., AI output parsing issues) for debugging.
+    *   Handle potential errors during JSON parsing of the extracted string.
+    *   Perform basic validation on the parsed JSON (e.g., using Zod schema check).
+    *   If parsing/validation fails or markers are missing, do not append data.
+    *   Rely on the AI's prompted graceful failure message in the text response.
+    *   Log backend errors (parsing issues, AI output format errors).
 *   **Frontend Responsibilities:**
     *   Check for presence and basic type (array) of `editorUpdates` in appended stream data.
     *   Wrap individual `editor[update.operation](...update.args);` calls in `try...catch` blocks during processing.
@@ -171,28 +171,27 @@ Enable seamless interaction between the user, the AI assistant, and the BlockNot
 
 ### 4.1. Read Scenario
 
-1.  **User:** Types a query (e.g., "What's the title?").
+1.  **User:** Types query.
 2.  **Frontend:** Captures `editor.document`.
-3.  **Frontend:** Sends `{ messages: [...], editorDocument: [...] }` to `/api/chat`. (Cursor/selection context usually not needed for reads).
-4.  **Backend:** Constructs prompt with messages and `editorDocument`.
-5.  **Backend:** Sends prompt to AI model.
-6.  **AI Model:** Analyzes and generates text response.
-7.  **Backend:** Receives response.
-8.  **Backend:** Sends `{ chatResponse: "..." }` to frontend.
-9.  **Frontend:** Displays `chatResponse`.
+3.  **Frontend:** Sends `{ messages: [...], data: { editorDocument: [...] } }` via `useChat`.
+4.  **Backend:** Constructs prompt with messages and editor context.
+5.  **Backend:** Calls `streamText`.
+6.  **AI Model:** Generates text response (no markers/JSON).
+7.  **Backend:** Returns `result.toDataStreamResponse()`. Full text processing finds no markers.
+8.  **Frontend:** Displays streamed text. `data` on the message remains empty/null.
 
 ### 4.2. Modify Scenario
 
-1.  **User:** Types instruction (e.g., "Bold the selection", "Insert 'Hello' here").
+1.  **User:** Types instruction.
 2.  **Frontend:** Captures `editor.document`, `currentBlockId`, `selectedBlockIds`.
-3.  **Frontend:** Sends `{ messages: [...], editorDocument: [...], currentBlockId: '...', selectedBlockIds: [...] }` to `/api/chat`.
-4.  **Backend:** Constructs prompt including messages, document, cursor/selection context, and instructions for modification output format.
-5.  **Backend:** Sends prompt to AI model.
-6.  **AI Model:** Analyzes context, determines target block(s) using ID/context/inference, generates `chatResponse` (streamed), and generates structured `editorUpdates` (if needed).
-7.  **Backend:** Receives full response from AI.
-8.  **Backend:** Sends `chatResponse` via stream. If `editorUpdates` exists, appends it as JSON data at the end of the stream.
-9.  **Frontend:** Displays streamed `chatResponse`. On stream completion, checks for appended `data` containing `editorUpdates`.
-10. **Frontend:** If `editorUpdates` is present, parses it and executes `editor[update.operation](...update.args);` for each operation.
+3.  **Frontend:** Sends `{ messages: [...], data: { editorDocument: [...], currentBlockId: '...', selectedBlockIds: [...] } }` via `useChat`.
+4.  **Backend:** Constructs prompt including editor context and instructions for embedded JSON output format.
+5.  **Backend:** Calls `streamText`.
+6.  **AI Model:** Analyzes, generates text response ending with `[EDITOR_UPDATES_START]...JSON...[EDITOR_UPDATES_END]`.
+7.  **Backend:** Initializes `StreamData`, returns `result.toDataStreamResponse({ data })` immediately.
+8.  **Backend (Async):** Awaits `result.text`, extracts and validates JSON, calls `data.append(updates)`, calls `data.close()`.
+9.  **Frontend:** Displays streamed text. On stream completion, checks the `data` property on the message, finds the appended `editorUpdates` array.
+10. **Frontend:** Parses `editorUpdates` and executes `editor[update.operation](...update.args);`.
 11. **BlockNote Editor:** Updates visually.
 
 ## 5. Key BlockNote APIs & Concepts
@@ -302,13 +301,14 @@ Enable seamless interaction between the user, the AI assistant, and the BlockNot
 ## 6. Future Considerations / Open Questions
 
 *   How to handle complex user requests involving multiple steps or ambiguity?
-*   Error handling: 
-    *   What happens if the AI generates invalid update instructions or invalid block IDs? (V1 handles via try/catch & logs).
-    *   Implementing more robust error handling (e.g., partial success feedback, potential rollbacks).
-*   Cursor positioning: Can/should the AI control the cursor position after modifications (using `setTextCursorPosition`)?
-*   Improving reliability of content-based block identification beyond V1.
-*   Performance: Impact of sending full `editor.document`. Consider diffing or partial updates if needed.
-*   Security implications of allowing AI to modify document content.
+*   Error handling:
+    *   What if the AI generates invalid JSON between markers? (V1 handled via try/catch & logs on backend).
+    *   Robustness: Informing the user if backend parsing/validation failed.
+*   Cursor positioning: Can/should the AI control cursor position post-modification?
+*   Improving reliability of content-based block identification.
+*   Performance: Impact of sending full `editor.document`.
+*   Security implications.
+*   Alternative data embedding: Consider base64 encoding the JSON if complex characters cause issues, though direct JSON is simpler.
 
 ## 7. Dependencies
 
@@ -321,3 +321,4 @@ Enable seamless interaction between the user, the AI assistant, and the BlockNot
 *   **Backend:**
     *   `@ai-sdk/openai` / `@ai-sdk/google` (or other model providers): For accessing the LLMs.
     *   `ai`: Vercel AI SDK core library for `streamText`, `DataStream`, etc.
+    *   `zod` (optional, for validation)
