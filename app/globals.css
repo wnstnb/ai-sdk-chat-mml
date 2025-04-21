@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+ :root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+ }
+
+ @font-face {
+  font-family: "uncut sans";
+  src: url("/uncut-sans.woff2") format("woff2");
+ }
+
+ @font-face {
+  font-family: "geist mono";
+  src: url("/geist-mono.woff2") format("woff2");
+ }
+
+ * {
+  font-family: "uncut sans", sans-serif;
+ }
+
+ code,
+ pre {
+  font-family: "geist mono", monospace;
+ }
+
+ @media (prefers-color-scheme: dark) {
+  :root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 0, 0, 0;
+  --background-end-rgb: 0, 0, 0;
+  }
+ }
+
+ body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+ }
+
+ /* Add your custom component styles here */
+ @layer components {
+  .model-select {
+  /*
+   You can use @apply to include Tailwind utilities.
+   Example: add padding, border, and rounded corners
+  */
+  @apply px-4 py-2 border border-gray-300 rounded-md;
+
+  /*
+   Or you can write regular CSS properties if needed.
+   Example: set a specific font size or background color not easily
+   achieved with utilities, or style pseudo-elements like ::before/::after.
+  */
+  font-size: 1rem;
+  background-color: white; /* Use a specific color or variable */
+  color: black; /* Text color */
+  /* Add more styles as needed */
+  }
+
+  /*
+   You might also need styles for child elements
+   or states like :focus, :hover etc.
+  */
+  .model-select:focus {
+  @apply outline-none ring-2 ring-blue-500 border-blue-500;
+  }
+
+  /* If your model-select has specific internal elements, style them too */
+  .model-select option {
+  /* Styles for the options within the select */
+  background-color: white;
+  color: black;
+  }
+
+  /* Dark mode styles */
+  @media (prefers-color-scheme: dark) {
+  .model-select {
+  @apply border-gray-700; /* Darker border */
+  background-color: #333; /* Darker background */
+  color: white; /* White text */
+  }
+  .model-select option {
+  background-color: #333;
+  color: white;
+  }
+  }
+ }
+
+
+ @layer utilities {
+  .text-balance {
+  text-wrap: balance;
+  }
+ }
