@@ -17,7 +17,7 @@ import { Markdown } from "@/components/markdown";
 import { ModelSelector } from "@/components/ModelSelector";
 import { Block, BlockNoteEditor, PartialBlock, InlineContent, BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs, defaultStyleSpecs } from "@blocknote/core";
 import dynamic from 'next/dynamic';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Wrench } from 'lucide-react';
 
 // Define the schema used by the editor (assuming default for now)
 const schema = BlockNoteSchema.create();
@@ -648,6 +648,19 @@ export default function Home() {
                       <div className="text-zinc-800 dark:text-zinc-300 flex flex-col gap-4">
                         <Markdown>{message.content}</Markdown>
                       </div>
+                      {/* Display Tool Invocations */}
+                      {message.role === "assistant" && message.toolInvocations && message.toolInvocations.length > 0 && (
+                        <div className="mt-2 flex flex-col gap-2 border-t border-zinc-200 dark:border-zinc-700 pt-2">
+                          {message.toolInvocations.map((toolCall) => (
+                            <div key={toolCall.toolCallId} className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+                              <Wrench size={12} className="flex-shrink-0" />
+                              <span>Using tool: <strong>{toolCall.toolName}</strong></span>
+                              {/* Optionally display args: <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(toolCall.args, null, 2)}</pre> */}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* End Display Tool Invocations */}
                       <div className="flex flex-row gap-2 flex-wrap">
                         {message.experimental_attachments?.map((attachment) =>
                           attachment.contentType?.startsWith("image") ? (
