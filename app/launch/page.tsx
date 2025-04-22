@@ -10,6 +10,7 @@ import { Document, Folder } from '@/types/supabase'; // Import types
 
 // Define the structure expected by Cubone File Manager (matching docs)
 type CuboneFileType = {
+    id?: string;
     name: string;
     isDirectory: boolean;
     path: string;
@@ -19,43 +20,31 @@ type CuboneFileType = {
 
 // Helper to map our DB structure to Cubone's expected structure
 const mapToCuboneFiles = (documents: Document[], folders: Folder[]): CuboneFileType[] => {
+    // Using names for paths to allow rendering, but adding UUID to 'id' field
     const mappedFolders: CuboneFileType[] = folders.map(f => ({
+        id: f.id,
         name: f.name,
         isDirectory: true,
-        path: `/${f.id}`, // Use ID as path segment for uniqueness, assuming root is '/' logic later
-        updatedAt: f.updated_at,
-        // We need a strategy to build full paths if nesting is deep
-    }));
-    const mappedDocuments: CuboneFileType[] = documents.map(d => ({
-        name: d.name,
-        isDirectory: false,
-        path: `${d.folder_id ? '/'+d.folder_id : '/'}/${d.id}`, // Construct path based on parent folder
-        updatedAt: d.updated_at,
-        // size: calculateSize(d.content), // Needs implementation if size is desired
-    }));
-    // This mapping needs refinement for actual hierarchical paths if the library requires them.
-    // For now, using IDs might work if the library handles structure internally based on a flat list.
-    // A better approach might be to build a proper path string during mapping.
-
-    // Let's try a simplified path for now, assuming root level
-     const simpleMappedFolders: CuboneFileType[] = folders.map(f => ({
-        name: f.name,
-        isDirectory: true,
-        path: `/${f.name}`, // Use name for path (simplistic)
+        path: `/${f.name}`, // Use name for path
         updatedAt: f.updated_at,
     }));
-     const simpleMappedDocuments: CuboneFileType[] = documents.map(d => ({
+     const mappedDocuments: CuboneFileType[] = documents.map(d => ({
+        id: d.id,
         name: d.name,
         isDirectory: false,
-        path: `/${d.name}`, // Use name for path (simplistic)
+        path: `/${d.name}`, // Use name for path
         updatedAt: d.updated_at,
     }));
 
-
-    // return [...mappedFolders, ...mappedDocuments];
-     return [...simpleMappedFolders, ...simpleMappedDocuments]; // Using simplified paths for now
+    return [...mappedFolders, ...mappedDocuments];
 };
 
+// Hardcoded test data to isolate rendering issue
+const testFiles: CuboneFileType[] = [
+    { name: "Test Document 1.txt", isDirectory: false, path: "/test-doc-uuid-1", updatedAt: new Date().toISOString() },
+    { name: "Test Folder A", isDirectory: true, path: "/test-folder-uuid-a", updatedAt: new Date().toISOString() },
+    { name: "Another Doc.md", isDirectory: false, path: "/test-doc-uuid-2", updatedAt: new Date().toISOString() }
+];
 
 export default function LaunchPage() {
   const router = useRouter();
@@ -68,30 +57,43 @@ export default function LaunchPage() {
 
   // Fetch initial file/folder data
   const fetchData = useCallback(async () => {
+    console.log("[LaunchPage] Attempting to fetch data..."); // Log start
     setIsLoading(true);
     setError(null);
     try {
+      console.log("[LaunchPage] Calling fetch('/api/file-manager')..."); // Log before fetch
       const response = await fetch('/api/file-manager');
+      console.log("[LaunchPage] Fetch response status:", response.status); // Log status
+
       if (!response.ok) {
-        const errorData = await response.json();
+        let errorData = { error: { message: `HTTP error ${response.status}`}};
+        try {
+          errorData = await response.json(); // Try to parse error JSON
+        } catch (parseError) {
+          console.error("[LaunchPage] Failed to parse error response JSON:", parseError);
+        }
         throw new Error(errorData.error?.message || `Failed to fetch data (${response.status})`);
       }
       const { data }: { data: { documents: Document[], folders: Folder[] } } = await response.json();
+      console.log("[LaunchPage] Fetched data:", data); // Log received data
 
       // Map fetched data to CuboneFile structure using the helper
       const mappedData = mapToCuboneFiles(data.documents, data.folders);
+      console.log("[LaunchPage] Mapped data for FileManager:", mappedData); // Log mapped data
       setCuboneFiles(mappedData);
 
     } catch (err: any) {
-      console.error("Fetch error:", err);
+      console.error("[LaunchPage] Error inside fetchData:", err); // Log fetch error
       setError(err.message || 'An unknown error occurred while fetching files.');
     } finally {
       setIsLoading(false);
+      console.log("[LaunchPage] Finished fetchData execution."); // Log end
     }
   }, []);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
+    console.log("[LaunchPage] useEffect triggered to call fetchData."); // Log effect trigger
     fetchData();
   }, [fetchData]);
 
@@ -153,10 +155,13 @@ export default function LaunchPage() {
   // Our old handlers took ID and name
   const handleRename = useCallback(async (file: CuboneFileType, newName: string) => {
     console.log('Rename Request:', file.path, newName);
-    setError(null);
-    // Extract ID from path (assuming simple path format used in mapping)
-    const id = file.path.substring(file.path.lastIndexOf('/') + 1);
-    const apiPath = file.isDirectory ? `/api/folders/${id}` : `/api/documents/${id}`; 
+    // Use the ID directly from the file object
+    const id = file.id;
+    if (!id) {
+        setError("Could not rename: Item ID is missing.");
+        return;
+    }
+    const apiPath = file.isDirectory ? `/api/folders/${id}` : `/api/documents/${id}`;
     try {
         const response = await fetch(apiPath, {
             method: 'PUT',
@@ -179,7 +184,11 @@ export default function LaunchPage() {
       setError(null);
       // Process deletes individually
       const results = await Promise.allSettled(filesToDelete.map(async (file) => {
-          const id = file.path.substring(file.path.lastIndexOf('/') + 1);
+          // Use the ID directly from the file object
+          const id = file.id;
+          if (!id) {
+             throw new Error(`Missing ID for ${file.name}`); // Skip items without ID
+          }
           const apiPath = file.isDirectory ? `/api/folders/${id}` : `/api/documents/${id}`;
           const response = await fetch(apiPath, { method: 'DELETE' });
           if (!response.ok) {
@@ -199,12 +208,12 @@ export default function LaunchPage() {
 
    // onFileOpen prop expects: (file: File) => void
   const handleFileOpen = useCallback((file: CuboneFileType) => {
-      console.log("File Open Request:", file.path);
+      console.log("File Open Request:", file.path, "ID:", file.id);
       if (!file.isDirectory) {
-          // Extract ID from path (requires consistent path mapping)
-           const id = file.path.substring(file.path.lastIndexOf('/') + 1);
+          // Use the ID directly from the file object
+           const id = file.id;
           if (id) {
-              router.push(`/editor/${id}`);
+              router.push(`/editor/${id}`); // Use the actual UUID
           } else {
                console.error("Could not extract ID from file path:", file.path);
                setError("Could not open file: Invalid path.");
@@ -229,7 +238,7 @@ export default function LaunchPage() {
 
 
   return (
-    <div className="flex flex-col h-screen p-4 bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <div className="flex flex-col h-full p-4 bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       <h1 className="text-2xl font-semibold mb-4 text-center">Launch Pad</h1>
 
       {/* Launch Input Form */}
@@ -256,22 +265,24 @@ export default function LaunchPage() {
       {error && <p className="text-red-500 mb-4 text-center bg-red-100 dark:bg-red-900 p-2 rounded border border-red-300 dark:border-red-700">Error: {error}</p>}
 
       {/* --- File Manager Container --- */}
-       <div className="flex-grow border border-gray-300 dark:border-gray-700 rounded-md overflow-hidden bg-white dark:bg-gray-800">
+       <div className="flex-grow overflow-hidden border border-gray-300 dark:border-gray-700 rounded-md shadow-sm">
             {isLoading ? (
-                <div className="flex justify-center items-center h-full">Loading files...</div>
+                <div className="p-4 text-center">Loading files...</div>
             ) : (
                 /* Use the single FileManager component */
                 <FileManager 
-                    files={cuboneFiles} // Pass the mapped files
-                    isLoading={isLoading} // Pass loading state
+                    // files={testFiles} // Revert test data
+                    files={cuboneFiles}
+                    // Restore temporarily removed props
+                    isLoading={isLoading}
                     // Pass handlers matching the documentation props
                     onCreateFolder={handleCreateFolder}
                     onRename={handleRename} // Single handler for files/folders
                     onDelete={handleDelete}
                     onFileOpen={handleFileOpen} 
-                    onPaste={handlePaste} // Handle move/copy via paste
+                    onPaste={handlePaste}
                     // Add other necessary props like onRefresh, language, etc.
-                    onRefresh={fetchData} // Allow user to refresh data
+                    onRefresh={fetchData}
                     // onError={(err, file) => setError(`FileManager Error (${err.type}): ${err.message}`)} // Basic error display
                     // Customization props (optional)
                     // height="calc(100vh - 250px)" // Example dynamic height 

@@ -455,3 +455,127 @@ body {
 }
 */
 /* --- End Scrollbar Styling --- */
+
+/* --- Cubone File Manager Dark Mode Overrides --- */
+[data-theme='dark'] main.file-explorer {
+  background-color: var(--bg-color) !important;
+  color: var(--text-color) !important;
+  border-color: var(--border-color) !important; /* Adjust if file-explorer has a border */
+}
+
+[data-theme='dark'] .fm-toolbar { /* Target the inner toolbar div */
+  background-color: var(--header-bg) !important;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+
+[data-theme='dark'] .fm-toolbar button.item-action {
+  background-color: transparent !important; /* Make toolbar buttons transparent */
+  color: var(--text-color) !important;
+  border: none !important; /* Remove default border? */
+}
+[data-theme='dark'] .fm-toolbar button.item-action:hover {
+  background-color: var(--hover-bg) !important;
+}
+[data-theme='dark'] .fm-toolbar button.item-action svg {
+   color: var(--text-color) !important; /* Ensure icons inherit text color */
+}
+
+/* Primary Button Styling (If Needed - Check if Cubone adds a specific class like 'primary') */
+/* [data-theme='dark'] .fm-toolbar button.item-action.primary { ... } */
+
+[data-theme='dark'] section.files-container {
+  /* Should inherit background from file-explorer */
+}
+
+[data-theme='dark'] div.navigation-pane {
+   background-color: var(--bg-secondary) !important; /* Slightly different background for contrast? */
+   border-right: 1px solid var(--border-color) !important;
+}
+[data-theme='dark'] div.navigation-pane .empty-nav-pane {
+   color: var(--muted-text-color) !important;
+}
+
+[data-theme='dark'] div.folders-preview { /* THIS is likely the main content background */
+  background-color: var(--bg-color) !important;
+  color: var(--text-color) !important;
+}
+
+[data-theme='dark'] div.files.grid, /* Container for file items */
+[data-theme='dark'] div.files.list {
+  /* Should inherit background from folders-preview */
+}
+
+[data-theme='dark'] .bread-crumb-container,
+[data-theme='dark'] .breadcrumb span {
+   color: var(--muted-text-color) !important; /* Adjust breadcrumb text color */
+}
+[data-theme='dark'] .breadcrumb span svg {
+   fill: var(--muted-text-color) !important;
+}
+
+[data-theme='dark'] .file-item-container { /* Individual item wrapper */
+  /* Reset background/color in case of specificity issues */
+  background-color: transparent !important;
+  color: var(--text-color) !important;
+  border: 1px solid transparent !important; /* Add border for selection later */
+}
+
+[data-theme='dark'] .file-item-container:hover {
+  background-color: var(--hover-bg) !important;
+}
+
+[data-theme='dark'] .file-item-container.selected { /* Assuming .selected class for selection */
+  background-color: var(--active-bg) !important;
+  border: 1px solid var(--primary-color) !important;
+}
+
+[data-theme='dark'] .file-item-container .file-name {
+  color: var(--text-color) !important;
+}
+
+[data-theme='dark'] .file-item-container svg { /* File/Folder Icons */
+   color: var(--text-color-secondary) !important; /* Use secondary text color for icons */
+}
+
+/* Inputs (e.g., rename) - Need to inspect element if renaming adds an input */
+/* [data-theme='dark'] .some-input-class { ... } */
+
+/* Checkboxes */
+[data-theme='dark'] input.fm-checkbox {
+   /* Style checkbox if needed, might be difficult depending on browser */
+   accent-color: var(--primary-color);
+}
+
+/* Resize Handle */
+[data-theme='dark'] .sidebar-resize {
+   background-color: var(--border-color) !important;
+}
+
+/* Context Menu */
+[data-theme='dark'] .fm-context-menu {
+   background-color: var(--card-bg) !important;
+   border: 1px solid var(--border-color) !important;
+   box-shadow: var(--shadow-md) !important;
+}
+
+[data-theme='dark'] .fm-context-menu .file-context-menu-list ul li {
+   color: var(--text-color) !important;
+   background-color: transparent !important;
+}
+
+[data-theme='dark'] .fm-context-menu .file-context-menu-list ul li:hover {
+   background-color: var(--hover-bg) !important;
+}
+
+[data-theme='dark'] .fm-context-menu .file-context-menu-list ul li svg {
+   color: var(--text-color-secondary) !important;
+}
+
+[data-theme='dark'] .fm-context-menu .file-context-menu-list ul li:hover svg {
+   color: var(--text-color) !important;
+}
+
+[data-theme='dark'] .fm-context-menu .divider {
+   border-top: 1px solid var(--border-color) !important;
+}
+/* --- End Cubone File Manager Overrides --- */
