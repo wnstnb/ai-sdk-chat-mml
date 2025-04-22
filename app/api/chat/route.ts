@@ -135,7 +135,7 @@ export async function POST(req: Request) {
   const { messages: originalMessages, data: requestData } = await req.json();
 
   // Extract editor block context and model ID from data
-  const { editorBlocksContext, id: modelIdFromData } = requestData || {};
+  const { editorBlocksContext, model: modelIdFromData } = requestData || {};
 
   // Determine the model ID
   const modelId = typeof modelIdFromData === 'string' && modelIdFromData in modelProviders

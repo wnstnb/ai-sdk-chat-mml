@@ -8,14 +8,16 @@ interface ThemeHandlerProps {
 }
 
 const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  // Default state to 'dark'
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
   // Effect to set initial theme from localStorage and update <html> attribute
   useEffect(() => {
     const storedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
     // Check if window is defined (ensures runs only on client)
     if (typeof window !== 'undefined') { 
-      const initialTheme = storedTheme || 'light';
+      // Default fallback to 'dark'
+      const initialTheme = storedTheme || 'dark';
       setTheme(initialTheme);
       document.documentElement.setAttribute('data-theme', initialTheme);
     }

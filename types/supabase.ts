@@ -1,0 +1,56 @@
+// types/supabase.ts (or appropriate location)
+
+// Based on your prds/supabase_implementation.md schema
+
+export interface Folder {
+  id: string; // uuid
+  user_id: string; // uuid, references auth.users.id
+  name: string; // text, not null
+  parent_folder_id: string | null; // uuid, references public.folders.id
+  created_at: string; // timestamp with time zone
+  updated_at: string; // timestamp with time zone
+}
+
+export interface Document {
+  id: string; // uuid
+  user_id: string; // uuid, references auth.users.id
+  folder_id: string | null; // uuid, references public.folders.id
+  name: string; // text, not null, default: 'Untitled Document'
+  content: any | null; // jsonb or text
+  created_at: string; // timestamp with time zone
+  updated_at: string; // timestamp with time zone
+}
+
+export interface Message {
+  id: string; // uuid
+  document_id: string; // uuid, references public.documents.id
+  user_id: string; // uuid, references auth.users.id
+  role: 'user' | 'assistant'; // text
+  content: string | null; // text
+  image_url: string | null; // text (stores path in bucket)
+  metadata: any | null; // jsonb
+  created_at: string; // timestamp with time zone
+}
+
+export interface MessageWithSignedUrl extends Message {
+    signedDownloadUrl: string | null; // Added for API response
+}
+
+export interface ToolCall {
+  id: string; // uuid
+  message_id: string; // uuid, references public.messages.id
+  user_id: string; // uuid, references auth.users.id (denormalized)
+  tool_name: string; // text, not null
+  tool_input: any | null; // jsonb
+  tool_output: any | null; // jsonb
+  created_at: string; // timestamp with time zone
+}
+
+// Generic API Error structure defined in the plan
+export interface ApiErrorResponse {
+  error: {
+    code: string;
+    message: string;
+    details?: any;
+  };
+} 

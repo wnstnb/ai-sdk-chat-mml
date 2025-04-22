@@ -20,3 +20,11 @@ Revised the implementation approach in `prds/supabase_implementation.md` to prio
 
 Updated `prds/supabase_implementation.md`: added `tool_calls` table, raw SQL DDL, specified signed URLs for storage, proposed middleware for route protection, and added placeholders for error handling.
 Created initial `README.md` with setup instructions (env vars, DB schema, storage bucket).
+
+Defined API route contracts for documents, folders, messages, and storage signed URLs in `prds/supabase_implementation.md`.
+
+Planned modifications for the editor page (`app/editor/[documentId]`) including data fetching (doc details, messages), rendering, saving content, sending messages (with image upload flow), and 'New Document' button behavior, documented in `prds/supabase_implementation.md`.
+
+Created `middleware.ts` at the project root using `@supabase/ssr` to protect routes (`/launch`, `/editor/*`) based on Supabase session state and redirect users accordingly.
+
+Defined API route error handling standards (JSON format, common codes, HTTP statuses) in `prds/supabase_implementation.md`.

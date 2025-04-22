@@ -31,3 +31,36 @@ The file manager on `/launch` will handle fetching/displaying folders and docume
 * Route protection for `/launch` and `/editor/*` will be handled by Next.js middleware checking Supabase sessions.
 * Raw SQL DDL for the schema is provided in `prds/supabase_implementation.md` for manual application.
 * A `README.md` file includes initial setup instructions.
+
+API routes defined in `prds/supabase_implementation.md` include:
+*   `GET /api/file-manager` (fetches user's documents & folders).
+*   CRUD endpoints for `/api/folders` and `/api/documents` (metadata updates).
+*   `POST /api/launch` (creates new doc + first message).
+*   `GET /api/documents/[documentId]` (fetches doc details).
+*   `PUT /api/documents/[documentId]/content` (updates doc content).
+*   `GET /api/documents/[documentId]/messages` (fetches messages, includes signed image download URLs).
+*   `POST /api/documents/[documentId]/messages` (creates user message).
+*   `POST /api/storage/signed-url/upload` (generates image upload URL).
+Tool call creation is handled server-side during AI response processing.
+
+The editor page (`app/editor/[documentId]`) will be modified to:
+*   Fetch document details (`GET /api/documents/[documentId]`) and messages (`GET /api/documents/[documentId]/messages`) on load.
+*   Use fetched data to populate the editor title, content, and chat display (including images via signed URLs).
+*   Implement the 'Save' button to call `PUT /api/documents/[documentId]/content`.
+*   Handle chat input submission via `POST /api/documents/[documentId]/messages`, including image upload flow (get signed URL, upload file, then post message with image path).
+*   The 'New Document' button will navigate to `/launch`.
+*   Requires state management for document data, messages, editor content, loading, and errors.
+
+A `middleware.ts` file has been created at the project root to handle route protection:
+*   Uses `@supabase/ssr`'s `createMiddlewareClient`.
+*   Checks for a valid session using `supabase.auth.getSession()`.
+*   Redirects unauthenticated users from protected routes (`/launch`, `/editor/*`) to `/login`.
+*   Redirects authenticated users from `/login` to `/launch`.
+*   Refreshes session cookies automatically.
+*   Uses a matcher config to exclude API routes and static assets.
+
+API route error handling follows a standard format:
+*   Errors return appropriate HTTP status codes (4xx/5xx).
+*   The JSON response body is `{ error: { code: string, message: string, details?: any } }`.
+*   Common codes include `INVALID_INPUT`, `UNAUTHENTICATED`, `UNAUTHORIZED_ACCESS`, `NOT_FOUND`, `SERVER_ERROR`.
+*   Details are documented in `prds/supabase_implementation.md`.

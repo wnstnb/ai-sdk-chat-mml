@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase/client';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { useRouter } from 'next/navigation';
@@ -10,7 +10,7 @@ import dynamic from 'next/dynamic';
 
 // Dynamically import the Auth component with SSR disabled
 const AuthUI = dynamic(
-  () => import('../components/AuthUI'),
+  () => import('../../components/AuthUI'),
   { ssr: false }
 );
 
