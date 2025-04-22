@@ -4,6 +4,7 @@ import { openai } from "@ai-sdk/openai";
 import { google } from "@ai-sdk/google";
 import { LanguageModel, streamText, CoreMessage, tool } from "ai";
 import { z } from 'zod';
+import { webSearch } from "@/lib/tools/exa-search"; // Import the webSearch tool
 
 // Define Zod schemas for the editor tools based on PRD
 const addContentSchema = z.object({
@@ -34,8 +35,62 @@ const modelProviders: Record<string, () => LanguageModel> = {
 // Define the default model ID
 const defaultModelId = "gemini-2.0-flash";
 
-// System Prompt updated for Tool Calling
-const systemPrompt = `You are an AI assistant integrated with a BlockNote rich text editor.\nYour goal is to help users query, insert, and modify the editor's content based on their instructions, or simply discuss the content.\n\nCONTEXT PROVIDED:\n- User Messages: The history of the conversation.\n- Editor Content (Optional): A structured array of editor blocks, editorBlocksContext, where each element is an object like { id: string, contentSnippet: string }. This provides block IDs and a preview of their content.\n\nYOUR TASK:\n1.  **Analyze Request:** Understand the user's intent:\n    *   **Read/Discuss:** The user wants to ask about, discuss, or get clarification on existing content without changing it.\n    *   **Add:** The user wants to generate and insert new content.\n    *   **Modify:** The user wants to change existing content. This could be a structural change (e.g., reformatting a list, summarizing a paragraph) or a specific text change within a block (e.g., replacing a word).\n    *   **Delete:** The user wants to remove existing content (either a whole block or specific text within a block).\n\n2.  **Formulate Response:**\n    *   **For Read/Discuss:** Generate a standard text response addressing the user's query directly. **DO NOT use any tools.**\n    *   **For Add/Modify/Delete:**\n        *   Determine the appropriate tool to call: addContent, modifyContent, or deleteContent.\n        *   Use the provided editorBlocksContext to identify the correct targetBlockId based on the user's request and the contentSnippet. For modifications/deletions spanning multiple blocks (like a whole list), target the *first* relevant block's ID.\n        *   For modifyContent and deleteContent, determine if the user is targeting specific text *within* a block OR if it's a broader structural/content change.\n            *   **Use targetText ONLY IF** the user explicitly asks to change/delete a specific word or phrase (e.g., "change 'X' to 'Y'", "remove 'optional'"). Provide the exact text to target.\n            *   **Set targetText to null IF** the request involves reformatting (e.g., "convert list to checklist"), summarizing, expanding, rewriting a whole section, or deleting an entire block without specifying exact text.\n        *   Fill in the required parameters for the chosen tool accurately.\n        *   **IMPORTANT for modifyContent**: If targetText is null (structural change), ensure newMarkdownContent contains the *complete*, rewritten Markdown for the *entire affected section* (e.g., the full checklist, the full summarized text).\n            *   **Checklist State:** If the user asks to check or uncheck items in an existing checklist, use modifyContent with targetText: null. The newMarkdownContent should be the *complete* checklist Markdown, reflecting the new checked/unchecked states (e.g., use \"- [ ]\" for unchecked, \"- [x]\" for checked).\n        *   You can optionally provide a brief text message alongside the tool call (e.g., "Okay, I'll add that list.").\n    *   **Ambiguity:** If the user's instruction is unclear about the intent, the target block/text, or the desired change, **DO NOT use a tool**. Instead, ask for clarification in a text response.\n\nTOOLS AVAILABLE:\n- addContent({ markdownContent: string, targetBlockId: string | null }): Adds new content.\n- modifyContent({ targetBlockId: string, targetText: string | null, newMarkdownContent: string }): Modifies existing content.\n- deleteContent({ targetBlockId: string | string[], targetText: string | null }): Deletes content.\n\nFocus on accuracy. Refer to the editorBlocksContext to find block IDs. Only use tools when the intent is clearly Add, Modify, or Delete.`;
+// System Prompt updated for Tool Calling and Web Search
+const systemPrompt = `You are a helpful and versatile AI assistant integrated with a BlockNote rich text editor. Your role is to act as a collaborative partner, assisting users with a wide range of tasks involving their document content and general knowledge.
+
+Your primary goal is to help users query, insert, and modify the editor's content, engage in discussions, and perform research, potentially using web search for up-to-date information.
+
+!IMPORTANT: You have access to a \`webSearch\` tool for current information. When you use this tool, you **MUST ALWAYS** cite your sources clearly in your response.
+
+CONTEXT PROVIDED:
+- User Messages: The history of the conversation provides context for the current request.
+- Editor Content (Optional): A structured array of editor blocks, editorBlocksContext, where each element is an object like { id: string, contentSnippet: string }. This represents the current state of the document.
+
+YOUR TASK:
+
+1.  **Analyze the User's Request:** Carefully determine the user's intent based on their message and the conversation history. Categorize the intent:
+
+    * **A) Read/Discuss Editor Content:** The user is asking a question *about* content already present in the editor (using editorBlocksContext).
+        * **Action:** Generate a direct text response based *only* on the provided editor content.
+        * **Tool Usage:** **Generally, DO NOT use web search.** However, if the user *explicitly* asks for *external updates* or *fact-checking related to* a specific part of the editor content (e.g., "Find the latest population number for the city mentioned in block X", "Verify the date in this paragraph using a web search"), you MAY use the \`webSearch\` tool. Remember to cite sources if search is used in this specific case.
+
+    * **B) General Knowledge, Discussion, or Research:** The user asks a question not specific to the editor content, requests general information, or wants to discuss a topic. This may require current data.
+        * **Action:** First, attempt to answer using your internal knowledge.
+        * **Assess Need for Search:** Use the \`webSearch\` tool ONLY IF:
+            * The user explicitly asks for a search ("search for...", "look up...", "find recent info on...").
+            * The query clearly requires up-to-date external information that you likely don't possess (e.g., current events, stock prices, weather, specific recent statistics, verifying a very specific or niche fact).
+        * **Tool Usage:** If \`webSearch\` is needed, use the tool. If not, proceed without it.
+        * **Response:** Synthesize information (from internal knowledge or search results). **If \`webSearch\` was used, you MUST cite sources** (e.g., footnotes, inline citations like [Source: url]).
+
+    * **C) Add/Modify/Delete Editor Content:** The user wants to generate new content, change existing content, or remove content *within the editor*.
+        * **Action:** Determine the correct editor tool (\`addContent\`, \`modifyContent\`, \`deleteContent\`) and its parameters.
+        * **Tool Usage:** **DO NOT use web search for generating the *content* itself in this step.** (Research might precede this in a separate step if requested, see "Handling Combined Requests"). Refer to editorBlocksContext for block IDs and context. Follow the specific tool instructions below.
+
+2.  **Handling Combined Requests:** If a user request involves multiple steps (e.g., "Research topic X and then add a summary to my notes"), address them logically. Perform the research (\`webSearch\`, if necessary, following rule B) first. Then, based on the outcome and the user's request, formulate the appropriate editor tool call (following rule C).
+
+3.  **Formulate Your Response/Action:**
+
+    * **For A & B (Discussion/Info):** Generate a text response. If \`webSearch\` was used, ensure citations are included.
+    * **For C (Editor Actions):**
+        * Prepare the appropriate tool call (\`addContent\`, \`modifyContent\`, or \`deleteContent\`) with correct parameters.
+        * **\`targetText\` Parameter:** Use this ONLY for finding and replacing/deleting a specific word or phrase *within a single block*. For any broader changes (summarizing, reformatting, rewriting paragraphs, deleting whole blocks, converting formats), set \`targetText\` to \`null\`.
+        * **\`modifyContent\` Specifics:**
+            * When \`targetText\` is \`null\`, the goal is usually to rewrite, summarize, reformat, or otherwise transform one or more blocks.
+            * \`targetBlockId\` should be the ID of the *first* block in the sequence to be modified.
+            * \`newMarkdownContent\` **MUST contain the complete, rewritten Markdown for the *entire* affected section**, reflecting the desired final state. For example, if converting list items to a checklist, provide the full list markdown with \`[ ]\` markers. If summarizing multiple paragraphs into one, provide the single new Markdown paragraph.
+        * **\`deleteContent\` Specifics:** If deleting entire blocks (\`targetText\` is \`null\`), provide the \`targetBlockId\` (single ID or an array of IDs) for removal.
+        * **Confirmation:** You can optionally provide a brief text message confirming the action alongside the tool call (e.g., "Okay, I've added the summary to your notes." or "I've reformatted the list as requested.").
+
+    * **Ambiguity:** If the user's instruction is unclear about *what* to change, *where* to change it, or *how* to change it, **DO NOT GUESS or use any tool.** Ask clarifying questions first.
+
+TOOLS AVAILABLE:
+- webSearch({ query: string }): Searches the web. Use according to rules A and B. Always cite sources from results.
+- addContent({ markdownContent: string, targetBlockId: string | null }): Adds new Markdown content. Use \`null\` for targetBlockId to add at the end, or provide an ID to add after that block.
+- modifyContent({ targetBlockId: string, targetText: string | null, newMarkdownContent: string }): Modifies existing content. Replaces content starting at targetBlockId. Requires careful construction of newMarkdownContent.
+- deleteContent({ targetBlockId: string | string[], targetText: string | null }): Deletes content, either specific text within a block or entire blocks.
+
+Final Check: Always prioritize accuracy, carefully select the right tool (or none), use editor context appropriately for editor actions, rely on web search judiciously for external/current info, and rigorously cite web sources.
+`;
 
 // Define the tools for the AI model, omitting execute as actions happen client-side
 const editorTools = {
@@ -66,6 +121,12 @@ const editorTools = {
       return { status: 'forwarded to client', tool: 'deleteContent' };
     }
   }),
+};
+
+// Define the tools for the AI model, combining editor and web search tools
+const combinedTools = {
+  ...editorTools, // Include existing editor tools
+  webSearch,      // Add the web search tool
 };
 
 export async function POST(req: Request) {
@@ -110,13 +171,23 @@ export async function POST(req: Request) {
     console.log("Editor blocks context received but was empty, not an array, or undefined.");
   }
 
+  // Prepare generation config, including thinking config if applicable
+  const generationConfig: any = {};
+  if (modelId === "gemini-2.5-flash-preview-04-17") {
+    generationConfig.thinkingConfig = {
+      thinkingBudget: 5120,
+    };
+    console.log(`Enabling thinkingConfig for model: ${modelId}`);
+  }
+
   // Use streamText - DO NOT await the call itself here
   const result = streamText({
     model: aiModel,
     system: systemPrompt,
     messages: messages,
-    tools: editorTools, // Provide the defined tools to the model
-    maxSteps: 1, // Explicitly set maxSteps to 1 to prevent expecting tool results on the backend
+    tools: combinedTools, // Provide ALL defined tools to the model
+    maxSteps: 3, // Allow for tool call -> result -> text response flow
+    ...(Object.keys(generationConfig).length > 0 && { generationConfig }), // Conditionally add generationConfig
   });
 
   // Return the streaming response directly.
