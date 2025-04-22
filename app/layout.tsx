@@ -1,11 +1,14 @@
-import "./globals.css";
-import { Metadata } from "next";
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import ThemeHandler from '@/components/ThemeHandler';
+import './globals.css';
 import { Toaster } from "sonner";
 
+const inter = Inter({ subsets: ['latin'] });
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://ai-sdk-preview-attachments.vercel.dev"),
-  title: "Attachments Preview",
-  description: "Experimental preview of attachments in useChat hook",
+  title: "AI SDK Chat MML",
+  description: "AI SDK Chat MML",
 };
 
 export default function RootLayout({
@@ -15,9 +18,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>
-        <Toaster position="top-center" richColors />
-        {children}
+      <body className={inter.className}>
+        <ThemeHandler>
+          {children}
+        </ThemeHandler>
+        <Toaster />
       </body>
     </html>
   );

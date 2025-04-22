@@ -17,7 +17,8 @@ import { Markdown } from "@/components/markdown";
 import { ModelSelector } from "@/components/ModelSelector";
 import { Block, BlockNoteEditor, PartialBlock, InlineContent, BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs, defaultStyleSpecs } from "@blocknote/core";
 import dynamic from 'next/dynamic';
-import { ChevronLeft, ChevronRight, Wrench } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Wrench, SendToBack } from 'lucide-react';
+import { DocumentPlusIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { webSearch } from "@/lib/tools/exa-search"; // Import the webSearch tool
 
 // Define the schema used by the editor (assuming default for now)
@@ -210,7 +211,7 @@ const ChatInputUI: React.FC<ChatInputUIProps> = ({
               ) : file.type.startsWith("text") ? (
                 <motion.div
                   key={file.name}
-                  className="flex-shrink-0 text-[8px] leading-1 w-20 h-16 overflow-hidden text-zinc-500 border p-1 rounded-lg bg-white dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400"
+                  className="flex-shrink-0 text-[8px] leading-1 w-20 h-16 overflow-hidden text-zinc-500 border p-1 rounded-lg bg-[--message-bg] border-[--border-color] text-[--text-color]"
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                 >
@@ -231,12 +232,12 @@ const ChatInputUI: React.FC<ChatInputUIProps> = ({
         onChange={handleFileChange}
       />
 
-      <div className="flex flex-col w-full bg-zinc-100 dark:bg-zinc-700 rounded-lg p-2 border border-zinc-200 dark:border-zinc-600 shadow-sm">
+      <div className="flex flex-col w-full bg-[--input-bg] rounded-lg p-2 border border-[--border-color] shadow-sm">
         <div className="flex-grow w-full mb-2">
           <textarea
             ref={inputRef}
             rows={1}
-            className="bg-transparent w-full outline-none text-zinc-800 dark:text-zinc-300 placeholder-zinc-400 resize-none overflow-y-auto max-h-40 align-bottom"
+            className="bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40 align-bottom"
             placeholder="What do you want to focus on?"
             value={input}
             onChange={(e) => {
@@ -256,22 +257,21 @@ const ChatInputUI: React.FC<ChatInputUIProps> = ({
             <ModelSelector model={model} setModel={setModel} />
           </div>
 
-          <div className="flex items-center space-x-2 pl-2">
+          <div className="flex items-center space-x-2 ml-auto">
             <button
               type="button"
               onClick={handleUploadClick}
-              className="text-zinc-500 dark:text-zinc-300 hover:text-zinc-700 dark:hover:text-zinc-100 focus:outline-none p-1 rounded-md"
+              className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none"
               aria-label="Upload Files"
             >
               <span className="w-5 h-5 block">
                 <AttachmentIcon aria-hidden="true" />
               </span>
             </button>
-
             <button
               type="submit"
-              disabled={!input.trim() && !files || isLoading}
-              className="text-zinc-500 dark:text-zinc-300 hover:text-zinc-700 dark:hover:text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none p-1 rounded-md"
+              disabled={isLoading || (!input && !files)}
+              className="p-1 rounded-md text-[--muted-text-color] disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:bg-[--hover-bg] enabled:hover:text-[--text-color] focus:outline-none"
               aria-label="Send message"
             >
               <span className="w-5 h-5 block">
@@ -293,6 +293,8 @@ export default function Home() {
   const [processedToolCallIds, setProcessedToolCallIds] = useState<Set<string>>(new Set());
   // State for controlling displayed messages
   const [displayedMessagesCount, setDisplayedMessagesCount] = useState(INITIAL_MESSAGE_COUNT);
+  // State to indicate if the next submission should include full editor content
+  const [includeEditorContent, setIncludeEditorContent] = useState(false);
 
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
   // --- NEW: State for resizable chat pane width ---
@@ -317,6 +319,25 @@ export default function Home() {
     });
 
   // --- Tool Execution Logic ---
+
+  // --- NEW: Function to get editor content as Markdown ---
+  const getEditorMarkdownContent = async (): Promise<string | null> => {
+    const editor = editorRef.current;
+    if (!editor) {
+      toast.error("Editor instance not available.");
+      return null;
+    }
+    try {
+      const markdown = await editor.blocksToMarkdownLossy(editor.document);
+      console.log("Retrieved editor content as Markdown:", markdown.slice(0, 100) + "..."); // Log snippet
+      return markdown;
+    } catch (error) {
+      console.error("Failed to get editor content as Markdown:", error);
+      toast.error("Error retrieving editor content.");
+      return null;
+    }
+  };
+  // --- END NEW ---
 
   const executeAddContent = async (args: any) => {
     const editor = editorRef.current;
@@ -679,15 +700,32 @@ export default function Home() {
   };
 
   // --- Submit Handler with Editor Context ---
-  const handleSubmitWithContext = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); // Prevent default regardless
+  const handleSubmitWithContext = async (event: React.FormEvent<HTMLFormElement> | null, // Allow null event for programmatic trigger
+                                         options?: { data?: Record<string, any> } // Allow passing extra data
+                                        ) => {
+    if(event) event.preventDefault(); // Prevent default only if triggered by form event
 
     const editor = editorRef.current;
-    let editorContextData = {};
+    let editorContextData = options?.data ?? {}; // Start with any pre-provided data
 
-    if (editor) {
+    // --- MODIFIED: Include full Markdown content if requested ---
+    if (includeEditorContent && editor) {
+      const markdownContent = await getEditorMarkdownContent();
+      if (markdownContent !== null) {
+         editorContextData = {
+           ...editorContextData,
+           editorMarkdownContent: markdownContent, // Add full markdown content
+         };
+         console.log("Including full editor Markdown content in submission.");
+      }
+       // Reset the flag after attempting to include the content
+      setIncludeEditorContent(false);
+    }
+    // --- END MODIFICATION ---
+    // Include block context snippets only if full markdown isn't being sent
+    else if (editor && !editorContextData.editorMarkdownContent) {
       try {
-        // Get editor blocks and create structured context
+        // Get editor blocks and create structured context (snippets)
         const currentBlocks = editor.document;
         const editorBlocksContext = currentBlocks.map((block: Block) => {
           const inlineContent = Array.isArray(block.content) ? block.content : [];
@@ -710,7 +748,7 @@ export default function Home() {
     }
 
     // Call the original useChat handleSubmit
-    handleSubmit(event, {
+    handleSubmit(event || undefined, {
       ...(files ? { experimental_attachments: files } : {}),
       data: {
         id: model, // Ensure model ID is included
@@ -773,6 +811,17 @@ export default function Home() {
              console.log("Acknowledging webSearch tool call (handled by backend).");
              executed = true; // Mark as handled to prevent unknown tool error
              break;
+           // --- NEW: Handle request for editor content --- 
+           case "request_editor_content":
+             console.log("AI requested editor content. Flagging for next submission.");
+             toast.info("AI requested editor context. It will be included in the next message.");
+             setIncludeEditorContent(true);
+             // Note: We don't trigger submission here. Content will be included
+             // when the user sends their *next* message, or if we decide
+             // to programmatically trigger a follow-up later.
+             executed = true; // Mark as handled
+             break;
+           // --- END NEW ---
            default:
              console.error(`Unknown tool called: ${toolName}`);
              toast.error(`AI tried to use an unknown tool: ${toolName}`);
@@ -805,15 +854,20 @@ export default function Home() {
          MIN_CHAT_PANE_WIDTH_PX,
          (windowWidth * INITIAL_CHAT_PANE_WIDTH_PERCENT) / 100
        );
-       const maxWidth = (windowWidth * MAX_CHAT_PANE_WIDTH_PERCENT) / 100;
-       // Only update if not currently resizing and width is not already set or needs adjustment
-       // Or if the current width exceeds the new max width
-       if (!isResizing && (chatPaneWidth === null || chatPaneWidth > maxWidth)) {
-          setChatPaneWidth(Math.min(initialWidth, maxWidth));
-       } else if (!isResizing && chatPaneWidth !== null && chatPaneWidth < MIN_CHAT_PANE_WIDTH_PX) {
-          // Ensure minimum width on resize
-          setChatPaneWidth(MIN_CHAT_PANE_WIDTH_PX);
+       const potentialMaxWidth = (windowWidth * MAX_CHAT_PANE_WIDTH_PERCENT) / 100;
+       // Ensure maxWidth is never less than minWidth
+       const effectiveMaxWidth = Math.max(potentialMaxWidth, MIN_CHAT_PANE_WIDTH_PX);
+
+       // Only update if not currently resizing
+       if (!isResizing) {
+         // If width is not set, or current width is outside the new bounds, recalculate
+         if (chatPaneWidth === null || chatPaneWidth > effectiveMaxWidth || chatPaneWidth < MIN_CHAT_PANE_WIDTH_PX) {
+           // Clamp the initial calculation between min and effective max
+           const newWidth = Math.max(MIN_CHAT_PANE_WIDTH_PX, Math.min(initialWidth, effectiveMaxWidth));
+           setChatPaneWidth(newWidth);
+         }
        }
+       // No need for the separate 'else if' ensuring minimum, as the clamping above handles it.
      };
 
      calculateWidth(); // Calculate on initial mount
@@ -883,17 +937,96 @@ export default function Home() {
    }, [isResizing]);
    // --- END NEW ---
 
+  const handleSendToEditor = async (content: string) => {
+    const editor = editorRef.current;
+    if (!editor) {
+      toast.error("Editor not available.");
+      return;
+    }
+    if (!content || content.trim() === '') {
+        toast.info("Cannot send empty message content to editor.");
+        return;
+    }
+
+    try {
+      console.log("Parsing message content for editor:", content);
+      const blocksToInsert = await editor.tryParseMarkdownToBlocks(content);
+
+      if (blocksToInsert.length === 0) {
+        toast.info("Message content resulted in empty blocks after parsing.");
+        return;
+      }
+
+      // Determine insertion point: after current cursor block or end of document
+      const { block: currentBlock } = editor.getTextCursorPosition();
+      let referenceBlockId: string | undefined = undefined;
+      let placement: 'before' | 'after' = 'after';
+
+      if (currentBlock) {
+        referenceBlockId = currentBlock.id;
+        placement = 'after';
+        console.log(`Inserting ${blocksToInsert.length} blocks after current block: ${referenceBlockId}`);
+      } else {
+        // No cursor or selection, insert at the end
+        const lastBlock = editor.document[editor.document.length - 1];
+        if (lastBlock) {
+            referenceBlockId = lastBlock.id;
+            placement = 'after';
+             console.log(`Inserting ${blocksToInsert.length} blocks after last block: ${referenceBlockId}`);
+        } else {
+          // Document is empty, replace content
+          console.log(`Document empty, replacing with ${blocksToInsert.length} blocks.`);
+          editor.replaceBlocks(editor.document, blocksToInsert);
+          toast.success("Message content sent to editor.");
+          return; // Exit early as replaceBlocks was used
+        }
+      }
+
+      editor.insertBlocks(blocksToInsert, referenceBlockId, placement);
+      toast.success("Message content sent to editor.");
+
+    } catch (error: any) {
+      console.error("Failed to send message content to editor:", error);
+      toast.error(`Error sending content to editor: ${error.message || 'Unknown error'}`);
+    }
+  };
+
   return (
-    <div className="flex flex-row h-dvh bg-white dark:bg-zinc-900 overflow-hidden">
+    <div className="flex flex-row w-full h-full bg-[--bg-color]">
       
-      <div className="flex-1 flex flex-col p-4 border-r border-zinc-200 dark:border-zinc-700 relative">
-        <h2 className="text-lg font-semibold mb-2 text-zinc-800 dark:text-zinc-200">Editor</h2>
-        <div className="flex-1 flex flex-col relative border rounded-lg bg-white dark:bg-zinc-800 dark:border-zinc-700 shadow-sm overflow-hidden">
+      <div className="flex-1 flex flex-col p-4 border-r border-[--border-color] relative">
+        {/* Editor Title Bar - Modified */}
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-lg font-semibold text-[--text-color]">Editor</h2>
+          <div className="flex items-center space-x-2">
+            {/* New Button */}
+            <button
+              // onClick={() => console.log('New clicked')} // Placeholder functionality
+              className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded"
+              aria-label="New File"
+              title="New File" // Tooltip
+            >
+              <DocumentPlusIcon className="h-5 w-5" />
+            </button>
+            {/* Save Button */}
+            <button
+              // onClick={() => console.log('Save clicked')} // Placeholder functionality
+              className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded"
+              aria-label="Save File"
+              title="Save File" // Tooltip
+            >
+              <ArrowDownTrayIcon className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+        {/* End Editor Title Bar */}
+        
+        <div className="flex-1 flex flex-col relative border rounded-lg bg-[--editor-bg] border-[--border-color] shadow-sm">
            <div className="flex-1 overflow-y-auto p-4">
              <BlockNoteEditorComponent editorRef={editorRef} />
            </div>
            {isChatCollapsed && (
-             <div className="absolute bottom-0 left-0 right-0 p-4 pt-2 bg-white dark:bg-zinc-800 border-t border-zinc-200 dark:border-zinc-700 z-10">
+             <div className="absolute bottom-0 left-0 right-0 p-4 pt-2 bg-[--editor-bg] border-t border-[--border-color] z-10">
                <form
                  ref={formRef}
                  onSubmit={handleSubmitWithContext}
@@ -920,7 +1053,7 @@ export default function Home() {
 
         <button
           onClick={() => setIsChatCollapsed(!isChatCollapsed)}
-          className="absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 z-20 p-1 bg-zinc-200 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded-full text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-600 focus:outline-none"
+          className="absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 z-20 p-1 bg-[--toggle-button-bg] border border-[--border-color] rounded-full text-[--text-color] hover:bg-[--hover-bg] focus:outline-none"
           aria-label={isChatCollapsed ? 'Expand chat' : 'Collapse chat'}
         >
           {isChatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
@@ -928,7 +1061,7 @@ export default function Home() {
       </div>
 
       <motion.div
-        className="flex flex-col bg-white dark:bg-zinc-900 h-full overflow-hidden relative border-l border-zinc-200 dark:border-zinc-700"
+        className="flex flex-col bg-[--bg-secondary] h-full relative border-l border-[--border-color]"
         initial={false}
         animate={{
           width: isChatCollapsed ? 0 : chatPaneWidth ?? `${INITIAL_CHAT_PANE_WIDTH_PERCENT}%`,
@@ -951,8 +1084,8 @@ export default function Home() {
         {/* --- END NEW --- */}
 
         {!isChatCollapsed && (
-          <div className="flex flex-col justify-between h-full w-full items-center pt-4">
-            <div className="flex flex-col gap-2 h-full w-full items-center overflow-y-auto pr-2 mb-4">
+          <>
+            <div className="flex-1 flex flex-col gap-2 w-full items-center overflow-y-auto pr-2 pt-4 mb-4">
               {/* --- Load More Button --- */}
               {messages.length > displayedMessagesCount && (
                 <button
@@ -981,6 +1114,22 @@ export default function Home() {
                       <div className="text-zinc-800 dark:text-zinc-300 flex flex-col gap-4">
                         <Markdown>{message.content}</Markdown>
                       </div>
+
+                      {/* --- NEW: Send to Editor Button --- */}
+                      {message.content && message.content.trim() !== '' && (
+                        <div className="mt-1 flex justify-end">
+                          <button
+                            onClick={() => handleSendToEditor(message.content)}
+                            className="p-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-md focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500"
+                            title="Send to Editor"
+                            aria-label="Send message content to editor"
+                          >
+                            <SendToBack size={14} />
+                          </button>
+                        </div>
+                      )}
+                      {/* --- END NEW --- */}
+
                       {/* Display Tool Invocations */}
                       {message.role === "assistant" && message.toolInvocations && message.toolInvocations.length > 0 && (
                         <div className="mt-2 flex flex-col gap-2 border-t border-zinc-200 dark:border-zinc-700 pt-2">
@@ -1060,7 +1209,7 @@ export default function Home() {
               <div ref={messagesEndRef} />
             </div>
 
-            <div className="w-full px-4 pb-4">
+            <div className="w-full px-4 pb-4 border-t border-[--border-color] pt-4">
               <form
                 ref={formRef}
                 onSubmit={handleSubmitWithContext}
@@ -1082,7 +1231,7 @@ export default function Home() {
                 />
               </form>
             </div>
-          </div>
+          </>
         )}
       </motion.div>
     </div>

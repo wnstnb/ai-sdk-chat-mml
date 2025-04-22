@@ -17,6 +17,8 @@ export const webSearch = tool({
       // numResults: 3 limits the output to the top 3 results
       const { results } = await exa.searchAndContents(query, {
         numResults: 3,
+        livecrawl: "always",
+        type: "auto",
         // Consider adding text content options if needed, e.g.,
         // text: {
         //   maxCharacters: 1000,

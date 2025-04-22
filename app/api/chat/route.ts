@@ -45,6 +45,7 @@ Your primary goal is to help users query, insert, and modify the editor's conten
 CONTEXT PROVIDED:
 - User Messages: The history of the conversation provides context for the current request.
 - Editor Content (Optional): A structured array of editor blocks, editorBlocksContext, where each element is an object like { id: string, contentSnippet: string }. This represents the current state of the document.
+!IMPORTANT: Do not discuss any block information or UUIDs for blocks (eg. Block e86357ab-a882-4a3b-9ffa-18550d63c272) when user asks about content in the editor. They are asking about the content in the editor, not specific blocks.
 
 YOUR TASK:
 
@@ -186,7 +187,7 @@ export async function POST(req: Request) {
     system: systemPrompt,
     messages: messages,
     tools: combinedTools, // Provide ALL defined tools to the model
-    maxSteps: 3, // Allow for tool call -> result -> text response flow
+    maxSteps: 5, // Allow for tool call -> result -> text response flow
     ...(Object.keys(generationConfig).length > 0 && { generationConfig }), // Conditionally add generationConfig
   });
 
