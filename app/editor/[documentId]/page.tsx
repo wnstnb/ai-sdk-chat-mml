@@ -257,6 +257,12 @@ export default function EditorPage() {
                 initialDisplayCount: Math.min(formattedMessages.length, INITIAL_MESSAGE_COUNT)
             });
 
+            // *** ADDED: Trigger reload if last message is user message ***
+            if (formattedMessages.length > 0 && formattedMessages[formattedMessages.length - 1].role === 'user') {
+                console.log("[fetchChatMessages] Last message is from user, triggering reload().");
+                reload(); // Trigger API call to process initial user message
+            }
+
         } catch (err: any) {
             console.error('Error fetching messages:', err);
             setError(`Failed to load messages: ${err.message}`); // Set page error
@@ -543,9 +549,19 @@ export default function EditorPage() {
     // Process tool calls from messages
     useEffect(() => {
         const lastMessage = chatMessages[chatMessages.length - 1];
+        console.log('[Tool Processing Effect Triggered] Last message:', lastMessage); // Log when effect runs
+
         if (lastMessage?.role === 'assistant' && lastMessage.toolInvocations) {
-            const callsToProcess = lastMessage.toolInvocations.filter(tc => !processedToolCallIds.has(tc.toolCallId));
+            console.log(`[Tool Processing Effect] Found ${lastMessage.toolInvocations.length} tool invocations in last message ID: ${lastMessage.id}. Current processed IDs:`, processedToolCallIds); // Log tool invocations found
+
+            const callsToProcess = lastMessage.toolInvocations.filter(tc => {
+                const alreadyProcessed = processedToolCallIds.has(tc.toolCallId);
+                console.log(`[Tool Processing Effect] Checking Tool Call ID: ${tc.toolCallId}. Already processed: ${alreadyProcessed}`); // Log check for each tool call
+                return !alreadyProcessed;
+            });
+
             if (callsToProcess.length > 0) {
+                console.log(`[Tool Processing Effect] Processing ${callsToProcess.length} new tool calls.`); // Log number of new calls to process
                 const newProcessedIds = new Set(processedToolCallIds);
                 callsToProcess.forEach(toolCall => {
                     newProcessedIds.add(toolCall.toolCallId); // Mark processed now

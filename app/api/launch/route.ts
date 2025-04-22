@@ -60,6 +60,7 @@ export async function POST(request: Request) {
     const newDocumentId = newDocument.id;
 
     // 4. Create Initial Message linked to the new document
+    console.log(`Creating initial message for document ${newDocumentId}`);
     const { data: newMessage, error: msgInsertError } = await supabase
       .from('messages')
       .insert({
@@ -78,7 +79,7 @@ export async function POST(request: Request) {
           // Alternatively, could try deleting the document here, but that might also fail.
           return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to create initial message: ${msgInsertError.message}. Document created but message failed.` } }, { status: 500 });
       }
-
+      console.log(`Initial message created with ID: ${newMessage?.id}`);
 
     // 5. Return New Document ID
     return NextResponse.json({ data: { documentId: newDocumentId } }, { status: 201 });

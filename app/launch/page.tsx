@@ -21,20 +21,24 @@ type CuboneFileType = {
 // Helper to map our DB structure to Cubone's expected structure
 const mapToCuboneFiles = (documents: Document[], folders: Folder[]): CuboneFileType[] => {
     // Using names for paths to allow rendering, but adding UUID to 'id' field
-    const mappedFolders: CuboneFileType[] = folders.map(f => ({
-        id: f.id,
-        name: f.name,
-        isDirectory: true,
-        path: `/${f.name}`, // Use name for path
-        updatedAt: f.updated_at,
-    }));
-     const mappedDocuments: CuboneFileType[] = documents.map(d => ({
-        id: d.id,
-        name: d.name,
-        isDirectory: false,
-        path: `/${d.name}`, // Use name for path
-        updatedAt: d.updated_at,
-    }));
+    const mappedFolders: CuboneFileType[] = folders
+        .filter(f => f && typeof f.name === 'string' && f.name.trim() !== '') // Ensure folder name is valid
+        .map(f => ({
+            id: f.id, // <-- Populate ID
+            name: f.name,
+            isDirectory: true,
+            path: `/${f.name}`, // Use name for path
+            updatedAt: f.updated_at,
+        }));
+     const mappedDocuments: CuboneFileType[] = documents
+        .filter(d => d && typeof d.name === 'string' && d.name.trim() !== '') // Ensure document name is valid
+        .map(d => ({
+            id: d.id, // <-- Populate ID
+            name: d.name,
+            isDirectory: false,
+            path: `/${d.name}`, // Use name for path
+            updatedAt: d.updated_at,
+        }));
 
     return [...mappedFolders, ...mappedDocuments];
 };

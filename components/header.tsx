@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { SunIcon, MoonIcon } from '@heroicons/react/24/outline'; // Removed DocumentPlusIcon and ArrowDownTrayIcon
+import { SunIcon, MoonIcon, FolderIcon } from '@heroicons/react/24/outline'; // Removed DocumentPlusIcon and ArrowDownTrayIcon, added FolderIcon
+import Link from 'next/link'; // Add Link import
 
 // Define props if needed, e.g., for theme toggling and logout function
 interface HeaderProps {
@@ -19,9 +20,14 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, /* onLogout, */ currentT
   return (
     <header className="app-header"> {/* Use a specific class for the header container */}
       <div className="header-content"> {/* Use class for inner content alignment */}
-        {/* Logo */}
-        <div className="header-logo">
-          tuon.io
+        {/* Logo and Launch Link */}
+        <div className="flex items-center gap-3"> {/* Group logo and icon */}
+          <Link href="/launch" className="text-[--text-color] hover:text-[--primary-color] transition-colors" title="Go to Launch Pad">
+            <FolderIcon className="h-6 w-6" />
+          </Link>
+          <div className="header-logo">
+            tuon.io
+          </div>
         </div>
 
         {/* Actions */}
