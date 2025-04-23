@@ -72,6 +72,12 @@ export default function LaunchPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false); // For launch action
 
+  // --- State for Typing Effect ---
+  const [displayedText, setDisplayedText] = useState('');
+  const [isTypingComplete, setIsTypingComplete] = useState(false);
+  const fullText = "What do you want to focus on?";
+  const typingSpeed = 80; // milliseconds per character
+
   // Fetch initial file/folder data
   const fetchData = useCallback(async () => {
     console.log("[LaunchPage] Attempting to fetch data..."); // Log start
@@ -115,6 +121,36 @@ export default function LaunchPage() {
     console.log("[LaunchPage] useEffect triggered to call fetchData."); // Log effect trigger
     fetchData();
   }, [fetchData]);
+
+  // Effect for typing animation
+  useEffect(() => {
+    let index = 0;
+    setIsTypingComplete(false);
+    setDisplayedText(''); // Reset text on mount/re-render
+
+    const typeCharacter = () => {
+        if (index < fullText.length) {
+            const charToAdd = fullText.charAt(index);
+            console.log(`[Typing Effect] Index: ${index}, Char: ${charToAdd}`); // <-- Add logging
+            setDisplayedText((prev) => prev + charToAdd);
+            index++;
+            setTimeout(typeCharacter, typingSpeed);
+        } else {
+            console.log("[Typing Effect] Typing complete."); // <-- Add logging
+            setIsTypingComplete(true); // Typing finished
+        }
+    };
+
+    // Start typing after a short delay
+    console.log("[Typing Effect] Starting typing..."); // <-- Add logging
+    const timeoutId = setTimeout(typeCharacter, 500);
+
+    // Cleanup function to clear timeout if component unmounts
+    return () => {
+        console.log("[Typing Effect] Cleanup effect."); // <-- Add logging
+        clearTimeout(timeoutId);
+    }
+  }, [fullText, typingSpeed]); // Rerun if text or speed changes (though they are constant here)
 
   // --- Handlers for Chat Input ---
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement> | React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -267,7 +303,22 @@ export default function LaunchPage() {
 
   return (
     <div className="flex flex-col h-full p-4 bg-[--bg-secondary] text-[--text-color]">
-      <h1 className="text-2xl font-semibold mb-4 text-center">Launch Pad</h1>
+      {/* Updated Heading with Conditional Content */}
+      <h1 className="text-2xl font-semibold mb-4 text-center font-uncut-sans h-8"> {/* Added h-8 for stable height */}
+        {isSubmitting ? (
+          <span className="loading-text">
+            Loading
+            <span className="dot1">.</span>
+            <span className="dot2">.</span>
+            <span className="dot3">.</span>
+          </span>
+        ) : (
+          <>
+            <span className="typing-text">{displayedText}</span>
+            <span className="cursor blinking"></span>
+          </>
+        )}
+      </h1>
 
       {/* Launch Input Form using ChatInputUI */}
       <form ref={formRef} onSubmit={handleLaunchSubmit} className="mb-6">

@@ -74,8 +74,8 @@ export default function AuthUI() {
         
         // Force a direct navigation instead of waiting for context
         setTimeout(() => {
-          console.log('Manually redirecting to /editor after successful OTP login');
-          router.replace('/editor');
+          console.log('Manually redirecting to /launch after successful OTP login');
+          router.replace('/launch');
         }, 500); // Short delay to allow state to update
       }
     } catch (err) {
@@ -95,20 +95,32 @@ export default function AuthUI() {
     setActiveTab(tab);
     setMessage('');
     setError('');
+    setOtp('');
+    setOtpSent(false);
   };
 
   return (
-    <div className="auth-container">
-      <div className="auth-tabs">
+    <div className="auth-ui-container space-y-6">
+      <div className="flex border-b border-[--border-color]">
         <button 
-          className={`auth-tab-button ${activeTab === 'standard' ? 'active' : ''}`}
+          className={`py-2 px-4 font-medium text-sm focus:outline-none transition-colors duration-150 
+                      ${
+                        activeTab === 'standard' 
+                        ? 'border-b-2 border-[--brand-color] text-[--brand-color]' 
+                        : 'text-[--text-color-secondary] hover:text-[--text-color]'
+                      }`}
           onClick={() => switchTab('standard')}
           type="button"
         >
           Password Login
         </button>
         <button 
-          className={`auth-tab-button ${activeTab === 'otp' ? 'active' : ''}`}
+          className={`py-2 px-4 font-medium text-sm focus:outline-none transition-colors duration-150 
+                      ${
+                        activeTab === 'otp' 
+                        ? 'border-b-2 border-[--brand-color] text-[--brand-color]' 
+                        : 'text-[--text-color-secondary] hover:text-[--text-color]'
+                      }`}
           onClick={() => switchTab('otp')}
           type="button"
         >
@@ -116,19 +128,16 @@ export default function AuthUI() {
         </button>
       </div>
       
-      {activeTab === 'otp' ? (
-        <div className="auth-options-container">
-          {/* OTP Authentication Section */}
-          <div className="otp-section">
-            <h3>One-Time Password Login</h3>
-            
-            {message && <div className="auth-message success">{message}</div>}
-            {error && <div className="auth-message error">{error}</div>}
+      <div className="auth-content mt-4">
+        {activeTab === 'otp' ? (
+          <div className="otp-section space-y-4">
+            {message && <div className="text-sm text-green-400">{message}</div>}
+            {error && <div className="text-sm text-red-400">{error}</div>}
             
             {!otpSent ? (
-              <form onSubmit={handleSendOTP} className="otp-form">
-                <div className="auth-field">
-                  <label htmlFor="email-otp">Email</label>
+              <form onSubmit={handleSendOTP} className="space-y-4">
+                <div>
+                  <label htmlFor="email-otp" className="block text-sm font-medium text-[--text-color-secondary] mb-1">Email</label>
                   <input
                     id="email-otp"
                     type="email"
@@ -137,20 +146,21 @@ export default function AuthUI() {
                     placeholder="your.email@example.com"
                     required
                     disabled={loading}
+                    className="auth-input w-full px-3 py-2 rounded-md border border-[--input-border-color] bg-[--input-bg-color] text-[--text-color] placeholder-[--input-placeholder-color] focus:outline-none focus:ring-1 focus:ring-[--brand-color] focus:border-[--brand-color]"
                   />
                 </div>
                 <button 
                   type="submit" 
-                  className="login-button otp-button"
+                  className="auth-button w-full justify-center"
                   disabled={loading}
                 >
                   {loading ? 'Sending...' : 'Send One-Time Password'}
                 </button>
               </form>
             ) : (
-              <form onSubmit={handleVerifyOTP} className="otp-form">
-                <div className="auth-field">
-                  <label htmlFor="otp-code">Enter the code from your email</label>
+              <form onSubmit={handleVerifyOTP} className="space-y-4">
+                <div>
+                  <label htmlFor="otp-code" className="block text-sm font-medium text-[--text-color-secondary] mb-1">Enter the code from your email</label>
                   <input
                     id="otp-code"
                     type="text"
@@ -159,76 +169,104 @@ export default function AuthUI() {
                     placeholder="123456"
                     required
                     disabled={loading}
+                    className="auth-input w-full px-3 py-2 rounded-md border border-[--input-border-color] bg-[--input-bg-color] text-[--text-color] placeholder-[--input-placeholder-color] focus:outline-none focus:ring-1 focus:ring-[--brand-color] focus:border-[--brand-color]"
                   />
                 </div>
                 <button 
                   type="submit" 
-                  className="login-button otp-verify-button"
+                  className="auth-button w-full justify-center"
                   disabled={loading}
                 >
                   {loading ? 'Verifying...' : 'Verify Code'}
                 </button>
                 <button 
                   type="button" 
-                  className="back-button"
+                  className="text-sm text-[--text-color-secondary] hover:text-[--brand-color] focus:outline-none w-full text-center mt-2"
                   onClick={handleBackToEmail}
                   disabled={loading}
                 >
-                  Back
+                  Use a different email
                 </button>
               </form>
             )}
           </div>
-        </div>
-      ) : (
-        /* Standard Auth UI */
-        <Auth
-          supabaseClient={supabase}
-          appearance={{
-            theme: ThemeSupa,
-            variables: {
-              default: {
-                colors: {
-                  brand: '#E5B679',            /* Sunkissed Brass */
-                  brandAccent: '#B38A58',      /* Wheat Bronze */
-                  brandButtonText: '#FFFFFF',  /* White for contrast */
-                  inputBackground: '#FFFFFF',  /* White for inputs */
-                  inputBorder: '#96A2B4',      /* Blue Pearl */
-                  inputPlaceholder: '#3F4F60', /* Moonlit Azure */
-                  messageText: '#3F4F60',      /* Moonlit Azure */
+        ) : (
+          <Auth
+            supabaseClient={supabase}
+            appearance={{
+              theme: ThemeSupa,
+              variables: {
+                default: {
+                  colors: {
+                    brand: 'var(--brand-color)',
+                    brandAccent: 'var(--brand-color-accent)',
+                    brandButtonText: 'var(--brand-button-text)',
+                    inputBackground: 'var(--input-bg-color)',
+                    inputBorder: 'var(--input-border-color)',
+                    inputPlaceholder: 'var(--input-placeholder-color)',
+                    messageText: 'var(--message-text-color)',
+                    anchorTextColor: 'var(--anchor-text-color)',
+                    anchorTextHoverColor: 'var(--anchor-text-hover-color)',
+                  },
+                  radii: {
+                    borderRadiusButton: '4px',
+                    buttonBorderRadius: '4px',
+                    inputBorderRadius: '4px',
+                  },
                 },
-                radii: {
-                  borderRadiusButton: '4px',
-                  buttonBorderRadius: '4px',
-                  inputBorderRadius: '4px',
-                },
+                dark: {
+                  colors: {
+                    brand: 'var(--brand-color)',
+                    brandAccent: 'var(--brand-color-accent)',
+                    brandButtonText: 'var(--brand-button-text)',
+                    defaultButtonBackground: 'var(--button-bg-color)',
+                    defaultButtonBackgroundHover: 'var(--button-bg-hover-color)',
+                    defaultButtonBorder: 'var(--button-border-color)',
+                    defaultButtonText: 'var(--button-text-color)',
+                    dividerBackground: 'var(--border-color)',
+                    inputBackground: 'var(--input-bg-color)',
+                    inputBorder: 'var(--input-border-color)',
+                    inputBorderHover: 'var(--input-border-hover-color)',
+                    inputBorderFocus: 'var(--brand-color)',
+                    inputText: 'var(--text-color)',
+                    inputPlaceholder: 'var(--input-placeholder-color)',
+                    messageText: 'var(--message-text-color)',
+                    messageTextDanger: 'var(--message-text-danger-color)',
+                    anchorTextColor: 'var(--anchor-text-color)',
+                    anchorTextHoverColor: 'var(--anchor-text-hover-color)',
+                  }
+                }
               },
-              dark: {
-                colors: {
-                  brand: '#C79553',            /* Ember Gold */
-                  brandAccent: '#8C6638',      /* Burnished Bronze */
-                  brandButtonText: '#FFFFFF',  /* White */
-                  inputBackground: '#2B3137',  /* Steel Ash */
-                  inputText: '#FFFFFF',        /* White */
-                  inputPlaceholder: '#A8ADB4', /* Frost Gray */
-                  inputBorder: '#3F4F60',      /* Moonlit Azure */
-                  dividerBackground: '#3F4F60',/* Moonlit Azure */
-                  messageText: '#A8ADB4',      /* Frost Gray */
+              className: {
+                container: 'supabase-auth-container',
+                button: 'auth-button',
+                input: 'auth-input',
+                label: 'auth-label',
+                anchor: 'auth-anchor',
+                message: 'auth-message',
+                divider: 'auth-divider'
+              },
+            }}
+            theme="dark"
+            providers={[]}
+            redirectTo={`${origin}/editor`}
+            view="sign_in"
+            localization={{
+              variables: {
+                sign_in: {
+                  email_label: 'Email address',
+                  password_label: 'Your Password',
+                  button_label: "Sign in",
+                  link_text: "Already have an account? Sign in",
+                },
+                sign_up: {
+                    link_text: "Don't have an account? Sign up"
                 }
               }
-            },
-            className: {
-              container: 'supabase-auth-ui',
-              button: 'login-button',
-              input: 'auth-input',
-            },
-          }}
-          theme="dark"
-          providers={[]}
-          redirectTo={`${origin}/editor`}
-          onlyThirdPartyProviders={false}
-        />
-      )}
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 } 

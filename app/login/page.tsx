@@ -67,16 +67,21 @@ export default function Login() {
   }, [router, isRedirecting]);
 
   if (isLoading || isRedirecting) {
-    return <div className="login-container">
-      {isRedirecting ? "Redirecting to editor..." : "Checking authentication status..."}
-    </div>;
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[url('/tuon-bg.png')] bg-cover bg-center text-white">
+        {isRedirecting ? "Redirecting to editor..." : "Checking authentication status..."}
+      </div>
+    );
   }
   
   return (
-    <div className="login-container">
-      <div className="login-form-wrapper">
-        <h1>tuon.io</h1>
-        <h2>Sign in to your account</h2>
+    // Centering container with background image
+    <div className="flex items-center justify-center min-h-screen bg-[url('/tuon-bg.png')] bg-cover bg-center p-4">
+      {/* Card container - increased shadow */}
+      <div className="login-card w-full max-w-md bg-[--card-bg-color-login] rounded-lg shadow-xl p-6 md:p-8">
+        {/* Keep h1 and h2, styling might need adjustment via CSS */}
+        <h1 className="text-3xl font-bold text-center mb-2 text-[--logo-color]">tuon.io</h1> 
+        <h2 className="text-xl text-center mb-6 text-[--text-color-secondary]">Sign in to your account</h2>
         <AuthUI />
       </div>
     </div>

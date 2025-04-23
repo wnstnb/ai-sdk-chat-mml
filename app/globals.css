@@ -33,6 +33,7 @@
   --accent-color-hover: #FAD89D; /* Golden Sand */
   --message-bg: #FFFFFF; /* White for message bubbles */
   --card-bg: #FFFFFF; /* White for cards */
+  --card-bg-color-login: #0F1317; /* White for cards */
   --disabled-bg: #D9DDE2; /* Silver Fog */
   --success-bg: #ecfdf5; /* Keep existing */
   --success-text: #047857; /* Keep existing */
@@ -130,6 +131,39 @@
   font-family: "geist mono";
   src: url("/geist-mono.woff2") format("woff2");
 }
+
+/* Apply the font via the class added in the component */
+.font-uncut-sans {
+  font-family: 'uncut sans', sans-serif; /* Fallback to sans-serif */
+}
+
+.typing-text,
+.cursor {
+  vertical-align: middle; /* Align both elements to the middle */
+}
+/* Block cursor styling */
+.cursor {
+  display: inline-block;
+  width: 0.5em; /* Adjust width as needed */
+  height: 1em;  /* Adjust height to match line-height/font-size */
+  background-color: currentColor; /* Use text color for the block */
+  margin-left: 2px; /* Optional: small space after text */
+  opacity: 1; /* Start visible */
+}
+
+/* The blinking animation remains the same */
+.cursor.blinking {
+  animation: blink 1.2s step-end infinite;
+}
+
+@keyframes blink {
+  from, to { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Optional: Ensure h1 maintains height during typing */
+/* The class h-8 (32px) was added in the component, adjust if needed */
+
 
 /* --- Base Styles from prds/globals.txt --- */
 * {
@@ -534,103 +568,218 @@ body {
    color: var(--muted-text-color) !important;
 }
 
-[data-theme='dark'] div.folders-preview { /* THIS is likely the main content background */
-  background-color: var(--bg-color) !important;
-  color: var(--text-color) !important;
+[data-theme='dark'] .files .file-item-container {
+  /* Base styles for container */
+  border-radius: 4px;
+  transition: background-color 0.15s ease-in-out;
 }
 
-[data-theme='dark'] div.files.grid, /* Container for file items */
-[data-theme='dark'] div.files.list {
-  /* Should inherit background from folders-preview */
+[data-theme='dark'] .files .file-item-container:hover {
+  /* Hover for non-selected */
+  background-color: var(--hover-bg) !important; /* Use important to ensure override */
 }
 
-[data-theme='dark'] .bread-crumb-container,
-[data-theme='dark'] .breadcrumb span {
-   color: var(--muted-text-color) !important; /* Adjust breadcrumb text color */
-}
-[data-theme='dark'] .breadcrumb span svg {
-   fill: var(--muted-text-color) !important;
-}
-
-[data-theme='dark'] .file-item-container { /* Individual item wrapper */
-  /* Reset background/color in case of specificity issues */
+[data-theme='dark'] .files .file-item:hover {
+  /* Prevent library hover on inner item */
   background-color: transparent !important;
+}
+
+[data-theme='dark'] .files .file-item-container.file-selected { /* Increased specificity */
+  background-color: var(--accent-color-light) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme='dark'] .files .file-item-container.file-selected .file-item { /* Inner item when selected */
+  background-color: transparent !important; /* Keep transparent */
+  color: inherit !important;
+}
+
+[data-theme='dark'] .files .file-item-container.file-selected:hover { /* Increased specificity */
+   background-color: var(--accent-color-light) !important; /* Keep selection color */
+   color: var(--text-primary) !important;
+}
+
+[data-theme='dark'] .files .file-item-container.file-selected:hover .file-item { /* Inner item when selected & hovered */
+   background-color: transparent !important; /* Keep transparent */
+   color: inherit !important;
+}
+
+/* Remove or comment out the less specific rules added before */
+/* 
+[data-theme='dark'] .folders-preview .file-item-container.selected { ... } 
+[data-theme='dark'] .folders-preview .file-item-container.selected .file-item { ... } 
+[data-theme='dark'] .folders-preview .file-item-container.selected:hover { ... } 
+[data-theme='dark'] .folders-preview .file-item-container.selected:hover .file-item { ... } 
+*/
+
+/* Style breadcrumb hover */
+.bread-crumb-container .breadcrumb span:hover, /* Target spans within breadcrumbs */
+.bread-crumb-container .folder-name:hover {   /* Target specific folder name spans */
+  color: var(--link-color) !important; /* Ensure text is readable on hover */
+  border-radius: 3px; /* Optional: slightly round the background */
+  cursor: pointer;
+}
+
+/* Style toolbar button hover */
+.fm-toolbar button.item-action:hover {
+  background-color: var(--hover-bg) !important; /* Apply theme hover background */
+  border-color: transparent !important; /* Remove border on hover if any */
+}
+
+/* Ensure icon color remains consistent on hover */
+.fm-toolbar button.item-action:hover svg {
+  color: var(--link-color) !important; /* Use standard text color for icon */
+}
+
+/* Style files list header */
+.files-header {
+  background-color: var(--header-bg) !important;
   color: var(--text-color) !important;
-  border: 1px solid transparent !important; /* Add border for selection later */
+  /* Add padding or other layout styles if needed */
+  /* Example: padding: 0.5rem 1rem; */
+  display: flex; /* Assuming it needs flex properties like its children */
+  align-items: center;
 }
 
-[data-theme='dark'] .file-item-container:hover {
-  background-color: var(--hover-bg) !important;
+/* Style header columns if needed */
+/* Example: 
+.files-header .file-name {
+  font-weight: bold;
+}
+*/
+
+/* Style Toggle View Dropdown */
+.toggle-view ul[role="menu"] {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px; /* Tailwind rounded-md */
+  box-shadow: var(--shadow-lg);
+  padding: 0.25rem 0; /* Add some vertical padding */
+  min-width: 100px; /* Give it a minimum width */
 }
 
-[data-theme='dark'] .file-item-container.selected { /* Assuming .selected class for selection */
-  background-color: var(--active-bg) !important;
-  border: 1px solid var(--primary-color) !important;
+.toggle-view li[role="menuitem"] {
+  color: var(--text-color);
+  background-color: transparent;
+  padding: 0.5rem 1rem; /* Adjust padding as needed */
+  cursor: pointer;
+  display: flex; /* Align icon and text */
+  align-items: center;
+  gap: 0.75rem; /* Use gap between VISIBLE items */
+  white-space: nowrap; /* Prevent text wrapping */
 }
 
-[data-theme='dark'] .file-item-container .file-name {
-  color: var(--text-color) !important;
+/* Hide the first, empty span */
+.toggle-view li[role="menuitem"] > span:first-child {
+  display: none;
 }
 
-[data-theme='dark'] .file-item-container svg { /* File/Folder Icons */
-   color: var(--text-color-secondary) !important; /* Use secondary text color for icons */
+/* Ensure the checkmark/icon container (second span) has consistent width for alignment */
+.toggle-view li[role="menuitem"] > span:nth-child(2) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center; /* Center the checkmark/icon */
+  min-width: 18px; /* Adjust width as needed for alignment */
 }
 
-/* Inputs (e.g., rename) - Need to inspect element if renaming adds an input */
-/* [data-theme='dark'] .some-input-class { ... } */
-
-/* Checkboxes */
-[data-theme='dark'] input.fm-checkbox {
-   /* Style checkbox if needed, might be difficult depending on browser */
-   accent-color: var(--primary-color);
+.toggle-view li[role="menuitem"]:hover {
+  background-color: var(--hover-bg);
 }
 
-/* Resize Handle */
-[data-theme='dark'] .sidebar-resize {
-   background-color: var(--border-color) !important;
+/* Style the checkmark icon specifically (using viewBox) */
+.toggle-view li[role="menuitem"] svg[viewBox="0 0 448 512"] {
+  color: var(--primary-color) !important;
+  width: 13px !important; /* Match HTML */
+  height: 13px !important; /* Match HTML */
 }
 
-/* Context Menu */
-[data-theme='dark'] .fm-context-menu {
-  @apply bg-[--bg-secondary] border-[--border-color] text-[--text-color] shadow-lg rounded-md;
+/* Style other icons */
+.toggle-view li[role="menuitem"] svg:not([viewBox="0 0 448 512"]) {
+  color: var(--text-color);
+  flex-shrink: 0; /* Prevent icons from shrinking */
 }
 
-[data-theme='dark'] .fm-context-menu .file-context-menu-list ul li {
-  @apply text-[--text-color];
+/* Style sidebar folder list items */
+[data-theme='dark'] .sb-folders-list-item {
+  /* Add base styles if needed, e.g., transition */
+  transition: background-color 0.15s ease-in-out;
+  border-radius: 4px; /* Consistent rounding */
+  margin: 0 0.25rem; /* Add some horizontal margin */
+  padding: 0.25rem 0.5rem; /* Adjust padding */
 }
 
-[data-theme='dark'] .fm-context-menu .file-context-menu-list ul li:hover {
-  @apply bg-[--hover-bg] text-[--text-color]; /* Ensure text remains readable on hover */
+[data-theme='dark'] .sb-folders-list-item:hover {
+  background-color: var(--hover-bg);
+  cursor: pointer;
 }
 
-[data-theme='dark'] .fm-context-menu .file-context-menu-list ul li svg {
-  @apply text-[--text-color]; /* Color the icons */
+[data-theme='dark'] .sb-folders-list-item.active-list-item { /* Corrected selector with dot */
+  background-color: var(--accent-color-light) !important; /* Use our theme's accent color */
+  color: var(--text-primary) !important; /* Use our theme's primary text color */
 }
 
-[data-theme='dark'] .fm-context-menu .file-context-menu-list ul li:hover svg {
-  @apply text-[--text-color]; /* Keep icon color consistent on hover */
+/* Ensure icons within the active item are also visible */
+[data-theme='dark'] .sb-folders-list-item.active-list-item svg {
+  color: var(--text-primary) !important; /* Match text color */
 }
 
-[data-theme='dark'] .fm-context-menu .file-context-menu-list .sub-menu {
-  @apply bg-[--bg-secondary] border-[--border-color] text-[--text-color] shadow-lg rounded-md;
+/* Keep active background on hover */
+[data-theme='dark'] .sb-folders-list-item.active-list-item:hover {
+  background-color: var(--accent-color-light) !important; /* Maintain active background */
 }
 
-/* Ensure sub-menu items also use hover styles */
-[data-theme='dark'] .fm-context-menu .file-context-menu-list .sub-menu li:hover {
-   @apply bg-[--hover-bg] text-[--text-color];
+/* Style Toggle View Dropdown */
+.toggle-view ul[role="menu"] {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px; /* Tailwind rounded-md */
+  box-shadow: var(--shadow-lg);
+  padding: 0.25rem 0; /* Add some vertical padding */
+  min-width: 100px; /* Give it a minimum width */
 }
 
-[data-theme='dark'] .fm-context-menu .file-context-menu-list .divider {
-  @apply border-b-[--border-color];
+.toggle-view li[role="menuitem"] {
+  color: var(--text-color);
+  background-color: transparent;
+  padding: 0.5rem 1rem; /* Adjust padding as needed */
+  cursor: pointer;
+  display: flex; /* Align icon and text */
+  align-items: center;
+  gap: 0.75rem; /* Use gap between VISIBLE items */
+  white-space: nowrap; /* Prevent text wrapping */
 }
 
-/* Adjust checkmark color in sub-menu for visibility */
-[data-theme='dark'] .fm-context-menu .file-context-menu-list .sub-menu .item-selected svg {
-  @apply text-[--primary-color]; /* Use primary color for the checkmark */
+/* Hide the first, empty span */
+.toggle-view li[role="menuitem"] > span:first-child {
+  display: none;
 }
-/* --- End Cubone File Manager Overrides --- */
 
-/* --- Theme-Aware Scrollbar Styles --- */
+/* Ensure the checkmark/icon container (second span) has consistent width for alignment */
+.toggle-view li[role="menuitem"] > span:nth-child(2) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center; /* Center the checkmark/icon */
+  min-width: 18px; /* Adjust width as needed for alignment */
+}
+
+.toggle-view li[role="menuitem"]:hover {
+  background-color: var(--hover-bg);
+}
+
+/* Style the checkmark icon specifically (using viewBox) */
+.toggle-view li[role="menuitem"] svg[viewBox="0 0 448 512"] {
+  color: var(--primary-color) !important;
+  width: 13px !important; /* Match HTML */
+  height: 13px !important; /* Match HTML */
+}
+
+/* Style other icons */
+.toggle-view li[role="menuitem"] svg:not([viewBox="0 0 448 512"]) {
+  color: var(--text-color);
+  flex-shrink: 0; /* Prevent icons from shrinking */
+}
+
+/* Theme-Aware Scrollbar Styles */
 
 /* Light Theme Scrollbar */
 ::-webkit-scrollbar {
@@ -724,21 +873,32 @@ a:focus {
 }
 
 /* Styles for sidebar folder list items */
-.sb-folders-list-item:hover {
+[data-theme='dark'] .sb-folders-list-item {
+  /* Add base styles if needed, e.g., transition */
+  transition: background-color 0.15s ease-in-out;
+  border-radius: 4px; /* Consistent rounding */
+  margin: 0 0.25rem; /* Add some horizontal margin */
+  padding: 0.25rem 0.5rem; /* Adjust padding */
+}
+
+[data-theme='dark'] .sb-folders-list-item:hover {
   background-color: var(--hover-bg);
   cursor: pointer;
 }
 
-.sb-folders-list-item.active-list-item { /* Corrected selector with dot */
-  background-color: var(--tab-active-border) !important; /* Keep important flag */
-  color: var(--text-color) !important; /* Ensure text color contrasts with active background, add important if needed */
-  /* Optional: Add a border like other selected items */
-  /* border-left: 3px solid var(--primary-color); */ 
+[data-theme='dark'] .sb-folders-list-item.active-list-item { /* Corrected selector with dot */
+  background-color: var(--accent-color-light) !important; /* Use our theme's accent color */
+  color: var(--text-primary) !important; /* Use our theme's primary text color */
 }
 
 /* Ensure icons within the active item are also visible */
-.sb-folders-list-item.active-list-item svg {
-  color: var(--text-color) !important; /* Add important flag */
+[data-theme='dark'] .sb-folders-list-item.active-list-item svg {
+  color: var(--text-primary) !important; /* Match text color */
+}
+
+/* Keep active background on hover */
+[data-theme='dark'] .sb-folders-list-item.active-list-item:hover {
+  background-color: var(--accent-color-light) !important; /* Maintain active background */
 }
 
 /* Style breadcrumb hover */
@@ -758,4 +918,77 @@ a:focus {
 /* Ensure icon color remains consistent on hover */
 .fm-toolbar button.item-action:hover svg {
   color: var(--link-color) !important; /* Use standard text color for icon */
+}
+
+/* Style files list header */
+.files-header {
+  background-color: var(--header-bg) !important;
+  color: var(--text-color) !important;
+  /* Add padding or other layout styles if needed */
+  /* Example: padding: 0.5rem 1rem; */
+  display: flex; /* Assuming it needs flex properties like its children */
+  align-items: center;
+}
+
+/* Style header columns if needed */
+/* Example: 
+.files-header .file-name {
+  font-weight: bold;
+}
+*/
+
+/* Style Toggle View Dropdown */
+.toggle-view ul[role="menu"] {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px; /* Tailwind rounded-md */
+  box-shadow: var(--shadow-lg);
+  padding: 0.25rem 0; /* Add some vertical padding */
+  min-width: 100px; /* Give it a minimum width */
+}
+
+.toggle-view li[role="menuitem"] {
+  color: var(--text-color);
+  background-color: transparent;
+  padding: 0.5rem 1rem; /* Adjust padding as needed */
+  cursor: pointer;
+  display: flex; /* Align icon and text */
+  align-items: center;
+  gap: 0.75rem; /* Use gap between VISIBLE items */
+  white-space: nowrap; /* Prevent text wrapping */
+}
+
+/* Hide the first, empty span */
+.toggle-view li[role="menuitem"] > span:first-child {
+  display: none;
+}
+
+/* Ensure the checkmark/icon container (second span) has consistent width for alignment */
+.toggle-view li[role="menuitem"] > span:nth-child(2) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center; /* Center the checkmark/icon */
+  min-width: 18px; /* Adjust width as needed for alignment */
+}
+
+.toggle-view li[role="menuitem"]:hover {
+  background-color: var(--hover-bg);
+}
+
+/* Style the checkmark icon specifically (using viewBox) */
+.toggle-view li[role="menuitem"] svg[viewBox="0 0 448 512"] {
+  color: var(--primary-color) !important;
+  width: 13px !important; /* Match HTML */
+  height: 13px !important; /* Match HTML */
+}
+
+/* Style other icons */
+.toggle-view li[role="menuitem"] svg:not([viewBox="0 0 448 512"]) {
+  color: var(--text-color);
+  flex-shrink: 0; /* Prevent icons from shrinking */
+}
+
+[data-theme='dark'] main.file-explorer div.folders-preview { /* Increased specificity */
+  background-color: var(--bg-color) !important;
+  color: var(--text-color) !important;
 }
