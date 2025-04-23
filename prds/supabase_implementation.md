@@ -75,7 +75,7 @@ The following environment variables are assumed to be configured:
         *   // Add index on user_id
 *   **Storage:**
     *   Use Supabase Storage.
-    *   Create a **private** bucket named `message_images`.
+    *   Create a **private** bucket named `message-images`.
     *   Store uploaded images associated with messages.
     *   Access images via **server-generated signed URLs** requested through an API route.
 *   **Row Level Security (RLS):**
@@ -97,8 +97,8 @@ The following environment variables are assumed to be configured:
         *   `SELECT`: Users can select tool calls associated with messages they can access (`auth.uid() = user_id` AND `message_id` is linked to a message they can access - requires check).
         *   `INSERT`: Users can insert tool calls for messages they own (`auth.uid() = user_id` AND `message_id` is linked to a message they own).
     *   **Storage Policies:**
-        *   Bucket `message_images` should be **private**.
-        *   `INSERT`: Authenticated users can upload to `message_images` (via API route).
+        *   Bucket `message-images` should be **private**.
+        *   `INSERT`: Authenticated users can upload to `message-images` (via API route).
         *   `SELECT`: No direct select policy needed; access is granted via signed URLs generated server-side.
 *   **Implementation Approach:** (Revised for Security)
     *   Create a Supabase client helper (`lib/supabase/client.ts` for client-side use, e.g., Auth state) and potentially a server-side client (`lib/supabase/server.ts` for API routes).
@@ -279,7 +279,7 @@ The following environment variables are assumed to be configured:
 
         -- Storage Bucket Setup (Manual Step in Supabase Dashboard)
         -- 1. Go to Storage -> Buckets -> Create Bucket
-        -- 2. Name: `message_images`
+        -- 2. Name: `message-images`
         -- 3. **IMPORTANT:** Ensure 'Public bucket' is **unchecked**.
         -- 4. (Optional) Add file size limits, allowed MIME types in bucket settings.
         -- 5. Define Storage Access Policies (recommended via Dashboard UI for simplicity initially):

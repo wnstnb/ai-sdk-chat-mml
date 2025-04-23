@@ -59,6 +59,8 @@
   --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.35);
   --overlay-bg: rgba(0, 0, 0, 0.8);
   --code-bg: #f8f9fa; /* Light gray background for code blocks */
+  --link-color: #C77A0A;
+  --link-hover-color: #B38A58;
 }
 
 [data-theme='dark'] {
@@ -114,6 +116,8 @@
   --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.35);
   --overlay-bg: rgba(0, 0, 0, 0.8);
   --code-bg: var(--input-bg); /* Use input background for code blocks in dark mode */
+  --link-color: #B38A58;
+  --link-hover-color: #C77A0A;
 }
 /* --- End CSS Variables --- */
 
@@ -456,6 +460,28 @@ body {
 */
 /* --- End Scrollbar Styling --- */
 
+/* --- Cubone File Manager Global Toolbar Styles --- */
+.toolbar { /* Target the outer toolbar container */
+  /* Apply layout styles globally */
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  padding-left: 0px !important;
+  padding-right: 0px !important;
+  height: 46px !important; /* Match the files-container calc height */
+  display: flex !important; /* Ensure content inside aligns */
+  align-items: center !important; /* Vertically center content */
+  justify-content: space-between !important; /* Push left/right items apart */
+  /* Add width 100%? Maybe not needed if fm-toolbar handles it */
+}
+
+.fm-toolbar { /* Apply globally */
+  width: 100% !important; /* Ensure it fills the container */
+  display: flex !important; /* Added to ensure inner items align correctly */
+  align-items: center !important; /* Added to ensure inner items align correctly */
+  height: 100% !important; /* Added to ensure it fills height */
+  /* Add justify-content if needed, but toolbar should handle it */
+}
+
 /* --- Cubone File Manager Dark Mode Overrides --- */
 [data-theme='dark'] main.file-explorer {
   background-color: var(--bg-color) !important;
@@ -463,17 +489,8 @@ body {
   border-color: var(--border-color) !important; /* Adjust if file-explorer has a border */
 }
 
-/* Override the padding on the outer toolbar container to remove vertical gap */
-[data-theme='dark'] .toolbar { /* Target the outer toolbar container */
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-  /* Keep horizontal padding, adjust if needed */
-  padding-left: 0px !important;
-  padding-right: 0px !important;
-  height: 46px !important; /* Match the files-container calc height: calc(100% - 46px) ? */
-  display: flex; /* Ensure content inside aligns */
-  align-items: center; /* Vertically center content */
-}
+/* Remove layout styles from dark mode scope as they are now global */
+/* [data-theme='dark'] .toolbar { ... } */
 
 [data-theme='dark'] .fm-toolbar { /* Target the inner toolbar div */
   background-color: var(--header-bg) !important;
@@ -481,7 +498,8 @@ body {
   /* Apply rounded corners to match container */
   border-top-left-radius: 6px; /* Match Tailwind's rounded-md */
   border-top-right-radius: 6px; /* Match Tailwind's rounded-md */
-  width: 100%; /* Ensure it fills the container */
+  /* width: 100%; */ /* Moved to global rule */
+  /* display, align-items, height moved to global rule */
 }
 
 [data-theme='dark'] .fm-toolbar button.item-action {
@@ -611,3 +629,133 @@ body {
   @apply text-[--primary-color]; /* Use primary color for the checkmark */
 }
 /* --- End Cubone File Manager Overrides --- */
+
+/* --- Theme-Aware Scrollbar Styles --- */
+
+/* Light Theme Scrollbar */
+::-webkit-scrollbar {
+  width: 12px; /* Width of the scrollbar */
+  height: 12px; /* Height of the scrollbar for horizontal */
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary, #F6F8FA); /* Track background - use a light theme variable or fallback */
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--border-color, #96A2B4); /* Thumb color - use a light theme variable or fallback */
+  border-radius: 6px;
+  border: 3px solid var(--bg-secondary, #F6F8FA); /* Creates padding around thumb */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted-text-color, #3F4F60); /* Thumb hover color - use a light theme variable or fallback */
+}
+
+/* Dark Theme Scrollbar */
+[data-theme='dark'] ::-webkit-scrollbar-track {
+  background: var(--bg-secondary, #0F1317); /* Dark track background - use a dark theme variable or fallback */
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background-color: var(--border-color, #3F4F60); /* Dark thumb color - use a dark theme variable or fallback */
+  border-color: var(--bg-secondary, #0F1317); /* Match dark track background for border */
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted-text-color, #A8ADB4); /* Dark thumb hover color - use a dark theme variable or fallback */
+}
+
+/* Firefox Scrollbar Styles (Less customizable but respects theme colors) */
+* {
+  scrollbar-width: thin; /* "auto" or "thin" */
+  scrollbar-color: var(--border-color, #96A2B4) var(--bg-secondary, #F6F8FA); /* thumb track */
+}
+
+[data-theme='dark'] * {
+  scrollbar-color: var(--border-color, #3F4F60) var(--bg-secondary, #0F1317); /* thumb track */
+}
+
+/* General Link Styling */
+a {
+  color: var(--link-color);
+  text-decoration: none; /* Remove default underline */
+  transition: color 0.2s ease-in-out;
+}
+
+a:hover,
+a:focus {
+  color: var(--link-hover-color);
+  text-decoration: underline;
+}
+
+/* Specificity for Chat Markdown (if needed) */
+.prose a {
+  color: var(--link-color); /* Ensure prose overrides don't conflict */
+  text-decoration: none;
+}
+
+.prose a:hover,
+.prose a:focus {
+  color: var(--link-hover-color);
+  text-decoration: underline;
+}
+
+/* Specificity for BlockNote Editor Content (if needed) */
+.bn-editor a {
+  color: var(--link-color); /* Ensure editor overrides don't conflict */
+  text-decoration: none;
+}
+
+.bn-editor a:hover,
+.bn-editor a:focus {
+  color: var(--link-hover-color);
+  text-decoration: underline;
+}
+
+/* Custom styles for @cubone/react-file-manager */
+.rename-file:focus, /* Apply to standard focus too */
+.rename-file:focus-visible { /* Target focus state reliably */
+  border: 1px solid transparent !important; /* Hide original border */
+  outline: 2px solid var(--accent-color) !important; /* Use important to override component styles if necessary */
+  outline-offset: 1px;
+  border-radius: 3px; /* Optional: slightly round the outline corners */
+}
+
+/* Styles for sidebar folder list items */
+.sb-folders-list-item:hover {
+  background-color: var(--hover-bg);
+  cursor: pointer;
+}
+
+.sb-folders-list-item.active-list-item { /* Corrected selector with dot */
+  background-color: var(--tab-active-border) !important; /* Keep important flag */
+  color: var(--text-color) !important; /* Ensure text color contrasts with active background, add important if needed */
+  /* Optional: Add a border like other selected items */
+  /* border-left: 3px solid var(--primary-color); */ 
+}
+
+/* Ensure icons within the active item are also visible */
+.sb-folders-list-item.active-list-item svg {
+  color: var(--text-color) !important; /* Add important flag */
+}
+
+/* Style breadcrumb hover */
+.bread-crumb-container .breadcrumb span:hover, /* Target spans within breadcrumbs */
+.bread-crumb-container .folder-name:hover {   /* Target specific folder name spans */
+  color: var(--link-color) !important; /* Ensure text is readable on hover */
+  border-radius: 3px; /* Optional: slightly round the background */
+  cursor: pointer;
+}
+
+/* Style toolbar button hover */
+.fm-toolbar button.item-action:hover {
+  background-color: var(--hover-bg) !important; /* Apply theme hover background */
+  border-color: transparent !important; /* Remove border on hover if any */
+}
+
+/* Ensure icon color remains consistent on hover */
+.fm-toolbar button.item-action:hover svg {
+  color: var(--link-color) !important; /* Use standard text color for icon */
+}

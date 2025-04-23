@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 // Import FileManager as per documentation
 import { FileManager } from '@cubone/react-file-manager'; 
 // Revert CSS path to the file confirmed to exist in node_modules
 import '@cubone/react-file-manager/dist/react-file-manager.css'; 
 import { Document, Folder } from '@/types/supabase'; // Import types
+import { ChatInputUI } from '@/components/editor/ChatInputUI'; // Import the chat input UI
+// import { ModelSelector } from '@/components/ModelSelector'; // Import if needed directly, ChatInputUI uses it
 
 // Define the structure expected by Cubone File Manager (matching docs)
 type CuboneFileType = {
@@ -44,20 +47,30 @@ const mapToCuboneFiles = (documents: Document[], folders: Folder[]): CuboneFileT
 };
 
 // Hardcoded test data to isolate rendering issue
-const testFiles: CuboneFileType[] = [
-    { name: "Test Document 1.txt", isDirectory: false, path: "/test-doc-uuid-1", updatedAt: new Date().toISOString() },
-    { name: "Test Folder A", isDirectory: true, path: "/test-folder-uuid-a", updatedAt: new Date().toISOString() },
-    { name: "Another Doc.md", isDirectory: false, path: "/test-doc-uuid-2", updatedAt: new Date().toISOString() }
-];
+// const testFiles: CuboneFileType[] = [
+//     { name: "Test Document 1.txt", isDirectory: false, path: "/test-doc-uuid-1", updatedAt: new Date().toISOString() },
+//     { name: "Test Folder A", isDirectory: true, path: "/test-folder-uuid-a", updatedAt: new Date().toISOString() },
+//     { name: "Another Doc.md", isDirectory: false, path: "/test-doc-uuid-2", updatedAt: new Date().toISOString() }
+// ];
 
 export default function LaunchPage() {
   const router = useRouter();
-  const [initialInputValue, setInitialInputValue] = useState('');
-  // State for Cubone-formatted files/folders
+  // --- State for Chat Input ---
+  const [input, setInput] = useState(''); // Replaces initialInputValue
+  const [model, setModel] = useState('gemini-1.5-flash'); // Default model for input
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<FileList | null>(null);
+  const [isUploading, setIsUploading] = useState(false); // Needed for ChatInputUI props
+  const [uploadError, setUploadError] = useState<string | null>(null); // Needed for ChatInputUI props
+  const [uploadedImagePath, setUploadedImagePath] = useState<string | null>(null); // Needed for ChatInputUI props
+  const formRef = useRef<HTMLFormElement>(null); // Ref for the form
+
+  // --- State for File Manager & Page ---
   const [cuboneFiles, setCuboneFiles] = useState<CuboneFileType[]>([]); 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // For initial data fetch
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false); 
+  const [isSubmitting, setIsSubmitting] = useState(false); // For launch action
 
   // Fetch initial file/folder data
   const fetchData = useCallback(async () => {
@@ -89,6 +102,8 @@ export default function LaunchPage() {
     } catch (err: any) {
       console.error("[LaunchPage] Error inside fetchData:", err); // Log fetch error
       setError(err.message || 'An unknown error occurred while fetching files.');
+      // Reset input state on error?
+      // setInput(''); 
     } finally {
       setIsLoading(false);
       console.log("[LaunchPage] Finished fetchData execution."); // Log end
@@ -101,39 +116,87 @@ export default function LaunchPage() {
     fetchData();
   }, [fetchData]);
 
-  // Handler for Launch Input Submission
-  const handleLaunchSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!initialInputValue.trim() || isSubmitting) return;
+  // --- Handlers for Chat Input ---
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement> | React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+  };
+
+  // Placeholder file handlers (can be implemented later if needed on launch)
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    console.warn("File change triggered on Launch page - not implemented yet.");
+    toast.info("File attachments are not supported when starting a new document yet.");
+    if (event.target) event.target.value = ''; // Reset file input
+  };
+
+  const handlePaste = (event: React.ClipboardEvent) => {
+    console.warn("Paste triggered on Launch page - not implemented yet.");
+     // Basic check to prevent image paste for now
+     const items = event.clipboardData?.items;
+     if (items) {
+        const containsFiles = Array.from(items).some(item => item.kind === 'file');
+        if (containsFiles) {
+            event.preventDefault(); // Prevent default paste behavior if files are detected
+            toast.info("Pasting files is not supported when starting a new document yet.");
+        }
+     }
+  };
+
+  const handleUploadClick = () => {
+    console.warn("Upload click triggered on Launch page - not implemented yet.");
+    toast.info("File attachments are not supported when starting a new document yet.");
+  };
+
+  // Handle Enter key submission
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey && !isSubmitting) {
+        event.preventDefault();
+        // Only submit if input is not empty
+        if (input.trim()) {
+            formRef.current?.requestSubmit(); // Trigger form submission
+        }
+    }
+  };
+
+  // --- Handler for Launch Submission (triggered by form onSubmit) ---
+  const handleLaunchSubmit = async (event?: React.FormEvent<HTMLFormElement>) => {
+    if (event) event.preventDefault(); // Prevent default form submission
+    if (!input.trim() || isSubmitting) return; // Check the 'input' state
+
+    console.log("[LaunchPage] Submitting with initial content:", input);
     setIsSubmitting(true);
     setError(null);
     try {
       const response = await fetch('/api/launch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initialContent: initialInputValue.trim() }),
+        // Send the text content from the 'input' state
+        body: JSON.stringify({ initialContent: input.trim() }), 
       });
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ error: { message: `Failed to launch (${response.status})`} }));
         throw new Error(errorData.error?.message || `Failed to launch document (${response.status})`);
       }
       const { data }: { data: { documentId: string } } = await response.json();
-      router.push(`/editor/${data.documentId}`); 
+      console.log("[LaunchPage] Document created, redirecting to:", `/editor/${data.documentId}`);
+      
+      // Pass initial message via query parameter
+      const initialMsgQuery = encodeURIComponent(input.trim());
+      router.push(`/editor/${data.documentId}?initialMsg=${initialMsgQuery}`);
+      
+      // Clear input after successful submission start
+      setInput(''); 
+
     } catch (err: any) {
       console.error("Launch submit error:", err);
       setError(err.message || 'An unknown error occurred during launch.');
-      setIsSubmitting(false); 
-    }
+      setIsSubmitting(false); // Ensure submit button is re-enabled on error
+    } 
+    // No finally block to reset isSubmitting, handled in success/error paths
   };
 
 
   // --- Handlers for Cubone File Manager Actions --- 
-  // Note: These handlers need to align with the props expected by <FileManager>
-  // The arguments might differ slightly (e.g., onDelete might receive Array<File>)
-
-  // onCreateFolder prop expects: (name: string, parentFolder: File) => void
-  // Our old handler: (name: string, parentId: string | null) => void
-  // We need to adapt or assume parentFolder might be null/undefined for root
+  // (Keep existing Cubone handlers as they are)
   const handleCreateFolder = useCallback(async (name: string /*, parentFolder: CuboneFileType | null */) => {
     console.log('Create Folder Request:', name /*, parentFolder?.path */);
     setError(null);
@@ -155,118 +218,79 @@ export default function LaunchPage() {
     }
   }, [fetchData]);
 
-  // onRename prop expects: (file: File, newName: string) => void
-  // Our old handlers took ID and name
   const handleRename = useCallback(async (file: CuboneFileType, newName: string) => {
     console.log('Rename Request:', file.path, newName);
-    // Use the ID directly from the file object
     const id = file.id;
-    if (!id) {
-        setError("Could not rename: Item ID is missing.");
-        return;
-    }
+    if (!id) { setError("Could not rename: Item ID is missing."); return; }
     const apiPath = file.isDirectory ? `/api/folders/${id}` : `/api/documents/${id}`;
     try {
         const response = await fetch(apiPath, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: newName }),
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName }),
         });
-        if (!response.ok) {
-             const err = await response.json();
-            throw new Error(err.error?.message || 'Failed to rename item');
-        }
+        if (!response.ok) { const err = await response.json(); throw new Error(err.error?.message || 'Failed to rename item'); }
         await fetchData(); // Refetch
-    } catch (err: any) {
-        setError(err.message);
-    }
+    } catch (err: any) { setError(err.message); }
   }, [fetchData]);
 
-  // onDelete prop expects: (files: Array<File>) => void
   const handleDelete = useCallback(async (filesToDelete: CuboneFileType[]) => {
       console.log('Delete Request:', filesToDelete.map(f => f.path));
       setError(null);
-      // Process deletes individually
       const results = await Promise.allSettled(filesToDelete.map(async (file) => {
-          // Use the ID directly from the file object
           const id = file.id;
-          if (!id) {
-             throw new Error(`Missing ID for ${file.name}`); // Skip items without ID
-          }
+          if (!id) { throw new Error(`Missing ID for ${file.name}`); }
           const apiPath = file.isDirectory ? `/api/folders/${id}` : `/api/documents/${id}`;
           const response = await fetch(apiPath, { method: 'DELETE' });
-          if (!response.ok) {
-               const err = await response.json().catch(() => ({ error: { message: `Failed to delete ${file.name}` } }));
-               throw new Error(err.error?.message || `Failed to delete ${file.name}`);
-           }
+          if (!response.ok) { const err = await response.json().catch(() => ({ error: { message: `Failed to delete ${file.name}` } })); throw new Error(err.error?.message || `Failed to delete ${file.name}`); }
       }));
-
       const failed = results.filter(r => r.status === 'rejected');
-      if (failed.length > 0) {
-          setError(`Failed to delete ${failed.length} item(s).`);
-          // Log specific errors
-           failed.forEach((fail: any) => console.error(fail.reason));
-      }
-      await fetchData(); // Refetch regardless of partial failure
+      if (failed.length > 0) { setError(`Failed to delete ${failed.length} item(s).`); failed.forEach((fail: any) => console.error(fail.reason)); }
+      await fetchData(); // Refetch
   }, [fetchData]);
 
-   // onFileOpen prop expects: (file: File) => void
   const handleFileOpen = useCallback((file: CuboneFileType) => {
       console.log("File Open Request:", file.path, "ID:", file.id);
       if (!file.isDirectory) {
-          // Use the ID directly from the file object
            const id = file.id;
-          if (id) {
-              router.push(`/editor/${id}`); // Use the actual UUID
-          } else {
-               console.error("Could not extract ID from file path:", file.path);
-               setError("Could not open file: Invalid path.");
-          }
+          if (id) { router.push(`/editor/${id}`); }
+          else { console.error("Could not extract ID from file path:", file.path); setError("Could not open file: Invalid path."); }
       } 
-      // Add logic here if clicking a folder should navigate *within* the file manager component
-      // This might involve setting an internal path state for the FileManager if supported,
-      // or refetching data filtered by the clicked folder's path/ID.
-      // Currently, clicking a folder does nothing.
+      // Logic for folder navigation within Cubone would go here
   }, [router]);
 
-  // --- Add other handlers as needed based on props (onDownload, onCopy, onPaste, onMove, etc.) ---
-  // Placeholder for onMove/onPaste - complex logic involving source/destination
-   const handlePaste = useCallback(async (sourceFiles: CuboneFileType[], destinationFolder: CuboneFileType, operationType: "copy" | "move") => {
-        console.log(`Paste Request: ${operationType}`, sourceFiles.map(f=>f.path), `to dest: ${destinationFolder.path}`);
+   const handlePasteCubone = useCallback(async (sourceFiles: CuboneFileType[], destinationFolder: CuboneFileType, operationType: "copy" | "move") => {
+        console.log(`Cubone Paste Request: ${operationType}`, sourceFiles.map(f=>f.path), `to dest: ${destinationFolder.path}`);
         setError("Move/Copy/Paste not implemented yet.");
-        // TODO: Implement API calls for move/copy
-        // Need PUT /api/documents/[id] or /api/folders/[id] with new parentFolderId/folderId
-        // Requires robust path-to-ID mapping or passing IDs if library allows
+        // TODO: Implement Cubone move/copy API calls
         // await fetchData();
     }, [fetchData]);
 
 
   return (
-    // Use CSS variables for background and text color
     <div className="flex flex-col h-full p-4 bg-[--bg-secondary] text-[--text-color]">
       <h1 className="text-2xl font-semibold mb-4 text-center">Launch Pad</h1>
 
-      {/* Launch Input Form */}
-      <form onSubmit={handleLaunchSubmit} className="mb-6">
-        <label htmlFor="launch-input" className="sr-only">What do you want to focus on?</label>
-        <input
-          id="launch-input"
-          placeholder="What do you want to focus on?"
-          // Use CSS variables for input background and border
-          className="w-full px-4 py-2 border border-[--border-color] rounded-md shadow-sm focus:outline-none focus:ring-none focus:border-[--tab-active-border] bg-[--input-bg] disabled:opacity-50"
-          type="text"
-          value={initialInputValue}
-          onChange={(e) => setInitialInputValue(e.target.value)}
-          disabled={isSubmitting} // Disable input while submitting
-        />
-        <button
-          type="submit"
-          disabled={!initialInputValue.trim() || isSubmitting} // Disable button if input is empty or submitting
-          // Use CSS variables for button background, text, and hover state
-          className="mt-2 w-full px-4 py-2 bg-[--primary-color-dark] text-[--button-primary-text] rounded-md hover:bg-[--tab-active-border] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-none disabled:opacity-50"
-        >
-          {isSubmitting ? 'Launching...' : 'Start New Document'}
-        </button>
+      {/* Launch Input Form using ChatInputUI */}
+      <form ref={formRef} onSubmit={handleLaunchSubmit} className="mb-6">
+        {/* <label htmlFor="launch-input" className="sr-only">What do you want to focus on?</label> */}
+         {/* We can hide the label since ChatInputUI has a placeholder */}
+         <ChatInputUI
+            files={files} // Pass null initially
+            fileInputRef={fileInputRef} // Pass ref
+            handleFileChange={handleFileChange} // Pass placeholder handler
+            inputRef={inputRef} // Pass ref
+            input={input} // Pass input state
+            handleInputChange={handleInputChange} // Pass handler
+            handleKeyDown={handleKeyDown} // Pass handler
+            handlePaste={handlePaste} // Pass placeholder handler
+            model={model} // Pass model state
+            setModel={setModel} // Pass model setter
+            handleUploadClick={handleUploadClick} // Pass placeholder handler
+            isLoading={isSubmitting} // Use isSubmitting to disable input during launch
+            isUploading={isUploading} // Pass state (false initially)
+            uploadError={uploadError} // Pass state (null initially)
+            uploadedImagePath={uploadedImagePath} // Pass state (null initially)
+          />
+        {/* The submit button is now inside ChatInputUI */}
       </form>
 
       {/* Error Message Display */}
@@ -280,27 +304,13 @@ export default function LaunchPage() {
         ) : (
           <FileManager
             files={cuboneFiles} // Use the correctly typed state
-            // Note: Using path as ID for now, but should use actual UUIDs
-            // files={testFiles} // <-- Switch to test data if API is problematic
             onCreateFolder={handleCreateFolder}
             onRenameFile={handleRename} // Use the correct prop name
-            onDeleteFile={handleDelete} // Use the correct prop name
+            onDelete={handleDelete} // Correct prop name
             onFileOpen={handleFileOpen}
-            // onPaste={handlePaste} // Enable if implemented
-            // Other props like onCopy, onMove, onDownload can be added here
-            options={{
-              // Customize options if needed
-              // Example: Disable certain actions
-              // disableDragAndDrop: true,
-              // disableContextMenu: true,
-            }}
-            style={{
-              // Use a CSS variable for height or set explicitly
-              height: 'calc(100% - 1px)', // Fill container, adjust if needed
-              width: '100%',
-              // '--file-manager-primary-color': '#your-color', // Example of overriding CSS var
-              // Consider setting font family via global CSS instead
-            }}
+            onPaste={handlePasteCubone} // Use the renamed handler
+            options={{}} // Customize options if needed
+            style={{ height: 'calc(100% - 1px)', width: '100%' }}
           />
         )}
       </div>

@@ -2,11 +2,12 @@
 
 import { openai } from "@ai-sdk/openai";
 import { google } from "@ai-sdk/google";
-import { LanguageModel, streamText, CoreMessage, tool, appendResponseMessages } from "ai";
+import { LanguageModel, streamText, CoreMessage, tool } from "ai";
 import { z } from 'zod';
 import { webSearch } from "@/lib/tools/exa-search"; // Import the webSearch tool
 import { createSupabaseServerClient } from '@/lib/supabase/server'; // Supabase server client
 import { Message as SupabaseMessage, ToolCall as SupabaseToolCall } from '@/types/supabase'; // DB types
+import { createClient } from '@supabase/supabase-js'; // <-- ADDED for explicit client for signed URLs if needed
 
 // Define Zod schemas for the editor tools based on PRD
 const addContentSchema = z.object({
@@ -95,6 +96,22 @@ TOOLS AVAILABLE:
 Final Check: Always prioritize accuracy, carefully select the right tool (or none), use editor context appropriately for editor actions, rely on web search judiciously for external/current info, and rigorously cite web sources.
 `;
 
+// --- NEW: Detailed Strategy for Summarization Task ---
+const summarizationStrategyPrompt = `
+--- SPECIAL INSTRUCTIONS FOR SUMMARIZATION TASK ---
+
+The user wants you to summarize multiple points, likely from an outline, and provide sources. Follow this specific strategy:
+
+1.  **Comprehensive Web Search:** Perform ONE or TWO broad web searches covering the main topic of the outline. Gather sufficient information and identify potential sources from these initial searches.
+2.  **Synthesize Summaries:** Based *only* on the information gathered in step 1, generate a concise summary for EACH bullet point or item in the original user request/editor context.
+3.  **Cite Sources:** For each summary, clearly cite the source(s) from your web search results where the information was found. Use inline citations (e.g., [Source: URL]) or footnotes.
+4.  **Format for Editor:** Structure your response so it can be easily inserted using the 'addContent' or 'modifyContent' tool. Ideally, prepare a *single* Markdown block containing all the summaries and citations, formatted to integrate cleanly with the original outline structure.
+5.  **Tool Call:** Use ONE appropriate editor tool call ('addContent' or 'modifyContent' with targetText=null) to apply ALL the generated summaries and citations to the document at once. Avoid making multiple separate tool calls for each bullet point.
+
+--- END SPECIAL INSTRUCTIONS ---
+`;
+// --- END NEW ---
+
 // Define the tools for the AI model, omitting execute as actions happen client-side
 const editorTools = {
   addContent: tool({
@@ -132,254 +149,315 @@ const combinedTools = {
   webSearch,      // Add the web search tool
 };
 
-export async function POST(req: Request) {
-  // Read messages and data from the request body
-  const { messages: originalMessages, data: requestData } = await req.json();
+// Helper function to get Supabase URL and Key (replace with your actual env variables)
+function getSupabaseCredentials() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // Use service key on backend for elevated privileges like generating signed URLs
 
-  // Extract editor block context, model ID, and document ID from data
-  const { editorBlocksContext, model: modelIdFromData, documentId } = requestData || {};
-
-  // Validate Document ID
-  if (!documentId || typeof documentId !== 'string') {
-    return new Response(JSON.stringify({ error: { code: 'INVALID_INPUT', message: 'Missing or invalid documentId in request data.' } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-  }
-
-  // --- Get User ID (needed for saving) ---
-  const supabase = createSupabaseServerClient(); // Create client early
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError || !session) {
-    const code = sessionError ? 'SERVER_ERROR' : 'UNAUTHENTICATED';
-    const message = sessionError?.message || 'User not authenticated.';
-    const status = sessionError ? 500 : 401;
-    return new Response(JSON.stringify({ error: { code, message } }), { status, headers: { 'Content-Type': 'application/json' } });
-  }
-  const userId = session.user.id;
-  // --- End Get User ID ---
-
-  // Determine the model ID
-  const modelId = typeof modelIdFromData === 'string' && modelIdFromData in modelProviders
-    ? modelIdFromData
-    : defaultModelId;
-
-  // Get the AI model provider function from the map
-  const getModelProvider = modelProviders[modelId];
-  const aiModel = getModelProvider();
-
-  // Prepare messages for the AI, potentially adding editor context
-  const messages: CoreMessage[] = [...originalMessages];
-
-  // Add structured editor context, if provided and valid
-  if (Array.isArray(editorBlocksContext) && editorBlocksContext.length > 0) {
-    // Basic validation for structure - enhance if needed
-    const isValidContext = editorBlocksContext.every(block =>
-      typeof block === 'object' && block !== null && 'id' in block && 'contentSnippet' in block
-    );
-
-    if (isValidContext) {
-      const contextString = JSON.stringify(editorBlocksContext, null, 2);
-      const contextMessage = `Current editor block context (use IDs to target blocks):\n\`\`\`json\n${contextString}\n\`\`\``;
-      // Insert the context message before the last user message
-      messages.splice(messages.length > 1 ? messages.length - 1 : 0, 0, {
-        role: 'user',
-        content: `[Editor Context]\n${contextMessage}`
-      });
-      console.log("Added structured editor context to messages.");
-    } else {
-      console.warn("Received editorBlocksContext, but it had an invalid structure.");
+    if (!supabaseUrl || !supabaseServiceKey) {
+        console.error('Supabase URL or Service Key is missing in environment variables.');
+        throw new Error('Server configuration error.');
     }
-  } else if (editorBlocksContext !== undefined) {
-    console.log("Editor blocks context received but was empty, not an array, or undefined.");
-  }
+    return { supabaseUrl, supabaseServiceKey };
+}
 
-  // Prepare generation config, including thinking config if applicable
-  const generationConfig: any = {};
-  if (modelId === "gemini-2.5-flash-preview-04-17") {
-    generationConfig.thinkingConfig = {
-      thinkingBudget: 5120,
-    };
-    console.log(`Enabling thinkingConfig for model: ${modelId}`);
-  }
+// Constants
+const SIGNED_URL_EXPIRES_IN = 60 * 5; // 5 minutes expiration for image URLs sent to AI
 
-  // Use streamText - DO NOT await the call itself here
-  const result = streamText({
-    model: aiModel,
-    system: systemPrompt,
-    messages: messages,
-    tools: combinedTools, // Provide ALL defined tools to the model
-    maxSteps: 5, // Allow for tool call -> result -> text response flow
-    ...(Object.keys(generationConfig).length > 0 && { generationConfig }), // Conditionally add generationConfig
+export async function POST(req: Request) {
+    const { supabaseUrl, supabaseServiceKey } = getSupabaseCredentials();
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey); // Admin client for storage operations
 
-    // --- ADDED: onFinish callback for saving --- 
-    async onFinish({ usage, response }) {
-        console.log(`[onFinish] Stream finished. Usage: ${JSON.stringify(usage)}`);
-        // Filter for assistant messages
-        const assistantMessages = response.messages.filter(m => m.role === 'assistant');
+    // Read messages and data from the request body
+    const { messages: originalMessages, data: requestData } = await req.json();
 
-        if (assistantMessages.length === 0) {
-            console.log("[onFinish] No assistant messages to save.");
-            return;
+    // Extract relevant data, including the potential image path
+    const {
+        editorBlocksContext,
+        model: modelIdFromData,
+        documentId,
+        firstImagePath, // <-- ADDED: Extract image path
+        taskHint // <-- ADDED: Extract task hint
+    } = requestData || {};
+
+    // --- Existing Validation (Document ID, User Session) ---
+    if (!documentId || typeof documentId !== 'string') {
+         return new Response(JSON.stringify({ error: { code: 'INVALID_INPUT', message: 'Missing or invalid documentId in request data.' } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    const supabaseUserClient = createSupabaseServerClient(); // Use user client for auth check
+    const { data: { session }, error: sessionError } = await supabaseUserClient.auth.getSession();
+    if (sessionError || !session) {
+        const code = sessionError ? 'SERVER_ERROR' : 'UNAUTHENTICATED';
+        const message = sessionError?.message || 'User not authenticated.';
+        const status = sessionError ? 500 : 401;
+        return new Response(JSON.stringify({ error: { code, message } }), { status, headers: { 'Content-Type': 'application/json' } });
+    }
+    const userId = session.user.id;
+    // --- End Validation ---
+
+
+    // Determine the model ID
+    const modelId = typeof modelIdFromData === 'string' && modelIdFromData in modelProviders
+        ? modelIdFromData
+        : defaultModelId;
+    const getModelProvider = modelProviders[modelId];
+    const aiModel = getModelProvider();
+
+    // --- Rate Limiting State (per request) ---
+    let webSearchCallCount = 0;
+    const WEB_SEARCH_RATE_LIMIT_MS = 2000; // 2 second delay between searches for specific tasks
+
+    // --- Wrap the webSearch tool for conditional rate limiting ---
+    const rateLimitedWebSearch = tool({
+        // description and parameters are top-level, not nested under 'config'
+        description: webSearch.description,
+        parameters: webSearch.parameters,
+        execute: async (args, options) => { // Add the second 'options' argument
+            // Apply rate limiting ONLY if this is a summarization task
+            if (taskHint === 'summarize_and_cite_outline') {
+                if (webSearchCallCount > 0) {
+                    console.log(`[Rate Limit] Applying ${WEB_SEARCH_RATE_LIMIT_MS}ms delay before webSearch #${webSearchCallCount + 1} for summarization task.`);
+                    await new Promise(resolve => setTimeout(resolve, WEB_SEARCH_RATE_LIMIT_MS));
+                }
+                webSearchCallCount++;
+            }
+            // Execute the original webSearch function
+            console.log(`[Rate Limit] Executing webSearch (Call #${webSearchCallCount} for this task hint). Args:`, args);
+            // Call the original execute with both args and options
+            return webSearch.execute ? await webSearch.execute(args, options) : { error: 'Original execute function not found' };
         }
+    });
 
+    // Rebuild combinedTools with the rate-limited version
+    const combinedToolsWithRateLimit = {
+        ...editorTools,
+        webSearch: rateLimitedWebSearch,
+    };
+    // --- End Rate Limiting Wrapper ---
+
+    // --- Prepare messages for the AI ---
+    let signedImageUrl: URL | undefined = undefined;
+
+    // If an image path was provided for the latest message, generate a signed URL
+    if (typeof firstImagePath === 'string' && firstImagePath.trim() !== '') {
         try {
-            for (const message of assistantMessages) {
-                // Cast the message to include optional toolCalls for type checking
-                const assistantMessage = message as CoreMessage & { toolCalls?: { toolCallId: string; toolName: string; args: any }[] };
+            console.log(`[API Chat] Generating signed URL for image path: ${firstImagePath}`);
+            const { data, error } = await supabaseAdmin.storage
+                .from('message-images') // Replace with your actual bucket name
+                .createSignedUrl(firstImagePath, SIGNED_URL_EXPIRES_IN);
 
-                // Type guard to check for toolCalls property
-                const hasToolCalls = Array.isArray(assistantMessage.toolCalls) && assistantMessage.toolCalls.length > 0;
+            if (error) {
+                console.error(`[API Chat] Error generating signed URL for ${firstImagePath}:`, error);
+                // Decide whether to proceed without the image or return an error
+                // For now, log and proceed without the image URL
+                // return new Response(JSON.stringify({ error: { code: 'STORAGE_ERROR', message: `Failed to get image URL: ${error.message}` } }), { status: 500 });
+            } else if (data?.signedUrl) {
+                signedImageUrl = new URL(data.signedUrl);
+                console.log(`[API Chat] Generated signed URL successfully.`);
+            }
+        } catch (e: any) {
+            console.error(`[API Chat] Exception generating signed URL for ${firstImagePath}:`, e);
+             // Log and proceed without image
+        }
+    }
 
-                // Extract plain text content for saving
-                let plainTextContent: string | null = null;
-                // Check if content is the tool call structure first before trying to extract text
-                let contentIsToolCallStructure = false;
-                if (Array.isArray(assistantMessage.content) && assistantMessage.content.length > 0 && assistantMessage.content[0]?.type === 'tool-call') {
-                    contentIsToolCallStructure = true;
-                } else if (typeof assistantMessage.content === 'string' && assistantMessage.content.startsWith('[') && assistantMessage.content.endsWith(']')) {
-                    try {
-                        const parsed = JSON.parse(assistantMessage.content);
-                        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.type === 'tool-call') {
-                            contentIsToolCallStructure = true;
-                        }
-                    } catch { /* Ignore parse error, treat as non-tool-call string */ }
-                }
+    const messages: CoreMessage[] = [];
+    for (let i = 0; i < originalMessages.length; i++) {
+        const msg = originalMessages[i];
+        const isLastMessage = i === originalMessages.length - 1;
 
-                // Only extract plain text if content isn't primarily a tool call
-                if (!contentIsToolCallStructure) {
+        if (msg.role === 'user' && isLastMessage && signedImageUrl) {
+            // Format the last user message as multimodal if an image URL was generated
+             console.log(`[API Chat] Formatting last user message (ID: ${msg.id || 'N/A'}) as multimodal.`);
+            messages.push({
+                role: 'user',
+                content: [
+                    { type: 'text', text: msg.content || '' }, // Include text content even if empty
+                    { type: 'image', image: signedImageUrl }
+                ]
+            });
+        } else if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system') {
+             // Add other message types or user messages without images normally
+             // Ensure content is a string as expected by CoreMessage default
+             let contentString = '';
+             if (typeof msg.content === 'string') {
+                 contentString = msg.content;
+             } else if (Array.isArray(msg.content)) {
+                 // ADDED type annotation for part
+                 const textPart = msg.content.find((part: { type: string; text?: string }) => part.type === 'text');
+                 contentString = textPart?.text || '';
+                 console.warn(`[API Chat] Message ${msg.id || i} had array content, extracting text: "${contentString.slice(0,50)}..."`);
+             }
+             messages.push({ role: msg.role, content: contentString });
+
+        } else if (msg.role === 'tool') {
+             // Handle tool messages (results of tool calls)
+            messages.push({
+                role: 'tool',
+                content: Array.isArray(msg.content) ? msg.content : [{ // Ensure content is ToolContentPart[]
+                    type: 'tool-result',
+                    toolCallId: msg.toolCallId || '', // Ensure toolCallId is present
+                    toolName: msg.toolName || '',     // Ensure toolName is present
+                    result: msg.content // The result itself
+                }]
+            });
+        }
+         // else: ignore other roles? data? function?
+    }
+
+    // --- NEW: Inject Strategy Prompt Conditionally ---
+    if (taskHint === 'summarize_and_cite_outline') {
+        console.log("[API Chat] Task Hint 'summarize_and_cite_outline' detected. Injecting strategy prompt.");
+        // Insert the strategy prompt before the last user message
+        let lastUserMessageIndex = messages.length - 1;
+        while (lastUserMessageIndex >= 0 && messages[lastUserMessageIndex].role !== 'user') {
+            lastUserMessageIndex--;
+        }
+        // Use a role that the model will pay attention to, but clearly indicates it's an instruction
+        // Using 'system' might be overridden by the main system prompt, let's try 'user'
+        messages.splice(lastUserMessageIndex >= 0 ? lastUserMessageIndex : messages.length, 0, {
+            role: 'user', // Or 'system' if preferred, test which works better
+            content: summarizationStrategyPrompt
+        });
+    }
+    // --- END NEW ---
+
+    // Add structured editor context, if provided and valid (insert before the last user message)
+    if (Array.isArray(editorBlocksContext) && editorBlocksContext.length > 0) {
+        const isValidContext = editorBlocksContext.every(block =>
+            typeof block === 'object' && block !== null && 'id' in block && 'contentSnippet' in block
+        );
+        if (isValidContext) {
+            const contextString = JSON.stringify(editorBlocksContext, null, 2);
+            const contextMessage = `Current editor block context (use IDs to target blocks):\n\`\`\`json\n${contextString}\n\`\`\``;
+            // Find the index of the last user message to insert before it
+            let lastUserMessageIndex = messages.length - 1;
+            while (lastUserMessageIndex >= 0 && messages[lastUserMessageIndex].role !== 'user') {
+                lastUserMessageIndex--;
+            }
+            messages.splice(lastUserMessageIndex >= 0 ? lastUserMessageIndex : 0, 0, {
+                role: 'user',
+                content: `[Editor Context]\n${contextMessage}`
+            });
+            console.log("[API Chat] Added structured editor context to messages.");
+        } else {
+            console.warn("[API Chat] Received editorBlocksContext, but it had an invalid structure.");
+        }
+    } else if (editorBlocksContext !== undefined) {
+         console.log("[API Chat] Editor blocks context received but was empty, not an array, or undefined.");
+    }
+
+    // --- Existing streamText call setup ---
+    const generationConfig: any = {};
+    if (modelId === "gemini-2.5-flash-preview-04-17") {
+        generationConfig.thinkingConfig = {
+            thinkingBudget: 5120,
+        };
+        console.log(`Enabling thinkingConfig for model: ${modelId}`);
+    }
+
+    console.log(`[API Chat] Calling streamText with ${messages.length} prepared messages. Last message role: ${messages[messages.length - 1]?.role}`);
+
+    const result = streamText({
+        model: aiModel,
+        system: systemPrompt,
+        messages: messages, // Use the potentially modified messages array
+        tools: combinedToolsWithRateLimit, // Use the rate-limited tools
+        maxSteps: 10, // Increased maxSteps slightly to accommodate potential multi-step (search then edit)
+         ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
+
+        // --- onFinish callback for saving assistant response ---
+         async onFinish({ usage, response }) {
+            console.log(`[onFinish] Stream finished. Usage: ${JSON.stringify(usage)}`);
+            const assistantMessagesToSave = response.messages.filter(m => m.role === 'assistant');
+
+            if (assistantMessagesToSave.length === 0) {
+                console.log("[onFinish] No assistant messages to save.");
+                return;
+            }
+
+            // Use the user client established earlier for saving messages under the user's RLS
+             const supabase = createSupabaseServerClient();
+
+            try {
+                for (const message of assistantMessagesToSave) {
+                     const assistantMessage = message as CoreMessage & { toolCalls?: { toolCallId: string; toolName: string; args: any }[] };
+                     const hasToolCalls = Array.isArray(assistantMessage.toolCalls) && assistantMessage.toolCalls.length > 0;
+
+                    // Extract plain text content - Refined logic
+                    let plainTextContent: string | null = null;
                     if (typeof assistantMessage.content === 'string') {
-                        plainTextContent = assistantMessage.content.trim();
-                        if (plainTextContent === '') plainTextContent = null;
+                        plainTextContent = assistantMessage.content.trim() || null;
                     } else if (Array.isArray(assistantMessage.content)) {
-                        plainTextContent = assistantMessage.content
-                            .filter(part => part.type === 'text')
-                            .map(part => part.text)
-                            .join('');
-                        if (plainTextContent.trim() === '') plainTextContent = null;
+                        // Find the first part with type 'text' and extract its text
+                        const textPart = assistantMessage.content.find(
+                            (part): part is { type: 'text'; text: string } => part.type === 'text'
+                        );
+                        plainTextContent = textPart?.text?.trim() || null;
                     }
-                }
 
-                // --- REVISED LOGIC to handle toolCalls property vs content structure ---
-                let contentToSave: string | null = null;
-                let shouldSaveToToolCallsTable = false;
-                const actualToolCalls = (Array.isArray(assistantMessage.toolCalls) && assistantMessage.toolCalls.length > 0) ? assistantMessage.toolCalls : undefined;
-
-                console.log(`[onFinish Pre-Logic] plainTextContent:`, plainTextContent);
-                console.log(`[onFinish Pre-Logic] actualToolCalls (from .toolCalls prop):`, JSON.stringify(actualToolCalls));
-                console.log(`[onFinish Pre-Logic] contentIsToolCallStructure (from .content):`, contentIsToolCallStructure);
-
-                if (plainTextContent) {
-                    // Case 1: There is text content.
-                    contentToSave = plainTextContent;
-                    // Save tool calls separately ONLY if they exist in the .toolCalls property.
-                    shouldSaveToToolCallsTable = !!actualToolCalls;
-                    console.log(`[onFinish Decision] Case 1: Text content exists. Saving text to content. Separate tool calls: ${shouldSaveToToolCallsTable}`);
-                } else if (actualToolCalls) {
-                    // Case 2: No text, but tool calls found in .toolCalls property.
-                    try {
-                        contentToSave = JSON.stringify(actualToolCalls);
-                        console.log(`[onFinish Decision] Case 2: No text, using toolCalls from .toolCalls prop for content.`);
-                    } catch (stringifyError) {
-                        console.error(`[onFinish] Error stringifying tool calls from .toolCalls prop:`, stringifyError);
-                        contentToSave = '[{"error":"Could not serialize tool calls"}]';
-                    }
-                    shouldSaveToToolCallsTable = false; // Don't save separately
-                } else if (contentIsToolCallStructure) {
-                    // Case 3: No text, no .toolCalls prop, but .content IS the tool call structure.
-                    // Save the original raw content string (which should be the JSON array string).
-                    if (typeof assistantMessage.content === 'string') {
-                        contentToSave = assistantMessage.content;
-                        console.log(`[onFinish Decision] Case 3: No text, using raw .content string (tool call JSON) for content.`);
-                    } else if (Array.isArray(assistantMessage.content)) { // Should ideally be string, but handle array just in case
-                         try {
-                            contentToSave = JSON.stringify(assistantMessage.content);
-                            console.log(`[onFinish Decision] Case 3: No text, stringifying .content array (tool call JSON) for content.`);
-                        } catch (stringifyError) {
-                            console.error(`[onFinish] Error stringifying tool calls from .content array:`, stringifyError);
-                            contentToSave = '[{"error":"Could not serialize tool calls"}]';
-                        }
-                    }
-                    shouldSaveToToolCallsTable = false; // Don't save separately
-                } else {
-                    // Case 4: No text and no tool calls found anywhere.
-                    contentToSave = null;
-                    shouldSaveToToolCallsTable = false;
-                    console.log(`[onFinish Decision] Case 4: No text or tool calls found. Saving null content.`);
-                }
-                // --- END REVISED LOGIC ---
-
-                // --- Add detailed logging before saving ---
-                // console.log(`[onFinish Debug] Assistant Message ID (from response): ${message.id ?? 'N/A'}`);
-                // console.log(`[onFinish Debug] Raw assistantMessage.content:`, JSON.stringify(assistantMessage.content));
-                // console.log(`[onFinish Debug] assistantMessage.toolCalls:`, JSON.stringify(assistantMessage.toolCalls));
-                // console.log(`[onFinish Debug] Extracted plainTextContent:`, plainTextContent);
-                // console.log(`[onFinish Debug] hasToolCalls (derived from actualToolCalls):`, !!actualToolCalls);
-                console.log(`[onFinish Debug] Final determined contentToSave:`, contentToSave);
-                console.log(`[onFinish Debug] Final determined shouldSaveToToolCallsTable:`, shouldSaveToToolCallsTable);
-                // --- End detailed logging ---
-
-                // 1. Save Assistant Message
-                const { data: savedMsgData, error: msgSaveError } = await supabase
-                    .from('messages')
-                    .insert({
+                    // Prepare message data for Supabase
+                    const messageData: Omit<SupabaseMessage, 'id' | 'created_at'> = {
                         document_id: documentId,
                         user_id: userId,
                         role: 'assistant',
-                        content: contentToSave, // <-- Use determined content to save
+                        content: plainTextContent, 
                         image_url: null,
-                        metadata: { usage, raw_content: assistantMessage.content }, // Store raw content if needed
-                    })
-                    .select('id')
-                    .single();
+                        metadata: null,
+                    };
 
-                if (msgSaveError) {
-                    console.error(`[onFinish] Error saving assistant message: ${msgSaveError.message}`);
-                    continue;
-                }
-                 if (!savedMsgData || !savedMsgData.id) {
-                    console.error("[onFinish] Error saving assistant message: No ID returned.");
-                    continue;
-                }
-                const savedAssistantMessageId = savedMsgData.id;
-                console.log(`[onFinish] Saved assistant message with ID: ${savedAssistantMessageId}`);
+                    // Insert the message
+                    const { data: savedMsgData, error: msgError } = await supabase
+                        .from('messages')
+                        .insert(messageData)
+                        .select('id') // Select the ID of the newly inserted message
+                        .single(); // Expect only one row back
 
-                // 2. Save Tool Calls if needed (only if there was also text content)
-                if (shouldSaveToToolCallsTable) {
-                    // Type assertion is safe here due to the guard and the modified logic
-                    const toolCallsToSave = assistantMessage.toolCalls as { toolCallId: string; toolName: string; args: any }[];
-
-                    const toolCallInserts = toolCallsToSave.map(tc => ({
-                        message_id: savedAssistantMessageId,
-                        user_id: userId,
-                        tool_call_id: tc.toolCallId,
-                        tool_name: tc.toolName,
-                        tool_input: tc.args,
-                    }));
-
-                    const { error: toolSaveError } = await supabase
-                        .from('tool_calls')
-                        .insert(toolCallInserts);
-
-                    if (toolSaveError) {
-                        console.error(`[onFinish] Error saving tool calls for message ${savedAssistantMessageId}: ${toolSaveError.message}`);
-                    } else {
-                        console.log(`[onFinish] Saved ${toolCallInserts.length} tool calls for message ${savedAssistantMessageId}`);
+                    if (msgError) {
+                        console.error(`[onFinish] Error saving assistant message content:`, msgError);
+                        // Continue to next message or throw? For now, log and continue.
+                        continue;
                     }
-                }
+
+                    const savedMessageId = savedMsgData?.id;
+                    if (!savedMessageId) {
+                         console.error(`[onFinish] Failed to get ID for saved assistant message.`);
+                         continue;
+                    }
+                     console.log(`[onFinish] Saved assistant message ID: ${savedMessageId}. Content saved: "${plainTextContent?.slice(0, 50)}..."`);
+
+
+                    // --- Save Tool Calls if they exist ---
+                     if (hasToolCalls) {
+                        const toolCallData: Omit<SupabaseToolCall, 'id' | 'created_at'>[] = assistantMessage.toolCalls!.map(tc => ({
+                            message_id: savedMessageId,
+                            user_id: userId,
+                            tool_call_id: tc.toolCallId,
+                            tool_name: tc.toolName,
+                            tool_input: tc.args, 
+                            tool_output: null 
+                        }));
+
+                         console.log(`[onFinish] Saving ${toolCallData.length} tool calls for message ${savedMessageId}`);
+                        const { error: toolError } = await supabase
+                            .from('tool_calls')
+                            .insert(toolCallData);
+
+                        if (toolError) {
+                            console.error(`[onFinish] Error saving tool calls for message ${savedMessageId}:`, toolError);
+                            // Log and continue, message content is already saved
+                        } else {
+                             console.log(`[onFinish] Successfully saved tool calls for message ${savedMessageId}.`);
+                        }
+                    }
+                } // end for loop over assistant messages
+            } catch (dbError: any) {
+                console.error('[onFinish] Database error during save:', dbError);
             }
-            console.log("[onFinish] Completed processing assistant messages and tool calls.");
+        } // end onFinish
+    }); // end streamText call
 
-        } catch (dbError: any) {
-            console.error(`[onFinish] Unexpected error during DB operations: ${dbError.message}`);
-        }
-    },
-    // --- END ADDED onFinish ---
-
-  });
-
-  // ADDED: Consume stream to ensure onFinish runs even if client disconnects
-  result.consumeStream(); // no await
-
-  // Return the streaming response directly.
-  // The client will handle text deltas and tool calls from the stream.
-  return result.toDataStreamResponse(); // Use standard Data Stream response
+    // Return the streaming response
+    return result.toDataStreamResponse();
 }
 

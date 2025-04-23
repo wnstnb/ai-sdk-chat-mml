@@ -10,7 +10,7 @@ import React, {
     KeyboardEvent,
     DragEvent,
 } from 'react';
-import { useParams, useRouter } from 'next/navigation'; // Dynamic routing hooks
+import { useParams, useRouter, useSearchParams } from 'next/navigation'; // Dynamic routing hooks
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
@@ -89,6 +89,7 @@ const schema = BlockNoteSchema.create();
 export default function EditorPage() {
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const documentId = params.documentId as string;
 
     // --- State Variables ---
@@ -112,19 +113,27 @@ export default function EditorPage() {
     const [isChatCollapsed, setIsChatCollapsed] = useState(false);
     const [chatPaneWidth, setChatPaneWidth] = useState<number | null>(null);
     const [isResizing, setIsResizing] = useState(false);
-    const [files, setFiles] = useState<FileList | null>(null); // Files staged for chat upload
+    const [files, setFiles] = useState<FileList | null>(null); // Files staged for chat upload PREVIEW
     const [isDragging, setIsDragging] = useState(false);
     const formRef = useRef<HTMLFormElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null); // Chat input textarea
     const fileInputRef = useRef<HTMLInputElement>(null); // Hidden file input
     const messagesEndRef = useRef<HTMLDivElement>(null); // Chat scroll anchor
 
+    // --- NEW: Upload State ---
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+    const [uploadedImagePath, setUploadedImagePath] = useState<string | null>(null);
+    // --- END NEW ---
+
+    // --- NEW: State for pending initial submission ---
+    const [pendingInitialSubmission, setPendingInitialSubmission] = useState<string | null>(null);
+
     // Loading/Error States
     const [isLoadingDocument, setIsLoadingDocument] = useState(true);
     const [isLoadingMessages, setIsLoadingMessages] = useState(true);
     const [isSaving, setIsSaving] = useState(false); // Editor save button state
     const [error, setError] = useState<string | null>(null); // General page error
-    const [initialResponseTriggered, setInitialResponseTriggered] = useState(false); // <-- ADDED
 
     // --- useChat Hook Integration ---
     const {
@@ -136,6 +145,7 @@ export default function EditorPage() {
         reload,
         stop,
         setMessages: setChatMessages, // Needed to set initial messages
+        setInput, // <-- ADDED: Need setInput to populate from query param
     } = useChat({
         api: '/api/chat', // API endpoint for chat interactions
         id: documentId, // Pass documentId for context (also sent in body)
@@ -278,22 +288,6 @@ export default function EditorPage() {
             setChatMessages(formattedMessages);
             setDisplayedMessagesCount(Math.min(formattedMessages.length, INITIAL_MESSAGE_COUNT));
 
-            // *** ADDED: Trigger initial AI response if only the first user message exists ***
-            if (formattedMessages.length === 1 && formattedMessages[0].role === 'user') {
-                 console.log("[fetchChatMessages] First message is from user and no response yet. Triggering initial AI response.");
-                 // Call originalHandleSubmit to trigger the /api/chat call
-                 // Pass undefined for the event, and provide the necessary data payload
-                 originalHandleSubmit(undefined, {
-                     data: {
-                         model: model, // Use the current model state
-                         documentId: documentId, // Use the current documentId
-                         // No specific editor context needed for this initial auto-response
-                     } as any // Cast as any to match useChat options type
-                 });
-            } else if (formattedMessages.length > 0 && formattedMessages[formattedMessages.length - 1].role === 'user') {
-                 console.log("[fetchChatMessages] Last message is from user, but other messages exist. Not triggering automatic response.");
-            }
-
             // Log state immediately after setting
             console.log('[fetchChatMessages] State set:', {
                 totalMessages: formattedMessages.length, // Use the variable available here
@@ -320,6 +314,50 @@ export default function EditorPage() {
         // Don't reset displayedMessagesCount here, fetchChatMessages handles initial set
     }, [documentId]);
 
+    // --- NEW: Effect to read initial message from query parameter ---
+    const routerForReplace = useRouter(); // Get router instance for replace
+    useEffect(() => {
+        const initialMsg = searchParams.get('initialMsg');
+        if (initialMsg) {
+            const decodedMsg = decodeURIComponent(initialMsg);
+            console.log("[EditorPage Mount] Found initialMsg query param:", decodedMsg);
+            setInput(decodedMsg); // Update chat input state
+            setPendingInitialSubmission(decodedMsg); // Set pending submission trigger
+
+            // Clean the URL by removing the query parameter
+            // Use router.replace to avoid adding a new entry to history
+            const currentPath = window.location.pathname; // Get current path without query
+            routerForReplace.replace(currentPath, { scroll: false }); // scroll: false prevents jumping
+        }
+    // Run only once when the component mounts or documentId changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps 
+    }, [documentId]);
+
+    // --- NEW: Effect to trigger submission once input state matches pending message ---
+    useEffect(() => {
+        // Only proceed if there's a message pending submission and it matches the current input
+        if (pendingInitialSubmission && input === pendingInitialSubmission) {
+            console.log("[EditorPage Submit Effect] Input matches pending submission. Triggering submit:", input);
+
+            // Call the original useChat submit handler
+            originalHandleSubmit(undefined, {
+                data: {
+                    model: model, // Use the current model state
+                    documentId: documentId, // Use the current documentId
+                    // Pass the input content explicitly in case useChat internal state is lagging?
+                    // Let's try without first, relying on the check `input === pendingInitialSubmission`
+                } as any // Cast as any to match useChat options type
+            });
+
+            // Clear the pending state ONLY after attempting submission
+            // to prevent re-submission if the component re-renders before submit completes
+            setPendingInitialSubmission(null);
+        }
+    // Dependencies: Run when input or pendingInitialSubmission changes
+    // Also include other values used inside (originalHandleSubmit, model, documentId) as per exhaustive-deps rule
+    // eslint-disable-next-line react-hooks/exhaustive-deps 
+    }, [input, pendingInitialSubmission, originalHandleSubmit, model, documentId]);
+
     // Effect to sync displayedMessagesCount with incoming messages up to the initial limit
     useEffect(() => {
         const newPotentialCount = Math.min(chatMessages.length, INITIAL_MESSAGE_COUNT);
@@ -332,30 +370,6 @@ export default function EditorPage() {
         // and displayedMessagesCount > INITIAL_MESSAGE_COUNT, this effect won't
         // decrease it, allowing the manual loading to persist.
     }, [chatMessages.length]); // Depend only on the total message count
-
-    // --- ADDED: Effect to trigger initial response ---
-    useEffect(() => {
-        // Only run if we haven't triggered it yet, messages have loaded,
-        // there's exactly one message, and it's from the user.
-        if (!initialResponseTriggered && !isLoadingMessages && chatMessages.length === 1 && chatMessages[0].role === 'user') {
-            console.log("[Initial Response Effect] First user message loaded. Triggering initial AI response.");
-            originalHandleSubmit(undefined, {
-                data: {
-                    model: model, // Use the current model state
-                    documentId: documentId, // Use the current documentId
-                    // No editor context needed for this initial auto-response
-                } as any // Cast as any to match useChat options type
-            });
-            setInitialResponseTriggered(true); // Mark as triggered to prevent re-runs
-        }
-    }, [chatMessages, initialResponseTriggered, isLoadingMessages, originalHandleSubmit, model, documentId]);
-
-    // ADDED: Effect to reset the trigger when the document ID changes
-    useEffect(() => {
-        console.log("[Document Change Effect] Resetting initial response trigger for new document.");
-        setInitialResponseTriggered(false);
-    }, [documentId]);
-    // --- END ADDED Effects ---
 
     // --- Editor Interaction Logic ---
 
@@ -511,16 +525,83 @@ export default function EditorPage() {
 
     // --- Chat Interaction Logic ---
 
+    // --- NEW: Upload Function --- 
+    const handleStartUpload = useCallback(async (file: File) => {
+        if (!documentId) {
+            toast.error("Cannot upload: Document context missing.");
+            return;
+        }
+        if (isUploading) { // Prevent concurrent uploads from UI for simplicity
+            toast.info("Please wait for the current upload to finish.");
+            return;
+        }
+
+        setIsUploading(true);
+        setUploadError(null);
+        setUploadedImagePath(null); // Reset previous path if a new upload starts
+        toast.info(`Uploading ${file.name}...`);
+
+        try {
+            // 1. Get Signed URL
+            const signedUrlRes = await fetch('/api/storage/signed-url/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fileName: file.name, contentType: file.type, documentId })
+            });
+            if (!signedUrlRes.ok) {
+                const err = await signedUrlRes.json().catch(() => ({}));
+                throw new Error(err.error?.message || `Upload URL error for ${file.name} (${signedUrlRes.status})`);
+            }
+            const { data: urlData } = await signedUrlRes.json(); // Gets { signedUrl, path }
+
+            // 2. Upload File using Signed URL
+            const uploadRes = await fetch(urlData.signedUrl, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file
+            });
+            if (!uploadRes.ok) {
+                // Attempt to get error details from storage response if possible
+                const storageErrorText = await uploadRes.text();
+                console.error("Storage Upload Error Text:", storageErrorText); 
+                throw new Error(`Upload failed for ${file.name} (${uploadRes.status})`);
+            }
+
+            // 3. Success
+            setUploadedImagePath(urlData.path);
+            toast.success(`${file.name} uploaded successfully!`);
+
+        } catch (err: any) {
+            console.error(`Upload error (${file.name}):`, err);
+            const errorMsg = `Failed to upload ${file.name}: ${err.message}`;
+            setUploadError(errorMsg);
+            toast.error(errorMsg);
+            setFiles(null); // Clear preview on error
+            setUploadedImagePath(null);
+        } finally {
+            setIsUploading(false);
+        }
+    }, [documentId, isUploading]); // Include isUploading to prevent overlap
+    // --- END NEW --- 
+
     const handlePaste = (event: React.ClipboardEvent) => {
         const items = event.clipboardData?.items; if (!items) return;
         const clipboardFiles = Array.from(items).map(item => item.getAsFile()).filter((f): f is File => f !== null);
         if (clipboardFiles.length > 0) {
-            const validFiles = clipboardFiles.filter(f => f.type.startsWith('image/') || f.type.startsWith('text/'));
-            if (validFiles.length > 0) {
-                const dataTransfer = new DataTransfer(); validFiles.forEach(f => dataTransfer.items.add(f));
-                setFiles(dataTransfer.files); toast.info(`${validFiles.length} file(s) attached.`);
-                if (validFiles.length < clipboardFiles.length) { toast.warning("Ignored non-image/text files."); }
-            } else { toast.error('Only image/text files accepted.'); }
+            const imageFiles = clipboardFiles.filter(f => f.type.startsWith('image/'));
+            if (imageFiles.length > 0) {
+                const firstImage = imageFiles[0]; // Handle one file at a time for simplicity now
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(firstImage);
+                setFiles(dataTransfer.files); // Set for preview
+                setUploadError(null); // Clear previous errors
+                setUploadedImagePath(null); // Clear previous path
+                handleStartUpload(firstImage); // Start upload immediately
+            } else if (clipboardFiles.some(f => f.type.startsWith('text/'))) {
+                console.log("Pasted content includes non-image files, allowing default paste behavior.");
+            } else if (clipboardFiles.length > 0) {
+                toast.error('Only image files can be pasted as attachments.');
+            }
         }
     };
     const handleDragOver = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(true); };
@@ -529,47 +610,71 @@ export default function EditorPage() {
         event.preventDefault(); setIsDragging(false);
         const droppedFiles = event.dataTransfer.files;
         if (droppedFiles && droppedFiles.length > 0) {
-            const validFiles = Array.from(droppedFiles).filter(f => f.type.startsWith('image/') || f.type.startsWith('text/'));
-            if (validFiles.length > 0) {
-                const dataTransfer = new DataTransfer(); validFiles.forEach(f => dataTransfer.items.add(f));
-                setFiles(dataTransfer.files); toast.info(`${validFiles.length} file(s) attached.`);
-                if (validFiles.length < droppedFiles.length) { toast.warning("Ignored non-image/text files."); }
-            } else { toast.error('Only image/text files accepted.'); }
+            const imageFiles = Array.from(droppedFiles).filter(f => f.type.startsWith('image/'));
+            if (imageFiles.length > 0) {
+                const firstImage = imageFiles[0]; // Handle one file at a time
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(firstImage);
+                setFiles(dataTransfer.files); // Set for preview
+                setUploadError(null); // Clear previous errors
+                setUploadedImagePath(null); // Clear previous path
+                handleStartUpload(firstImage); // Start upload immediately
+                if (imageFiles.length > 1) { toast.info("Attached the first image. Multiple file uploads coming soon!"); }
+            } else { toast.error('Only image files accepted via drop.'); }
         }
     };
     const scrollToBottom = useCallback(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, []);
     useEffect(() => { scrollToBottom(); }, [chatMessages, scrollToBottom]);
-    const handleUploadClick = () => { fileInputRef.current?.click(); };
+    const handleUploadClick = () => { 
+        if (isUploading) { toast.info("Please wait for the current upload to finish."); return; } 
+        fileInputRef.current?.click(); 
+    };
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         if (event.target.files && event.target.files.length > 0) {
-            const validFiles = Array.from(event.target.files).filter(f => f.type.startsWith('image/') || f.type.startsWith('text/'));
-            if (validFiles.length > 0) {
-                const dataTransfer = new DataTransfer(); validFiles.forEach(f => dataTransfer.items.add(f)); setFiles(dataTransfer.files);
-                if (validFiles.length < event.target.files.length) { toast.warning("Ignored non-image/text files."); }
-            } else { toast.error("No valid image/text files selected."); setFiles(null); }
+            const imageFiles = Array.from(event.target.files).filter(f => f.type.startsWith('image/'));
+            if (imageFiles.length > 0) {
+                const firstImage = imageFiles[0]; // Handle one file at a time
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(firstImage);
+                setFiles(dataTransfer.files); // Set for preview
+                setUploadError(null); // Clear previous errors
+                setUploadedImagePath(null); // Clear previous path
+                handleStartUpload(firstImage); // Start upload immediately
+                if (imageFiles.length > 1) { toast.info("Selected the first image. Multiple file uploads coming soon!"); }
+            } else { toast.error("No valid image files selected."); setFiles(null); }
         } else { setFiles(null); }
         if (event.target) event.target.value = ''; // Reset input
     };
     const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-        if (event.key === 'Enter' && !event.shiftKey && !isChatLoading) { event.preventDefault(); formRef.current?.requestSubmit(); }
+        // Submit on Enter unless Shift is pressed OR upload is in progress
+        if (event.key === 'Enter' && !event.shiftKey && !isChatLoading && !isUploading) { 
+            event.preventDefault(); 
+            // Check if there is content to submit (text or uploaded image)
+            if (input.trim() || uploadedImagePath) {
+                formRef.current?.requestSubmit(); 
+            } else {
+                toast.info("Please type a message or attach an image.");
+            }
+        }
     };
 
-    // Wrapped handleSubmit for useChat
+    // Wrapped handleSubmit for useChat - REVISED
     const handleSubmitWithContext = async (event?: React.FormEvent<HTMLFormElement>) => {
         if (event) event.preventDefault();
         if (!documentId) { toast.error("Cannot send message: Document context missing."); return; }
-        const currentFiles = files; const currentInput = input; const currentModel = model;
-        // Lock loading state immediately
-        const isSubmitting = isChatLoading || (!currentInput.trim() && (!currentFiles || currentFiles.length === 0));
-        if (isSubmitting) return;
+        
+        const currentInput = input;
+        const currentModel = model;
+        const imagePathToSend = uploadedImagePath; // Use the state variable
 
-        // Clear input immediately for optimistic UI update (useChat handles this via originalHandleSubmit?)
-        // handleInputChange({ target: { value: '' } } as any); // Clear input manually if needed
+        // Submission Guard: Check if loading, uploading, or no content (text or image)
+        if (isChatLoading || isUploading || (!currentInput.trim() && !imagePathToSend)) {
+            console.log('Submission prevented:', { isChatLoading, isUploading, currentInput, imagePathToSend });
+            return; 
+        }
 
-
-        setFiles(null); if (fileInputRef.current) fileInputRef.current.value = ''; // Clear staged files UI
-
-        let editorContextData = {}; const editor = editorRef.current;
+        let editorContextData = {}; 
+        const editor = editorRef.current;
         if (includeEditorContent && editor) { /* Add full markdown */
             const markdownContent = await getEditorMarkdownContent();
             if (markdownContent !== null) { editorContextData = { editorMarkdownContent: markdownContent }; }
@@ -584,45 +689,24 @@ export default function EditorPage() {
             } catch (e) { console.error('Failed to get editor snippets:', e); toast.error('⚠️ Error getting editor context.'); }
         }
 
-        let uploadedFilePaths: { name: string; path: string; contentType: string }[] = [];
-        let firstImagePath: string | undefined = undefined; // Store path for message saving
-
-        if (currentFiles && currentFiles.length > 0) { /* Upload files */
-            toast.info(`Uploading ${currentFiles.length} file(s)...`);
-            const uploadPromises = Array.from(currentFiles).map(async f => {
-                try {
-                    // 1. Get Signed URL
-                    const signedUrlRes = await fetch('/api/storage/signed-url/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: f.name, contentType: f.type, documentId }) });
-                    if (!signedUrlRes.ok) { const err = await signedUrlRes.json().catch(() => ({})); throw new Error(err.error?.message || `Upload URL error for ${f.name}`); }
-                    const { data: urlData } = await signedUrlRes.json(); // Gets { signedUrl, path }
-
-                    // 2. Upload File using Signed URL
-                    const uploadRes = await fetch(urlData.signedUrl, { method: 'PUT', headers: { 'Content-Type': f.type }, body: f });
-                    if (!uploadRes.ok) { throw new Error(`Upload failed for ${f.name}`); }
-
-                    // 3. Collect path for successful uploads
-                    return { name: f.name, path: urlData.path, contentType: f.type };
-                } catch (err: any) { console.error(`Upload error (${f.name}):`, err); toast.error(`Failed to upload ${f.name}`); return null; }
-            });
-            uploadedFilePaths = (await Promise.all(uploadPromises)).filter((r): r is { name: string; path: string; contentType: string } => r !== null);
-
-            if (uploadedFilePaths.length !== currentFiles.length) { toast.warning("Some files failed upload."); }
-            else if (uploadedFilePaths.length > 0) { toast.success(`${uploadedFilePaths.length} file(s) uploaded.`); }
-
-            // Store the path of the first successfully uploaded image for the message DB entry
-            firstImagePath = uploadedFilePaths.length > 0 ? uploadedFilePaths[0].path : undefined;
+        // --- NEW: Detect Summarization Task ---
+        // Basic check: look for keywords related to summarizing outlines/points
+        const isSummarizationTask = /\b(summar(y|ize|ies)|bullet|points?|outline|sources?|citations?)\b/i.test(currentInput) && currentInput.length > 25; // Require some length to avoid triggering on short phrases
+        if (isSummarizationTask) {
+            console.log("[handleSubmitWithContext] Summarization task detected based on input:", currentInput.slice(0, 50) + "...");
         }
+        // --- END NEW ---
 
         // --- Save the user message to the database FIRST ---
         try {
-            console.log(`Saving user message to DB: content='${currentInput.slice(0,30)}...', imagePath='${firstImagePath}'`);
+            console.log(`Saving user message to DB: content='${currentInput.slice(0,30)}...', imagePath='${imagePathToSend}'`);
             const saveMessageResponse = await fetch(`/api/documents/${documentId}/messages`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    role: 'user', // Hardcode role for user message
-                    content: currentInput.trim() || null, // Send null if only image
-                    imageUrlPath: firstImagePath // Send path if available
+                    role: 'user', 
+                    content: currentInput.trim() || null, 
+                    imageUrlPath: imagePathToSend // Send the path from state
                 }),
             });
 
@@ -632,35 +716,38 @@ export default function EditorPage() {
             }
             const { data: savedMessage } = await saveMessageResponse.json();
             console.log('User message saved to DB:', savedMessage);
-            // Optional: Could use savedMessage.id for better optimistic updates later if needed
 
             // --- Now, trigger the AI interaction using useChat's handler ---
             const submitOptions = {
-                 // Provide necessary context for the AI.
-                 // We no longer need imageUrlPath here, as the AI can retrieve it via GET messages if needed.
-                 // Send the user's text input as the primary content for the AI turn.
                 data: {
                     model: currentModel,
                     documentId,
-                    ...editorContextData, // Editor context (snippets or full markdown)
+                    ...editorContextData, 
+                    firstImagePath: imagePathToSend, // Pass the path from state
+                    // --- MODIFIED: Add taskHint conditionally ---
+                    taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined,
+                    // --- END MODIFIED ---
                 },
-                 // For optimistic UI: useChat needs the user's input and potentially file previews.
-                 // Pass the original File objects if they existed.
-                options: { experimental_attachments: currentFiles ? Array.from(currentFiles) : undefined }
+                 // Optimistic UI: Pass the text input. Attachment preview is handled separately.
+                 // We pass the FileList here for the useChat hook to potentially use internally for optimistic updates
+                 // even though the actual upload is done. This mirrors the previous behaviour.
+                 // If this causes issues, we might remove it or pass undefined.
+                 options: { experimental_attachments: files ? Array.from(files) : undefined }
             };
 
             // Pass the event and options to the original useChat handler
             originalHandleSubmit(event, { ...submitOptions, data: submitOptions.data as any });
 
-        } catch (saveError: any) {
-             console.error("Error saving user message:", saveError);
-             toast.error(`Failed to send message: ${saveError.message}`);
-             // Don't proceed to call originalHandleSubmit if saving failed? Or allow AI call anyway?
-             // For now, stopping here on save failure.
-             // Need to potentially reset loading states if isChatLoading was tied to useChat hook only.
-        }
+            // Clear inputs/state AFTER successful submission start
+            setUploadedImagePath(null);
+            setFiles(null); // Clear preview files
+            // useChat hook should handle clearing the text input (`input`)
+            requestAnimationFrame(() => { if (inputRef.current) inputRef.current.style.height = 'auto'; });
 
-        requestAnimationFrame(() => { if (inputRef.current) inputRef.current.style.height = 'auto'; }); // Reset input height after clear
+        } catch (saveError: any) {
+             console.error("Error saving user message or submitting:", saveError);
+             toast.error(`Failed to send message: ${saveError.message}`);
+        }
     };
 
     // --- Side Effects ---
@@ -973,7 +1060,7 @@ export default function EditorPage() {
                     {/* Collapsed Chat Input */}
                     {isChatCollapsed && <div className="p-4 pt-2 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0">
                         <form ref={formRef} onSubmit={handleSubmitWithContext} className="w-full flex flex-col items-center">
-                            <ChatInputUI files={files} fileInputRef={fileInputRef} handleFileChange={handleFileChange} inputRef={inputRef} input={input} handleInputChange={handleInputChange} handleKeyDown={handleKeyDown} handlePaste={handlePaste} model={model} setModel={setModel} handleUploadClick={handleUploadClick} isLoading={isChatLoading} />
+                            <ChatInputUI files={files} fileInputRef={fileInputRef} handleFileChange={handleFileChange} inputRef={inputRef} input={input} handleInputChange={handleInputChange} handleKeyDown={handleKeyDown} handlePaste={handlePaste} model={model} setModel={setModel} handleUploadClick={handleUploadClick} isLoading={isChatLoading} isUploading={isUploading} uploadError={uploadError} uploadedImagePath={uploadedImagePath} />
                     </form>
                     </div>}
                 </div>
@@ -1027,7 +1114,7 @@ export default function EditorPage() {
                 {!isChatCollapsed &&
                     <div className="w-full px-0 pb-4 border-t border-[--border-color] pt-4 flex-shrink-0 bg-[--bg-secondary]">
                         <form ref={formRef} onSubmit={handleSubmitWithContext} className="w-full flex flex-col items-center">
-                            <ChatInputUI files={files} fileInputRef={fileInputRef} handleFileChange={handleFileChange} inputRef={inputRef} input={input} handleInputChange={handleInputChange} handleKeyDown={handleKeyDown} handlePaste={handlePaste} model={model} setModel={setModel} handleUploadClick={handleUploadClick} isLoading={isChatLoading} />
+                            <ChatInputUI files={files} fileInputRef={fileInputRef} handleFileChange={handleFileChange} inputRef={inputRef} input={input} handleInputChange={handleInputChange} handleKeyDown={handleKeyDown} handlePaste={handlePaste} model={model} setModel={setModel} handleUploadClick={handleUploadClick} isLoading={isChatLoading} isUploading={isUploading} uploadError={uploadError} uploadedImagePath={uploadedImagePath} />
                         </form>
                     </div>
                 }
