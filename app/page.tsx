@@ -52,6 +52,9 @@ export default function LandingPageContent() {
     setEmail("");
   };
 
+  // Ref for the main parallax container
+  const mainRef = useRef<HTMLDivElement>(null);
+
   // Intersection Observer Logic
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -71,19 +74,43 @@ export default function LandingPageContent() {
       }
     );
 
-    // Select all feature cards and observe them
+    // Select all feature cards and the hero section and observe them
     const cards = document.querySelectorAll('.feature-card');
     cards.forEach((card) => observer.observe(card));
+    const hero = document.querySelector('.hero-section');
+    if (hero) observer.observe(hero);
 
     // Cleanup function to unobserve targets when component unmounts
     return () => {
       cards.forEach((card) => observer.unobserve(card));
+      if (hero) observer.unobserve(hero);
     };
   }, []); // Empty dependency array ensures this runs only once on mount
 
+  // Effect for Parallax Background Scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      if (mainRef.current) {
+        const scrollY = window.scrollY;
+        // Adjust the factor (e.g., 0.4) to control the speed. Lower = slower.
+        const offsetY = scrollY * 0.4; 
+        // Update the CSS variable instead of backgroundPositionY
+        mainRef.current.style.setProperty('--background-offset-y', `${offsetY}px`);
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+
+    // Initial call to set position on load
+    handleScroll(); 
+
+    // Cleanup listener on unmount
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []); // Empty dependency array, runs once on mount
+
   return (
-    // Keep the parallax background on the main container
-    <main className="parallax-bg min-h-screen text-[color:var(--text-color)] ">
+    // Add ref to the main element
+    <main ref={mainRef} className="parallax-bg min-h-screen text-[color:var(--text-color)] ">
       {/* Content wrapper with relative positioning and z-index */}
       <div className="relative z-10">
         {/* Header Section */}
@@ -108,7 +135,7 @@ export default function LandingPageContent() {
           <section className="container mx-auto px-6 py-32 md:py-40 flex items-center justify-center text-center min-h-[calc(100vh-100px)]"> {/* Adjusted padding/height */}
              {/* Add semi-transparent overlay for readability */}
              <div className="absolute inset-0 bg-black/50 z-0"></div> 
-             <div className="max-w-4xl mx-auto relative z-10"> {/* Ensure content is above overlay */}
+             <div className="hero-section w-full max-w-4xl mx-auto relative z-10 bg-[color:var(--card-bg)]/40 backdrop-blur-sm p-8 rounded-lg border border-[color:var(--border-color)]/20 opacity-0 translate-y-8 transition-all duration-700"> {/* Ensure content is above overlay and matches card style */}
               {/* Use theme variable for heading and wrap with motion */}
               <motion.h1
                 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-tight text-[color:var(--accent-color)] mb-8"
@@ -138,7 +165,7 @@ export default function LandingPageContent() {
 
           {/* Features Section */}
           {/* Added background color to section for content visibility against parallax */}
-          <section id="features" className="py-20 bg-[color:var(--bg-color)]">
+          <section id="features" className="py-20">
             <div className="container mx-auto px-4">
               <div className="text-center max-w-3xl mx-auto mb-16">
                 {/* Use theme variables */}

@@ -993,58 +993,62 @@ a:focus {
   color: var(--text-color) !important;
 }
 
-/* Parallax Background Styles */
-.parallax-bg {
-  /* The image path assumes tuon-bg.png is in the public folder */
-  background-image: url('/tuon-bg.png');
-
-  /* Create the parallax scrolling effect */
-  background-attachment: fixed;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
-
-  /* Apply a zoom effect */
-  /* transform: scale(1); Adjust scale value as needed */
-
-  /* Ensure the element itself doesn't transform, only the background */
-  /* We apply transform directly here, but if it caused issues with child elements,
-     we might need a pseudo-element approach. */
-
-  /* Add perspective for potential 3D transforms if needed later */
-   perspective: 1px; /* Helps with performance on some browsers */
-   overflow-x: hidden; /* Prevent horizontal scrollbar due to scaling */
+.hero-section {
+  border: 0px solid var(--border-color);
 }
 
-/* Optional: If the scale transform causes layout issues with fixed headers/footers,
-   you might need to apply the background to a pseudo-element instead:
+.hero-section,
+.feature-card {
+  opacity: 0;
+  transform: translateY(32px);
+  transition: opacity 0.7s cubic-bezier(0.4,0,0.2,1), transform 0.7s cubic-bezier(0.4,0,0.2,1);
+}
+.hero-section.is-visible,
+.feature-card.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Parallax Background Styles - Pseudo-element + CSS Variable for JS control */
+.parallax-bg {
+  position: relative; /* Needed for absolute positioning of ::before */
+  background-color: transparent; /* Hide parent background */
+  overflow: hidden; /* Contain the scaled pseudo-element */
+  /* Define the CSS variable for the Y offset */
+  --background-offset-y: 0px; 
+}
 
 .parallax-bg::before {
   content: "";
-  position: fixed; // Use fixed to attach to viewport
+  position: absolute; /* Position relative to .parallax-bg */
   left: 0;
   right: 0;
-  top: 0;
-  bottom: 0;
-  z-index: -1; // Place behind content
+  /* Make it taller than the container to allow for vertical movement 
+     Height needs to be enough to cover viewport + scroll distance difference 
+     Let's start with 150% - might need adjustment */
+  top: 0; 
+  height: 150%; 
+  z-index: -1; /* Behind content */
 
+  /* Background properties */
   background-image: url('/tuon-bg.png');
-  background-position: center;
+  background-position: center center;
   background-repeat: no-repeat;
   background-size: cover;
 
-  transform: scale(1.1);
+  /* Apply zoom and use CSS variable for vertical translation */
+  /* The scale makes it slightly taller too, factor that into height/offset */
+  transform: translateY(var(--background-offset-y)) scale(1.1);
 
-  // Filter for potential dimming/effects
-  // filter: brightness(0.8);
+  /* Optimize rendering */
+  will-change: transform;
 }
 
+/* Remove the old direct styles */
+/*
 .parallax-bg {
-  position: relative; // Needed for z-index context if using ::before
-  background-color: transparent; // Ensure container background doesn't hide the pseudo-element
-  overflow-x: hidden;
+  // ... old direct styles ...
 }
-
 */
 
 /* Feature Card Scroll Animation Styles */
