@@ -992,3 +992,85 @@ a:focus {
   background-color: var(--bg-color) !important;
   color: var(--text-color) !important;
 }
+
+/* Parallax Background Styles */
+.parallax-bg {
+  /* The image path assumes tuon-bg.png is in the public folder */
+  background-image: url('/tuon-bg.png');
+
+  /* Create the parallax scrolling effect */
+  background-attachment: fixed;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+
+  /* Apply a zoom effect */
+  /* transform: scale(1); Adjust scale value as needed */
+
+  /* Ensure the element itself doesn't transform, only the background */
+  /* We apply transform directly here, but if it caused issues with child elements,
+     we might need a pseudo-element approach. */
+
+  /* Add perspective for potential 3D transforms if needed later */
+   perspective: 1px; /* Helps with performance on some browsers */
+   overflow-x: hidden; /* Prevent horizontal scrollbar due to scaling */
+}
+
+/* Optional: If the scale transform causes layout issues with fixed headers/footers,
+   you might need to apply the background to a pseudo-element instead:
+
+.parallax-bg::before {
+  content: "";
+  position: fixed; // Use fixed to attach to viewport
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: -1; // Place behind content
+
+  background-image: url('/tuon-bg.png');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+
+  transform: scale(1.1);
+
+  // Filter for potential dimming/effects
+  // filter: brightness(0.8);
+}
+
+.parallax-bg {
+  position: relative; // Needed for z-index context if using ::before
+  background-color: transparent; // Ensure container background doesn't hide the pseudo-element
+  overflow-x: hidden;
+}
+
+*/
+
+/* Feature Card Scroll Animation Styles */
+.feature-card {
+  opacity: 0;
+  transform: translateY(30px); /* Start slightly lower */
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out, border-color 0.3s ease-in-out;
+}
+
+.feature-card.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Subtle hover effect for visible cards */
+.feature-card.is-visible:hover {
+  transform: translateY(-4px); /* Slight lift */
+  border-color: var(--accent-color); /* Highlight border with accent color */
+  cursor: default; /* Indicate it's not clickable unless it is */
+}
+
+/* Scroll Snapping */
+html {
+  scroll-snap-type: y mandatory; /* Enable vertical mandatory snapping on the main scroll */
+}
+
+.card-snap-wrapper {
+  scroll-snap-align: start; /* Snap the top of this element to the top of the viewport */
+}
