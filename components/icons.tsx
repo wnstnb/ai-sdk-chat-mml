@@ -1,3 +1,5 @@
+import { ArrowUp } from 'lucide-react';
+
 export const BotIcon = () => {
   return (
     <svg
@@ -36,6 +38,22 @@ export const UserIcon = () => {
     </svg>
   );
 };
+
+// Add this StopIcon component, perhaps near your other icon components
+const StopIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      {...props}
+  >
+      <path
+          fillRule="evenodd"
+          d="M4.5 7.5a3 3 0 013-3h9a3 3 0 013 3v9a3 3 0 01-3 3h-9a3 3 0 01-3-3v-9z"
+          clipRule="evenodd"
+      />
+  </svg>
+);
 
 export const AttachmentIcon = () => {
   return (
@@ -77,19 +95,6 @@ export const VercelIcon = () => {
 
 export const SendIcon = () => {
   return (
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="lucide lucide-send"
-    >
-      <path d="m22 2-7 20-4-9-9-4Z"/>
-      <path d="M22 2 11 13"/>
-    </svg>
+    <ArrowUp size={18} />
   )
 }

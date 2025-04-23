@@ -6,6 +6,22 @@ import { AttachmentIcon, SendIcon } from '@/components/icons';
 import { ModelSelector } from '@/components/ModelSelector';
 import { TextFilePreview } from './TextFilePreview'; // Import from sibling file
 
+// --- Helper Icon Component ---
+const StopIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        {...props}
+    >
+        <path
+            fillRule="evenodd"
+            d="M4.5 7.5a3 3 0 013-3h9a3 3 0 013 3v9a3 3 0 01-3 3h-9a3 3 0 01-3-3v-9z"
+            clipRule="evenodd"
+        />
+    </svg>
+);
+
 // --- Chat Input UI Component (JSX only - Copied) ---
 interface ChatInputUIProps {
     files: FileList | null;
@@ -27,6 +43,7 @@ interface ChatInputUIProps {
     isUploading: boolean; // NEW: Upload in progress state
     uploadError: string | null; // NEW: Upload error message
     uploadedImagePath: string | null; // NEW: Path of successfully uploaded image
+    onStop?: () => void; // NEW: Optional handler for stopping generation
 }
 
 export const ChatInputUI: React.FC<ChatInputUIProps> = ({
@@ -45,6 +62,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     isUploading,
     uploadError,
     uploadedImagePath,
+    onStop,
 }) => {
     // Adjust textarea height dynamically based on content
     useEffect(() => {
@@ -54,8 +72,18 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
         }
     }, [input, inputRef]);
 
-    // Determine if send button should be enabled
+    // Determine if send button should be enabled for *submitting*
+    // The button itself might be active for stopping
     const canSubmit = !isLoading && !isUploading && (!!input.trim() || !!uploadedImagePath);
+
+    const handleSendClick = () => {
+        if (isLoading && onStop) {
+            onStop();
+        } else {
+            // Let the parent form handle submission
+            // If not using a form, you might need an onSubmit prop
+        }
+    };
 
     return (
         <>
@@ -124,7 +152,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                      ref={inputRef}
                      rows={1}
                      className="bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40 align-bottom"
-                     placeholder={isUploading ? "Uploading image..." : "Ask a question or give instructions..."}
+                     placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : "Ask a question or give instructions...")}
                      value={input}
                      onChange={handleInputChange}
                      onKeyDown={handleKeyDown}
@@ -146,14 +174,24 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                          >
                              <span className="w-5 h-5 block"><AttachmentIcon aria-hidden="true" /></span>
                          </button>
-                         <button
-                             type="submit" 
-                             disabled={!canSubmit}
-                             className="p-1 rounded-md text-[--muted-text-color] disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:bg-[--hover-bg] enabled:hover:text-[--text-color] focus:outline-none"
-                             title="Send message"
-                         >
-                             <span className="w-5 h-5 block"><SendIcon aria-hidden="true" /></span>
-                         </button>
+                         {/* Send/Stop Button Container */}
+                         <div className="relative w-8 h-8 flex items-center justify-center"> {/* Container for positioning animation */}
+                             {isLoading && (
+                                 <div className="absolute inset-0 border-2 border-[--primary-color] border-t-transparent rounded-full animate-spin pointer-events-none"></div>
+                             )}
+                             <button
+                                 type={isLoading ? "button" : "submit"} // Change type based on loading state
+                                 onClick={handleSendClick} // Use combined handler
+                                 // Disable only if not loading AND cannot submit
+                                 disabled={!isLoading && !canSubmit}
+                                 className={`w-full h-full flex items-center justify-center rounded-full text-[--muted-text-color] disabled:opacity-50 disabled:cursor-not-allowed ${isLoading ? 'bg-[--hover-bg]' : 'enabled:hover:bg-[--hover-bg] enabled:hover:text-[--text-color] focus:outline-none'}`}
+                                 title={isLoading ? "Stop generating" : "Send message"}
+                             >
+                                 <span className="w-5 h-5 block">
+                                     {isLoading ? <StopIcon aria-hidden="true" /> : <SendIcon aria-hidden="true" />}
+                                 </span>
+                             </button>
+                         </div>
                      </div>
                  </div>
             </div>
