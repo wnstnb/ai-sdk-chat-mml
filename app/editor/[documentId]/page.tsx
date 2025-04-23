@@ -693,10 +693,15 @@ export default function EditorPage() {
                             case 'modifyContent': executeModifyContent(args); executed = true; break;
                             case 'deleteContent': executeDeleteContent(args); executed = true; break;
                             case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); executed = true; break;
+                            // Add case for webSearch to prevent 'Unknown tool' error
+                            case 'webSearch':
+                                console.log(`[Tool Call Acknowledged] ${toolName} - handled server-side.`);
+                                // No client-side action needed, execution happens on backend
+                                executed = true; // Mark as handled to prevent 'Unhandled' warning
+                                break;
                             default: console.error(`Unknown tool: ${toolName}`); toast.error(`Unknown tool: ${toolName}`);
                         }
                         if (executed) console.log(`[Tool Call Processed] ${toolName}`);
-                        else console.warn(`[Tool Call Unhandled] ${toolName}`);
                     } catch (toolError: any) { console.error(`Tool ${toolName} error:`, toolError); toast.error(`Tool error: ${toolError.message}`); }
                 });
                 setProcessedToolCallIds(newProcessedIds);
@@ -912,7 +917,7 @@ export default function EditorPage() {
             <div className="flex flex-col justify-center items-center h-screen text-center p-4 bg-[--bg-color]">
                 <p className="text-red-500 text-xl mb-2">Error Loading Document</p>
                 <p className="text-[--muted-text-color] mb-4">{error || 'Document not found or access denied.'}</p>
-             <button onClick={() => router.push('/launch')} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Go to Launch Pad</button>
+             <button onClick={() => router.push('/launch')} className="mt-4 px-4 py-2 bg-[--editor-bg]-white rounded hover:bg-[--hover-bg]">Go to Launch Pad</button>
             </div>
         );
     }

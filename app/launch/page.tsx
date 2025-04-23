@@ -242,59 +242,68 @@ export default function LaunchPage() {
 
 
   return (
-    <div className="flex flex-col h-full p-4 bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    // Use CSS variables for background and text color
+    <div className="flex flex-col h-full p-4 bg-[--bg-secondary] text-[--text-color]">
       <h1 className="text-2xl font-semibold mb-4 text-center">Launch Pad</h1>
 
       {/* Launch Input Form */}
       <form onSubmit={handleLaunchSubmit} className="mb-6">
         <label htmlFor="launch-input" className="sr-only">What do you want to focus on?</label>
-         <input
-           id="launch-input"
-           type="text"
-           value={initialInputValue}
-           onChange={(e) => setInitialInputValue(e.target.value)}
-           placeholder="What do you want to focus on?"
-           disabled={isSubmitting}
-           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-800 disabled:opacity-50"
-         />
-         <button
-           type="submit"
-           disabled={isSubmitting || !initialInputValue.trim()}
-           className="mt-2 w-full px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-         >
-           {isSubmitting ? 'Launching...' : 'Start New Document'}
-         </button>
+        <input
+          id="launch-input"
+          placeholder="What do you want to focus on?"
+          // Use CSS variables for input background and border
+          className="w-full px-4 py-2 border border-[--border-color] rounded-md shadow-sm focus:outline-none focus:ring-none focus:border-[--tab-active-border] bg-[--input-bg] disabled:opacity-50"
+          type="text"
+          value={initialInputValue}
+          onChange={(e) => setInitialInputValue(e.target.value)}
+          disabled={isSubmitting} // Disable input while submitting
+        />
+        <button
+          type="submit"
+          disabled={!initialInputValue.trim() || isSubmitting} // Disable button if input is empty or submitting
+          // Use CSS variables for button background, text, and hover state
+          className="mt-2 w-full px-4 py-2 bg-[--primary-color-dark] text-[--button-primary-text] rounded-md hover:bg-[--tab-active-border] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-none disabled:opacity-50"
+        >
+          {isSubmitting ? 'Launching...' : 'Start New Document'}
+        </button>
       </form>
 
-      {error && <p className="text-red-500 mb-4 text-center bg-red-100 dark:bg-red-900 p-2 rounded border border-red-300 dark:border-red-700">Error: {error}</p>}
+      {/* Error Message Display */}
+      {error && <div className="mb-4 p-2 text-red-700 bg-red-100 border border-red-400 rounded text-center">{error}</div>}
 
-      {/* --- File Manager Container --- */}
-       <div className="flex-grow overflow-hidden border border-gray-300 dark:border-gray-700 rounded-md shadow-sm">
-            {isLoading ? (
-                <div className="p-4 text-center">Loading files...</div>
-            ) : (
-                /* Use the single FileManager component */
-                <FileManager 
-                    // files={testFiles} // Revert test data
-                    files={cuboneFiles}
-                    // Restore temporarily removed props
-                    isLoading={isLoading}
-                    // Pass handlers matching the documentation props
-                    onCreateFolder={handleCreateFolder}
-                    onRename={handleRename} // Single handler for files/folders
-                    onDelete={handleDelete}
-                    onFileOpen={handleFileOpen} 
-                    onPaste={handlePaste}
-                    // Add other necessary props like onRefresh, language, etc.
-                    onRefresh={fetchData}
-                    // onError={(err, file) => setError(`FileManager Error (${err.type}): ${err.message}`)} // Basic error display
-                    // Customization props (optional)
-                    // height="calc(100vh - 250px)" // Example dynamic height 
-                    // layout="list" 
-                    // primaryColor="#E97451" 
-                />
-            )}
-        </div>
+      {/* File Manager Section */}
+      {/* Use CSS variables for border */}
+      <div className="flex-grow overflow-hidden border border-[--border-color] rounded-md shadow-sm">
+        {isLoading ? (
+          <div className="flex justify-center items-center h-full">Loading files...</div>
+        ) : (
+          <FileManager
+            files={cuboneFiles} // Use the correctly typed state
+            // Note: Using path as ID for now, but should use actual UUIDs
+            // files={testFiles} // <-- Switch to test data if API is problematic
+            onCreateFolder={handleCreateFolder}
+            onRenameFile={handleRename} // Use the correct prop name
+            onDeleteFile={handleDelete} // Use the correct prop name
+            onFileOpen={handleFileOpen}
+            // onPaste={handlePaste} // Enable if implemented
+            // Other props like onCopy, onMove, onDownload can be added here
+            options={{
+              // Customize options if needed
+              // Example: Disable certain actions
+              // disableDragAndDrop: true,
+              // disableContextMenu: true,
+            }}
+            style={{
+              // Use a CSS variable for height or set explicitly
+              height: 'calc(100% - 1px)', // Fill container, adjust if needed
+              width: '100%',
+              // '--file-manager-primary-color': '#your-color', // Example of overriding CSS var
+              // Consider setting font family via global CSS instead
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 } 

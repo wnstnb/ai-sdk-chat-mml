@@ -463,9 +463,25 @@ body {
   border-color: var(--border-color) !important; /* Adjust if file-explorer has a border */
 }
 
+/* Override the padding on the outer toolbar container to remove vertical gap */
+[data-theme='dark'] .toolbar { /* Target the outer toolbar container */
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  /* Keep horizontal padding, adjust if needed */
+  padding-left: 0px !important;
+  padding-right: 0px !important;
+  height: 46px !important; /* Match the files-container calc height: calc(100% - 46px) ? */
+  display: flex; /* Ensure content inside aligns */
+  align-items: center; /* Vertically center content */
+}
+
 [data-theme='dark'] .fm-toolbar { /* Target the inner toolbar div */
   background-color: var(--header-bg) !important;
   border-bottom: 1px solid var(--border-color) !important;
+  /* Apply rounded corners to match container */
+  border-top-left-radius: 6px; /* Match Tailwind's rounded-md */
+  border-top-right-radius: 6px; /* Match Tailwind's rounded-md */
+  width: 100%; /* Ensure it fills the container */
 }
 
 [data-theme='dark'] .fm-toolbar button.item-action {
@@ -478,6 +494,11 @@ body {
 }
 [data-theme='dark'] .fm-toolbar button.item-action svg {
    color: var(--text-color) !important; /* Ensure icons inherit text color */
+}
+
+/* Style the separator */
+[data-theme='dark'] .fm-toolbar .item-separator {
+  background: var(--border-color) !important;
 }
 
 /* Primary Button Styling (If Needed - Check if Cubone adds a specific class like 'primary') */
@@ -553,29 +574,40 @@ body {
 
 /* Context Menu */
 [data-theme='dark'] .fm-context-menu {
-   background-color: var(--card-bg) !important;
-   border: 1px solid var(--border-color) !important;
-   box-shadow: var(--shadow-md) !important;
+  @apply bg-[--bg-secondary] border-[--border-color] text-[--text-color] shadow-lg rounded-md;
 }
 
 [data-theme='dark'] .fm-context-menu .file-context-menu-list ul li {
-   color: var(--text-color) !important;
-   background-color: transparent !important;
+  @apply text-[--text-color];
 }
 
 [data-theme='dark'] .fm-context-menu .file-context-menu-list ul li:hover {
-   background-color: var(--hover-bg) !important;
+  @apply bg-[--hover-bg] text-[--text-color]; /* Ensure text remains readable on hover */
 }
 
 [data-theme='dark'] .fm-context-menu .file-context-menu-list ul li svg {
-   color: var(--text-color-secondary) !important;
+  @apply text-[--text-color]; /* Color the icons */
 }
 
 [data-theme='dark'] .fm-context-menu .file-context-menu-list ul li:hover svg {
-   color: var(--text-color) !important;
+  @apply text-[--text-color]; /* Keep icon color consistent on hover */
 }
 
-[data-theme='dark'] .fm-context-menu .divider {
-   border-top: 1px solid var(--border-color) !important;
+[data-theme='dark'] .fm-context-menu .file-context-menu-list .sub-menu {
+  @apply bg-[--bg-secondary] border-[--border-color] text-[--text-color] shadow-lg rounded-md;
+}
+
+/* Ensure sub-menu items also use hover styles */
+[data-theme='dark'] .fm-context-menu .file-context-menu-list .sub-menu li:hover {
+   @apply bg-[--hover-bg] text-[--text-color];
+}
+
+[data-theme='dark'] .fm-context-menu .file-context-menu-list .divider {
+  @apply border-b-[--border-color];
+}
+
+/* Adjust checkmark color in sub-menu for visibility */
+[data-theme='dark'] .fm-context-menu .file-context-menu-list .sub-menu .item-selected svg {
+  @apply text-[--primary-color]; /* Use primary color for the checkmark */
 }
 /* --- End Cubone File Manager Overrides --- */
