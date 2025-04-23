@@ -96,15 +96,26 @@ export async function GET(
 
             let signedDownloadUrl: string | null = null;
             if (msg.image_url) {
-                const { data, error: urlError } = await supabase.storage
-                    .from('message_images') // Ensure this matches your bucket name
-                    .createSignedUrl(msg.image_url, SIGNED_URL_EXPIRY);
+                console.log(`[GET /messages] Attempting to generate signed URL for message ${msg.id}, image path: ${msg.image_url}`);
+                try {
+                    const { data, error: urlError } = await supabase.storage
+                        .from('message-images') // Ensure this matches your bucket name
+                        .createSignedUrl(msg.image_url, SIGNED_URL_EXPIRY);
 
-                if (urlError) {
-                    console.error(`Failed to create signed URL for image ${msg.image_url}:`, urlError.message);
-                } else {
-                    signedDownloadUrl = data.signedUrl;
+                    if (urlError) {
+                        console.error(`[GET /messages] Failed to create signed URL for image ${msg.image_url} (message ID: ${msg.id}):`, urlError.message);
+                    } else if (data?.signedUrl) {
+                        signedDownloadUrl = data.signedUrl;
+                        console.log(`[GET /messages] Successfully generated signed URL for message ${msg.id}`);
+                    } else {
+                        console.warn(`[GET /messages] createSignedUrl returned ok but no signedUrl data for message ${msg.id}`);
+                    }
+                } catch (e: any) {
+                     console.error(`[GET /messages] EXCEPTION generating signed URL for message ${msg.id}:`, e.message); 
                 }
+            } else {
+                // Optional log for messages without images
+                // console.log(`[GET /messages] Message ${msg.id} has no image_url.`);
             }
             // Return the complete MessageWithDetails object
             return {

@@ -1061,7 +1061,7 @@ export default function EditorPage() {
                     {isChatCollapsed && <div className="p-4 pt-2 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0">
                         <form ref={formRef} onSubmit={handleSubmitWithContext} className="w-full flex flex-col items-center">
                             <ChatInputUI files={files} fileInputRef={fileInputRef} handleFileChange={handleFileChange} inputRef={inputRef} input={input} handleInputChange={handleInputChange} handleKeyDown={handleKeyDown} handlePaste={handlePaste} model={model} setModel={setModel} handleUploadClick={handleUploadClick} isLoading={isChatLoading} isUploading={isUploading} uploadError={uploadError} uploadedImagePath={uploadedImagePath} onStop={stop} />
-                    </form>
+                        </form>
                     </div>}
                 </div>
                 {/* Collapse Button */}

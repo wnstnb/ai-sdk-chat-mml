@@ -43,7 +43,7 @@ interface ChatInputUIProps {
     isUploading: boolean; // NEW: Upload in progress state
     uploadError: string | null; // NEW: Upload error message
     uploadedImagePath: string | null; // NEW: Path of successfully uploaded image
-    onStop?: () => void; // NEW: Optional handler for stopping generation
+    onStop?: () => void; // Optional handler for stopping generation
 }
 
 export const ChatInputUI: React.FC<ChatInputUIProps> = ({
@@ -66,6 +66,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
 }) => {
     // Adjust textarea height dynamically based on content
     useEffect(() => {
+        // Always adjust height if the ref exists
         if (inputRef.current) {
             inputRef.current.style.height = 'auto';
             inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
