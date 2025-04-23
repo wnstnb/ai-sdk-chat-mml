@@ -39,7 +39,7 @@ import {
     VercelIcon,
     SendIcon,
 } from '@/components/icons';
-import { ChevronLeft, ChevronRight, Wrench, SendToBack } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Wrench, SendToBack, Edit, Save, X } from 'lucide-react';
 import {
     DocumentPlusIcon,
     ArrowDownTrayIcon,
@@ -100,7 +100,8 @@ export default function EditorPage() {
     const [documentData, setDocumentData] = useState<SupabaseDocument | null>(
         null
     ); // Store fetched document metadata
-
+    const [isEditingTitle, setIsEditingTitle] = useState(false);
+    const [newTitleValue, setNewTitleValue] = useState('');
     const [processedToolCallIds, setProcessedToolCallIds] = useState<Set<string>>(
         new Set()
     );
@@ -123,6 +124,7 @@ export default function EditorPage() {
     const [isLoadingMessages, setIsLoadingMessages] = useState(true);
     const [isSaving, setIsSaving] = useState(false); // Editor save button state
     const [error, setError] = useState<string | null>(null); // General page error
+    const [initialResponseTriggered, setInitialResponseTriggered] = useState(false); // <-- ADDED
 
     // --- useChat Hook Integration ---
     const {
@@ -231,37 +233,72 @@ export default function EditorPage() {
             const allowedRoles: Message['role'][] = ['user', 'assistant', 'system', 'data']; // Removed 'function'
             const formattedMessages: Message[] = data
                 .filter(msg => allowedRoles.includes(msg.role as any)) // Filter out unsupported roles
-                .map(msg => ({
-                    id: msg.id,
-                    role: msg.role as Message['role'], // Cast to Message['role'] after filtering
-                    content: msg.content || '',
-                    createdAt: new Date(msg.created_at),
-                    // Map image URL to attachment structure for display
-                    experimental_attachments: msg.signedDownloadUrl ? [{
-                        name: msg.image_url?.split('/').pop() || `image_${msg.id}`,
-                        contentType: 'image/*', // Best guess
-                        url: msg.signedDownloadUrl,
-                    }] : undefined,
-                    // Add tool_calls if available and match the structure expected by ai/react Message type
-                    // tool_calls: msg.tool_calls ? msg.tool_calls.map(tc => ({ id: tc.id, type: 'tool_call', function: { name: tc.tool_name, arguments: JSON.stringify(tc.tool_input) } })) : undefined,
-                    // Tool invocations (for display) might need separate mapping if structure differs
-                }));
+                .map(msg => {
+                    let displayContent = msg.content || '';
+                    // Attempt to parse content if it's a JSON string
+                    let isToolCallContent = false;
+                    if (displayContent.startsWith('[') && displayContent.endsWith(']')) { // Basic check for JSON array
+                        try {
+                            const parsedContent = JSON.parse(displayContent);
+                            // Check if it's specifically a tool call structure
+                            if (Array.isArray(parsedContent) && parsedContent.length > 0 && parsedContent[0]?.type === 'tool-call') {
+                                isToolCallContent = true;
+                                console.log(`[fetchChatMessages] Identified tool call content for message ${msg.id}`);
+                            // Check if it's the text content structure
+                            } else if (Array.isArray(parsedContent) && parsedContent.length > 0 && parsedContent[0] && typeof parsedContent[0].text === 'string') {
+                                displayContent = parsedContent[0].text; // Extract text content
+                                console.log(`[fetchChatMessages] Extracted text content from JSON for message ${msg.id}`);
+                            } else {
+                                console.warn(`[fetchChatMessages] Parsed JSON content for message ${msg.id} is not a recognized tool call or text format:`, parsedContent);
+                            }
+                        } catch (parseError) {
+                            // If parsing fails, log it but keep the original string content
+                            console.warn(`[fetchChatMessages] Failed to parse potential JSON content for message ${msg.id}:`, parseError);
+                        }
+                    }
+
+                    return {
+                        id: msg.id,
+                        role: msg.role as Message['role'], // Cast to Message['role'] after filtering
+                        content: isToolCallContent ? '' : displayContent, // Use empty string for tool calls, otherwise use extracted/original
+                        createdAt: new Date(msg.created_at),
+                        // Map image URL to attachment structure for display
+                        experimental_attachments: msg.signedDownloadUrl ? [{
+                            name: msg.image_url?.split('/').pop() || `image_${msg.id}`,
+                            contentType: 'image/*', // Best guess
+                            url: msg.signedDownloadUrl,
+                        }] : undefined,
+                        // Add tool_calls if available and match the structure expected by ai/react Message type
+                        // tool_calls: msg.tool_calls ? msg.tool_calls.map(tc => ({ id: tc.id, type: 'tool_call', function: { name: tc.tool_name, arguments: JSON.stringify(tc.tool_input) } })) : undefined,
+                        // Tool invocations (for display) might need separate mapping if structure differs
+                    };
+                });
 
             console.log(`Fetched ${formattedMessages.length} messages.`);
             setChatMessages(formattedMessages);
             setDisplayedMessagesCount(Math.min(formattedMessages.length, INITIAL_MESSAGE_COUNT));
+
+            // *** ADDED: Trigger initial AI response if only the first user message exists ***
+            if (formattedMessages.length === 1 && formattedMessages[0].role === 'user') {
+                 console.log("[fetchChatMessages] First message is from user and no response yet. Triggering initial AI response.");
+                 // Call originalHandleSubmit to trigger the /api/chat call
+                 // Pass undefined for the event, and provide the necessary data payload
+                 originalHandleSubmit(undefined, {
+                     data: {
+                         model: model, // Use the current model state
+                         documentId: documentId, // Use the current documentId
+                         // No specific editor context needed for this initial auto-response
+                     } as any // Cast as any to match useChat options type
+                 });
+            } else if (formattedMessages.length > 0 && formattedMessages[formattedMessages.length - 1].role === 'user') {
+                 console.log("[fetchChatMessages] Last message is from user, but other messages exist. Not triggering automatic response.");
+            }
 
             // Log state immediately after setting
             console.log('[fetchChatMessages] State set:', {
                 totalMessages: formattedMessages.length, // Use the variable available here
                 initialDisplayCount: Math.min(formattedMessages.length, INITIAL_MESSAGE_COUNT)
             });
-
-            // *** ADDED: Trigger reload if last message is user message ***
-            if (formattedMessages.length > 0 && formattedMessages[formattedMessages.length - 1].role === 'user') {
-                console.log("[fetchChatMessages] Last message is from user, triggering reload().");
-                reload(); // Trigger API call to process initial user message
-            }
 
         } catch (err: any) {
             console.error('Error fetching messages:', err);
@@ -271,17 +308,17 @@ export default function EditorPage() {
             setIsLoadingMessages(false);
             // Removed log from here
         }
-    }, [documentId, setChatMessages, setDisplayedMessagesCount]);
+    }, [documentId, setChatMessages, setDisplayedMessagesCount, model, originalHandleSubmit]);
 
     // Initial data fetch on component mount or when documentId changes
     useEffect(() => {
         if (documentId) {
-        fetchDocument();
+            fetchDocument();
             fetchChatMessages();
         }
         setProcessedToolCallIds(new Set());
         // Don't reset displayedMessagesCount here, fetchChatMessages handles initial set
-    }, [documentId, fetchDocument, fetchChatMessages]);
+    }, [documentId]);
 
     // Effect to sync displayedMessagesCount with incoming messages up to the initial limit
     useEffect(() => {
@@ -295,6 +332,30 @@ export default function EditorPage() {
         // and displayedMessagesCount > INITIAL_MESSAGE_COUNT, this effect won't
         // decrease it, allowing the manual loading to persist.
     }, [chatMessages.length]); // Depend only on the total message count
+
+    // --- ADDED: Effect to trigger initial response ---
+    useEffect(() => {
+        // Only run if we haven't triggered it yet, messages have loaded,
+        // there's exactly one message, and it's from the user.
+        if (!initialResponseTriggered && !isLoadingMessages && chatMessages.length === 1 && chatMessages[0].role === 'user') {
+            console.log("[Initial Response Effect] First user message loaded. Triggering initial AI response.");
+            originalHandleSubmit(undefined, {
+                data: {
+                    model: model, // Use the current model state
+                    documentId: documentId, // Use the current documentId
+                    // No editor context needed for this initial auto-response
+                } as any // Cast as any to match useChat options type
+            });
+            setInitialResponseTriggered(true); // Mark as triggered to prevent re-runs
+        }
+    }, [chatMessages, initialResponseTriggered, isLoadingMessages, originalHandleSubmit, model, documentId]);
+
+    // ADDED: Effect to reset the trigger when the document ID changes
+    useEffect(() => {
+        console.log("[Document Change Effect] Resetting initial response trigger for new document.");
+        setInitialResponseTriggered(false);
+    }, [documentId]);
+    // --- END ADDED Effects ---
 
     // --- Editor Interaction Logic ---
 
@@ -498,9 +559,15 @@ export default function EditorPage() {
         if (event) event.preventDefault();
         if (!documentId) { toast.error("Cannot send message: Document context missing."); return; }
         const currentFiles = files; const currentInput = input; const currentModel = model;
-        if (isChatLoading || (!currentInput.trim() && (!currentFiles || currentFiles.length === 0))) return;
+        // Lock loading state immediately
+        const isSubmitting = isChatLoading || (!currentInput.trim() && (!currentFiles || currentFiles.length === 0));
+        if (isSubmitting) return;
 
-        setFiles(null); if (fileInputRef.current) fileInputRef.current.value = ''; // Clear staged files
+        // Clear input immediately for optimistic UI update (useChat handles this via originalHandleSubmit?)
+        // handleInputChange({ target: { value: '' } } as any); // Clear input manually if needed
+
+
+        setFiles(null); if (fileInputRef.current) fileInputRef.current.value = ''; // Clear staged files UI
 
         let editorContextData = {}; const editor = editorRef.current;
         if (includeEditorContent && editor) { /* Add full markdown */
@@ -518,29 +585,81 @@ export default function EditorPage() {
         }
 
         let uploadedFilePaths: { name: string; path: string; contentType: string }[] = [];
+        let firstImagePath: string | undefined = undefined; // Store path for message saving
+
         if (currentFiles && currentFiles.length > 0) { /* Upload files */
             toast.info(`Uploading ${currentFiles.length} file(s)...`);
             const uploadPromises = Array.from(currentFiles).map(async f => {
                 try {
+                    // 1. Get Signed URL
                     const signedUrlRes = await fetch('/api/storage/signed-url/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: f.name, contentType: f.type, documentId }) });
                     if (!signedUrlRes.ok) { const err = await signedUrlRes.json().catch(() => ({})); throw new Error(err.error?.message || `Upload URL error for ${f.name}`); }
-                    const { data: urlData } = await signedUrlRes.json();
+                    const { data: urlData } = await signedUrlRes.json(); // Gets { signedUrl, path }
+
+                    // 2. Upload File using Signed URL
                     const uploadRes = await fetch(urlData.signedUrl, { method: 'PUT', headers: { 'Content-Type': f.type }, body: f });
                     if (!uploadRes.ok) { throw new Error(`Upload failed for ${f.name}`); }
+
+                    // 3. Collect path for successful uploads
                     return { name: f.name, path: urlData.path, contentType: f.type };
                 } catch (err: any) { console.error(`Upload error (${f.name}):`, err); toast.error(`Failed to upload ${f.name}`); return null; }
             });
             uploadedFilePaths = (await Promise.all(uploadPromises)).filter((r): r is { name: string; path: string; contentType: string } => r !== null);
+
             if (uploadedFilePaths.length !== currentFiles.length) { toast.warning("Some files failed upload."); }
             else if (uploadedFilePaths.length > 0) { toast.success(`${uploadedFilePaths.length} file(s) uploaded.`); }
+
+            // Store the path of the first successfully uploaded image for the message DB entry
+            firstImagePath = uploadedFilePaths.length > 0 ? uploadedFilePaths[0].path : undefined;
         }
 
-        const submitOptions = {
-            data: { model: currentModel, documentId, ...editorContextData, uploadedFilePaths: uploadedFilePaths.length ? uploadedFilePaths : undefined },
-            options: { experimental_attachments: currentFiles ? Array.from(currentFiles) : undefined } // For optimistic UI
-        };
-        // Pass the event and options to the original handler - cast data to any to resolve type conflict
-        originalHandleSubmit(event, { ...submitOptions, data: submitOptions.data as any });
+        // --- Save the user message to the database FIRST ---
+        try {
+            console.log(`Saving user message to DB: content='${currentInput.slice(0,30)}...', imagePath='${firstImagePath}'`);
+            const saveMessageResponse = await fetch(`/api/documents/${documentId}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    role: 'user', // Hardcode role for user message
+                    content: currentInput.trim() || null, // Send null if only image
+                    imageUrlPath: firstImagePath // Send path if available
+                }),
+            });
+
+            if (!saveMessageResponse.ok) {
+                const errorData = await saveMessageResponse.json().catch(() => ({}));
+                throw new Error(errorData.error?.message || `Failed to save message (${saveMessageResponse.status})`);
+            }
+            const { data: savedMessage } = await saveMessageResponse.json();
+            console.log('User message saved to DB:', savedMessage);
+            // Optional: Could use savedMessage.id for better optimistic updates later if needed
+
+            // --- Now, trigger the AI interaction using useChat's handler ---
+            const submitOptions = {
+                 // Provide necessary context for the AI.
+                 // We no longer need imageUrlPath here, as the AI can retrieve it via GET messages if needed.
+                 // Send the user's text input as the primary content for the AI turn.
+                data: {
+                    model: currentModel,
+                    documentId,
+                    ...editorContextData, // Editor context (snippets or full markdown)
+                },
+                 // For optimistic UI: useChat needs the user's input and potentially file previews.
+                 // Pass the original File objects if they existed.
+                options: { experimental_attachments: currentFiles ? Array.from(currentFiles) : undefined }
+            };
+
+            // Pass the event and options to the original useChat handler
+            originalHandleSubmit(event, { ...submitOptions, data: submitOptions.data as any });
+
+        } catch (saveError: any) {
+             console.error("Error saving user message:", saveError);
+             toast.error(`Failed to send message: ${saveError.message}`);
+             // Don't proceed to call originalHandleSubmit if saving failed? Or allow AI call anyway?
+             // For now, stopping here on save failure.
+             // Need to potentially reset loading states if isChatLoading was tied to useChat hook only.
+        }
+
         requestAnimationFrame(() => { if (inputRef.current) inputRef.current.style.height = 'auto'; }); // Reset input height after clear
     };
 
@@ -705,6 +824,74 @@ export default function EditorPage() {
     // Navigation Handlers
     const handleNewDocument = () => { console.log("Navigating to /launch"); router.push('/launch'); };
 
+    // --- Title Editing Handlers ---
+    const handleEditTitleClick = () => {
+        if (!documentData) return;
+        setNewTitleValue(documentData.name);
+        setIsEditingTitle(true);
+    };
+
+    const handleCancelEditTitle = () => {
+        setIsEditingTitle(false);
+        setNewTitleValue(''); // Clear temporary value
+    };
+
+    const handleSaveTitle = async () => {
+        if (!documentData || !newTitleValue.trim() || newTitleValue.trim() === documentData.name) {
+            // If name is empty or unchanged, just cancel edit mode
+            if (!newTitleValue.trim()) {
+                toast.error("Document name cannot be empty.");
+            }
+            handleCancelEditTitle();
+            return;
+        }
+
+        const originalTitle = documentData.name;
+        const optimisticNewTitle = newTitleValue.trim();
+
+        // Optimistic UI update
+        setDocumentData(prevData => prevData ? { ...prevData, name: optimisticNewTitle } : null);
+        setIsEditingTitle(false);
+
+        try {
+            const response = await fetch(`/api/documents/${documentId}`,
+                {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: optimisticNewTitle }), // Send only the name
+                }
+            );
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({ error: { message: `HTTP ${response.status}` } }));
+                throw new Error(errData.error?.message || `Failed to rename document (${response.status})`);
+            }
+
+            const { data: updatedDoc } = await response.json();
+            // Update timestamp from response if needed, though name change might not update it server-side unless explicit
+            setDocumentData(prevData => prevData ? { ...prevData, updated_at: updatedDoc.updated_at || prevData.updated_at } : null);
+            toast.success('Document renamed successfully!');
+
+        } catch (err: any) {
+            console.error('Error saving title:', err);
+            toast.error(`Failed to rename: ${err.message}`);
+            // Rollback optimistic update
+            setDocumentData(prevData => prevData ? { ...prevData, name: originalTitle } : null);
+            // Optionally re-enter edit mode?
+            // setIsEditingTitle(true);
+        }
+    };
+
+    // Add handler for Enter key in title input
+    const handleTitleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'Enter') {
+            handleSaveTitle();
+        } else if (event.key === 'Escape') {
+            handleCancelEditTitle();
+        }
+    };
+    // --- END Added Title Editing Handlers ---
+
     // --- Render Logic ---
 
     // Add log before returning JSX
@@ -739,13 +926,33 @@ export default function EditorPage() {
             <div className="flex-1 flex flex-col p-4 border-r border-[--border-color] relative overflow-hidden">
                 {/* Title Bar */}
                 <div className="flex justify-between items-center mb-2 flex-shrink-0">
-                    <h2 className="text-lg font-semibold text-[--text-color] truncate" title={documentData.name}>{documentData.name}</h2>
-                <div className="flex items-center space-x-2">
+                    <div className="flex items-center gap-2 flex-grow min-w-0">
+                        {isEditingTitle ? (
+                            <>
+                                <input
+                                    type="text"
+                                    value={newTitleValue}
+                                    onChange={(e) => setNewTitleValue(e.target.value)}
+                                    onKeyDown={handleTitleInputKeyDown}
+                                    className="flex-grow px-2 py-1 border border-[--border-color] rounded bg-[--input-bg] text-[--text-color] focus:outline-none focus:ring-1 focus:ring-[--primary-color] text-lg font-semibold"
+                                    autoFocus
+                                />
+                                <button onClick={handleSaveTitle} className="p-1 text-green-600 hover:bg-green-100 dark:hover:bg-green-900 rounded" title="Save Title"><Save size={18} /></button>
+                                <button onClick={handleCancelEditTitle} className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900 rounded" title="Cancel"><X size={18} /></button>
+                            </>
+                        ) : (
+                            <>
+                                <h2 className="text-lg font-semibold text-[--text-color] truncate" title={documentData.name}>{documentData.name}</h2>
+                                <button onClick={handleEditTitleClick} className="p-1 text-[--muted-text-color] hover:text-[--text-color] hover:bg-[--hover-bg] rounded flex-shrink-0" title="Rename Document"><Edit size={16} /></button>
+                            </>
+                        )}
+                    </div>
+                    <div className="flex items-center space-x-2">
                         <button onClick={handleNewDocument} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded" title="New/Open (Launch Pad)"><DocumentPlusIcon className="h-5 w-5" /></button>
                         <button onClick={handleSaveContent} disabled={isSaving} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed" title="Save Document">
                             {isSaving ? <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <ArrowDownTrayIcon className="h-5 w-5" />}
-                    </button>
-                </div>
+                        </button>
+                    </div>
                 </div>
                 {/* Page Errors */}
                 {error && !error.startsWith("Chat Error:") && <div className="mb-2 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {error}</div>}
@@ -786,8 +993,16 @@ export default function EditorPage() {
                         {/* No Messages */}
                         {!isLoadingMessages && chatMessages.length === 0 && <motion.div className="h-auto w-full pt-16 px-4 text-center" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}><div className="border rounded-lg p-4 flex flex-col gap-3 text-zinc-500 text-sm dark:text-zinc-400 dark:border-zinc-700"><p className="font-medium text-zinc-700 dark:text-zinc-300">No messages yet.</p><p>Start the conversation below!</p></div></motion.div>}
                         {/* Messages */}
-                        {chatMessages.length > 0 && chatMessages.slice(-displayedMessagesCount).map((message, index) => (
-                            <motion.div key={message.id || `msg-${index}`} className={`flex flex-row gap-2 w-full md:px-0 ${index === 0 && chatMessages.length <= displayedMessagesCount ? 'pt-4' : ''}`} initial={{ y: 5, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.2 }}>
+                        {chatMessages.length > 0 && chatMessages.slice(-displayedMessagesCount).map((message, index) => {
+                            console.log('Rendering message content:', JSON.stringify(message.content)); // Log before returning JSX
+                            return (
+                            <motion.div
+                                key={message.id || `msg-${index}`}
+                                className={`flex flex-row gap-2 w-full mb-4 md:px-0 ${index === 0 && chatMessages.length <= displayedMessagesCount ? 'pt-4' : ''}`}
+                                initial={{ y: 5, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                transition={{ duration: 0.2 }}
+                            >
                                 <div className="size-[24px] flex flex-col justify-start items-center flex-shrink-0 text-zinc-400 pt-1">{message.role === 'assistant' ? <BotIcon /> : <UserIcon />}</div>
                                 <div className="flex flex-col gap-1 flex-grow break-words overflow-hidden p-2 rounded-md bg-[--message-bg] shadow-sm">
                                     <div className="text-zinc-800 dark:text-zinc-300 flex flex-col gap-4"><Markdown>{message.content}</Markdown></div>
@@ -796,7 +1011,8 @@ export default function EditorPage() {
                                     <div className="flex flex-row gap-2 flex-wrap mt-2">{message.experimental_attachments?.map((attachment, idx) => attachment.contentType?.startsWith("image") ? <img className="rounded-md w-32 mb-2 object-cover" key={attachment.name || `attach-${idx}`} src={attachment.url} alt={attachment.name || 'Attachment'} onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : attachment.contentType?.startsWith("text") ? <div key={attachment.name || `attach-${idx}`} className="text-xs w-32 h-20 overflow-hidden text-zinc-400 border p-1 rounded-md dark:bg-zinc-800 dark:border-zinc-700 mb-2">{attachment.url.startsWith('data:') ? getTextFromDataUrl(attachment.url).slice(0, 100) + '...' : `[${attachment.name || 'Text File'}]`}</div> : null)}</div>
                                 </div>
                             </motion.div>
-                        ))}
+                        );
+                      })}
                         {/* Assistant Loading */}
                         {isChatLoading && <div className="flex flex-row gap-2 w-full md:px-0 mt-2"><div className="size-[24px] flex flex-col justify-start items-center flex-shrink-0 text-zinc-400 pt-1"> <BotIcon /> </div><div className="flex items-center gap-1 text-zinc-400 p-2"><span className="h-2 w-2 bg-zinc-400 rounded-full animate-pulse [animation-delay:-0.3s]"></span><span className="h-2 w-2 bg-zinc-400 rounded-full animate-pulse [animation-delay:-0.15s]"></span><span className="h-2 w-2 bg-zinc-400 rounded-full animate-pulse"></span></div></div>}
                         <div ref={messagesEndRef} /> {/* Scroll Anchor */}

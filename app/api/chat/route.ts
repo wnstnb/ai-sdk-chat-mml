@@ -2,9 +2,11 @@
 
 import { openai } from "@ai-sdk/openai";
 import { google } from "@ai-sdk/google";
-import { LanguageModel, streamText, CoreMessage, tool } from "ai";
+import { LanguageModel, streamText, CoreMessage, tool, appendResponseMessages } from "ai";
 import { z } from 'zod';
 import { webSearch } from "@/lib/tools/exa-search"; // Import the webSearch tool
+import { createSupabaseServerClient } from '@/lib/supabase/server'; // Supabase server client
+import { Message as SupabaseMessage, ToolCall as SupabaseToolCall } from '@/types/supabase'; // DB types
 
 // Define Zod schemas for the editor tools based on PRD
 const addContentSchema = z.object({
@@ -134,8 +136,25 @@ export async function POST(req: Request) {
   // Read messages and data from the request body
   const { messages: originalMessages, data: requestData } = await req.json();
 
-  // Extract editor block context and model ID from data
-  const { editorBlocksContext, model: modelIdFromData } = requestData || {};
+  // Extract editor block context, model ID, and document ID from data
+  const { editorBlocksContext, model: modelIdFromData, documentId } = requestData || {};
+
+  // Validate Document ID
+  if (!documentId || typeof documentId !== 'string') {
+    return new Response(JSON.stringify({ error: { code: 'INVALID_INPUT', message: 'Missing or invalid documentId in request data.' } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  // --- Get User ID (needed for saving) ---
+  const supabase = createSupabaseServerClient(); // Create client early
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session) {
+    const code = sessionError ? 'SERVER_ERROR' : 'UNAUTHENTICATED';
+    const message = sessionError?.message || 'User not authenticated.';
+    const status = sessionError ? 500 : 401;
+    return new Response(JSON.stringify({ error: { code, message } }), { status, headers: { 'Content-Type': 'application/json' } });
+  }
+  const userId = session.user.id;
+  // --- End Get User ID ---
 
   // Determine the model ID
   const modelId = typeof modelIdFromData === 'string' && modelIdFromData in modelProviders
@@ -189,10 +208,178 @@ export async function POST(req: Request) {
     tools: combinedTools, // Provide ALL defined tools to the model
     maxSteps: 5, // Allow for tool call -> result -> text response flow
     ...(Object.keys(generationConfig).length > 0 && { generationConfig }), // Conditionally add generationConfig
+
+    // --- ADDED: onFinish callback for saving --- 
+    async onFinish({ usage, response }) {
+        console.log(`[onFinish] Stream finished. Usage: ${JSON.stringify(usage)}`);
+        // Filter for assistant messages
+        const assistantMessages = response.messages.filter(m => m.role === 'assistant');
+
+        if (assistantMessages.length === 0) {
+            console.log("[onFinish] No assistant messages to save.");
+            return;
+        }
+
+        try {
+            for (const message of assistantMessages) {
+                // Cast the message to include optional toolCalls for type checking
+                const assistantMessage = message as CoreMessage & { toolCalls?: { toolCallId: string; toolName: string; args: any }[] };
+
+                // Type guard to check for toolCalls property
+                const hasToolCalls = Array.isArray(assistantMessage.toolCalls) && assistantMessage.toolCalls.length > 0;
+
+                // Extract plain text content for saving
+                let plainTextContent: string | null = null;
+                // Check if content is the tool call structure first before trying to extract text
+                let contentIsToolCallStructure = false;
+                if (Array.isArray(assistantMessage.content) && assistantMessage.content.length > 0 && assistantMessage.content[0]?.type === 'tool-call') {
+                    contentIsToolCallStructure = true;
+                } else if (typeof assistantMessage.content === 'string' && assistantMessage.content.startsWith('[') && assistantMessage.content.endsWith(']')) {
+                    try {
+                        const parsed = JSON.parse(assistantMessage.content);
+                        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.type === 'tool-call') {
+                            contentIsToolCallStructure = true;
+                        }
+                    } catch { /* Ignore parse error, treat as non-tool-call string */ }
+                }
+
+                // Only extract plain text if content isn't primarily a tool call
+                if (!contentIsToolCallStructure) {
+                    if (typeof assistantMessage.content === 'string') {
+                        plainTextContent = assistantMessage.content.trim();
+                        if (plainTextContent === '') plainTextContent = null;
+                    } else if (Array.isArray(assistantMessage.content)) {
+                        plainTextContent = assistantMessage.content
+                            .filter(part => part.type === 'text')
+                            .map(part => part.text)
+                            .join('');
+                        if (plainTextContent.trim() === '') plainTextContent = null;
+                    }
+                }
+
+                // --- REVISED LOGIC to handle toolCalls property vs content structure ---
+                let contentToSave: string | null = null;
+                let shouldSaveToToolCallsTable = false;
+                const actualToolCalls = (Array.isArray(assistantMessage.toolCalls) && assistantMessage.toolCalls.length > 0) ? assistantMessage.toolCalls : undefined;
+
+                console.log(`[onFinish Pre-Logic] plainTextContent:`, plainTextContent);
+                console.log(`[onFinish Pre-Logic] actualToolCalls (from .toolCalls prop):`, JSON.stringify(actualToolCalls));
+                console.log(`[onFinish Pre-Logic] contentIsToolCallStructure (from .content):`, contentIsToolCallStructure);
+
+                if (plainTextContent) {
+                    // Case 1: There is text content.
+                    contentToSave = plainTextContent;
+                    // Save tool calls separately ONLY if they exist in the .toolCalls property.
+                    shouldSaveToToolCallsTable = !!actualToolCalls;
+                    console.log(`[onFinish Decision] Case 1: Text content exists. Saving text to content. Separate tool calls: ${shouldSaveToToolCallsTable}`);
+                } else if (actualToolCalls) {
+                    // Case 2: No text, but tool calls found in .toolCalls property.
+                    try {
+                        contentToSave = JSON.stringify(actualToolCalls);
+                        console.log(`[onFinish Decision] Case 2: No text, using toolCalls from .toolCalls prop for content.`);
+                    } catch (stringifyError) {
+                        console.error(`[onFinish] Error stringifying tool calls from .toolCalls prop:`, stringifyError);
+                        contentToSave = '[{"error":"Could not serialize tool calls"}]';
+                    }
+                    shouldSaveToToolCallsTable = false; // Don't save separately
+                } else if (contentIsToolCallStructure) {
+                    // Case 3: No text, no .toolCalls prop, but .content IS the tool call structure.
+                    // Save the original raw content string (which should be the JSON array string).
+                    if (typeof assistantMessage.content === 'string') {
+                        contentToSave = assistantMessage.content;
+                        console.log(`[onFinish Decision] Case 3: No text, using raw .content string (tool call JSON) for content.`);
+                    } else if (Array.isArray(assistantMessage.content)) { // Should ideally be string, but handle array just in case
+                         try {
+                            contentToSave = JSON.stringify(assistantMessage.content);
+                            console.log(`[onFinish Decision] Case 3: No text, stringifying .content array (tool call JSON) for content.`);
+                        } catch (stringifyError) {
+                            console.error(`[onFinish] Error stringifying tool calls from .content array:`, stringifyError);
+                            contentToSave = '[{"error":"Could not serialize tool calls"}]';
+                        }
+                    }
+                    shouldSaveToToolCallsTable = false; // Don't save separately
+                } else {
+                    // Case 4: No text and no tool calls found anywhere.
+                    contentToSave = null;
+                    shouldSaveToToolCallsTable = false;
+                    console.log(`[onFinish Decision] Case 4: No text or tool calls found. Saving null content.`);
+                }
+                // --- END REVISED LOGIC ---
+
+                // --- Add detailed logging before saving ---
+                // console.log(`[onFinish Debug] Assistant Message ID (from response): ${message.id ?? 'N/A'}`);
+                // console.log(`[onFinish Debug] Raw assistantMessage.content:`, JSON.stringify(assistantMessage.content));
+                // console.log(`[onFinish Debug] assistantMessage.toolCalls:`, JSON.stringify(assistantMessage.toolCalls));
+                // console.log(`[onFinish Debug] Extracted plainTextContent:`, plainTextContent);
+                // console.log(`[onFinish Debug] hasToolCalls (derived from actualToolCalls):`, !!actualToolCalls);
+                console.log(`[onFinish Debug] Final determined contentToSave:`, contentToSave);
+                console.log(`[onFinish Debug] Final determined shouldSaveToToolCallsTable:`, shouldSaveToToolCallsTable);
+                // --- End detailed logging ---
+
+                // 1. Save Assistant Message
+                const { data: savedMsgData, error: msgSaveError } = await supabase
+                    .from('messages')
+                    .insert({
+                        document_id: documentId,
+                        user_id: userId,
+                        role: 'assistant',
+                        content: contentToSave, // <-- Use determined content to save
+                        image_url: null,
+                        metadata: { usage, raw_content: assistantMessage.content }, // Store raw content if needed
+                    })
+                    .select('id')
+                    .single();
+
+                if (msgSaveError) {
+                    console.error(`[onFinish] Error saving assistant message: ${msgSaveError.message}`);
+                    continue;
+                }
+                 if (!savedMsgData || !savedMsgData.id) {
+                    console.error("[onFinish] Error saving assistant message: No ID returned.");
+                    continue;
+                }
+                const savedAssistantMessageId = savedMsgData.id;
+                console.log(`[onFinish] Saved assistant message with ID: ${savedAssistantMessageId}`);
+
+                // 2. Save Tool Calls if needed (only if there was also text content)
+                if (shouldSaveToToolCallsTable) {
+                    // Type assertion is safe here due to the guard and the modified logic
+                    const toolCallsToSave = assistantMessage.toolCalls as { toolCallId: string; toolName: string; args: any }[];
+
+                    const toolCallInserts = toolCallsToSave.map(tc => ({
+                        message_id: savedAssistantMessageId,
+                        user_id: userId,
+                        tool_call_id: tc.toolCallId,
+                        tool_name: tc.toolName,
+                        tool_input: tc.args,
+                    }));
+
+                    const { error: toolSaveError } = await supabase
+                        .from('tool_calls')
+                        .insert(toolCallInserts);
+
+                    if (toolSaveError) {
+                        console.error(`[onFinish] Error saving tool calls for message ${savedAssistantMessageId}: ${toolSaveError.message}`);
+                    } else {
+                        console.log(`[onFinish] Saved ${toolCallInserts.length} tool calls for message ${savedAssistantMessageId}`);
+                    }
+                }
+            }
+            console.log("[onFinish] Completed processing assistant messages and tool calls.");
+
+        } catch (dbError: any) {
+            console.error(`[onFinish] Unexpected error during DB operations: ${dbError.message}`);
+        }
+    },
+    // --- END ADDED onFinish ---
+
   });
+
+  // ADDED: Consume stream to ensure onFinish runs even if client disconnects
+  result.consumeStream(); // no await
 
   // Return the streaming response directly.
   // The client will handle text deltas and tool calls from the stream.
-  return result.toDataStreamResponse(); // Use standard Data Stream response (even without appended data)
+  return result.toDataStreamResponse(); // Use standard Data Stream response
 }
 

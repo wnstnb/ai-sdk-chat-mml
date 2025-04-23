@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { Message, MessageWithSignedUrl } from '@/types/supabase';
+import { Message, ToolCall as DbToolCall } from '@/types/supabase';
+
+interface MessageWithDetails extends Message {
+  signedDownloadUrl: string | null;
+  tool_calls: DbToolCall[] | null;
+}
 
 const SIGNED_URL_EXPIRY = 60 * 5; // Signed URLs expire in 5 minutes
 
@@ -48,27 +53,47 @@ export async function GET(
     const { userId, errorResponse } = await getUserOrError(supabase);
     if (errorResponse) return errorResponse;
 
-     // Optional: Verify document ownership explicitly before fetching messages, though RLS should cover this.
+    // Optional: Verify document ownership explicitly
     // const isOwner = await checkDocumentOwnership(supabase, documentId, userId);
-    // if (!isOwner) {
-    //     return NextResponse.json({ error: { code: 'UNAUTHORIZED_ACCESS', message: 'You do not have permission to view messages for this document.' } }, { status: 403 });
-    // }
+    // if (!isOwner) { ... return 403 ... }
 
     // Fetch messages - RLS ensures user can only access messages for owned documents
     const { data: messages, error: fetchError } = await supabase
       .from('messages')
-      .select('*')
+      .select('id, created_at, role, content, image_url, user_id')
       .eq('document_id', documentId)
-      .order('created_at', { ascending: true }); // Fetch in chronological order
+      .order('created_at', { ascending: true });
 
     if (fetchError) {
       console.error('Messages GET Error:', fetchError.message);
       return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch messages: ${fetchError.message}` } }, { status: 500 });
     }
 
-    // Generate signed URLs for messages with images
-    const messagesWithUrls: MessageWithSignedUrl[] = await Promise.all(
-        (messages as Message[] || []).map(async (msg) => {
+    if (!messages || messages.length === 0) {
+      return NextResponse.json({ data: [] }, { status: 200 }); // Return empty array if no messages
+    }
+
+    // --- Fetch Tool Calls for these Messages --- 
+    const messageIds = messages.map(m => m.id);
+    const { data: toolCalls, error: toolFetchError } = await supabase
+        .from('tool_calls')
+        .select('*')
+        .in('message_id', messageIds);
+
+    if (toolFetchError) {
+        // Handle error fetching tool calls
+        console.error('Tool Calls GET Error:', toolFetchError.message);
+        // Decide whether to return partial data (messages only) or an error
+        // Returning error for now to indicate incomplete data
+        return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch tool calls: ${toolFetchError.message}` } }, { status: 500 });
+    }
+
+    // Combine messages with tool calls and generate signed URLs
+    const messagesWithDetails: MessageWithDetails[] = await Promise.all(
+        (messages as Message[]).map(async (msg) => {
+            // Find associated tool calls for this message
+            const associatedToolCalls = toolCalls?.filter(tc => tc.message_id === msg.id) || null;
+
             let signedDownloadUrl: string | null = null;
             if (msg.image_url) {
                 const { data, error: urlError } = await supabase.storage
@@ -77,16 +102,20 @@ export async function GET(
 
                 if (urlError) {
                     console.error(`Failed to create signed URL for image ${msg.image_url}:`, urlError.message);
-                    // Decide how to handle: return null, return error, etc. Returning null for now.
                 } else {
                     signedDownloadUrl = data.signedUrl;
                 }
             }
-            return { ...msg, signedDownloadUrl };
+            // Return the complete MessageWithDetails object
+            return {
+                ...msg,
+                signedDownloadUrl,
+                tool_calls: associatedToolCalls
+            };
         })
     );
 
-    return NextResponse.json({ data: messagesWithUrls }, { status: 200 });
+    return NextResponse.json({ data: messagesWithDetails }, { status: 200 });
 
   } catch (error: any) {
     console.error('Messages GET Error:', error.message);
