@@ -10,7 +10,7 @@ import React, {
     KeyboardEvent,
     DragEvent,
 } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation'; // Dynamic routing hooks
+import { useParams, useRouter, useSearchParams, usePathname } from 'next/navigation'; // Added usePathname for Step 8
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
@@ -30,6 +30,8 @@ import {
     // defaultInlineContentSpecs,
     // defaultStyleSpecs,
 } from '@blocknote/core';
+// Import BlockNoteEditor type for handleEditorChange
+import type { BlockNoteEditor as BlockNoteEditorType } from '@blocknote/core';
 
 // Icons
 import {
@@ -39,7 +41,8 @@ import {
     VercelIcon,
     SendIcon,
 } from '@/components/icons';
-import { ChevronLeft, ChevronRight, Wrench, SendToBack, Edit, Save, X } from 'lucide-react';
+// Added Clock, CheckCircle2, AlertCircle, XCircle for autosave status
+import { ChevronLeft, ChevronRight, Wrench, SendToBack, Edit, Save, X, Clock, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
 import {
     DocumentPlusIcon,
     ArrowDownTrayIcon,
@@ -90,7 +93,10 @@ export default function EditorPage() {
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
-    const documentId = params.documentId as string;
+    // Use assertion or check, assertion is simpler if we expect it to always exist here
+    const documentId = params?.documentId as string; 
+    // NEW: Pathname for navigation handling (Step 8)
+    const pathname = usePathname();
 
     // --- State Variables ---
     const [model, setModel] = useState('gemini-2.0-flash'); // Default model
@@ -134,6 +140,15 @@ export default function EditorPage() {
     const [isLoadingMessages, setIsLoadingMessages] = useState(true);
     const [isSaving, setIsSaving] = useState(false); // Editor save button state
     const [error, setError] = useState<string | null>(null); // General page error
+
+    // --- NEW: Autosave State & Refs (Step 2) ---
+    const [autosaveTimerId, setAutosaveTimerId] = useState<NodeJS.Timeout | null>(null);
+    const [revertStatusTimerId, setRevertStatusTimerId] = useState<NodeJS.Timeout | null>(null); // For reverting 'saved' -> 'idle' (Step 9)
+    const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved' | 'error'>('idle');
+    const latestEditorContentRef = useRef<string | null>(null); // JSON stringified content
+    const latestEditorBlocksRef = useRef<BlockNoteEditorType['document'] | null>(null); // Blocks for direct use
+    const isContentLoadedRef = useRef<boolean>(false); // To prevent save on initial load
+    const previousPathnameRef = useRef(pathname); // For navigation detection (Step 8)
 
     // --- useChat Hook Integration ---
     const {
@@ -317,7 +332,7 @@ export default function EditorPage() {
     // --- NEW: Effect to read initial message from query parameter ---
     const routerForReplace = useRouter(); // Get router instance for replace
     useEffect(() => {
-        const initialMsg = searchParams.get('initialMsg');
+        const initialMsg = searchParams?.get('initialMsg'); // Add optional chaining
         if (initialMsg) {
             const decodedMsg = decodeURIComponent(initialMsg);
             console.log("[EditorPage Mount] Found initialMsg query param:", decodedMsg);
@@ -891,27 +906,320 @@ export default function EditorPage() {
         } catch (error: any) { console.error('Send to editor error:', error); toast.error(`Send to editor error: ${error.message}`); }
     };
 
-    // Manual Save Handler
+    // --- NEW: Autosave Trigger Function (Step 3) ---
+    const triggerSaveDocument = useCallback(async (content: string, docId: string) => {
+        console.log(`[Autosave] Triggering save for document ${docId}`);
+        try {
+            const response = await fetch(`/api/documents/${docId}/content`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: JSON.parse(content) }), // Parse back to object for API
+            });
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error?.message || `Autosave failed (${response.status})`);
+            }
+            console.log(`[Autosave] Document ${docId} saved successfully.`);
+            // Return true on success, can be used by caller
+            return true;
+        } catch (err: any) {
+            console.error(`[Autosave] Failed to save document ${docId}:`, err);
+            // Throw the error to be caught by the caller (handleEditorChange)
+            throw err;
+        }
+    }, []); // No dependencies, uses arguments directly
+    // --- END NEW ---
+
+    // --- NEW: Autosave Handler for Editor Changes (Step 4 & 9) ---
+    // MODIFIED: Accept full editor instance from the component
+    const handleEditorChange = useCallback((editor: BlockNoteEditorType) => {
+        console.log("--- handleEditorChange called ---"); // <<< Existing DEBUG LOG
+        const editorContent = editor.document; // Extract document from editor instance
+
+        // Prevent triggering save immediately after initial content load
+        if (!isContentLoadedRef.current) {
+            isContentLoadedRef.current = true;
+            console.log("[handleEditorChange] Initial content flag SET to true. Returning."); // <<< ADDED DEBUG LOG
+            latestEditorBlocksRef.current = editorContent;
+            latestEditorContentRef.current = JSON.stringify(editorContent);
+            return;
+        }
+        console.log("[handleEditorChange] Initial content flag is TRUE. Proceeding..."); // <<< ADDED DEBUG LOG
+
+        console.log("[handleEditorChange] Editor content changed. Setting status to 'unsaved'."); // <<< ADDED DEBUG LOG
+        latestEditorBlocksRef.current = editorContent;
+        try {
+            latestEditorContentRef.current = JSON.stringify(editorContent);
+        } catch (stringifyError) {
+             console.error("[handleEditorChange] Failed to stringify editor content:", stringifyError);
+             setAutosaveStatus('error');
+             return;
+        }
+
+        setAutosaveStatus('unsaved');
+
+        // Clear timers
+        if (revertStatusTimerId) {
+            console.log("[handleEditorChange] Clearing existing REVERT timer:", revertStatusTimerId); // <<< ADDED DEBUG LOG
+            clearTimeout(revertStatusTimerId);
+            setRevertStatusTimerId(null);
+        }
+        if (autosaveTimerId) {
+            console.log("[handleEditorChange] Clearing existing AUTOSAVE timer:", autosaveTimerId); // <<< ADDED DEBUG LOG
+            clearTimeout(autosaveTimerId);
+        }
+
+        console.log("[handleEditorChange] Setting NEW autosave timer (3000ms)..."); // <<< ADDED DEBUG LOG
+        const newTimerId = setTimeout(async () => {
+            console.log("[Autosave Timer] --- Timer FIRED ---"); // <<< ADDED DEBUG LOG
+            // Check refs and ID right before saving
+            if (!editorRef.current || !documentId || !latestEditorContentRef.current) {
+                console.warn("[Autosave Timer] Missing editorRef, documentId, or latest content. Aborting save.");
+                setAutosaveTimerId(null);
+                return;
+            }
+            const currentContentStr = latestEditorContentRef.current;
+
+            console.log("[Autosave Timer] Setting status to 'saving'."); // <<< ADDED DEBUG LOG
+            setAutosaveStatus('saving');
+            try {
+                console.log("[Autosave Timer] Calling triggerSaveDocument..."); // <<< ADDED DEBUG LOG
+                await triggerSaveDocument(currentContentStr, documentId);
+                console.log("[Autosave Timer] triggerSaveDocument SUCCESS. Setting status to 'saved'."); // <<< ADDED DEBUG LOG
+                setAutosaveStatus('saved');
+
+                // Set timer to revert status
+                console.log("[Autosave Timer] Setting REVERT timer (2000ms)..."); // <<< ADDED DEBUG LOG
+                const newRevertTimerId = setTimeout(() => {
+                    console.log("[Revert Timer] --- Timer FIRED --- Setting status to 'idle'."); // <<< ADDED DEBUG LOG
+                    setAutosaveStatus('idle');
+                    setRevertStatusTimerId(null);
+                }, 2000);
+                setRevertStatusTimerId(newRevertTimerId);
+
+            } catch (error) {
+                console.error("[Autosave Timer] triggerSaveDocument FAILED:", error); // <<< ADDED DEBUG LOG
+                setAutosaveStatus('error');
+            } finally {
+                console.log("[Autosave Timer] Clearing main autosave timer ID state."); // <<< ADDED DEBUG LOG
+                setAutosaveTimerId(null);
+            }
+        }, 3000); // 3-second debounce
+
+        console.log("[handleEditorChange] Storing NEW autosave timer ID:", newTimerId); // <<< ADDED DEBUG LOG
+        setAutosaveTimerId(newTimerId);
+
+    }, [documentId, triggerSaveDocument, autosaveTimerId, revertStatusTimerId]); // Include timers in deps to clear them correctly
+    // --- END NEW ---
+
+    // --- NEW: beforeunload Hook for Unsaved Changes (Step 7) ---
+    useEffect(() => {
+        const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+             // Check if there are unsaved changes OR if an autosave is pending
+            if (autosaveStatus === 'unsaved' || autosaveTimerId) {
+                console.log('[beforeunload] Unsaved changes detected. Attempting synchronous save.');
+
+                // Clear any pending autosave timer immediately
+                if (autosaveTimerId) {
+                    clearTimeout(autosaveTimerId);
+                    // No need to setAutosaveTimerId(null) here, component is unloading
+                }
+                 // Clear status revert timer too
+                if (revertStatusTimerId) {
+                    clearTimeout(revertStatusTimerId);
+                     // No need to setRevertStatusTimerId(null) here
+                }
+
+
+                // Attempt a synchronous (best-effort) save using fetch with keepalive
+                // Use the latest content from the ref
+                if (latestEditorContentRef.current && documentId) {
+                    try {
+                        const contentToSave = latestEditorContentRef.current;
+                        const url = `/api/documents/${documentId}/content`;
+                        const payload = JSON.stringify({ content: JSON.parse(contentToSave) }); // Parse back for API
+
+                        // navigator.sendBeacon is another option, generally preferred for analytics
+                        // but fetch with keepalive is often used for critical data saving like this.
+                        // It's still best-effort.
+                         if (navigator.sendBeacon) {
+                            const blob = new Blob([payload], { type: 'application/json' });
+                            navigator.sendBeacon(url, blob);
+                            console.log('[beforeunload] Sent data via navigator.sendBeacon.');
+                         } else {
+                            // Fallback for browsers that don't support sendBeacon (less likely)
+                            fetch(url, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: payload,
+                                keepalive: true, // Important!
+                            }).catch(err => {
+                                // Errors here are hard to handle reliably as the page is closing. Log attempts.
+                                console.warn('[beforeunload] fetch keepalive error (may be expected):', err);
+                            });
+                             console.log('[beforeunload] Sent data via fetch keepalive.');
+                        }
+
+
+                    } catch (err) {
+                        // Catch errors during preparation (e.g., JSON.parse)
+                        console.error('[beforeunload] Error preparing sync save data:', err);
+                    }
+                } else {
+                    console.warn('[beforeunload] Could not attempt sync save: Missing content or document ID.');
+                }
+
+                // Standard way to prompt the user (though modern browsers often show generic messages)
+                // event.preventDefault(); // Standard practice, might be needed for older browsers
+                // event.returnValue = ''; // Standard practice
+                // Note: Browsers are increasingly ignoring custom messages here for security.
+                // The presence of the handler itself might trigger a generic "Leave site?" prompt
+                // if changes were detected, which is often sufficient. We don't explicitly set returnValue.
+            } else {
+                 console.log('[beforeunload] No unsaved changes detected.');
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            console.log('[beforeunload] Cleanup: Removed listener.');
+        };
+    }, [autosaveStatus, autosaveTimerId, revertStatusTimerId, documentId]); // Dependencies: status, timers, docId
+    // --- END NEW ---
+
+    // --- NEW: Navigation Handling Hook (Step 8) ---
+    useEffect(() => {
+        // Check if navigating away from an editor page
+        // Add check for pathname existence
+        const isLeavingEditor = !!(previousPathnameRef.current?.startsWith('/editor/') && !pathname?.startsWith('/editor/'));
+
+        if (isLeavingEditor && (autosaveStatus === 'unsaved' || autosaveTimerId)) {
+            console.log('[Navigation] Leaving editor with unsaved changes. Triggering save.');
+
+            // Clear pending timers
+             if (autosaveTimerId) {
+                clearTimeout(autosaveTimerId);
+                setAutosaveTimerId(null); // Update state since component isn't unmounting yet
+            }
+            if (revertStatusTimerId) {
+                 clearTimeout(revertStatusTimerId);
+                 setRevertStatusTimerId(null);
+            }
+
+            // Trigger a save (fire-and-forget)
+            if (latestEditorContentRef.current && documentId) {
+                 setAutosaveStatus('saving'); // Show saving status briefly during navigation
+                 triggerSaveDocument(latestEditorContentRef.current, documentId)
+                    .then(() => {
+                        console.log('[Navigation] Save successful.');
+                         // Optionally update status briefly, though user is navigating away
+                         // setAutosaveStatus('saved'); // Might not be visible
+                    })
+                    .catch(err => {
+                        console.error("[Navigation] Save on navigate failed:", err);
+                         // Don't revert status to 'error' here as user is leaving
+                    });
+            }
+        }
+
+        // Update the ref *after* checking the navigation condition
+        // Add check for pathname existence
+        if (pathname) {
+           previousPathnameRef.current = pathname;
+        }
+
+    }, [pathname, autosaveStatus, autosaveTimerId, revertStatusTimerId, documentId, triggerSaveDocument]); // Dependencies
+    // --- END NEW ---
+
+    // --- NEW: Unmount Cleanup Hook for Timers (Step 9) ---
+     useEffect(() => {
+        // Return a cleanup function that runs on unmount
+        return () => {
+            console.log('[Unmount Cleanup] Clearing timers.');
+            if (autosaveTimerId) {
+                clearTimeout(autosaveTimerId);
+                console.log('[Unmount Cleanup] Cleared autosaveTimerId:', autosaveTimerId);
+            }
+            if (revertStatusTimerId) {
+                clearTimeout(revertStatusTimerId);
+                 console.log('[Unmount Cleanup] Cleared revertStatusTimerId:', revertStatusTimerId);
+            }
+        };
+    }, [autosaveTimerId, revertStatusTimerId]); // Re-run only if timer IDs change (to get latest ID for cleanup)
+    // --- END NEW ---
+
+    // Manual Save Handler - MODIFIED to interact with autosave
     const handleSaveContent = useCallback(async () => {
         const editor = editorRef.current;
         if (!documentId) { toast.error("Cannot save: Document ID missing."); return; }
         if (!editor?.document) { console.warn('Save aborted: Editor content ref not available.'); return; }
-        if (isSaving) return;
+        if (isSaving) return; // Prevent multiple manual saves
 
-        setIsSaving(true); setError(null);
-        console.log("Saving document content...");
+        // --- NEW: Interact with Autosave ---
+        console.log("[Manual Save] Triggered.");
+        // Clear any pending autosave timer
+        if (autosaveTimerId) {
+            clearTimeout(autosaveTimerId);
+            setAutosaveTimerId(null);
+            console.log("[Manual Save] Cleared pending autosave timer.");
+        }
+         // Clear any pending status revert timer
+        if (revertStatusTimerId) {
+            clearTimeout(revertStatusTimerId);
+            setRevertStatusTimerId(null);
+            console.log("[Manual Save] Cleared pending status revert timer.");
+        }
+         // Set status to saving (overrides autosave status)
+        setAutosaveStatus('saving');
+        // --- END NEW ---
+
+        setIsSaving(true); // Still use isSaving for button state specifically
+        setError(null);
+        console.log("Saving document content manually...");
         try {
             const currentEditorContent = editor.document; // Get content at time of save
-            const response = await fetch(`/api/documents/${documentId}/content`, {
-                method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: currentEditorContent }),
-            });
-            if (!response.ok) { const errData = await response.json().catch(() => ({})); throw new Error(errData.error?.message || `Save failed (${response.status})`); }
+            const stringifiedContent = JSON.stringify(currentEditorContent); // Use the same format as autosave ref
+
+            // Update refs immediately for consistency
+            latestEditorBlocksRef.current = currentEditorContent;
+            latestEditorContentRef.current = stringifiedContent;
+
+            // Use triggerSaveDocument for consistency (even though it parses back)
+            // Alternatively, could call fetch directly here. Using triggerSaveDocument is slightly cleaner.
+            await triggerSaveDocument(stringifiedContent, documentId);
+
             toast.success('Document saved!');
-            const { data } = await response.json();
-            if (documentData && data.updated_at) { setDocumentData({ ...documentData, updated_at: data.updated_at }); }
-        } catch (err: any) { console.error("Save error:", err); setError(`Save failed: ${err.message}`); toast.error(`Save failed: ${err.message}`); }
-        finally { setIsSaving(false); }
-    }, [documentId, isSaving, documentData]);
+            // --- NEW: Set autosave status to 'saved' after manual save ---
+            setAutosaveStatus('saved');
+            // Set timer to revert to idle
+             const newRevertTimerId = setTimeout(() => {
+                 setAutosaveStatus('idle');
+                 setRevertStatusTimerId(null);
+             }, 2000);
+             setRevertStatusTimerId(newRevertTimerId);
+            // --- END NEW ---
+
+            // Update document metadata timestamp if possible (API should return it)
+            // Refetch or expect updated_at in response? Assuming API returns it.
+            // const { data } = await response.json(); // triggerSaveDocument doesn't return full data
+            // Need to fetch updated doc data or rely on API response structure if changed
+            // For now, just log success.
+
+        } catch (err: any) {
+            console.error("[Manual Save] Save error:", err);
+            setError(`Save failed: ${err.message}`);
+            toast.error(`Save failed: ${err.message}`);
+            // --- NEW: Set autosave status to 'error' on manual save failure ---
+            setAutosaveStatus('error');
+            // --- END NEW ---
+        } finally {
+            setIsSaving(false); // Reset manual save button state
+             // Note: Autosave status is now managed independently ('saved' or 'error')
+        }
+    // Include autosave timers in dependencies
+    }, [documentId, isSaving, documentData, autosaveTimerId, revertStatusTimerId, triggerSaveDocument]);
 
     // Navigation Handlers
     const handleNewDocument = () => { console.log("Navigating to /launch"); router.push('/launch'); };
@@ -1039,10 +1347,21 @@ export default function EditorPage() {
                             </>
                         )}
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 flex-shrink-0">
+                        {/* --- SIMPLIFIED Autosave Status Indicator --- */}
+                        <div className="flex items-center gap-1 text-sm border border-red-500 px-1" aria-live="polite" aria-atomic="true">
+                            {/* Always render the status text */} 
+                            <span className="text-red-500 font-bold">[{autosaveStatus}]</span>
+                            {/* {autosaveStatus === 'unsaved' && <><Clock size={14} className="text-yellow-500" /><span>Unsaved</span></>} */} 
+                            {/* {autosaveStatus === 'saving' && <><svg className="animate-spin h-3.5 w-3.5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>Saving...</span></>} */} 
+                            {/* {autosaveStatus === 'saved' && <><CheckCircle2 size={14} className="text-green-500" /><span>Saved</span></>} */} 
+                            {/* {autosaveStatus === 'error' && <><AlertCircle size={14} className="text-red-500" /><span>Error</span></>} */} 
+                        </div>
+                        {/* --- END SIMPLIFIED --- */}
                         <button onClick={handleNewDocument} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded" title="New/Open (Launch Pad)"><DocumentPlusIcon className="h-5 w-5" /></button>
-                        <button onClick={handleSaveContent} disabled={isSaving} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed" title="Save Document">
-                            {isSaving ? <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <ArrowDownTrayIcon className="h-5 w-5" />}
+                        {/* Manual Save Button - Now uses isSaving state */}
+                        <button onClick={handleSaveContent} disabled={isSaving || autosaveStatus === 'saving'} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed" title="Save Document Manually">
+                           {isSaving ? <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <ArrowDownTrayIcon className="h-5 w-5" />}
                         </button>
                     </div>
                 </div>
@@ -1052,7 +1371,13 @@ export default function EditorPage() {
                 <div className="flex-1 flex flex-col relative border rounded-lg bg-[--editor-bg] border-[--border-color] shadow-sm overflow-hidden">
                     <div className="flex-1 overflow-y-auto p-4 styled-scrollbar">
                         {initialEditorContent !== undefined ? (
-                            <BlockNoteEditorComponent key={documentId} editorRef={editorRef} initialContent={initialEditorContent} />
+                            // --- MODIFIED: Pass onEditorContentChange (Step 5) ---
+                            <BlockNoteEditorComponent
+                                key={documentId} // Keep key for re-initialization if ID changes
+                                editorRef={editorRef}
+                                initialContent={initialEditorContent}
+                                onEditorContentChange={handleEditorChange} // Pass the handler
+                            />
                         ) : (
                             <p className="p-4 text-center text-[--muted-text-color]">Initializing editor...</p>
                          )}
@@ -1060,7 +1385,7 @@ export default function EditorPage() {
                     {/* Collapsed Chat Input */}
                     {isChatCollapsed && <div className="p-4 pt-2 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0">
                         <form ref={formRef} onSubmit={handleSubmitWithContext} className="w-full flex flex-col items-center">
-                            <ChatInputUI files={files} fileInputRef={fileInputRef} handleFileChange={handleFileChange} inputRef={inputRef} input={input} handleInputChange={handleInputChange} handleKeyDown={handleKeyDown} handlePaste={handlePaste} model={model} setModel={setModel} handleUploadClick={handleUploadClick} isLoading={isChatLoading} isUploading={isUploading} uploadError={uploadError} uploadedImagePath={uploadedImagePath} onStop={stop} />
+                           <ChatInputUI files={files} fileInputRef={fileInputRef} handleFileChange={handleFileChange} inputRef={inputRef} input={input} handleInputChange={handleInputChange} handleKeyDown={handleKeyDown} handlePaste={handlePaste} model={model} setModel={setModel} handleUploadClick={handleUploadClick} isLoading={isChatLoading} isUploading={isUploading} uploadError={uploadError} uploadedImagePath={uploadedImagePath} onStop={stop} />
                         </form>
                     </div>}
                 </div>

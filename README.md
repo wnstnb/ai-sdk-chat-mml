@@ -36,7 +36,7 @@ This project is a chat interface combined with a document editor, leveraging AI 
 5.  **Set up Supabase Storage:**
     *   In your Supabase project dashboard, navigate to "Storage".
     *   Click "Create Bucket".
-    *   Name the bucket `message_images`.
+    *   Name the bucket `message-images`.
     *   **Ensure the "Public bucket" option is UNCHECKED.**
     *   Go to Bucket Settings -> Policies.
     *   Create a new policy (or edit existing) to allow authenticated users to perform the `insert` operation. Example (adjust as needed):

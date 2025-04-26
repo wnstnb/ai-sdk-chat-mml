@@ -27,7 +27,7 @@ RLS policies are defined for the `folders` table based on `user_id`.
 The file manager on `/launch` will handle fetching/displaying folders and documents, and allow folder operations (create, rename, delete, move documents).
 * Implementation will use Next.js API routes (`app/api/...`) to securely interact with Supabase on the server-side for all data operations (CRUD), rather than direct client-side calls (except potentially for Auth state).
 * A `tool_calls` table (`id`, `message_id`, `user_id`, `tool_name`, `tool_input`, `tool_output`) stores details of AI tool interactions, linked to the `messages` table.
-* The `message_images` storage bucket is private; access requires server-generated signed URLs.
+* The `message-images` storage bucket is private; access requires server-generated signed URLs.
 * Route protection for `/launch` and `/editor/*` will be handled by Next.js middleware checking Supabase sessions.
 * Raw SQL DDL for the schema is provided in `prds/supabase_implementation.md` for manual application.
 * A `README.md` file includes initial setup instructions.
