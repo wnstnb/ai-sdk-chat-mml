@@ -6,8 +6,16 @@ import { useFileData } from '@/hooks/useFileData'; // Import hook
 import { useDraggable } from '@dnd-kit/core'; // Import useDraggable
 import { CSS } from '@dnd-kit/utilities'; // Import CSS utility
 
+// --- NEW: Define a type for props that includes SearchResult fields --- 
+// Make Document fields optional, ensure SearchResult fields are present.
+type DocumentLike = Partial<Document> & { 
+  id: string; 
+  name: string; 
+  folder_id: string | null; // Keep folder_id, though not directly used here
+};
+
 interface DocumentItemProps {
-  document: Document;
+  document: DocumentLike; // Use the combined type
   level?: number; // Add optional level prop
 }
 

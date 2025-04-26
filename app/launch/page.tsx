@@ -13,6 +13,9 @@ import { ChatInputUI } from '@/components/editor/ChatInputUI'; // Import the cha
 // Import the new file manager component
 import NewFileManager from '@/components/file-manager/NewFileManager';
 
+// --- NEW: Import Omnibar ---
+import { Omnibar } from '@/components/search/Omnibar';
+
 // Define the structure expected by Cubone File Manager (matching docs)
 type CuboneFileType = {
     id?: string;
@@ -125,7 +128,7 @@ export default function LaunchPage() {
   useEffect(() => {
     console.log("[LaunchPage] useEffect triggered to call fetchData."); // Log effect trigger
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   // Effect for typing animation
   useEffect(() => {
@@ -310,7 +313,7 @@ export default function LaunchPage() {
         setError("Move/Copy/Paste not implemented yet.");
         // TODO: Implement Cubone move/copy API calls
         // await fetchData();
-    }, [fetchData]);
+    }, []); // Removed fetchData dependency
 
 
   return (
@@ -430,6 +433,11 @@ export default function LaunchPage() {
       {/* New Conditional Block for New File Manager */}
       {activeView === 'newFileManager' && (
         <>
+          {/* --- NEW: Add Omnibar above the file manager --- */}
+          <div className="mb-4">
+            <Omnibar />
+          </div>
+
           {/* Render the actual NewFileManager component */}
           <div className="flex-grow overflow-hidden border border-[--border-color] rounded-md shadow-sm">
             <NewFileManager />

@@ -1,11 +1,12 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useFileMediaStore } from '@/stores/fileMediaStore';
 import { useFileData } from '@/hooks/useFileData';
+import { useSearchStore } from '@/stores/useSearchStore';
 import FolderItem from './FolderItem';
 import DocumentItem from './DocumentItem';
 import FolderTree from './FolderTree';
 import Breadcrumbs from './Breadcrumbs';
-import { FolderPlus, Check, X } from 'lucide-react'; // Icons for create folder UI
+import { FolderPlus, Check, X, Loader2 } from 'lucide-react'; // Icons for create folder UI
 import {
   DndContext,
   closestCenter,
@@ -32,10 +33,18 @@ const NewFileManager = () => {
     currentViewFolders,
     currentViewDocuments,
     allFolders,
-    isLoading,
-    error,
+    isLoading: isLoadingFiles,
+    error: fileError,
     setCurrentFolder,
   } = useFileMediaStore();
+
+  // Get Search State
+  const {
+    isSearching,
+    searchResults,
+    isLoadingSearch,
+    searchError,
+  } = useSearchStore();
 
   // Get fetch and create functions from the custom hook
   const { fetchData, createFolder, moveItem } = useFileData();
@@ -178,68 +187,96 @@ const NewFileManager = () => {
 
   // Determine content to display based on state
   let mainContent;
-  if (isLoading && !isCreatingFolder) { // Don't show loading if only creating
-    mainContent = <div className="p-4 text-center text-[--text-color-secondary]">Loading files...</div>;
-  } else if (error) {
-    mainContent = <div className="p-4 text-center text-red-500">Error: {error}</div>;
-  } else if (!isCreatingFolder && currentViewFolders.length === 0 && currentViewDocuments.length === 0) {
-    mainContent = (
-      <div className="p-4 text-center text-[--text-color-secondary]">
-        This folder is empty.
-        {/* Optionally show create button here too? */}
-      </div>
-    );
-  } else {
-    // Combine folders and documents for SortableContext
-    const items = [
-        ...currentViewFolders.map(f => ({...f, type: 'folder'})), // Add type indicator
-        ...currentViewDocuments.map(d => ({...d, type: 'document'})) // Add type indicator
-    ];
 
+  // --- NEW: Handle Search View --- 
+  if (isLoadingSearch) {
     mainContent = (
-      <>
-        {/* Inline Create Folder Form */}
-        {isCreatingFolder && (
-          <form onSubmit={handleCreateFolderSubmit} className="flex items-center p-2 mb-2 border border-[--border-color] rounded bg-[--bg-secondary]">
-            <FolderPlus className="w-5 h-5 mr-2 text-[--icon-color] flex-shrink-0" />
-            <input
-              ref={createFolderInputRef}
-              type="text"
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
-              placeholder="New folder name..."
-              className="flex-grow bg-transparent text-sm focus:outline-none mr-2 p-1"
-              maxLength={100} // Add a reasonable max length
-            />
-            <button
-              type="submit"
-              className="p-1 text-green-500 hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={!newFolderName.trim()}
-              aria-label="Create folder"
-            >
-              <Check className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleCreateFolderCancel}
-              className="p-1 text-red-500 hover:bg-[--hover-bg] rounded ml-1"
-              aria-label="Cancel creation"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </form>
-        )}
-
-        {/* Render Folders */}
-        {currentViewFolders.map((folder) => (
-          <FolderItem key={folder.id} folder={folder} onNavigate={handleNavigate} />
-        ))}
-        {/* Render Documents */}
-        {currentViewDocuments.map((doc) => (
-          <DocumentItem key={doc.id} document={doc} />
-        ))}
-      </>
+        <div className="flex justify-center items-center h-full p-4">
+            <Loader2 className="h-6 w-6 animate-spin text-[--text-color-secondary]" />
+            <span className="ml-2 text-[--text-color-secondary]">Searching documents...</span>
+        </div>
     );
+  } else if (searchError) {
+      mainContent = <div className="p-4 text-center text-red-500">Search Error: {searchError}</div>;
+  } else if (isSearching) {
+      if (searchResults && searchResults.length > 0) {
+          mainContent = (
+              <>
+                {searchResults.map((doc) => (
+                  // Assuming DocumentItem can handle the SearchResult structure
+                  // Or create a specific SearchResultItem component
+                  <DocumentItem key={doc.id} document={doc} />
+                ))}
+              </>
+          );
+      } else {
+           mainContent = <div className="p-4 text-center text-[--text-color-secondary]">No search results found.</div>;
+      }
+  // --- END NEW --- 
+  } else { // Original File/Folder View
+      if (isLoadingFiles && !isCreatingFolder) { // Don't show loading if only creating
+        mainContent = <div className="p-4 text-center text-[--text-color-secondary]">Loading files...</div>;
+      } else if (fileError) {
+        mainContent = <div className="p-4 text-center text-red-500">Error: {fileError}</div>;
+      } else if (!isCreatingFolder && currentViewFolders.length === 0 && currentViewDocuments.length === 0) {
+        mainContent = (
+          <div className="p-4 text-center text-[--text-color-secondary]">
+            This folder is empty.
+            {/* Optionally show create button here too? */}
+          </div>
+        );
+      } else {
+        // Combine folders and documents for SortableContext
+        const items = [
+            ...currentViewFolders.map(f => ({...f, type: 'folder'})), // Add type indicator
+            ...currentViewDocuments.map(d => ({...d, type: 'document'})) // Add type indicator
+        ];
+
+        mainContent = (
+          <>
+            {/* Inline Create Folder Form */}
+            {isCreatingFolder && (
+              <form onSubmit={handleCreateFolderSubmit} className="flex items-center p-2 mb-2 border border-[--border-color] rounded bg-[--bg-secondary]">
+                <FolderPlus className="w-5 h-5 mr-2 text-[--icon-color] flex-shrink-0" />
+                <input
+                  ref={createFolderInputRef}
+                  type="text"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  placeholder="New folder name..."
+                  className="flex-grow bg-transparent text-sm focus:outline-none mr-2 p-1"
+                  maxLength={100} // Add a reasonable max length
+                />
+                <button
+                  type="submit"
+                  className="p-1 text-green-500 hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!newFolderName.trim()}
+                  aria-label="Create folder"
+                >
+                  <Check className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateFolderCancel}
+                  className="p-1 text-red-500 hover:bg-[--hover-bg] rounded ml-1"
+                  aria-label="Cancel creation"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </form>
+            )}
+
+            {/* Render Folders */}
+            {currentViewFolders.map((folder) => (
+              <FolderItem key={folder.id} folder={folder} onNavigate={handleNavigate} />
+            ))}
+            {/* Render Documents */}
+            {currentViewDocuments.map((doc) => (
+              <DocumentItem key={doc.id} document={doc} />
+            ))}
+          </>
+        );
+      }
   }
 
   return (
