@@ -36,7 +36,7 @@ export default function Login() {
           console.log("Session found in login page, setting redirect flag");
           setIsRedirecting(true);
           redirectAttempted.current = true;
-          router.replace('/editor');
+          router.replace('/launch');
         } else {
           setIsLoading(false);
         }
@@ -59,7 +59,7 @@ export default function Login() {
         console.log("Session detected in login page auth change");
         setIsRedirecting(true);
         redirectAttempted.current = true;
-        router.replace('/editor');
+        router.replace('/launch');
       }
     });
 

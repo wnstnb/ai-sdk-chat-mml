@@ -249,7 +249,7 @@ export default function AuthUI() {
             }}
             theme="dark"
             providers={[]}
-            redirectTo={`${origin}/editor`}
+            redirectTo={`${origin}/launch`}
             view="sign_in"
             localization={{
               variables: {

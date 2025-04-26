@@ -34,12 +34,31 @@ export async function middleware(request: NextRequest) {
   )
 
   // Refresh session if expired - important!
-  const { data: { session } } = await supabase.auth.getSession()
+  let session = null; // Default to null
+  let sessionError = null;
+
+  console.log(`Middleware: Checking session for path: ${request.nextUrl.pathname}`);
+
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      sessionError = error;
+      console.error(`Middleware: Error getting session for path ${request.nextUrl.pathname}:`, error.message);
+    } else if (data?.session) {
+      session = data.session;
+      console.log(`Middleware: Session found for path ${request.nextUrl.pathname}. User ID: ${session.user.id.substring(0, 8)}...`);
+    } else {
+      console.log(`Middleware: No session data found for path ${request.nextUrl.pathname}.`);
+    }
+  } catch (error: any) {
+    sessionError = error;
+    console.error(`Middleware: Exception during getSession for path ${request.nextUrl.pathname}:`, error?.message || error);
+  }
 
   const { pathname } = request.nextUrl
 
   // Define public paths accessible without authentication
-  const publicPaths = ['/', '/login']
+  // const publicPaths = ['/', '/login'] // Not strictly needed for this logic
   // Define protected paths that require authentication
   const protectedPaths = ['/editor', '/launch']
 
@@ -51,20 +70,24 @@ export async function middleware(request: NextRequest) {
     console.log(`Middleware: No session, accessing protected path ${pathname}. Redirecting to /login.`)
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = '/login'
-    // Keep search params if any, e.g., for redirection after login
-    // redirectUrl.search = `redirectedFrom=${pathname}`
+    // Optional: Keep original path for redirect after login
+    // redirectUrl.searchParams.set('redirectedFrom', pathname)
     return NextResponse.redirect(redirectUrl)
   }
 
-  // If user is logged in and trying to access login page, redirect to editor
+  // If user is logged in and trying to access login page, redirect to launch
   if (session && pathname === '/login') {
-    console.log(`Middleware: Session found, accessing /login. Redirecting to /editor.`)
+    console.log(`Middleware: Session found, accessing /login. Redirecting to /launch.`)
     const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = '/editor'
+    redirectUrl.pathname = '/launch'
     return NextResponse.redirect(redirectUrl)
   }
 
-  console.log(`Middleware: Access allowed for path ${pathname}. Session: ${!!session}`)
+  // Log access only if no redirect happened
+  if (!(sessionError)) { // Avoid logging access allowed if there was a session error
+    console.log(`Middleware: Access allowed for path ${pathname}. Session: ${!!session}`);
+  }
+
   // Return the response object, potentially modified by the Supabase client
   return response
 }
@@ -72,14 +95,8 @@ export async function middleware(request: NextRequest) {
 // Ensure the middleware is only called for relevant paths.
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - api routes (optional, depending on your needs)
-     * - Specific file extensions (svg, png, jpg, etc.)
-     */
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+     '/login', // Match the login page itself to handle redirects when already logged in
+     '/launch/:path*', // Match the launch page and any sub-paths
+     '/editor/:path*', // Match the editor page and any sub-paths (like document IDs)
   ],
 } 
