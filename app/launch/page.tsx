@@ -123,7 +123,7 @@ export default function LaunchPage() {
   useEffect(() => {
     console.log("[LaunchPage] useEffect triggered to call fetchData."); // Log effect trigger
     fetchData();
-  }, [fetchData]);
+  }, []);
 
   // Effect for typing animation
   useEffect(() => {

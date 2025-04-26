@@ -32,6 +32,8 @@ import {
 } from '@blocknote/core';
 // Import BlockNoteEditor type for handleEditorChange
 import type { BlockNoteEditor as BlockNoteEditorType } from '@blocknote/core';
+// ADDED: Import FormattingToolbarController
+import { FormattingToolbarController } from '@blocknote/react';
 
 // Icons
 import {
@@ -42,7 +44,8 @@ import {
     SendIcon,
 } from '@/components/icons';
 // Added Clock, CheckCircle2, AlertCircle, XCircle for autosave status
-import { ChevronLeft, ChevronRight, Wrench, SendToBack, Edit, Save, X, Clock, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
+// Added Sparkles for Infer Title
+import { ChevronLeft, ChevronRight, Wrench, SendToBack, Edit, Save, X, Clock, CheckCircle2, AlertCircle, XCircle, Sparkles } from 'lucide-react';
 import {
     DocumentPlusIcon,
     ArrowDownTrayIcon,
@@ -53,7 +56,7 @@ import { Markdown } from '@/components/markdown';
 import { ModelSelector } from '@/components/ModelSelector';
 import { TextFilePreview } from '@/components/editor/TextFilePreview'; // Import the extracted component
 import { ChatInputUI } from '@/components/editor/ChatInputUI'; // Import the extracted component
-// import { webSearch } from '@/lib/tools/exa-search'; // Not directly used client-side anymore
+// import { AIButton } from '../components/AIButton';
 import type {
     Document as SupabaseDocument,
     MessageWithSignedUrl,
@@ -66,6 +69,9 @@ import {
     deleteTextInInlineContent,
     getTextFromDataUrl,
 } from '@/lib/editorUtils'; // Import the extracted helpers
+
+// Zustand Store
+import { useFollowUpStore } from '@/lib/stores/followUpStore';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -126,6 +132,9 @@ export default function EditorPage() {
     const fileInputRef = useRef<HTMLInputElement>(null); // Hidden file input
     const messagesEndRef = useRef<HTMLDivElement>(null); // Chat scroll anchor
 
+    // --- NEW: Infer Title State ---
+    const [isInferringTitle, setIsInferringTitle] = useState(false);
+
     // --- NEW: Upload State ---
     const [isUploading, setIsUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
@@ -172,6 +181,16 @@ export default function EditorPage() {
         },
         // Body is handled dynamically in the wrapped handleSubmit
     });
+
+    // --- Zustand Follow Up Store ---
+    const followUpContext = useFollowUpStore((state) => state.followUpContext);
+    const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
+
+    // --- DEBUG: Log followUpContext changes ---
+    useEffect(() => {
+        console.log("[EditorPage] followUpContext state updated:", followUpContext);
+    }, [followUpContext]);
+    // --- END DEBUG ---
 
     // --- Data Fetching ---
 
@@ -317,7 +336,7 @@ export default function EditorPage() {
             setIsLoadingMessages(false);
             // Removed log from here
         }
-    }, [documentId, setChatMessages, setDisplayedMessagesCount, model, originalHandleSubmit]);
+    }, [documentId, setChatMessages, setDisplayedMessagesCount]); // Removed model, originalHandleSubmit
 
     // Initial data fetch on component mount or when documentId changes
     useEffect(() => {
@@ -327,7 +346,7 @@ export default function EditorPage() {
         }
         setProcessedToolCallIds(new Set());
         // Don't reset displayedMessagesCount here, fetchChatMessages handles initial set
-    }, [documentId]);
+    }, [documentId, fetchDocument, fetchChatMessages]); // Added fetchDocument, fetchChatMessages
 
     // --- NEW: Effect to read initial message from query parameter ---
     const routerForReplace = useRouter(); // Get router instance for replace
@@ -384,7 +403,7 @@ export default function EditorPage() {
         // up to INITIAL_MESSAGE_COUNT. If the user has clicked "Load More"
         // and displayedMessagesCount > INITIAL_MESSAGE_COUNT, this effect won't
         // decrease it, allowing the manual loading to persist.
-    }, [chatMessages.length]); // Depend only on the total message count
+    }, [chatMessages.length, displayedMessagesCount]); // Added displayedMessagesCount
 
     // --- Editor Interaction Logic ---
 
@@ -678,13 +697,16 @@ export default function EditorPage() {
         if (event) event.preventDefault();
         if (!documentId) { toast.error("Cannot send message: Document context missing."); return; }
         
-        const currentInput = input;
+        // Combine follow-up context with current input
+        const contextPrefix = followUpContext ? `${followUpContext}\n\n---\n\n` : '';
+        const currentInput = contextPrefix + input;
         const currentModel = model;
-        const imagePathToSend = uploadedImagePath; // Use the state variable
+        const imagePathToSend = uploadedImagePath;
 
         // Submission Guard: Check if loading, uploading, or no content (text or image)
-        if (isChatLoading || isUploading || (!currentInput.trim() && !imagePathToSend)) {
-            console.log('Submission prevented:', { isChatLoading, isUploading, currentInput, imagePathToSend });
+        // Adjusted check to account for potentially only having followUpContext
+        if (isChatLoading || isUploading || (!input.trim() && !imagePathToSend && !followUpContext)) {
+            console.log('Submission prevented:', { isChatLoading, isUploading, currentInput: input, imagePathToSend, followUpContext });
             return; 
         }
 
@@ -747,6 +769,7 @@ export default function EditorPage() {
                  // We pass the FileList here for the useChat hook to potentially use internally for optimistic updates
                  // even though the actual upload is done. This mirrors the previous behaviour.
                  // If this causes issues, we might remove it or pass undefined.
+                 // If this causes issues, we might remove it or pass undefined.
                  options: { experimental_attachments: files ? Array.from(files) : undefined }
             };
 
@@ -756,6 +779,7 @@ export default function EditorPage() {
             // Clear inputs/state AFTER successful submission start
             setUploadedImagePath(null);
             setFiles(null); // Clear preview files
+            setFollowUpContext(null); // <-- ADDED: Clear follow-up context
             // useChat hook should handle clearing the text input (`input`)
             requestAnimationFrame(() => { if (inputRef.current) inputRef.current.style.height = 'auto'; });
 
@@ -1219,7 +1243,7 @@ export default function EditorPage() {
              // Note: Autosave status is now managed independently ('saved' or 'error')
         }
     // Include autosave timers in dependencies
-    }, [documentId, isSaving, documentData, autosaveTimerId, revertStatusTimerId, triggerSaveDocument]);
+    }, [documentId, isSaving, /* Removed documentData */ autosaveTimerId, revertStatusTimerId, triggerSaveDocument]);
 
     // Navigation Handlers
     const handleNewDocument = () => { console.log("Navigating to /launch"); router.push('/launch'); };
@@ -1236,29 +1260,33 @@ export default function EditorPage() {
         setNewTitleValue(''); // Clear temporary value
     };
 
-    const handleSaveTitle = async () => {
-        if (!documentData || !newTitleValue.trim() || newTitleValue.trim() === documentData.name) {
+    const handleSaveTitle = async (titleToSave?: string) => {
+        // Determine the title to actually save
+        const finalTitle = titleToSave !== undefined ? titleToSave.trim() : newTitleValue.trim();
+
+        if (!documentData || !finalTitle || finalTitle === documentData.name) {
             // If name is empty or unchanged, just cancel edit mode
-            if (!newTitleValue.trim()) {
+            if (!finalTitle) {
                 toast.error("Document name cannot be empty.");
             }
-            handleCancelEditTitle();
+            handleCancelEditTitle(); // Also cancels if name is unchanged
             return;
         }
 
         const originalTitle = documentData.name;
-        const optimisticNewTitle = newTitleValue.trim();
+        // Use finalTitle for optimistic update and API call
+        const optimisticNewTitle = finalTitle;
 
         // Optimistic UI update
         setDocumentData(prevData => prevData ? { ...prevData, name: optimisticNewTitle } : null);
-        setIsEditingTitle(false);
+        setIsEditingTitle(false); // Exit edit mode after initiating save
 
         try {
             const response = await fetch(`/api/documents/${documentId}`,
                 {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: optimisticNewTitle }), // Send only the name
+                    body: JSON.stringify({ name: optimisticNewTitle }), // Send finalTitle
                 }
             );
 
@@ -1285,12 +1313,80 @@ export default function EditorPage() {
     // Add handler for Enter key in title input
     const handleTitleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter') {
-            handleSaveTitle();
+            handleSaveTitle(); // No argument - uses state from input
         } else if (event.key === 'Escape') {
             handleCancelEditTitle();
         }
     };
     // --- END Added Title Editing Handlers ---
+
+    // --- NEW: Handle Infer Title Click ---
+    const handleInferTitle = async () => {
+        const editor = editorRef.current;
+        if (!editor) {
+            toast.error("Editor not ready.");
+            return;
+        }
+
+        setIsInferringTitle(true);
+        toast.info("Generating title based on content..."); // Inform user
+
+        try {
+            // 1. Get editor content as Markdown
+            const blocks = editor.document;
+            const markdown = await editor.blocksToMarkdownLossy(blocks);
+
+            // 2. Extract snippet (first 500 chars, as per PRD)
+            const snippet = markdown.substring(0, 500);
+
+            // Basic check if snippet is empty after conversion/extraction
+            if (!snippet.trim()) {
+                 toast.warning("Cannot generate title from empty content.");
+                 setIsInferringTitle(false);
+                 return;
+            }
+
+            // 3. Call the backend API
+            const response = await fetch('/api/generate-title', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ content: snippet }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+                throw new Error(errorData.error || `Failed to generate title (${response.status})`);
+            }
+
+            const { title } = await response.json();
+
+            if (!title) {
+                throw new Error("Received empty title from API.");
+            }
+
+            // 4. Update the title using existing logic
+            toast.success("Title suggested!");
+            // Set the input field value directly
+            setNewTitleValue(title);
+            // Trigger the save mechanism (which also handles optimistic UI update if isEditingTitle is true)
+            setIsEditingTitle(true); // Ensure save button appears if not already editing
+            // We might need a slight delay or focus management here if needed,
+            // but handleSaveTitle should pick up the new value from `newTitleValue`
+            // No, actually call handleSaveTitle directly to persist it immediately
+            await handleSaveTitle(title); // Call without arguments, uses newTitleValue state
+            // setIsEditingTitle(false); // Exit edit mode after successful save // Keep edit mode active so user sees the change and can modify/confirm
+
+
+        } catch (error) {
+            console.error("Error inferring title:", error);
+            const message = error instanceof Error ? error.message : "Unknown error occurred";
+            toast.error(`Title generation failed: ${message}`);
+        } finally {
+            setIsInferringTitle(false);
+        }
+    };
 
     // --- Render Logic ---
 
@@ -1337,12 +1433,33 @@ export default function EditorPage() {
                                     className="flex-grow px-2 py-1 border border-[--border-color] rounded bg-[--input-bg] text-[--text-color] focus:outline-none focus:ring-1 focus:ring-[--primary-color] text-lg font-semibold"
                                     autoFocus
                                 />
-                                <button onClick={handleSaveTitle} className="p-1 text-green-600 hover:bg-green-100 dark:hover:bg-green-900 rounded" title="Save Title"><Save size={18} /></button>
+                                <button onClick={() => handleSaveTitle()} className="p-1 text-green-600 hover:bg-green-100 dark:hover:bg-green-900 rounded" title="Save Title"><Save size={18} /></button>
                                 <button onClick={handleCancelEditTitle} className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900 rounded" title="Cancel"><X size={18} /></button>
                             </>
                         ) : (
                             <>
                                 <h2 className="text-lg font-semibold text-[--text-color] truncate" title={documentData.name}>{documentData.name}</h2>
+                                {/* --- NEW: Infer Title Button (Re-added) --- */}
+                                <button
+                                    onClick={handleInferTitle}
+                                    className="p-1 rounded hover:bg-[--hover-bg] text-[--muted-text-color] hover:text-[--text-color] disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                                    aria-label="Suggest title from content"
+                                    title="Suggest title from content"
+                                    disabled={isInferringTitle || !editorRef.current} // Disable while inferring or if editor not ready
+                                >
+                                    {isInferringTitle ? (
+                                         <motion.div
+                                            animate={{ rotate: 360 }}
+                                            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                                            style={{ display: 'flex' }} // Keep layout consistent
+                                         >
+                                             <Sparkles size={16} className="text-yellow-500" />
+                                         </motion.div>
+                                    ) : (
+                                         <Sparkles size={16} />
+                                    )}
+                                </button>
+                                {/* --- End: Infer Title Button --- */}
                                 <button onClick={handleEditTitleClick} className="p-1 text-[--muted-text-color] hover:text-[--text-color] hover:bg-[--hover-bg] rounded flex-shrink-0" title="Rename Document"><Edit size={16} /></button>
                             </>
                         )}
@@ -1371,12 +1488,14 @@ export default function EditorPage() {
                 <div className="flex-1 flex flex-col relative border rounded-lg bg-[--editor-bg] border-[--border-color] shadow-sm overflow-hidden">
                     <div className="flex-1 overflow-y-auto p-4 styled-scrollbar">
                         {initialEditorContent !== undefined ? (
-                            // --- MODIFIED: Pass onEditorContentChange (Step 5) ---
+                            // Render the editor component directly
                             <BlockNoteEditorComponent
                                 key={documentId} // Keep key for re-initialization if ID changes
                                 editorRef={editorRef}
                                 initialContent={initialEditorContent}
                                 onEditorContentChange={handleEditorChange} // Pass the handler
+                                // Remove editable prop
+                                // editable={true}
                             />
                         ) : (
                             <p className="p-4 text-center text-[--muted-text-color]">Initializing editor...</p>
@@ -1385,6 +1504,22 @@ export default function EditorPage() {
                     {/* Collapsed Chat Input */}
                     {isChatCollapsed && <div className="p-4 pt-2 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0">
                         <form ref={formRef} onSubmit={handleSubmitWithContext} className="w-full flex flex-col items-center">
+                           {/* --- ADDED: Follow Up Context Display --- */}
+                           {followUpContext && (
+                               <div className="w-full mb-2 p-2 border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 rounded-md relative text-sm text-blue-800 dark:text-blue-200">
+                                   <button 
+                                       type="button"
+                                       onClick={() => setFollowUpContext(null)}
+                                       className="absolute top-1 right-1 p-0.5 text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800"
+                                       title="Clear follow-up context"
+                                   >
+                                       <X size={14} />
+                                   </button>
+                                   <p className="font-medium mb-1 text-blue-600 dark:text-blue-300">Follow-up Context:</p>
+                                   <p className="line-clamp-2">{followUpContext}</p>
+                               </div>
+                           )}
+                           {/* --- END ADDED --- */}
                            <ChatInputUI files={files} fileInputRef={fileInputRef} handleFileChange={handleFileChange} inputRef={inputRef} input={input} handleInputChange={handleInputChange} handleKeyDown={handleKeyDown} handlePaste={handlePaste} model={model} setModel={setModel} handleUploadClick={handleUploadClick} isLoading={isChatLoading} isUploading={isUploading} uploadError={uploadError} uploadedImagePath={uploadedImagePath} onStop={stop} />
                         </form>
                     </div>}
@@ -1439,6 +1574,22 @@ export default function EditorPage() {
                 {!isChatCollapsed &&
                     <div className="w-full px-0 pb-4 border-t border-[--border-color] pt-4 flex-shrink-0 bg-[--bg-secondary]">
                         <form ref={formRef} onSubmit={handleSubmitWithContext} className="w-full flex flex-col items-center">
+                           {/* --- ADDED: Follow Up Context Display --- */}
+                           {followUpContext && (
+                               <div className="w-full mb-2 p-2 border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 rounded-md relative text-sm text-blue-800 dark:text-blue-200">
+                                   <button 
+                                       type="button"
+                                       onClick={() => setFollowUpContext(null)}
+                                       className="absolute top-1 right-1 p-0.5 text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800"
+                                       title="Clear follow-up context"
+                                   >
+                                       <X size={14} />
+                                   </button>
+                                   <p className="font-medium mb-1 text-blue-600 dark:text-blue-300">Follow-up Context:</p>
+                                   <p className="line-clamp-2">{followUpContext}</p>
+                               </div>
+                           )}
+                           {/* --- END ADDED --- */}
                             <ChatInputUI files={files} fileInputRef={fileInputRef} handleFileChange={handleFileChange} inputRef={inputRef} input={input} handleInputChange={handleInputChange} handleKeyDown={handleKeyDown} handlePaste={handlePaste} model={model} setModel={setModel} handleUploadClick={handleUploadClick} isLoading={isChatLoading} isUploading={isUploading} uploadError={uploadError} uploadedImagePath={uploadedImagePath} onStop={stop} />
                         </form>
                     </div>

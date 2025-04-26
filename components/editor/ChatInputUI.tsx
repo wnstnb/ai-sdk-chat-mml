@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { AttachmentIcon, SendIcon } from '@/components/icons';
 import { ModelSelector } from '@/components/ModelSelector';
 import { TextFilePreview } from './TextFilePreview'; // Import from sibling file
+import Image from 'next/image'; // Import Next.js Image
 
 // --- Helper Icon Component ---
 const StopIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -113,11 +114,12 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                                     <div key={file.name} className="flex-shrink-0 relative group">
                                         {/* Image Preview */}
                                         {file.type.startsWith('image/') && (
-                                            <img // Using simple img tag, motion wrapper was removed for simplicity here
+                                            <Image 
                                                 src={URL.createObjectURL(file)}
                                                 alt={file.name}
-                                                className={`rounded-md w-16 h-16 object-cover ${isUploading ? 'opacity-50' : ''}`}
-                                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                width={64}
+                                                height={64}
+                                                className={`rounded-md object-cover ${isUploading ? 'opacity-50' : ''}`}
                                             />
                                         )}
                                         {/* Uploading Indicator */}
@@ -198,4 +200,4 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
             </div>
         </>
     );
-}; 
+};
