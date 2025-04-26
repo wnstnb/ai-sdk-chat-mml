@@ -10,6 +10,8 @@ import '@cubone/react-file-manager/dist/react-file-manager.css';
 import { Document, Folder } from '@/types/supabase'; // Import types
 import { ChatInputUI } from '@/components/editor/ChatInputUI'; // Import the chat input UI
 // import { ModelSelector } from '@/components/ModelSelector'; // Import if needed directly, ChatInputUI uses it
+// Import the new file manager component
+import NewFileManager from '@/components/file-manager/NewFileManager';
 
 // Define the structure expected by Cubone File Manager (matching docs)
 type CuboneFileType = {
@@ -79,7 +81,7 @@ export default function LaunchPage() {
   const typingSpeed = 40; // milliseconds per character
 
   // --- State for Tab View ---
-  const [activeView, setActiveView] = useState<'chat' | 'files'>('chat');
+  const [activeView, setActiveView] = useState<'chat' | 'files' | 'newFileManager'>('chat');
 
   // Fetch initial file/folder data
   const fetchData = useCallback(async () => {
@@ -350,6 +352,15 @@ export default function LaunchPage() {
         >
           Browse Files
         </button>
+        <button 
+          onClick={() => setActiveView('newFileManager')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-150 
+                     ${activeView === 'newFileManager' 
+                       ? 'bg-[--accent-color] text-[--accent-text-color]'
+                       : 'bg-[--button-bg-secondary] text-[--text-color-secondary] hover:bg-[--button-hover-bg-secondary]'}`}
+        >
+          New File Manager (Prototype)
+        </button>
       </div>
 
       {/* Conditional Rendering based on activeView */}
@@ -413,6 +424,19 @@ export default function LaunchPage() {
               />
             )}
           </div>
+        </>
+      )}
+
+      {/* New Conditional Block for New File Manager */}
+      {activeView === 'newFileManager' && (
+        <>
+          {/* Render the actual NewFileManager component */}
+          <div className="flex-grow overflow-hidden border border-[--border-color] rounded-md shadow-sm">
+            <NewFileManager />
+          </div>
+
+          {/* Display general errors if any occur while this view is active */}
+          {error && <div className="mt-4 p-2 text-red-700 bg-red-100 border border-red-400 rounded text-center">{error}</div>}
         </>
       )}
     </div>
