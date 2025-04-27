@@ -136,7 +136,7 @@ export default function LaunchPage() {
     const typeCharacter = () => {
         if (index < fullText.length) {
             const charToAdd = fullText.charAt(index);
-            console.log(`[Typing Effect] Index: ${index}, Char: ${charToAdd}`); // <-- Add logging
+            // console.log(`[Typing Effect] Index: ${index}, Char: ${charToAdd}`); // <-- Add logging
             setDisplayedText((prev) => prev + charToAdd);
             index++;
             setTimeout(typeCharacter, typingSpeed);
