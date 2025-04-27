@@ -58,6 +58,8 @@ import { TextFilePreview } from '@/components/editor/TextFilePreview'; // Import
 import { ChatInputUI } from '@/components/editor/ChatInputUI'; // Import the extracted component
 // NEW: Import AutosaveStatusIndicator
 import { AutosaveStatusIndicator } from '@/app/components/editor/AutosaveStatusIndicator';
+// NEW: Import EditorTitleBar
+import { EditorTitleBar } from '@/components/editor/EditorTitleBar';
 // import { AIButton } from '../components/AIButton';
 import type {
     Document as SupabaseDocument,
@@ -1297,8 +1299,26 @@ export default function EditorPage() {
 
             {/* Editor Pane */}
             <div className="flex-1 flex flex-col p-4 border-r border-[--border-color] relative overflow-hidden">
-                {/* Title Bar - UPDATED TO USE HOOK STATE/HANDLERS */}
-                <div className="flex justify-between items-center mb-2 flex-shrink-0">
+                {/* --- NEW: Use EditorTitleBar Component --- */}
+                <EditorTitleBar
+                    currentTitle={currentTitle}
+                    isEditingTitle={isEditingTitle}
+                    newTitleValue={newTitleValue}
+                    setNewTitleValue={setNewTitleValue}
+                    handleTitleInputKeyDown={handleTitleInputKeyDown}
+                    handleSaveTitle={handleSaveTitle}
+                    handleCancelEditTitle={handleCancelEditTitle}
+                    handleEditTitleClick={handleEditTitleClick}
+                    isInferringTitle={isInferringTitle}
+                    handleInferTitle={handleInferTitle}
+                    editorRef={editorRef} // Pass editorRef
+                    autosaveStatus={autosaveStatus} // Pass autosave status from page state
+                    handleNewDocument={handleNewDocument} // Pass handler from page
+                    handleSaveContent={handleSaveContent} // Pass handler from page
+                    isSaving={isSaving} // Pass saving state from page
+                />
+                {/* --- REMOVED: Original Title Bar JSX --- */}
+                {/* <div className="flex justify-between items-center mb-2 flex-shrink-0">
                     <div className="flex items-center gap-2 flex-grow min-w-0">
                         {isEditingTitle ? (
                             <>
@@ -1310,13 +1330,12 @@ export default function EditorPage() {
                                     className="flex-grow px-2 py-1 border border-[--border-color] rounded bg-[--input-bg] text-[--text-color] focus:outline-none focus:ring-1 focus:ring-[--primary-color] text-lg font-semibold"
                                     autoFocus
                                 />
-                                <button onClick={() => handleSaveTitle()} className="p-1 text-green-600 hover:bg-green-100 dark:hover:bg-green-900 rounded" title="Save Title"><Save size={18} /></button> {/* Use hook handler */}
-                                <button onClick={handleCancelEditTitle} className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900 rounded" title="Cancel"><X size={18} /></button> {/* Use hook handler */}
+                                <button onClick={() => handleSaveTitle()} className="p-1 text-green-600 hover:bg-green-100 dark:hover:bg-green-900 rounded" title="Save Title"><Save size={18} /></button>
+                                <button onClick={handleCancelEditTitle} className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900 rounded" title="Cancel"><X size={18} /></button>
                             </>
                         ) : (
                             <>
-                                <h2 className="text-lg font-semibold text-[--text-color] truncate" title={currentTitle}>{currentTitle}</h2> {/* Use currentTitle from hook */}
-                                {/* --- Infer Title Button --- */}
+                                <h2 className="text-lg font-semibold text-[--text-color] truncate" title={currentTitle}>{currentTitle}</h2>
                                 <button
                                     onClick={handleInferTitle} // Use hook handler
                                     className="p-1 rounded hover:bg-[--hover-bg] text-[--muted-text-color] hover:text-[--text-color] disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
@@ -1336,31 +1355,19 @@ export default function EditorPage() {
                                          <Sparkles size={16} />
                                     )}
                                 </button>
-                                {/* --- End: Infer Title Button --- */}
-                                <button onClick={handleEditTitleClick} className="p-1 text-[--muted-text-color] hover:text-[--text-color] hover:bg-[--hover-bg] rounded flex-shrink-0" title="Rename Document"><Edit size={16} /></button> {/* Use hook handler */}
+                                <button onClick={handleEditTitleClick} className="p-1 text-[--muted-text-color] hover:text-[--text-color] hover:bg-[--hover-bg] rounded flex-shrink-0" title="Rename Document"><Edit size={16} /></button>
                             </>
                         )}
                     </div>
                     <div className="flex items-center space-x-2 flex-shrink-0">
-                        {/* --- NEW: Use AutosaveStatusIndicator Component --- */}
                         <AutosaveStatusIndicator status={autosaveStatus} />
-                        {/* --- REMOVED: Simplified/Old Autosave Status Indicator --- */}
-                        {/* <div className="flex items-center gap-1 text-sm border border-red-500 px-1" aria-live="polite" aria-atomic="true"> */}
-                            {/* Always render the status text */} 
-                            {/* <span className="text-red-500 font-bold">[{autosaveStatus}]</span> */}
-                            {/* {autosaveStatus === 'unsaved' && <><Clock size={14} className="text-yellow-500" /><span>Unsaved</span></>} */} 
-                            {/* {autosaveStatus === 'saving' && <><svg className="animate-spin h-3.5 w-3.5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>Saving...</span></>} */} 
-                            {/* {autosaveStatus === 'saved' && <><CheckCircle2 size={14} className="text-green-500" /><span>Saved</span></>} */} 
-                            {/* {autosaveStatus === 'error' && <><AlertCircle size={14} className="text-red-500" /><span>Error</span></>} */} 
-                        {/* </div> */}
-                        {/* --- END REMOVED --- */}
                         <button onClick={handleNewDocument} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded" title="New/Open (Launch Pad)"><DocumentPlusIcon className="h-5 w-5" /></button>
-                        {/* Manual Save Button - Now uses isSaving state */}
                         <button onClick={handleSaveContent} disabled={isSaving || autosaveStatus === 'saving'} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed" title="Save Document Manually">
                            {isSaving ? <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <ArrowDownTrayIcon className="h-5 w-5" />}
                         </button>
                     </div>
-                </div>
+                </div> */}
+                {/* --- END REMOVED --- */}
                 {/* Page Errors */}
                 {pageError && !pageError.startsWith("Chat Error:") && <div className="mb-2 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>}
                 {/* Editor */}
