@@ -171,13 +171,13 @@ export async function POST(req: Request) {
     // Read messages and data from the request body
     const { messages: originalMessages, data: requestData } = await req.json();
 
-    // Extract relevant data, including the potential image path
+    // Extract relevant data, including the potential image SIGNED URL
     const {
         editorBlocksContext,
         model: modelIdFromData,
         documentId,
-        firstImagePath, // <-- ADDED: Extract image path
-        taskHint // <-- ADDED: Extract task hint
+        firstImageSignedUrl, // <-- UPDATED: Expect signed URL
+        taskHint
     } = requestData || {};
 
     // --- Existing Validation (Document ID, User Session) ---
@@ -236,28 +236,17 @@ export async function POST(req: Request) {
     // --- End Rate Limiting Wrapper ---
 
     // --- Prepare messages for the AI ---
-    let signedImageUrl: URL | undefined = undefined;
+    let finalImageSignedUrl: URL | undefined = undefined; // Use the directly passed URL
 
-    // If an image path was provided for the latest message, generate a signed URL
-    if (typeof firstImagePath === 'string' && firstImagePath.trim() !== '') {
+    // If a signed image URL was provided, try to parse it
+    if (typeof firstImageSignedUrl === 'string' && firstImageSignedUrl.trim() !== '') {
         try {
-            console.log(`[API Chat] Generating signed URL for image path: ${firstImagePath}`);
-            const { data, error } = await supabaseAdmin.storage
-                .from('message-images') // Replace with your actual bucket name
-                .createSignedUrl(firstImagePath, SIGNED_URL_EXPIRES_IN);
-
-            if (error) {
-                console.error(`[API Chat] Error generating signed URL for ${firstImagePath}:`, error);
-                // Decide whether to proceed without the image or return an error
-                // For now, log and proceed without the image URL
-                // return new Response(JSON.stringify({ error: { code: 'STORAGE_ERROR', message: `Failed to get image URL: ${error.message}` } }), { status: 500 });
-            } else if (data?.signedUrl) {
-                signedImageUrl = new URL(data.signedUrl);
-                console.log(`[API Chat] Generated signed URL successfully.`);
-            }
+            // Validate if it's a proper URL
+            finalImageSignedUrl = new URL(firstImageSignedUrl);
+            console.log(`[API Chat] Using provided signed URL for image.`);
         } catch (e: any) {
-            console.error(`[API Chat] Exception generating signed URL for ${firstImagePath}:`, e);
-             // Log and proceed without image
+            console.error(`[API Chat] Invalid image URL provided in request data: ${firstImageSignedUrl}`, e);
+             // Log and proceed without image if URL is invalid
         }
     }
 
@@ -266,14 +255,15 @@ export async function POST(req: Request) {
         const msg = originalMessages[i];
         const isLastMessage = i === originalMessages.length - 1;
 
-        if (msg.role === 'user' && isLastMessage && signedImageUrl) {
-            // Format the last user message as multimodal if an image URL was generated
+        // Use finalImageSignedUrl which contains the validated URL from requestData
+        if (msg.role === 'user' && isLastMessage && finalImageSignedUrl) {
+            // Format the last user message as multimodal if an image URL was provided
              console.log(`[API Chat] Formatting last user message (ID: ${msg.id || 'N/A'}) as multimodal.`);
             messages.push({
                 role: 'user',
                 content: [
-                    { type: 'text', text: msg.content || '' }, // Include text content even if empty
-                    { type: 'image', image: signedImageUrl }
+                    { type: 'text', text: msg.content || '' },
+                    { type: 'image', image: finalImageSignedUrl } // Use the validated URL
                 ]
             });
         } else if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system') {

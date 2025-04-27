@@ -649,60 +649,66 @@ export default function EditorPage() {
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
             {/* --- NEW: Use EditorPaneWrapper --- */}
-            <EditorPaneWrapper
-                // Props for BlockNoteEditorComponent
-                documentId={documentId}
-                initialContent={initialEditorContent}
-                editorRef={editorRef}
-                onEditorContentChange={handleEditorChange} // Pass the page's handler
-                // Props for Collapsed Chat Input
-                isChatCollapsed={isChatCollapsed}
-                // Pass all necessary props for collapsed ChatInputUI
-                input={input}
-                handleInputChange={handleInputChange}
-                handleSubmit={handleSubmit}
-                isLoading={isChatLoading}
-                model={model}
-                setModel={setModel}
-                stop={stop}
-                files={files}
-                handleFileChange={handleFileChange}
-                handlePaste={handlePaste}
-                handleUploadClick={handleUploadClick}
-                isUploading={isUploading}
-                uploadError={uploadError}
-                uploadedImagePath={uploadedImagePath}
-                followUpContext={followUpContext}
-                setFollowUpContext={setFollowUpContext}
-                formRef={formRef}
-                inputRef={inputRef}
-                fileInputRef={fileInputRef}
-                handleKeyDown={handleKeyDown}
-            />
-            {/* --- REMOVED: Original Editor Pane JSX --- */}
-            {/* <div className="flex-1 flex flex-col p-4 border-r border-[--border-color] relative overflow-hidden">
-                <EditorTitleBar ... />
-                {pageError && ... }
-                <div className="flex-1 flex flex-col relative border ...">
-                    <div className="flex-1 overflow-y-auto p-4 styled-scrollbar">
-                       <BlockNoteEditorComponent ... />
-                    </div>
-                    {isChatCollapsed && <div ... >
-                       // Collapsed Chat Input Form + ChatInputUI 
-                    </div>}
-                </div>
-                <button onClick={() => setIsChatCollapsed(!isChatCollapsed)} ... > ... </button>
-            </div> */}
-            {/* --- END REMOVED --- */}
-            
+            <div className="flex-1 flex flex-col p-4 border-r border-[--border-color] relative overflow-hidden">
+                <EditorTitleBar
+                    currentTitle={currentTitle}
+                    isEditingTitle={isEditingTitle}
+                    newTitleValue={newTitleValue}
+                    setNewTitleValue={setNewTitleValue}
+                    handleTitleInputKeyDown={handleTitleInputKeyDown}
+                    handleSaveTitle={handleSaveTitle}
+                    handleCancelEditTitle={handleCancelEditTitle}
+                    handleEditTitleClick={handleEditTitleClick}
+                    isInferringTitle={isInferringTitle}
+                    handleInferTitle={handleInferTitle}
+                    editorRef={editorRef}
+                    autosaveStatus={autosaveStatus}
+                    handleNewDocument={handleNewDocument}
+                    handleSaveContent={handleSaveContent}
+                    isSaving={isSaving}
+                />
+                {pageError && !pageError.startsWith("Chat Error:") && (
+                    <div className="mb-2 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
+                )}
+                <EditorPaneWrapper
+                    documentId={documentId}
+                    initialContent={initialEditorContent}
+                    editorRef={editorRef}
+                    onEditorContentChange={handleEditorChange}
+                    isChatCollapsed={isChatCollapsed}
+                    input={input}
+                    handleInputChange={handleInputChange}
+                    handleSubmit={handleSubmit}
+                    isLoading={isChatLoading}
+                    model={model}
+                    setModel={setModel}
+                    stop={stop}
+                    files={files}
+                    handleFileChange={handleFileChange}
+                    handlePaste={handlePaste}
+                    handleUploadClick={handleUploadClick}
+                    isUploading={isUploading}
+                    uploadError={uploadError}
+                    uploadedImagePath={uploadedImagePath}
+                    followUpContext={followUpContext}
+                    setFollowUpContext={setFollowUpContext}
+                    formRef={formRef}
+                    inputRef={inputRef}
+                    fileInputRef={fileInputRef}
+                    handleKeyDown={handleKeyDown}
+                />
+                <button onClick={() => setIsChatCollapsed(!isChatCollapsed)} className="absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 z-20 p-1 bg-[--toggle-button-bg] border border-[--border-color] rounded-full text-[--text-color] hover:bg-[--hover-bg] focus:outline-none" title={isChatCollapsed ? 'Expand chat' : 'Collapse chat'}>
+                    {isChatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+                </button>
+            </div>
+            {/* --- REMOVED: Original Editor Pane JSX (including title bar, error, wrapper div, button) --- */}
+
             {/* Use ChatPaneWrapper */}
             <ChatPaneWrapper
-                // Props from useChatPane
                 isChatCollapsed={isChatCollapsed}
                 chatPaneWidth={chatPaneWidth}
                 dragHandleRef={dragHandleRef}
                 handleMouseDownResize={handleMouseDownResize}
-                // Props for ChatMessagesList
                 chatMessages={chatMessages}
                 displayedMessagesCount={displayedMessagesCount}
                 isLoadingMessages={isLoadingMessages}
@@ -711,7 +717,6 @@ export default function EditorPage() {
                 handleSendToEditor={handleSendToEditor}
                 messagesEndRef={messagesEndRef}
                 messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
-                // Props for ChatInputArea
                 input={input}
                 handleInputChange={handleInputChange}
                 handleSubmit={handleSubmit}
@@ -731,7 +736,6 @@ export default function EditorPage() {
                 inputRef={inputRef}
                 fileInputRef={fileInputRef}
                 handleKeyDown={handleKeyDown}
-                // Constants
                 initialChatPaneWidthPercent={INITIAL_CHAT_PANE_WIDTH_PERCENT}
                 minChatPaneWidthPx={MIN_CHAT_PANE_WIDTH_PX}
             />
