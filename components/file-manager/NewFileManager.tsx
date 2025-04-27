@@ -6,7 +6,7 @@ import FolderItem from './FolderItem';
 import DocumentItem from './DocumentItem';
 import FolderTree from './FolderTree';
 import Breadcrumbs from './Breadcrumbs';
-import { FolderPlus, Check, X, Loader2 } from 'lucide-react'; // Icons for create folder UI
+import { FolderPlus, Check, X, Loader2, XCircle } from 'lucide-react'; // Icons for create folder UI and XCircle
 import {
   DndContext,
   closestCenter,
@@ -143,7 +143,6 @@ const NewFileManager = () => {
       newDraggedIds = new Set([activeId]); // Drag only this one item
     }
     setDraggedItemIds(newDraggedIds);
-    console.log("[handleDragStart] Dragged IDs set to:", Array.from(newDraggedIds)); // Log the IDs being set
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -151,18 +150,8 @@ const NewFileManager = () => {
     const currentDraggedIds = draggedItemIds; // Capture the state at the start of the function
     setDraggedItemIds(null); // Reset dragged items state immediately
 
-    // Log the state right before the check
-    console.log("[handleDragEnd] Event:", { 
-      activeId: active?.id,
-      activeData: active?.data?.current,
-      overId: over?.id,
-      overData: over?.data?.current,
-      currentDraggedIds: currentDraggedIds ? Array.from(currentDraggedIds) : null 
-    });
-
     // Check if essential active data is missing or if nothing was actually being dragged
     if (!active.data.current || !currentDraggedIds || currentDraggedIds.size === 0) {
-        console.log("Drag cancelled: Missing active data or no items were being dragged.");
         return;
     }
 
@@ -179,11 +168,9 @@ const NewFileManager = () => {
         // Drop occurred over a registered droppable zone
         overId = over.id as string;
         overType = over.data.current.type as string; // Get type
-        console.log(`Drop detected over known zone: ${overId}, Type: ${overType}`);
 
         // Don't allow dropping a selection onto one of the items within the selection
         if (currentDraggedIds.has(overId) && (overType === 'folder' || overType === 'document')) {
-            console.log("Drag cancelled: Cannot drop selection onto itself.");
             return;
         }
 
@@ -194,29 +181,20 @@ const NewFileManager = () => {
         } else if (overType === 'folder-tree-root') {
             targetFolderId = null;
         } else {
-            // Dropped over something registered but not a valid target type for us
-            console.log(`Drag cancelled: Dropped over registered but unsupported zone type: ${overType}`);
             return;
         }
     } else {
         // Drop occurred somewhere else (assume background of current view)
-        console.log("Drop detected outside known zones. Assuming drop onto current view background.");
         targetFolderId = currentFolderId; // Use the current folder ID as the target
-        // overId and overType remain null
     }
     // --- End Determine Target Folder --- 
 
-    console.log(`Processing DragEnd for ${currentDraggedIds.size} items:`, {
-        draggedIds: Array.from(currentDraggedIds),
-        activeTriggerId: activeId, 
-        activeType,
-        determinedTargetFolderId: targetFolderId, // Log the finally determined target
-        detectedOverId: overId, // Log the detected overId (if any)
-        detectedOverType: overType, // Log the detected overType (if any)
-    });
+    // Keep this log, but use itemsToMove which is the array version
+    const itemsToMove = Array.from(currentDraggedIds);
+    console.log(`Attempting to move items: ${itemsToMove.join(', ')} to targetFolderId: ${targetFolderId}`);
 
     // --- Perform Move Operation for ALL Dragged Items ---
-    const itemsToMove = Array.from(currentDraggedIds);
+    // const itemsToMove = Array.from(currentDraggedIds); // Moved declaration up
 
     // Get details for all items being moved (needed for parent checks)
     // This assumes itemsToMove contains only IDs. We need to get their types and current parents.
@@ -237,7 +215,6 @@ const NewFileManager = () => {
         : active.data.current.document?.folder_id;
 
     if (itemsToMove.length === 1 && initialItemParentId === targetFolderId) {
-        console.log(`Drag cancelled: ${activeType} dropped onto its current parent folder.`);
         return;
     }
 
@@ -246,11 +223,7 @@ const NewFileManager = () => {
     // 2. Iterate through itemsToMove and check *each* item's currentParentId against targetFolderId.
     //    Only move items that are actually changing parent.
 
-    console.log(`Attempting to move items: ${itemsToMove.join(', ')} to targetFolderId: ${targetFolderId}`);
-
     // Call moveItem for each dragged item
-    // Note: moveItem likely needs to accept an array or be called in a loop
-    // Assuming moveItem handles individual moves for now.
     itemsToMove.forEach(itemId => {
         // Determine type based on ID (requires looking up in allFolders/allDocuments)
         const folder = allFolders.find(f => f.id === itemId);
@@ -259,11 +232,8 @@ const NewFileManager = () => {
 
         if (itemType) {
             const currentParent = folder ? folder.parent_folder_id : doc?.folder_id;
-            // Add specific logging here
-            console.log(`Item ID: ${itemId}, Type: ${itemType}, Current Parent: ${currentParent}, Target Folder: ${targetFolderId}`);
             // Update check: Move if parents are different OR if target is root (null)
             if (currentParent !== targetFolderId || targetFolderId === null) {
-                 console.log(`--> Calling moveItem(${itemId}, ${itemType}, ${targetFolderId})`);
                  moveItem(itemId, itemType, targetFolderId);
             } else {
                 console.log(`--> Skipping move for ${itemId}: Already in target folder.`);
@@ -288,13 +258,6 @@ const NewFileManager = () => {
     minHeight: '100px', // Ensure drop zone has some height even when empty
     position: 'relative' as const, // Keep relative for potential children like inline form
   };
-
-  // Log when the hover state changes
-  useEffect(() => {
-    console.log(`[useDroppable] isOverMainArea changed: ${isOverMainArea}`);
-  }, [isOverMainArea]);
-
-  // --- End Main Area Drop Zone ---
 
   // Determine content to display based on state
   let mainContent;
@@ -402,15 +365,28 @@ const NewFileManager = () => {
         <div className="flex items-center justify-between p-2 border-b border-[--border-color]">
           <Breadcrumbs onNavigate={handleNavigate} />
           {/* Create Folder Button */}
-          {!isCreatingFolder && (
-            <button
-              onClick={handleCreateFolderClick}
-              className="flex items-center px-2 py-1 text-sm bg-[--button-bg] text-[--button-text] hover:bg-[--button-hover-bg] rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <FolderPlus className="w-4 h-4 mr-1" />
-              Create Folder
-            </button>
-          )}
+          <div className="flex items-center space-x-2"> {/* Wrapper for buttons */}
+            {/* Clear Selection Button - Conditionally rendered */}
+            {selectedItemIds.size > 0 && (
+              <button
+                onClick={clearSelection}
+                className="flex items-center px-2 py-1 text-sm bg-[--secondary-button-bg] text-[--secondary-button-text] hover:bg-[--secondary-button-hover-bg] rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                aria-label="Clear selection"
+              >
+                <XCircle className="w-4 h-4 mr-1" />
+                Clear Selection ({selectedItemIds.size})
+              </button>
+            )}
+            {!isCreatingFolder && (
+              <button
+                onClick={handleCreateFolderClick}
+                className="flex items-center px-2 py-1 text-sm bg-[--button-bg] text-[--button-text] hover:bg-[--button-hover-bg] rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <FolderPlus className="w-4 h-4 mr-1" />
+                Create Folder
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Main Content Area */}
