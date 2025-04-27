@@ -28,9 +28,12 @@ const FolderItem = React.forwardRef<
     expandedFolderIds,
     toggleFolderExpansion,
     allFolders,
-    allDocuments
+    allDocuments,
+    selectedItemIds, // Get selected IDs
+    toggleSelectItem, // Use the updated action
   } = useFileMediaStore();
 
+  const isSelected = selectedItemIds.has(folder.id);
   const isExpanded = expandedFolderIds.has(folder.id);
 
   // Find children efficiently
@@ -97,10 +100,19 @@ const FolderItem = React.forwardRef<
       toggleFolderExpansion(folder.id);
   };
 
+  // Click handler for navigation ONLY (selection handled by checkbox)
   const handleNavigateClick = () => {
+    // Only navigate if not renaming or dragging
     if (!isRenaming && !isDragging) {
       onNavigate(folder.id);
     }
+  };
+
+  // Checkbox change handler
+  const handleCheckboxChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    // Prevent click event on the row from firing
+    event.stopPropagation();
+    toggleSelectItem(folder.id);
   };
 
   // Rename Handlers
@@ -146,9 +158,23 @@ const FolderItem = React.forwardRef<
       <div
         ref={setNodeRef} // Apply combined ref here
         style={{ ...draggableStyle, ...dropStyle, ...indentationStyle }} // Apply styles
-        className={`group flex items-center w-full p-2 rounded text-left relative ${isRenaming ? 'bg-[--selected-bg]' : 'hover:bg-[--hover-bg]'}`}
+        // Apply selection background based on isSelected
+        className={`group flex items-center w-full p-2 rounded text-left relative 
+                    ${isSelected ? 'bg-[--selected-bg]' : 'hover:bg-[--hover-bg]'}`}
         {...attributes} // Keep accessibility attributes
       >
+        {/* Checkbox for Selection */}
+        <span onClick={(e) => e.stopPropagation()} className="mr-2 flex-shrink-0">
+          {/* Replace with actual Checkbox component if available */}
+          <input 
+            type="checkbox" 
+            checked={isSelected}
+            onChange={handleCheckboxChange}
+            aria-label={`Select folder ${folder.name}`}
+            className="cursor-pointer form-checkbox h-4 w-4 text-blue-600 transition duration-150 ease-in-out rounded border-gray-300 focus:ring-blue-500"
+          />
+        </span>
+
         {/* Chevron for Expansion (Click handled separately) */}
         <span onClick={handleExpandClick} className="mr-1 p-0.5 rounded hover:bg-[--icon-hover-bg] cursor-pointer flex-shrink-0">
             {hasChildren ? (
@@ -158,7 +184,8 @@ const FolderItem = React.forwardRef<
             )}
         </span>
 
-        {/* Clickable & Draggable Area (Icon + Name/Form) */}
+        {/* Clickable & Draggable Area (Icon + Name/Form) - Handles navigation */}
+        {/* Apply drag listeners and navigation click here */}
         <div className="flex items-center flex-grow cursor-pointer" onClick={handleNavigateClick} {...listeners}>
             <FolderIcon className="w-5 h-5 mr-2 text-[--icon-color] flex-shrink-0" />
             {isRenaming ? (

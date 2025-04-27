@@ -5,6 +5,7 @@ import { FileTextIcon, Edit2, Check, X, Trash2 } from 'lucide-react'; // Using l
 import { useFileData } from '@/hooks/useFileData'; // Import hook
 import { useDraggable } from '@dnd-kit/core'; // Import useDraggable
 import { CSS } from '@dnd-kit/utilities'; // Import CSS utility
+import { useFileMediaStore } from '@/stores/fileMediaStore'; // Import the store
 
 // --- NEW: Define a type for props that includes SearchResult fields --- 
 // Make Document fields optional, ensure SearchResult fields are present.
@@ -25,6 +26,10 @@ const DocumentItem: React.FC<DocumentItemProps> = ({ document, level = 0 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const { renameDocument, deleteDocument } = useFileData(); // Get rename and delete functions
   const router = useRouter(); // Get router instance
+
+  // Get selection state and actions from the store
+  const { selectedItemIds, toggleSelectItem } = useFileMediaStore();
+  const isSelected = selectedItemIds.has(document.id);
 
   // --- Draggable Setup ---
   const {attributes, listeners, setNodeRef, transform, isDragging} = useDraggable({
@@ -84,12 +89,19 @@ const DocumentItem: React.FC<DocumentItemProps> = ({ document, level = 0 }) => {
     }
   };
 
-  // Handle click for navigation
+  // Handle click for navigation/opening ONLY (selection is via checkbox)
   const handleClick = () => {
-    // Prevent navigation if a drag action just occurred or is in progress
+    // Only navigate if not renaming or dragging
     if (!isRenaming && !isDragging) {
       router.push(`/editor/${document.id}`);
     }
+  };
+
+  // Checkbox change handler
+  const handleCheckboxChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    // Prevent click event on the row from firing
+    event.stopPropagation();
+    toggleSelectItem(document.id);
   };
 
   // --- Delete Handler ---
@@ -108,45 +120,57 @@ const DocumentItem: React.FC<DocumentItemProps> = ({ document, level = 0 }) => {
       ref={setNodeRef} // Draggable ref attached here
       style={{ ...style, ...indentationStyle }} // Apply indentation style
       type="button"
-      // Keep the outer button clickable for navigation
-      className={`group flex items-center w-full p-2 rounded text-left relative ${isRenaming ? 'bg-[--selected-bg]' : 'hover:bg-[--hover-bg] cursor-pointer'} focus:outline-none focus:ring-1 ${isRenaming ? 'focus:ring-transparent' : 'focus:ring-blue-500'}`}
-      onClick={handleClick}
+      // Apply selection background based on isSelected
+      className={`group flex items-center w-full p-2 rounded text-left relative 
+                  ${isSelected ? 'bg-[--selected-bg]' : 'hover:bg-[--hover-bg] cursor-pointer'} 
+                  focus:outline-none focus:ring-1 ${isRenaming ? 'focus:ring-transparent' : 'focus:ring-blue-500'}`}
       disabled={isRenaming}
-      // Remove listeners and attributes from the main button
     >
-      {/* Inner container for content and drag handle */} 
+      {/* Checkbox for Selection */}
+      <span onClick={(e) => e.stopPropagation()} className="mr-2 flex-shrink-0">
+        {/* Replace with actual Checkbox component if available */}
+        <input 
+          type="checkbox" 
+          checked={isSelected}
+          onChange={handleCheckboxChange}
+          aria-label={`Select document ${document.name}`}
+          className="cursor-pointer form-checkbox h-4 w-4 text-blue-600 transition duration-150 ease-in-out rounded border-gray-300 focus:ring-blue-500"
+        />
+      </span>
+      {/* Inner container for content and drag handle - Handles navigation/opening click */}
       <div
-        className="flex-grow flex items-center"
+        className="flex-grow flex items-center cursor-pointer"
+        onClick={handleClick}
         {...attributes} // Apply accessibility attributes here
         {...listeners} // Apply drag listeners here
       >
-          <FileTextIcon className="w-5 h-5 mr-2 text-[--icon-color] flex-shrink-0" />
-          {isRenaming ? (
-            // Pass stopPropagation to the form to prevent the outer button click
-            <form onSubmit={handleRenameSubmit} onClick={(e) => e.stopPropagation()} className="flex-grow flex items-center">
-              {/* Rename form remains the same */}
-              <input
-                ref={inputRef}
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onBlur={() => handleRenameSubmit()}
-                className="flex-grow bg-transparent text-sm focus:outline-none mr-1 p-0.5 rounded ring-1 ring-blue-500"
-                maxLength={100}
-              />
-              <button type="submit" className="p-1 text-green-500 hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0" disabled={!newName.trim() || newName.trim() === document.name} aria-label="Save name">
-                <Check className="w-4 h-4" />
-              </button>
-              <button type="button" onClick={handleRenameCancel} className="p-1 text-red-500 hover:bg-[--hover-bg] rounded ml-1 flex-shrink-0" aria-label="Cancel rename">
-                <X className="w-4 h-4" />
-              </button>
-            </form>
-          ) : (
-            // Document name now inside the draggable div
-            <span className="text-sm truncate flex-grow">{document.name}</span>
-          )}
-       </div>
+        <FileTextIcon className="w-5 h-5 mr-2 text-[--icon-color] flex-shrink-0" />
+        {isRenaming ? (
+          // Pass stopPropagation to the form to prevent the outer button click
+          <form onSubmit={handleRenameSubmit} onClick={(e) => e.stopPropagation()} className="flex-grow flex items-center">
+            {/* Rename form remains the same */}
+            <input
+              ref={inputRef}
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onBlur={() => handleRenameSubmit()}
+              className="flex-grow bg-transparent text-sm focus:outline-none mr-1 p-0.5 rounded ring-1 ring-blue-500"
+              maxLength={100}
+            />
+            <button type="submit" className="p-1 text-green-500 hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0" disabled={!newName.trim() || newName.trim() === document.name} aria-label="Save name">
+              <Check className="w-4 h-4" />
+            </button>
+            <button type="button" onClick={handleRenameCancel} className="p-1 text-red-500 hover:bg-[--hover-bg] rounded ml-1 flex-shrink-0" aria-label="Cancel rename">
+              <X className="w-4 h-4" />
+            </button>
+          </form>
+        ) : (
+          // Document name now inside the draggable div
+          <span className="text-sm truncate flex-grow">{document.name}</span>
+        )}
+      </div>
 
       {/* Action Buttons container - outside the inner draggable div */}
       {!isRenaming && (

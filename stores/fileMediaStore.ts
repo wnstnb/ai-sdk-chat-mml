@@ -24,7 +24,7 @@ interface FileMediaStoreState {
   expandedFolderIds: Set<string>; // IDs of folders expanded in the main view
   isLoading: boolean;
   error: string | null;
-  selectedItems: string[]; // Store IDs of selected items (folders/documents)
+  selectedItemIds: Set<string>; // NEW: Set to store IDs of selected items
 
   // Setters and Actions
   setAllFolders: (folders: Folder[]) => void; // Keep track of all folders for tree/path building
@@ -33,9 +33,10 @@ interface FileMediaStoreState {
   setCurrentFolder: (folderId: string | null, allFolders: Folder[]) => void; // Action to change folder and update path
   setIsLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
-  setSelectedItems: (ids: string[]) => void;
-  // --- New Action for Expansion ---
   toggleFolderExpansion: (folderId: string) => void;
+  // Rename action for clarity with checkboxes
+  toggleSelectItem: (id: string) => void;
+  clearSelection: () => void;
   // TODO: Add more specific actions later (e.g., addFolder, removeDocument, updateItem)
 }
 
@@ -69,7 +70,7 @@ export const useFileMediaStore = create<FileMediaStoreState>((set, get) => ({
   expandedFolderIds: new Set(), // Initialize as empty set
   isLoading: false,
   error: null,
-  selectedItems: [],
+  selectedItemIds: new Set(), // Initialize selected IDs as an empty set
 
   // Implement Setters and Actions
   setAllFolders: (folders) => set({ allFolders: folders }),
@@ -80,14 +81,12 @@ export const useFileMediaStore = create<FileMediaStoreState>((set, get) => ({
     set({
       currentFolderId: folderId,
       currentPath: newPath,
-      selectedItems: [],
+      selectedItemIds: new Set(), // Clear selection when navigating
       expandedFolderIds: new Set(), // Collapse all folders when navigating
     });
   },
   setIsLoading: (loading) => set({ isLoading: loading }),
   setError: (error) => set({ error }),
-  setSelectedItems: (ids) => set({ selectedItems: ids }),
-  // --- Implement Expansion Action ---
   toggleFolderExpansion: (folderId) => set((state) => {
     const newSet = new Set(state.expandedFolderIds);
     if (newSet.has(folderId)) {
@@ -97,6 +96,20 @@ export const useFileMediaStore = create<FileMediaStoreState>((set, get) => ({
     }
     return { expandedFolderIds: newSet };
   }),
+
+  // --- Selection Actions (Updated for Checkboxes) ---
+  toggleSelectItem: (id) => set((state) => {
+    const newSelection = new Set(state.selectedItemIds);
+    if (newSelection.has(id)) {
+      newSelection.delete(id);
+    } else {
+      newSelection.add(id);
+    }
+    return { selectedItemIds: newSelection };
+  }),
+
+  clearSelection: () => set({ selectedItemIds: new Set() }),
+  // --- End Selection Actions ---
 }));
 
 // Example Usage (can be removed later):

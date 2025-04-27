@@ -16,7 +16,10 @@ import {
   useSensor,
   useSensors,
   DragEndEvent, // Import DragEndEvent type
+  DragStartEvent, // Correct type for onDragStart
   useDroppable, // Import useDroppable
+  DragOverlay,   // Import DragOverlay
+  pointerWithin, // Import pointerWithin
 } from '@dnd-kit/core';
 import {
   // arrayMove, // We might need this later
@@ -25,6 +28,8 @@ import {
   // verticalListSortingStrategy, // We might use different strategies
 } from '@dnd-kit/sortable';
 import { toast } from 'sonner';
+// Import icons needed for overlay
+import { FileTextIcon, FolderIcon } from 'lucide-react';
 
 const NewFileManager = () => {
   // Get state and setters from Zustand store
@@ -33,9 +38,13 @@ const NewFileManager = () => {
     currentViewFolders,
     currentViewDocuments,
     allFolders,
+    allDocuments,
     isLoading: isLoadingFiles,
     error: fileError,
     setCurrentFolder,
+    selectedItemIds, // Get selected IDs
+    clearSelection,  // Get clear selection action
+    toggleSelectItem, // Added toggleSelectItem
   } = useFileMediaStore();
 
   // Get Search State
@@ -53,6 +62,9 @@ const NewFileManager = () => {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const createFolderInputRef = useRef<HTMLInputElement>(null);
+
+  // NEW: State to track IDs being dragged in a multi-select scenario
+  const [draggedItemIds, setDraggedItemIds] = useState<Set<string> | null>(null);
 
   // Fetch data whenever the currentFolderId changes
   useEffect(() => {
@@ -111,70 +123,155 @@ const NewFileManager = () => {
     })
   );
 
+  // NEW: Handle Drag Start
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event;
+    const activeId = active.id as string;
+    let newDraggedIds: Set<string>; // Define variable to hold the set
+
+    // Check if the item drag started on is currently selected via checkbox
+    if (selectedItemIds.has(activeId)) {
+      // If starting drag on an already selected item, drag all selected items
+      newDraggedIds = new Set(selectedItemIds);
+    } else {
+      // If starting drag on an unselected item:
+      // 1. Clear the previous selection.
+      // 2. Select only the item being dragged.
+      // 3. Set only this item to be dragged.
+      clearSelection();
+      toggleSelectItem(activeId); // Select the single item
+      newDraggedIds = new Set([activeId]); // Drag only this one item
+    }
+    setDraggedItemIds(newDraggedIds);
+    console.log("[handleDragStart] Dragged IDs set to:", Array.from(newDraggedIds)); // Log the IDs being set
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    const currentDraggedIds = draggedItemIds; // Capture the state at the start of the function
+    setDraggedItemIds(null); // Reset dragged items state immediately
 
-    if (!over || !active.data.current || !over.data.current) {
-        console.log("Drag cancelled: Missing active or over data");
+    // Log the state right before the check
+    console.log("[handleDragEnd] Event:", { 
+      activeId: active?.id,
+      activeData: active?.data?.current,
+      overId: over?.id,
+      overData: over?.data?.current,
+      currentDraggedIds: currentDraggedIds ? Array.from(currentDraggedIds) : null 
+    });
+
+    // Check if essential active data is missing or if nothing was actually being dragged
+    if (!active.data.current || !currentDraggedIds || currentDraggedIds.size === 0) {
+        console.log("Drag cancelled: Missing active data or no items were being dragged.");
         return;
     }
 
+    // We still use the original `active` data for type determination
     const activeId = active.id as string;
-    const overId = over.id as string;
     const activeType = active.data.current.type as 'folder' | 'document';
-    // Adjust overType possibilities
-    const overType = over.data.current.type as 'folder' | 'main-area' | 'folder-tree-root';
-
-    if (activeId === overId) {
-        console.log("Drag cancelled: Item dropped on itself");
-        return;
-    }
-
-    console.log("Processing DragEnd:", {
-        activeId,
-        activeType,
-        activeData: active.data.current,
-        overId,
-        overType,
-        overData: over.data.current,
-      });
 
     let targetFolderId: string | null = null;
+    let overId: string | null = null;
+    let overType: string | null = null;
 
-    // Determine target folder ID based on drop zone type
-    if (overType === 'folder') {
-      // Dropped onto a folder item in the main view
-      targetFolderId = overId;
-    } else if (overType === 'main-area') {
-      // Dropped onto the background area of the current folder
-      targetFolderId = over.data.current.folderId; // This is the currentFolderId (or null for root)
-    } else if (overType === 'folder-tree-root') {
-        // Dropped onto the "My Files" root in the sidebar
-        targetFolderId = null;
+    // --- Determine Target Folder --- 
+    if (over && over.data.current) {
+        // Drop occurred over a registered droppable zone
+        overId = over.id as string;
+        overType = over.data.current.type as string; // Get type
+        console.log(`Drop detected over known zone: ${overId}, Type: ${overType}`);
+
+        // Don't allow dropping a selection onto one of the items within the selection
+        if (currentDraggedIds.has(overId) && (overType === 'folder' || overType === 'document')) {
+            console.log("Drag cancelled: Cannot drop selection onto itself.");
+            return;
+        }
+
+        if (overType === 'folder' || overType === 'breadcrumb-folder') {
+            targetFolderId = overId;
+        } else if (overType === 'main-area') {
+            targetFolderId = over.data.current.folderId;
+        } else if (overType === 'folder-tree-root') {
+            targetFolderId = null;
+        } else {
+            // Dropped over something registered but not a valid target type for us
+            console.log(`Drag cancelled: Dropped over registered but unsupported zone type: ${overType}`);
+            return;
+        }
     } else {
-        console.log("Drag cancelled: Invalid drop target type", overType);
-        return; // Invalid drop target
+        // Drop occurred somewhere else (assume background of current view)
+        console.log("Drop detected outside known zones. Assuming drop onto current view background.");
+        targetFolderId = currentFolderId; // Use the current folder ID as the target
+        // overId and overType remain null
     }
+    // --- End Determine Target Folder --- 
 
-    // Perform checks (moving folder into itself, moving to current parent)
-    if (activeType === 'folder' && activeId === targetFolderId) {
+    console.log(`Processing DragEnd for ${currentDraggedIds.size} items:`, {
+        draggedIds: Array.from(currentDraggedIds),
+        activeTriggerId: activeId, 
+        activeType,
+        determinedTargetFolderId: targetFolderId, // Log the finally determined target
+        detectedOverId: overId, // Log the detected overId (if any)
+        detectedOverType: overType, // Log the detected overType (if any)
+    });
+
+    // --- Perform Move Operation for ALL Dragged Items ---
+    const itemsToMove = Array.from(currentDraggedIds);
+
+    // Get details for all items being moved (needed for parent checks)
+    // This assumes itemsToMove contains only IDs. We need to get their types and current parents.
+    // We might need to fetch this data from the store if not readily available in `active.data`
+    // For now, we simplify and use the initial active item's type and data for checks,
+    // *but this is a limitation if dragging mixed types or checking individual parent folders*
+
+    // Simplified Check: Check if the *initiating* item is being moved into itself (if it's a folder)
+    if (activeType === 'folder' && itemsToMove.includes(activeId) && activeId === targetFolderId) {
         toast.warning("Cannot move a folder into itself.");
         return;
     }
 
-    const currentParentId = activeType === 'folder'
+    // Simplified Check: Check if the *initiating* item is dropped onto its current parent
+    // This won't prevent moving other selected items if they have different parents.
+    const initialItemParentId = activeType === 'folder'
         ? active.data.current.folder?.parent_folder_id
         : active.data.current.document?.folder_id;
 
-    if (currentParentId === targetFolderId) {
+    if (itemsToMove.length === 1 && initialItemParentId === targetFolderId) {
         console.log(`Drag cancelled: ${activeType} dropped onto its current parent folder.`);
-        // Optionally add a user-facing toast message here if desired
-        // toast.info("Item is already in this folder.");
         return;
     }
 
-    // Call the moveItem function from the hook
-    moveItem(activeId, activeType, targetFolderId);
+    // TODO: Implement more robust checks for multi-drag:
+    // 1. Prevent moving multiple folders if one is an ancestor of the targetFolderId.
+    // 2. Iterate through itemsToMove and check *each* item's currentParentId against targetFolderId.
+    //    Only move items that are actually changing parent.
+
+    console.log(`Attempting to move items: ${itemsToMove.join(', ')} to targetFolderId: ${targetFolderId}`);
+
+    // Call moveItem for each dragged item
+    // Note: moveItem likely needs to accept an array or be called in a loop
+    // Assuming moveItem handles individual moves for now.
+    itemsToMove.forEach(itemId => {
+        // Determine type based on ID (requires looking up in allFolders/allDocuments)
+        const folder = allFolders.find(f => f.id === itemId);
+        const doc = allDocuments.find(d => d.id === itemId);
+        const itemType = folder ? 'folder' : (doc ? 'document' : null);
+
+        if (itemType) {
+            const currentParent = folder ? folder.parent_folder_id : doc?.folder_id;
+            // Add specific logging here
+            console.log(`Item ID: ${itemId}, Type: ${itemType}, Current Parent: ${currentParent}, Target Folder: ${targetFolderId}`);
+            // Update check: Move if parents are different OR if target is root (null)
+            if (currentParent !== targetFolderId || targetFolderId === null) {
+                 console.log(`--> Calling moveItem(${itemId}, ${itemType}, ${targetFolderId})`);
+                 moveItem(itemId, itemType, targetFolderId);
+            } else {
+                console.log(`--> Skipping move for ${itemId}: Already in target folder.`);
+            }
+        } else {
+            console.error(`Could not determine type for dragged item ID: ${itemId}`);
+        }
+    });
 
   };
 
@@ -184,11 +281,19 @@ const NewFileManager = () => {
     id: dropZoneId,
     data: { type: 'main-area', folderId: currentFolderId, accepts: ['folder', 'document'] },
   });
+  // Re-apply style directly for the main container
   const mainAreaStyle = {
     backgroundColor: isOverMainArea ? 'var(--drop-target-bg)' : 'transparent',
     transition: 'background-color 0.2s ease',
     minHeight: '100px', // Ensure drop zone has some height even when empty
+    position: 'relative' as const, // Keep relative for potential children like inline form
   };
+
+  // Log when the hover state changes
+  useEffect(() => {
+    console.log(`[useDroppable] isOverMainArea changed: ${isOverMainArea}`);
+  }, [isOverMainArea]);
+
   // --- End Main Area Drop Zone ---
 
   // Determine content to display based on state
@@ -288,7 +393,8 @@ const NewFileManager = () => {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={rectIntersection} // Change from closestCenter
+      collisionDetection={pointerWithin}
+      onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
       <div className="flex flex-col h-full w-full text-[--text-color]">
@@ -314,12 +420,13 @@ const NewFileManager = () => {
             <FolderTree onNavigate={handleNavigate} />
           </div>
 
-          {/* File/Folder Listing - Apply droppable ref and style */}
+          {/* File/Folder Listing Container - Apply drop zone ref/style again */}
           <div
-             ref={setMainAreaNodeRef} // Set ref for droppable
-             style={mainAreaStyle} // Apply drop highlight style
-             className="flex-grow h-full overflow-auto p-2 flex flex-col space-y-1" // Added flex-col and space-y
+            ref={setMainAreaNodeRef} // Apply drop zone ref here
+            style={mainAreaStyle} // Apply drop zone style here
+            className="flex-grow h-full overflow-auto p-2 flex flex-col space-y-1 relative" // Keep relative positioning
           >
+            {/* Remove the dedicated background drop zone and the extra content wrapper */}
             {mainContent}
           </div>
         </div>
@@ -329,6 +436,39 @@ const NewFileManager = () => {
           Status Bar
         </div> */}
       </div>
+
+      {/* Drag Overlay for Custom Previews */}
+      <DragOverlay dropAnimation={null}> 
+        {draggedItemIds && draggedItemIds.size > 0 ? (
+          <div className="pointer-events-none rounded bg-[--selected-bg] px-3 py-2 text-sm shadow-lg ring-1 ring-black ring-opacity-5">
+            {draggedItemIds.size === 1 ? (
+              // Single item preview
+              (() => {
+                const itemId = Array.from(draggedItemIds)[0];
+                const folder = allFolders.find(f => f.id === itemId);
+                const document = allDocuments.find(d => d.id === itemId);
+                const item = folder || document;
+                const itemType = folder ? 'folder' : (document ? 'document' : null);
+
+                if (!item || !itemType) return <span>Loading preview...</span>;
+
+                return (
+                  <span className="flex items-center">
+                    {itemType === 'folder' ? 
+                      <FolderIcon className="w-4 h-4 mr-2 text-[--icon-color]" /> : 
+                      <FileTextIcon className="w-4 h-4 mr-2 text-[--icon-color]" />
+                    }
+                    <span className="truncate">{item.name}</span>
+                  </span>
+                );
+              })()
+            ) : (
+              // Multi-item preview
+              <span>Moving {draggedItemIds.size} items</span>
+            )}
+          </div>
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 };
