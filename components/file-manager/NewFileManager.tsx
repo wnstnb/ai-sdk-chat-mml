@@ -99,7 +99,13 @@ const NewFileManager = () => {
 
   // --- Drag & Drop Setup ---
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      // Require the mouse to move by 5 pixels before starting a drag
+      // Adjust this value as needed
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })

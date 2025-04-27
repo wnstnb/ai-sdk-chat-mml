@@ -62,7 +62,7 @@ const FolderItem = React.forwardRef<
   const {isOver, setNodeRef: setDroppableNodeRef} = useDroppable({
     id: folder.id,
     data: { type: 'folder', accepts: ['folder', 'document'] },
-    disabled: isRenaming || isExpanded, // Disable dropping into itself if expanded or renaming
+    disabled: isRenaming, // Allow dropping onto the folder item even when it's expanded
   });
 
   // Combine refs for the main div
