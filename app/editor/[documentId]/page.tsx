@@ -74,6 +74,10 @@ import {
 import { useFollowUpStore } from '@/lib/stores/followUpStore';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // Import preference store
 
+// --- NEW: Import the hook ---
+// Use correct alias based on tsconfig.json
+import { useDocument } from '@/app/lib/hooks/editor/useDocument';
+
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
     () => import('@/components/BlockNoteEditorComponent'),
@@ -94,15 +98,13 @@ const defaultModelFallback = 'gemini-2.0-flash'; // Define fallback
 // Define the BlockNote schema
 const schema = BlockNoteSchema.create();
 
-// --- HELPER FUNCTIONS --- MOVED to lib/editorUtils.ts
-
 // --- Main Editor Page Component ---
 export default function EditorPage() {
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
     // Use assertion or check, assertion is simpler if we expect it to always exist here
-    const documentId = params?.documentId as string; 
+    const documentId = params?.documentId as string;
     // NEW: Pathname for navigation handling (Step 8)
     const pathname = usePathname();
 
@@ -117,11 +119,11 @@ export default function EditorPage() {
     const [model, setModel] = useState<string>(() => {
         if (isPreferencesInitialized && preferredModel) {
             return preferredModel;
-        } 
+        }
         // If store isn't ready yet, use the hardcoded fallback for initial render
         return defaultModelFallback;
-    }); 
-    
+    });
+
     // Effect to update local model state if preference loads *after* initial render
     useEffect(() => {
         if (isPreferencesInitialized && preferredModel && model !== preferredModel) {
@@ -133,12 +135,28 @@ export default function EditorPage() {
     }, [isPreferencesInitialized, preferredModel]);
 
     const editorRef = useRef<BlockNoteEditor<typeof schema.blockSchema>>(null); // Specify schema type
-    const [initialEditorContent, setInitialEditorContent] = useState<
-        PartialBlock<typeof schema.blockSchema>[] | undefined 
-    >(undefined); // For initializing editor
-    const [documentData, setDocumentData] = useState<SupabaseDocument | null>(
-        null
-    ); // Store fetched document metadata
+    // --- REMOVED: State variables handled by useDocument ---
+    // const [initialEditorContent, setInitialEditorContent] = useState<
+    //     PartialBlock<typeof schema.blockSchema>[] | undefined 
+    // >(undefined); // For initializing editor
+    // const [documentData, setDocumentData] = useState<SupabaseDocument | null>(
+    //     null
+    // ); // Store fetched document metadata
+    // const [isLoadingDocument, setIsLoadingDocument] = useState(true);
+    // const [error, setError] = useState<string | null>(null); // General page error
+    // --- END REMOVED ---
+
+    // --- NEW: Use the useDocument hook ---
+    const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
+    // Use a separate state for page-level error, potentially combining hook errors
+    const [pageError, setPageError] = useState<string | null>(null);
+    useEffect(() => {
+        if (documentError) {
+            setPageError(documentError); // Set page error if hook reports one
+        }
+    }, [documentError]);
+    // --- END NEW ---
+
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [newTitleValue, setNewTitleValue] = useState('');
     const [processedToolCallIds, setProcessedToolCallIds] = useState<Set<string>>(
@@ -171,10 +189,10 @@ export default function EditorPage() {
     const [pendingInitialSubmission, setPendingInitialSubmission] = useState<string | null>(null);
 
     // Loading/Error States
-    const [isLoadingDocument, setIsLoadingDocument] = useState(true);
+    // const [isLoadingDocument, setIsLoadingDocument] = useState(true); // Handled by hook
     const [isLoadingMessages, setIsLoadingMessages] = useState(true);
     const [isSaving, setIsSaving] = useState(false); // Editor save button state
-    const [error, setError] = useState<string | null>(null); // General page error
+    // const [error, setError] = useState<string | null>(null); // Replaced by pageError
 
     // --- NEW: Autosave State & Refs (Step 2) ---
     const [autosaveTimerId, setAutosaveTimerId] = useState<NodeJS.Timeout | null>(null);
@@ -203,7 +221,7 @@ export default function EditorPage() {
         onError: (err) => {
             const errorMsg = `Chat Error: ${err.message || 'Unknown error'}`;
             toast.error(errorMsg);
-            setError(errorMsg); // Also set page-level error state if needed
+            setPageError(errorMsg); // Use setPageError
         },
         // Body is handled dynamically in the wrapped handleSubmit
     });
@@ -219,65 +237,6 @@ export default function EditorPage() {
     // --- END DEBUG ---
 
     // --- Data Fetching ---
-
-    // Fetch Document Details (Name, Initial Content)
-    const fetchDocument = useCallback(async () => {
-        if (!documentId) {
-            setError("Document ID is missing.");
-            setIsLoadingDocument(false);
-            return;
-        }
-        console.log(`Fetching document: ${documentId}`);
-        setIsLoadingDocument(true);
-        setError(null);
-        try {
-            const response = await fetch(`/api/documents/${documentId}`);
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({ error: { message: `HTTP ${response.status}` } }));
-                throw new Error(
-                    errData.error?.message || `Failed to fetch document (${response.status})`
-                );
-            }
-            const { data }: { data: SupabaseDocument } = await response.json();
-            if (!data) {
-                throw new Error("Document not found or access denied.");
-            }
-            setDocumentData(data);
-
-            // Initialize Editor Content - provide default block if empty/invalid
-            const defaultInitialContent: PartialBlock[] = [{ type: 'paragraph', content: [] }];
-            if (typeof data.content === 'object' && data.content !== null && Array.isArray(data.content)) {
-                // Validate if content somewhat matches BlockNote structure (basic check)
-                if (data.content.length === 0) {
-                    console.log("Document content is empty array, initializing editor with default block.");
-                    setInitialEditorContent(defaultInitialContent);
-                } else if (data.content[0] && typeof data.content[0].type === 'string') {
-                    setInitialEditorContent(data.content as PartialBlock[]); // Trust the fetched content
-                    console.log("Initialized editor with fetched BlockNote content.");
-                } else {
-                     console.warn('Fetched content does not look like BlockNote structure. Initializing with default block.', data.content);
-                     setInitialEditorContent(defaultInitialContent);
-                }
-            } else if (!data.content) {
-                console.log("Document content is null/undefined, initializing editor with default block.");
-                setInitialEditorContent(defaultInitialContent);
-            } else {
-                console.warn(
-                    'Document content is not in expected BlockNote format. Initializing with default block.', data.content
-                );
-                setInitialEditorContent(defaultInitialContent);
-            }
-
-        } catch (err: any) {
-            console.error('Error fetching document:', err);
-            setError(`Failed to load document: ${err.message}`);
-            setDocumentData(null); // Clear data on error
-            // Set default content even on error to prevent editor crash
-            setInitialEditorContent([{ type: 'paragraph', content: [] }]);
-        } finally {
-            setIsLoadingDocument(false);
-        }
-    }, [documentId]);
 
     // Fetch Initial Chat Messages for this Document
     const fetchChatMessages = useCallback(async () => {
@@ -356,23 +315,27 @@ export default function EditorPage() {
 
         } catch (err: any) {
             console.error('Error fetching messages:', err);
-            setError(`Failed to load messages: ${err.message}`); // Set page error
+            setPageError(`Failed to load messages: ${err.message}`); // Use setPageError
             setChatMessages([]); // Clear messages on error
         } finally {
             setIsLoadingMessages(false);
             // Removed log from here
         }
-    }, [documentId, setChatMessages, setDisplayedMessagesCount]); // Removed model, originalHandleSubmit
+    // }, [documentId, setChatMessages, setDisplayedMessagesCount, setPageError]); // Removed model, originalHandleSubmit, added setPageError dependency
+    // Adjusted dependency: only need documentId, setChatMessages, setDisplayedMessagesCount, setPageError
+    }, [documentId, setChatMessages, setDisplayedMessagesCount, setPageError]);
 
     // Initial data fetch on component mount or when documentId changes
+    // REMOVED: fetchDocument call (handled within useDocument hook)
     useEffect(() => {
         if (documentId) {
-            fetchDocument();
+            // fetchDocument(); // No longer needed here
             fetchChatMessages();
         }
         setProcessedToolCallIds(new Set());
         // Don't reset displayedMessagesCount here, fetchChatMessages handles initial set
-    }, [documentId, fetchDocument, fetchChatMessages]); // Added fetchDocument, fetchChatMessages
+    // }, [documentId, fetchDocument, fetchChatMessages]); // Removed fetchDocument dependency
+    }, [documentId, fetchChatMessages]); // Updated dependencies
 
     // --- NEW: Effect to read initial message from query parameter ---
     const routerForReplace = useRouter(); // Get router instance for replace
@@ -1311,7 +1274,7 @@ export default function EditorPage() {
         // --- END NEW ---
 
         setIsSaving(true); // Still use isSaving for button state specifically
-        setError(null);
+        setPageError(null);
         console.log("Saving document content manually...");
         try {
             const currentEditorContent = editor.document; // Get content at time of save
@@ -1344,7 +1307,7 @@ export default function EditorPage() {
 
         } catch (err: any) {
             console.error("[Manual Save] Save error:", err);
-            setError(`Save failed: ${err.message}`);
+            setPageError(`Save failed: ${err.message}`);
             toast.error(`Save failed: ${err.message}`);
             // --- NEW: Set autosave status to 'error' on manual save failure ---
             setAutosaveStatus('error');
@@ -1384,12 +1347,13 @@ export default function EditorPage() {
             return;
         }
 
-        const originalTitle = documentData.name;
+        // const originalTitle = documentData.name;
         // Use finalTitle for optimistic update and API call
         const optimisticNewTitle = finalTitle;
 
-        // Optimistic UI update
-        setDocumentData(prevData => prevData ? { ...prevData, name: optimisticNewTitle } : null);
+        // Optimistic UI update - TEMPORARILY DISABLED
+        // TODO: Move title state management (incl. optimistic updates) to useTitleManagement hook (Step 8)
+        // setDocumentData(prevData => prevData ? { ...prevData, name: optimisticNewTitle } : null);
         setIsEditingTitle(false); // Exit edit mode after initiating save
 
         try {
@@ -1408,14 +1372,16 @@ export default function EditorPage() {
 
             const { data: updatedDoc } = await response.json();
             // Update timestamp from response if needed, though name change might not update it server-side unless explicit
-            setDocumentData(prevData => prevData ? { ...prevData, updated_at: updatedDoc.updated_at || prevData.updated_at } : null);
+            // TODO: Re-enable and refine when state is in useTitleManagement
+            // setDocumentData(prevData => prevData ? { ...prevData, updated_at: updatedDoc.updated_at || prevData.updated_at } : null);
             toast.success('Document renamed successfully!');
 
         } catch (err: any) {
             console.error('Error saving title:', err);
             toast.error(`Failed to rename: ${err.message}`);
-            // Rollback optimistic update
-            setDocumentData(prevData => prevData ? { ...prevData, name: originalTitle } : null);
+            // Rollback optimistic update - TEMPORARILY DISABLED
+            // TODO: Re-enable and refine when state is in useTitleManagement
+            // setDocumentData(prevData => prevData ? { ...prevData, name: originalTitle } : null);
             // Optionally re-enter edit mode?
             // setIsEditingTitle(true);
         }
@@ -1514,14 +1480,24 @@ export default function EditorPage() {
     }
 
     // Error state if document fetch failed
-    if (!documentData) {
+    // Check documentData directly now, error is handled via pageError state
+    if (!documentData && !isLoadingDocument) { // Check loading flag too to avoid flicker
         return (
             <div className="flex flex-col justify-center items-center h-screen text-center p-4 bg-[--bg-color]">
                 <p className="text-red-500 text-xl mb-2">Error Loading Document</p>
-                <p className="text-[--muted-text-color] mb-4">{error || 'Document not found or access denied.'}</p>
+                <p className="text-[--muted-text-color] mb-4">{pageError || 'Document not found or access denied.'}</p>
              <button onClick={() => router.push('/launch')} className="mt-4 px-4 py-2 bg-[--editor-bg]-white rounded hover:bg-[--hover-bg]">Go to Launch Pad</button>
             </div>
         );
+    }
+    // If documentData is null but we are still loading, the loading screen above handles it.
+    // If we are not loading and documentData is null, the error screen above handles it.
+    // If documentData exists, proceed to render.
+    // So, add an explicit check for documentData before rendering the main content.
+    if (!documentData) {
+        // This case should theoretically be covered by loading/error states above,
+        // but acts as a safeguard.
+        return <div className="flex justify-center items-center h-screen bg-[--bg-color] text-[--text-color]">Preparing document...</div>;
     }
 
     // Main Render
@@ -1594,7 +1570,7 @@ export default function EditorPage() {
                     </div>
                 </div>
                 {/* Page Errors */}
-                {error && !error.startsWith("Chat Error:") && <div className="mb-2 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {error}</div>}
+                {pageError && !pageError.startsWith("Chat Error:") && <div className="mb-2 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>}
                 {/* Editor */}
                 <div className="flex-1 flex flex-col relative border rounded-lg bg-[--editor-bg] border-[--border-color] shadow-sm overflow-hidden">
                     <div className="flex-1 overflow-y-auto p-4 styled-scrollbar">
