@@ -13,20 +13,16 @@ export async function GET(request: NextRequest) {
   const supabase = createSupabaseServerClient();
   try {
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-    if (sessionError) {
-      console.error('Error getting session:', sessionError);
-      return NextResponse.json({ error: 'Error getting session' }, { status: 500 });
-    }
-
-    if (!session?.user?.id) {
+    if (userError || !user) {
+      console.error('Error getting user or user not found:', userError);
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const userId = session.user.id;
+    const userId = user.id;
 
     // Fetch preferences for the user
     const { data, error } = await supabase
@@ -56,20 +52,16 @@ export async function PUT(request: NextRequest) {
   const supabase = createSupabaseServerClient();
   try {
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-    if (sessionError) {
-      console.error('Error getting session:', sessionError);
-      return NextResponse.json({ error: 'Error getting session' }, { status: 500 });
-    }
-
-    if (!session?.user?.id) {
+    if (userError || !user) {
+      console.error('Error getting user or user not found:', userError);
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const userId = session.user.id;
+    const userId = user.id;
 
     // Parse the request body
     let preferencesToUpdate;

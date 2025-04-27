@@ -92,6 +92,7 @@ import { useChatInteractions } from '@/lib/hooks/editor/useChatInteractions';
 import { ChatInputArea } from '@/components/editor/ChatInputArea'; // Import the new component
 import { ChatMessagesList } from '@/components/editor/ChatMessagesList'; // Import the new component
 import { ChatPaneWrapper } from '@/components/editor/ChatPaneWrapper'; // Import the new wrapper
+import { EditorPaneWrapper } from '@/components/editor/EditorPaneWrapper'; // Import the new wrapper
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -647,126 +648,54 @@ export default function EditorPage() {
         <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
-            {/* Editor Pane */}
-            <div className="flex-1 flex flex-col p-4 border-r border-[--border-color] relative overflow-hidden">
-                {/* --- NEW: Use EditorTitleBar Component --- */}
-                <EditorTitleBar
-                    currentTitle={currentTitle}
-                    isEditingTitle={isEditingTitle}
-                    newTitleValue={newTitleValue}
-                    setNewTitleValue={setNewTitleValue}
-                    handleTitleInputKeyDown={handleTitleInputKeyDown}
-                    handleSaveTitle={handleSaveTitle}
-                    handleCancelEditTitle={handleCancelEditTitle}
-                    handleEditTitleClick={handleEditTitleClick}
-                    isInferringTitle={isInferringTitle}
-                    handleInferTitle={handleInferTitle}
-                    editorRef={editorRef} // Pass editorRef
-                    autosaveStatus={autosaveStatus} // Pass autosave status from page state
-                    handleNewDocument={handleNewDocument} // Pass handler from page
-                    handleSaveContent={handleSaveContent} // Pass handler from page
-                    isSaving={isSaving} // Pass saving state from page
-                />
-                {/* --- REMOVED: Original Title Bar JSX --- */}
-                {/* <div className="flex justify-between items-center mb-2 flex-shrink-0">
-                    <div className="flex items-center gap-2 flex-grow min-w-0">
-                        {isEditingTitle ? (
-                            <>
-                                <input
-                                    type="text"
-                                    value={newTitleValue} // Use hook state
-                                    onChange={(e) => setNewTitleValue(e.target.value)} // Use hook setter
-                                    onKeyDown={handleTitleInputKeyDown} // Use hook handler
-                                    className="flex-grow px-2 py-1 border border-[--border-color] rounded bg-[--input-bg] text-[--text-color] focus:outline-none focus:ring-1 focus:ring-[--primary-color] text-lg font-semibold"
-                                    autoFocus
-                                />
-                                <button onClick={() => handleSaveTitle()} className="p-1 text-green-600 hover:bg-green-100 dark:hover:bg-green-900 rounded" title="Save Title"><Save size={18} /></button>
-                                <button onClick={handleCancelEditTitle} className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900 rounded" title="Cancel"><X size={18} /></button>
-                            </>
-                        ) : (
-                            <>
-                                <h2 className="text-lg font-semibold text-[--text-color] truncate" title={currentTitle}>{currentTitle}</h2>
-                                <button
-                                    onClick={handleInferTitle} // Use hook handler
-                                    className="p-1 rounded hover:bg-[--hover-bg] text-[--muted-text-color] hover:text-[--text-color] disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-                                    aria-label="Suggest title from content"
-                                    title="Suggest title from content"
-                                    disabled={isInferringTitle || !editorRef.current} // Use hook state
-                                >
-                                    {isInferringTitle ? ( // Use hook state
-                                         <motion.div
-                                            animate={{ rotate: 360 }}
-                                            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                                            style={{ display: 'flex' }}
-                                         >
-                                             <Sparkles size={16} className="text-yellow-500" />
-                                         </motion.div>
-                                    ) : (
-                                         <Sparkles size={16} />
-                                    )}
-                                </button>
-                                <button onClick={handleEditTitleClick} className="p-1 text-[--muted-text-color] hover:text-[--text-color] hover:bg-[--hover-bg] rounded flex-shrink-0" title="Rename Document"><Edit size={16} /></button>
-                            </>
-                        )}
-                    </div>
-                    <div className="flex items-center space-x-2 flex-shrink-0">
-                        <AutosaveStatusIndicator status={autosaveStatus} />
-                        <button onClick={handleNewDocument} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded" title="New/Open (Launch Pad)"><DocumentPlusIcon className="h-5 w-5" /></button>
-                        <button onClick={handleSaveContent} disabled={isSaving || autosaveStatus === 'saving'} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed" title="Save Document Manually">
-                           {isSaving ? <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <ArrowDownTrayIcon className="h-5 w-5" />}
-                        </button>
-                    </div>
-                </div> */}
-                {/* --- END REMOVED --- */}
-                {/* Page Errors */}
-                {pageError && !pageError.startsWith("Chat Error:") && <div className="mb-2 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>}
-                {/* Editor */}
-                <div className="flex-1 flex flex-col relative border rounded-lg bg-[--editor-bg] border-[--border-color] shadow-sm overflow-hidden">
+            {/* --- NEW: Use EditorPaneWrapper --- */}
+            <EditorPaneWrapper
+                // Props for BlockNoteEditorComponent
+                documentId={documentId}
+                initialContent={initialEditorContent}
+                editorRef={editorRef}
+                onEditorContentChange={handleEditorChange} // Pass the page's handler
+                // Props for Collapsed Chat Input
+                isChatCollapsed={isChatCollapsed}
+                // Pass all necessary props for collapsed ChatInputUI
+                input={input}
+                handleInputChange={handleInputChange}
+                handleSubmit={handleSubmit}
+                isLoading={isChatLoading}
+                model={model}
+                setModel={setModel}
+                stop={stop}
+                files={files}
+                handleFileChange={handleFileChange}
+                handlePaste={handlePaste}
+                handleUploadClick={handleUploadClick}
+                isUploading={isUploading}
+                uploadError={uploadError}
+                uploadedImagePath={uploadedImagePath}
+                followUpContext={followUpContext}
+                setFollowUpContext={setFollowUpContext}
+                formRef={formRef}
+                inputRef={inputRef}
+                fileInputRef={fileInputRef}
+                handleKeyDown={handleKeyDown}
+            />
+            {/* --- REMOVED: Original Editor Pane JSX --- */}
+            {/* <div className="flex-1 flex flex-col p-4 border-r border-[--border-color] relative overflow-hidden">
+                <EditorTitleBar ... />
+                {pageError && ... }
+                <div className="flex-1 flex flex-col relative border ...">
                     <div className="flex-1 overflow-y-auto p-4 styled-scrollbar">
-                        {initialEditorContent !== undefined ? (
-                            // Render the editor component directly
-                            <BlockNoteEditorComponent
-                                key={documentId} // Keep key for re-initialization if ID changes
-                                editorRef={editorRef}
-                                initialContent={initialEditorContent}
-                                onEditorContentChange={handleEditorChange} // Pass the handler
-                                // Remove editable prop
-                                // editable={true}
-                            />
-                        ) : (
-                            <p className="p-4 text-center text-[--muted-text-color]">Initializing editor...</p>
-                         )}
+                       <BlockNoteEditorComponent ... />
                     </div>
-                    {/* Collapsed Chat Input */}
-                    {isChatCollapsed && <div className="p-4 pt-2 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0">
-                        <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center">
-                           {/* --- ADDED: Follow Up Context Display --- */}
-                           {followUpContext && (
-                               <div className="w-full mb-2 p-2 border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 rounded-md relative text-sm text-blue-800 dark:text-blue-200">
-                                   <button 
-                                       type="button"
-                                       onClick={() => setFollowUpContext(null)}
-                                       className="absolute top-1 right-1 p-0.5 text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800"
-                                       title="Clear follow-up context"
-                                   >
-                                       <X size={14} />
-                                   </button>
-                                   <p className="font-medium mb-1 text-blue-600 dark:text-blue-300">Follow-up Context:</p>
-                                   <p className="line-clamp-2">{followUpContext}</p>
-                               </div>
-                           )}
-                           {/* --- END ADDED --- */}
-                           <ChatInputUI files={files} fileInputRef={fileInputRef} handleFileChange={handleFileChange} inputRef={inputRef} input={input} handleInputChange={handleInputChange} handleKeyDown={handleKeyDown} handlePaste={handlePaste} model={model} setModel={setModel} handleUploadClick={handleUploadClick} isLoading={isChatLoading} isUploading={isUploading} uploadError={uploadError} uploadedImagePath={uploadedImagePath} onStop={stop} />
-                        </form>
+                    {isChatCollapsed && <div ... >
+                       // Collapsed Chat Input Form + ChatInputUI 
                     </div>}
                 </div>
-                {/* Collapse Button */}
-                <button onClick={() => setIsChatCollapsed(!isChatCollapsed)} className="absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 z-20 p-1 bg-[--toggle-button-bg] border border-[--border-color] rounded-full text-[--text-color] hover:bg-[--hover-bg] focus:outline-none" title={isChatCollapsed ? 'Expand chat' : 'Collapse chat'}>
-                    {isChatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
-                </button>
-            </div>
-
-            {/* --- NEW: Use ChatPaneWrapper --- */}
+                <button onClick={() => setIsChatCollapsed(!isChatCollapsed)} ... > ... </button>
+            </div> */}
+            {/* --- END REMOVED --- */}
+            
+            {/* Use ChatPaneWrapper */}
             <ChatPaneWrapper
                 // Props from useChatPane
                 isChatCollapsed={isChatCollapsed}
@@ -806,16 +735,6 @@ export default function EditorPage() {
                 initialChatPaneWidthPercent={INITIAL_CHAT_PANE_WIDTH_PERCENT}
                 minChatPaneWidthPx={MIN_CHAT_PANE_WIDTH_PX}
             />
-            {/* --- REMOVED: Original Chat Pane JSX --- */}
-            {/* <motion.div ... >
-                {!isChatCollapsed && (
-                    <>
-                        <ChatMessagesList ... />
-                        <ChatInputArea ... />
-                    </>
-                )}
-            </motion.div> */}
-            {/* --- END REMOVED --- */}
         </div>
     );
 } 
