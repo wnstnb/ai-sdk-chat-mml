@@ -72,6 +72,7 @@ import {
 
 // Zustand Store
 import { useFollowUpStore } from '@/lib/stores/followUpStore';
+import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // Import preference store
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -88,6 +89,7 @@ const MESSAGE_LOAD_BATCH_SIZE = 20;
 const INITIAL_CHAT_PANE_WIDTH_PERCENT = 35;
 const MIN_CHAT_PANE_WIDTH_PX = 250;
 const MAX_CHAT_PANE_WIDTH_PERCENT = 70;
+const defaultModelFallback = 'gemini-2.0-flash'; // Define fallback
 
 // Define the BlockNote schema
 const schema = BlockNoteSchema.create();
@@ -104,8 +106,32 @@ export default function EditorPage() {
     // NEW: Pathname for navigation handling (Step 8)
     const pathname = usePathname();
 
+    // --- Preference Store ---
+    const {
+        default_model: preferredModel,
+        isInitialized: isPreferencesInitialized,
+    } = usePreferenceStore();
+
     // --- State Variables ---
-    const [model, setModel] = useState('gemini-2.0-flash'); // Default model
+    // Initialize model state: Use preference if available and initialized, otherwise use fallback
+    const [model, setModel] = useState<string>(() => {
+        if (isPreferencesInitialized && preferredModel) {
+            return preferredModel;
+        } 
+        // If store isn't ready yet, use the hardcoded fallback for initial render
+        return defaultModelFallback;
+    }); 
+    
+    // Effect to update local model state if preference loads *after* initial render
+    useEffect(() => {
+        if (isPreferencesInitialized && preferredModel && model !== preferredModel) {
+             console.log(`[EditorPage] Preference store initialized. Setting model state to preferred: ${preferredModel}`);
+             setModel(preferredModel);
+        }
+        // We only want to run this when the preference becomes available or changes.
+        // Don't include `model` in deps, as that would cause a loop.
+    }, [isPreferencesInitialized, preferredModel]);
+
     const editorRef = useRef<BlockNoteEditor<typeof schema.blockSchema>>(null); // Specify schema type
     const [initialEditorContent, setInitialEditorContent] = useState<
         PartialBlock<typeof schema.blockSchema>[] | undefined 
