@@ -87,6 +87,8 @@ import { useTitleManagement } from '@/lib/hooks/editor/useTitleManagement'; // C
 import { useChatPane } from '@/lib/hooks/editor/useChatPane';
 // --- NEW: Import the useFileUpload hook ---
 import { useFileUpload } from '@/lib/hooks/editor/useFileUpload';
+// --- NEW: Import the useChatInteractions hook ---
+import { useChatInteractions } from '@/lib/hooks/editor/useChatInteractions';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -131,41 +133,22 @@ export default function EditorPage() {
 
     // --- State Variables --- (Declare state early)
     const { default_model: preferredModel, isInitialized: isPreferencesInitialized } = usePreferenceStore();
-    const [model, setModel] = useState<string>(() => (isPreferencesInitialized && preferredModel) ? preferredModel : defaultModelFallback);
+    const initialModel = (isPreferencesInitialized && preferredModel) ? preferredModel : defaultModelFallback;
     const [pageError, setPageError] = useState<string | null>(null);
     const [processedToolCallIds, setProcessedToolCallIds] = useState<Set<string>>(new Set());
     const [displayedMessagesCount, setDisplayedMessagesCount] = useState(INITIAL_MESSAGE_COUNT);
     const [includeEditorContent, setIncludeEditorContent] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
-    const [pendingInitialSubmission, setPendingInitialSubmission] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [autosaveTimerId, setAutosaveTimerId] = useState<NodeJS.Timeout | null>(null);
     const [revertStatusTimerId, setRevertStatusTimerId] = useState<NodeJS.Timeout | null>(null);
     const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved' | 'error'>('idle');
 
-    // --- Custom Hooks --- (Now safe to call, state/refs declared)
+    // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
-    const { messages: chatMessages, input, handleInputChange, handleSubmit: originalHandleSubmit, isLoading: isChatLoading, reload, stop, setMessages: setChatMessages, setInput } = useChat({
-        api: '/api/chat',
-        id: documentId,
-        initialMessages: [],
-        onError: (err) => {
-            const errorMsg = `Chat Error: ${err.message || 'Unknown error'}`;
-            toast.error(errorMsg);
-            setPageError(errorMsg); 
-        },
-    });
-    const followUpContext = useFollowUpStore((state) => state.followUpContext);
-    const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
-    const { isLoadingMessages } = useInitialChatMessages({
-        documentId,
-        setChatMessages,
-        setDisplayedMessagesCount, // Pass the state setter
-        setPageError             // Pass the state setter
-    });
     const { currentTitle, isEditingTitle, newTitleValue, isInferringTitle, handleEditTitleClick, handleCancelEditTitle, handleSaveTitle, handleTitleInputKeyDown, handleInferTitle, setNewTitleValue } = useTitleManagement({
         documentId,
-        initialName: documentData?.name || '', // Use documentData AFTER useDocument hook
+        initialName: documentData?.name || '',
         editorRef,
     });
     const { isChatCollapsed, setIsChatCollapsed, chatPaneWidth, isResizing, dragHandleRef, handleMouseDownResize } = useChatPane({
@@ -174,6 +157,34 @@ export default function EditorPage() {
         maxWidthPercent: MAX_CHAT_PANE_WIDTH_PERCENT,
     });
     const { files, isUploading, uploadError, uploadedImagePath, handleFileSelectEvent, handleFilePasteEvent, handleFileDropEvent, clearPreview } = useFileUpload({ documentId });
+    const {
+        messages: chatMessages, 
+        setMessages: setChatMessages, 
+        input,
+        setInput, 
+        handleInputChange,
+        handleSubmit, 
+        isLoading: isChatLoading, 
+        reload,
+        stop,
+        model,
+        setModel,
+    } = useChatInteractions({
+        documentId,
+        initialModel,
+        editorRef,
+        uploadedImagePath,
+        isUploading,
+        clearFileUploadPreview: clearPreview,
+    });
+    const { isLoadingMessages } = useInitialChatMessages({
+        documentId,
+        setChatMessages,
+        setDisplayedMessagesCount,
+        setPageError
+    });
+    const followUpContext = useFollowUpStore((state) => state.followUpContext);
+    const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
 
     // --- Callback Hooks (Defined BEFORE Early Returns) ---
     const triggerSaveDocument = useCallback(async (content: string, docId: string) => {
@@ -352,66 +363,6 @@ export default function EditorPage() {
         }
     };
 
-    const handleSubmitWithContext = useCallback(async (event?: React.FormEvent<HTMLFormElement>) => {
-        if (event) event.preventDefault();
-        if (!documentId) { toast.error("Cannot send message: Document context missing."); return; }
-        
-        const contextPrefix = followUpContext ? `${followUpContext}\n\n---\n\n` : '';
-        const currentInput = contextPrefix + input;
-        const currentModel = model;
-        const imagePathToSend = uploadedImagePath;
-
-        if (isChatLoading || isUploading || (!currentInput.trim() && !imagePathToSend && !followUpContext)) {
-            return;
-        }
-
-        let editorContextData = {}; 
-        const editor = editorRef.current;
-        if (includeEditorContent && editor) {
-            const markdownContent = await getEditorMarkdownContent(); // Call the function
-            if (markdownContent !== null) { editorContextData = { editorMarkdownContent: markdownContent }; }
-            setIncludeEditorContent(false);
-        } else if (editor) {
-            try {
-                const currentBlocks = editor.document;
-                if (currentBlocks?.length > 0) {
-                    editorContextData = { editorBlocksContext: currentBlocks.map(b => ({ id: b.id, contentSnippet: (Array.isArray(b.content) ? getInlineContentText(b.content).slice(0, 100) : '') || `[${b.type}]` })) };
-                }
-            } catch (e) { console.error('Failed to get editor snippets:', e); toast.error('⚠️ Error getting editor context.'); }
-        }
-
-        const isSummarizationTask = /\b(summar(y|ize|ies)|bullet|points?|outline|sources?|citations?)\b/i.test(currentInput) && currentInput.length > 25;
-        
-        try {
-            // Save user message (assuming API exists and works)
-            const saveMessageResponse = await fetch(`/api/documents/${documentId}/messages`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ role: 'user', content: currentInput.trim() || null, imageUrlPath: imagePathToSend }),
-            });
-            if (!saveMessageResponse.ok) {
-                 const errorData = await saveMessageResponse.json().catch(() => ({}));
-                 throw new Error(errorData.error?.message || `Failed to save message (${saveMessageResponse.status})`);
-             }
-            await saveMessageResponse.json(); // Consume response body
-
-            // Trigger AI chat submission
-            const submitOptions = {
-                data: { model: currentModel, documentId, ...editorContextData, firstImagePath: imagePathToSend, taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined },
-                options: { experimental_attachments: files ? Array.from(files) : undefined }
-            };
-            originalHandleSubmit(event, { ...submitOptions, data: submitOptions.data as any });
-
-            clearPreview();
-            setFollowUpContext(null);
-            requestAnimationFrame(() => { if (inputRef.current) inputRef.current.style.height = 'auto'; });
-
-        } catch (saveError: any) {
-             console.error("Error saving user message or submitting:", saveError);
-             toast.error(`Failed to send message: ${saveError.message}`);
-        }
-    }, [documentId, followUpContext, input, model, uploadedImagePath, isChatLoading, isUploading, includeEditorContent, originalHandleSubmit, files, clearPreview, setFollowUpContext /* removed getEditorMarkdownContent from deps */ ]);
-    
     // Define execute* functions (not wrapped in useCallback as they are called within useEffect)
     const executeAddContent = async (args: any) => {
         const editor = editorRef.current;
@@ -511,12 +462,6 @@ export default function EditorPage() {
     };
 
     // --- Effect Hooks (Defined BEFORE Early Returns) ---
-    useEffect(() => { /* Effect for model sync */
-        if (isPreferencesInitialized && preferredModel && model !== preferredModel) {
-            setModel(preferredModel);
-        }
-    }, [isPreferencesInitialized, preferredModel]);
-
     useEffect(() => { /* Effect for page error */
         if (documentError) {
             setPageError(documentError);
@@ -526,28 +471,6 @@ export default function EditorPage() {
     useEffect(() => { /* Effect for follow-up context logging */
         console.log("[EditorPage] followUpContext state updated:", followUpContext);
     }, [followUpContext]);
-
-    useEffect(() => { /* Effect for initial message query param */
-        const initialMsg = searchParams?.get('initialMsg');
-        if (initialMsg) {
-            const decodedMsg = decodeURIComponent(initialMsg);
-            setInput(decodedMsg);
-            setPendingInitialSubmission(decodedMsg);
-            const currentPath = window.location.pathname;
-            routerForReplace.replace(currentPath, { scroll: false });
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps 
-    }, [documentId]); // Only run on mount/docId change
-
-    useEffect(() => { /* Effect for pending initial submission */
-        if (pendingInitialSubmission && input === pendingInitialSubmission) {
-            originalHandleSubmit(undefined, {
-                data: { model: model, documentId: documentId } as any
-            });
-            setPendingInitialSubmission(null);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps 
-    }, [input, pendingInitialSubmission, originalHandleSubmit, model, documentId]);
 
     useEffect(() => { /* Effect for displayed message count */
         const newPotentialCount = Math.min(chatMessages.length, INITIAL_MESSAGE_COUNT);
@@ -658,7 +581,7 @@ export default function EditorPage() {
     // --- END Effect Hooks ---
 
     // --- Early Return Checks ---
-    if (isLoadingDocument) {
+    if (isLoadingDocument || isLoadingMessages) {
         return <div className="flex justify-center items-center h-screen bg-[--bg-color] text-[--text-color]">Loading document...</div>;
     }
 
@@ -683,34 +606,13 @@ export default function EditorPage() {
         return <div className="flex justify-center items-center h-screen bg-[--bg-color] text-[--text-color]">Preparing document...</div>;
     }
 
-    // --- Handler Definitions (Can be defined here, AFTER hooks but BEFORE return) ---
-    const handlePaste = (event: React.ClipboardEvent) => {
-        handleFilePasteEvent(event);
-    };
-    const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
-         event.preventDefault(); 
-         setIsDragging(true);
-    };
-    const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
-         event.preventDefault(); 
-         setIsDragging(false);
-    };
-    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-        event.preventDefault(); 
-        setIsDragging(false);
-        handleFileDropEvent(event);
-    };
-    const handleUploadClick = () => { 
-        if (isUploading) {
-            toast.info("Please wait for the current upload to finish."); 
-            return; 
-        } 
-        fileInputRef.current?.click();
-    };
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        handleFileSelectEvent(event);
-    };
-    // RESTORED: handleSendToEditor definition
+    // --- Handler Definitions (Place standard handlers here) ---
+    const handlePaste = (event: React.ClipboardEvent) => handleFilePasteEvent(event);
+    const handleDragOver = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(true); };
+    const handleDragLeave = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(false); };
+    const handleDrop = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(false); handleFileDropEvent(event); };
+    const handleUploadClick = () => { if (isUploading) { toast.info("Please wait..."); return; } fileInputRef.current?.click(); };
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => handleFileSelectEvent(event);
     const handleSendToEditor = async (content: string) => {
         const editor = editorRef.current;
         if (!editor || !content || content.trim() === '') return;
@@ -834,7 +736,7 @@ export default function EditorPage() {
                     </div>
                     {/* Collapsed Chat Input */}
                     {isChatCollapsed && <div className="p-4 pt-2 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0">
-                        <form ref={formRef} onSubmit={handleSubmitWithContext} className="w-full flex flex-col items-center">
+                        <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center">
                            {/* --- ADDED: Follow Up Context Display --- */}
                            {followUpContext && (
                                <div className="w-full mb-2 p-2 border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 rounded-md relative text-sm text-blue-800 dark:text-blue-200">
@@ -872,9 +774,9 @@ export default function EditorPage() {
                         {/* Load More */}
                         {chatMessages.length > displayedMessagesCount && <button onClick={() => setDisplayedMessagesCount(prev => Math.min(prev + MESSAGE_LOAD_BATCH_SIZE, chatMessages.length))} className="text-sm text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 py-2 focus:outline-none mb-2 mx-auto block">Load More ({chatMessages.length - displayedMessagesCount} older)</button>}
                         {/* Initial Loading - Use state from hook */}
-                        {isLoadingMessages && chatMessages.length === 0 && <div className="flex justify-center items-center h-full"><p className="text-zinc-500">Loading messages...</p></div>}
+                        {isChatLoading && chatMessages.length === 0 && <div className="flex justify-center items-center h-full"><p className="text-zinc-500">Loading messages...</p></div>}
                         {/* No Messages */}
-                        {!isLoadingMessages && chatMessages.length === 0 && <motion.div className="h-auto w-full pt-16 px-4 text-center" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}><div className="border rounded-lg p-4 flex flex-col gap-3 text-zinc-500 text-sm dark:text-zinc-400 dark:border-zinc-700"><p className="font-medium text-zinc-700 dark:text-zinc-300">No messages yet.</p><p>Start the conversation below!</p></div></motion.div>}
+                        {!isChatLoading && chatMessages.length === 0 && <motion.div className="h-auto w-full pt-16 px-4 text-center" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}><div className="border rounded-lg p-4 flex flex-col gap-3 text-zinc-500 text-sm dark:text-zinc-400 dark:border-zinc-700"><p className="font-medium text-zinc-700 dark:text-zinc-300">No messages yet.</p><p>Start the conversation below!</p></div></motion.div>}
                         {/* Messages */}
                         {chatMessages.length > 0 && chatMessages.slice(-displayedMessagesCount).map((message, index) => {
                             console.log('Rendering message content:', JSON.stringify(message.content)); // Log before returning JSX
@@ -904,7 +806,7 @@ export default function EditorPage() {
                 {/* Chat Input Area (fixed at bottom) */}
                 {!isChatCollapsed &&
                     <div className="w-full px-0 pb-4 border-t border-[--border-color] pt-4 flex-shrink-0 bg-[--bg-secondary]">
-                        <form ref={formRef} onSubmit={handleSubmitWithContext} className="w-full flex flex-col items-center">
+                        <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center">
                            {/* --- ADDED: Follow Up Context Display --- */}
                            {followUpContext && (
                                <div className="w-full mb-2 p-2 border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 rounded-md relative text-sm text-blue-800 dark:text-blue-200">
