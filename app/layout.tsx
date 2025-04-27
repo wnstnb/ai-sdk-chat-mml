@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import ThemeHandler from '@/components/ThemeHandler';
+import AppInitializer from '@/components/AppInitializer';
 import './globals.css';
 import { Toaster } from "sonner";
 
@@ -20,7 +21,9 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning={true}>
       <body className={inter.className}>
         <ThemeHandler>
-          {children}
+          <AppInitializer>
+            {children}
+          </AppInitializer>
         </ThemeHandler>
         <Toaster position="bottom-center" offset="4rem" />
       </body>

@@ -3,55 +3,80 @@
 import { useState, useEffect } from 'react';
 import Header from '@/components/header';
 import { usePathname } from 'next/navigation';
+import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // Import the store
 
 interface ThemeHandlerProps {
   children: React.ReactNode;
 }
 
+// Define a default theme for fallback
+const defaultTheme = 'dark'; 
+
 const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
-  // Default state to 'dark'
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const pathname = usePathname();
+  // Get theme state and actions from the preference store
+  const {
+    theme: prefTheme, 
+    setTheme: setThemePref,
+    isInitialized,
+    fetchPreferences // Fetch might need to be triggered if AppInitializer isn't used/working
+  } = usePreferenceStore();
 
-  // Effect to set initial theme from localStorage and update <html> attribute
+  // Local state to manage the theme *before* the store is initialized
+  // Helps prevent FOUC by using localStorage immediately
+  const [initialThemeApplied, setInitialThemeApplied] = useState(false);
+
+  // Effect 1: Set initial theme based on localStorage FIRST, then fetch store
   useEffect(() => {
-    const storedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
-    // Check if window is defined (ensures runs only on client)
-    if (typeof window !== 'undefined') { 
-      // Default fallback to 'dark'
-      const initialTheme = storedTheme || 'dark';
-      setTheme(initialTheme);
-      document.documentElement.setAttribute('data-theme', initialTheme);
+    // Only run on client
+    if (typeof window !== 'undefined' && !initialThemeApplied) {
+      const storedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
+      const initialLocalTheme = storedTheme || defaultTheme;
+      console.log('[ThemeHandler] Applying initial theme from localStorage:', initialLocalTheme);
+      document.documentElement.setAttribute('data-theme', initialLocalTheme);
+      setInitialThemeApplied(true);
     }
-  }, []);
+  }, [initialThemeApplied]); // Run once when initialThemeApplied changes
 
-  // Effect to update localStorage and <html> attribute when theme changes
+  // Effect 2: Apply theme from the store once it's initialized
   useEffect(() => {
-    // Check if window is defined (ensures runs only on client)
-    if (typeof window !== 'undefined') { 
-      localStorage.setItem('theme', theme);
-      document.documentElement.setAttribute('data-theme', theme);
+    // Only run on client and once preferences are loaded
+    if (typeof window !== 'undefined' && isInitialized && prefTheme) {
+       console.log('[ThemeHandler] Applying theme from preference store:', prefTheme);
+       document.documentElement.setAttribute('data-theme', prefTheme);
+       // Update local storage to keep it in sync (optional but good practice)
+       localStorage.setItem('theme', prefTheme);
+    } else if (typeof window !== 'undefined' && isInitialized && !prefTheme) {
+        // Handle case where store is initialized but theme is null (e.g., fetch error)
+        // Apply the default theme from store logic (which falls back to 'light')
+        const fallbackTheme = usePreferenceStore.getState().theme || defaultTheme;
+        console.log('[ThemeHandler] Store initialized, applying fallback theme:', fallbackTheme);
+        document.documentElement.setAttribute('data-theme', fallbackTheme);
+        localStorage.setItem('theme', fallbackTheme);
     }
-  }, [theme]);
+  }, [isInitialized, prefTheme]); // React to store initialization and theme changes
 
+  // Theme toggling function now uses the store action
   const handleToggleTheme = () => {
-    setTheme((prevTheme) => (prevTheme === 'light' ? 'dark' : 'light'));
+    // Determine the next theme based on the *current* store value
+    const currentTheme = prefTheme || defaultTheme; // Use default if store is null
+    const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
+    console.log('[ThemeHandler] Toggling theme to:', nextTheme);
+    setThemePref(nextTheme); // Call the store action
   };
 
   // Determine if the header should be shown
   const showHeader = pathname !== '/' && pathname !== '/login';
 
+  // Determine the theme to pass to the Header (use store value or default)
+  const headerTheme = prefTheme || defaultTheme;
+
   return (
-    // Apply flex layout and full height to this container
     <div className="flex flex-col h-screen">
-      {/* Conditionally render Header */}
       {showHeader && (
-        <Header currentTheme={theme} onToggleTheme={handleToggleTheme} />
+        <Header currentTheme={headerTheme} onToggleTheme={handleToggleTheme} />
       )}
-      {/* Main content area takes remaining space and handles overflow */}
-      {/* Adjust top padding/margin if header is not shown? Maybe handled by CSS */}
-      <main className={`flex-grow overflow-y-auto ${!showHeader ? 'h-screen' : ''}`}> 
-        {/* If no header, main might need full screen height */}      
+      <main className={`flex-grow overflow-y-auto ${!showHeader ? 'h-screen' : ''}`}>
         {children}
       </main>
     </div>
