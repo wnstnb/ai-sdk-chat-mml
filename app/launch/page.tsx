@@ -83,9 +83,6 @@ export default function LaunchPage() {
   const fullText = "What do you want to focus on?";
   const typingSpeed = 40; // milliseconds per character
 
-  // --- State for Tab View ---
-  const [activeView, setActiveView] = useState<'chat' | 'files' | 'newFileManager'>('chat');
-
   // Fetch initial file/folder data
   const fetchData = useCallback(async () => {
     console.log("[LaunchPage] Attempting to fetch data..."); // Log start
@@ -160,12 +157,12 @@ export default function LaunchPage() {
     }
   }, [fullText, typingSpeed]); // Rerun if text or speed changes (though they are constant here)
 
-  // Focus the chat input by default on mount or when chat view becomes active
+  // Focus the chat input by default on mount 
   useEffect(() => {
-    if (activeView === 'chat' && inputRef.current) {
+    if (inputRef.current) {
       inputRef.current.focus();
     }
-  }, [activeView]); // Re-run when activeView changes
+  }, []); // REMOVED: activeView dependency
 
   // --- Handlers for Chat Input ---
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement> | React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -335,118 +332,47 @@ export default function LaunchPage() {
         )}
       </h1>
 
-      {/* Tab/View Switcher Buttons */}
-      <div className="flex justify-center mb-4 space-x-2">
-        <button 
-          onClick={() => setActiveView('chat')}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-150 
-                     ${activeView === 'chat' 
-                       ? 'bg-[--accent-color] text-[--accent-text-color]'
-                       : 'bg-[--button-bg-secondary] text-[--text-color-secondary] hover:bg-[--button-hover-bg-secondary]'}`}
-        >
-          Start with Text
-        </button>
-        <button 
-          onClick={() => setActiveView('files')}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-150 
-                     ${activeView === 'files' 
-                       ? 'bg-[--accent-color] text-[--accent-text-color]'
-                       : 'bg-[--button-bg-secondary] text-[--text-color-secondary] hover:bg-[--button-hover-bg-secondary]'}`}
-        >
-          Browse Files
-        </button>
-        <button 
-          onClick={() => setActiveView('newFileManager')}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-150 
-                     ${activeView === 'newFileManager' 
-                       ? 'bg-[--accent-color] text-[--accent-text-color]'
-                       : 'bg-[--button-bg-secondary] text-[--text-color-secondary] hover:bg-[--button-hover-bg-secondary]'}`}
-        >
-          New File Manager (Prototype)
-        </button>
-      </div>
+      {/* Main Content Area (Previously Conditional) */}
+      <> 
+        {/* Launch Input Form using ChatInputUI */}
+        <form ref={formRef} onSubmit={handleLaunchSubmit} className="mb-6">
+          {/* <label htmlFor="launch-input" className="sr-only">What do you want to focus on?</label> */}
+          {/* We can hide the label since ChatInputUI has a placeholder */}
+          <ChatInputUI
+            files={files} // Pass null initially
+            fileInputRef={fileInputRef} // Pass ref
+            handleFileChange={handleFileChange} // Pass placeholder handler
+            inputRef={inputRef} // Pass ref
+            input={input} // Pass input state
+            handleInputChange={handleInputChange} // Pass handler
+            handleKeyDown={handleKeyDown} // Pass handler
+            handlePaste={handlePaste} // Pass placeholder handler
+            model={model} // Pass model state
+            setModel={setModel} // Pass model setter
+            handleUploadClick={handleUploadClick} // Pass placeholder handler
+            isLoading={isSubmitting} // Use isSubmitting to disable input during launch
+            isUploading={isUploading} // Pass state (false initially)
+            uploadError={uploadError} // Pass state (null initially)
+            uploadedImagePath={uploadedImagePath} // Pass state (null initially)
+          />
+          {/* The submit button is now inside ChatInputUI */}
+        </form>
+        
+        {/* Error Message Display (Only show errors relevant to chat/launch?) */}
+        {error && <div className="mb-4 p-2 text-red-700 bg-red-100 border border-red-400 rounded text-center">{error}</div>}
 
-      {/* Conditional Rendering based on activeView */}
-      {activeView === 'chat' && (
-        <> 
-          {/* Launch Input Form using ChatInputUI */}
-          <form ref={formRef} onSubmit={handleLaunchSubmit} className="mb-6">
-            {/* <label htmlFor="launch-input" className="sr-only">What do you want to focus on?</label> */}
-            {/* We can hide the label since ChatInputUI has a placeholder */}
-            <ChatInputUI
-              files={files} // Pass null initially
-              fileInputRef={fileInputRef} // Pass ref
-              handleFileChange={handleFileChange} // Pass placeholder handler
-              inputRef={inputRef} // Pass ref
-              input={input} // Pass input state
-              handleInputChange={handleInputChange} // Pass handler
-              handleKeyDown={handleKeyDown} // Pass handler
-              handlePaste={handlePaste} // Pass placeholder handler
-              model={model} // Pass model state
-              setModel={setModel} // Pass model setter
-              handleUploadClick={handleUploadClick} // Pass placeholder handler
-              isLoading={isSubmitting} // Use isSubmitting to disable input during launch
-              isUploading={isUploading} // Pass state (false initially)
-              uploadError={uploadError} // Pass state (null initially)
-              uploadedImagePath={uploadedImagePath} // Pass state (null initially)
-            />
-            {/* The submit button is now inside ChatInputUI */}
-          </form>
-          
-          {/* Error Message Display (Only show errors relevant to chat/launch?) */}
-          {error && <div className="mb-4 p-2 text-red-700 bg-red-100 border border-red-400 rounded text-center">{error}</div>}
-        </>
-      )}
+        {/* --- MOVED FROM newFileManager VIEW --- */}
+        {/* Add Omnibar */}
+        <div className="mb-4">
+          <Omnibar />
+        </div>
 
-      {activeView === 'files' && (
-        <> 
-          {/* Error Message Display (Only show errors relevant to file manager?) */}
-          {error && <div className="mb-4 p-2 text-red-700 bg-red-100 border border-red-400 rounded text-center">{error}</div>}
-
-          {/* File Manager Section */}
-          {/* Use CSS variables for border */}
-          {/* No longer need the onKeyDown wrapper here */}
-          <div 
-            className="flex-grow overflow-hidden border border-[--border-color] rounded-md shadow-sm"
-            // Removed onKeyDown handler
-            tabIndex={-1} // Keep for potential focus, though maybe not needed now
-          >
-            {isLoading ? (
-              <div className="flex justify-center items-center h-full">Loading files...</div>
-            ) : (
-              <FileManager
-                files={cuboneFiles} // Use the correctly typed state
-                onCreateFolder={handleCreateFolder}
-                onRenameFile={handleRename} // Use the correct prop name
-                onDelete={handleDelete} // Correct prop name
-                onFileOpen={handleFileOpen}
-                onPaste={handlePasteCubone} // Use the renamed handler
-                // Attempt to disable default double-click behavior
-                options={{ disableDefaultDoubleClick: true }} 
-                style={{ height: 'calc(100% - 1px)', width: '100%' }}
-              />
-            )}
-          </div>
-        </>
-      )}
-
-      {/* New Conditional Block for New File Manager */}
-      {activeView === 'newFileManager' && (
-        <>
-          {/* --- NEW: Add Omnibar above the file manager --- */}
-          <div className="mb-4">
-            <Omnibar />
-          </div>
-
-          {/* Render the actual NewFileManager component */}
-          <div className="flex-grow overflow-hidden border border-[--border-color] rounded-md shadow-sm">
-            <NewFileManager />
-          </div>
-
-          {/* Display general errors if any occur while this view is active */}
-          {error && <div className="mt-4 p-2 text-red-700 bg-red-100 border border-red-400 rounded text-center">{error}</div>}
-        </>
-      )}
+        {/* Render the actual NewFileManager component */}
+        <div className="flex-grow overflow-hidden border border-[--border-color] rounded-md shadow-sm">
+          <NewFileManager />
+        </div>
+        {/* --- END MOVED SECTION --- */}
+      </>
     </div>
   );
 } 
