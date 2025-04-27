@@ -74,9 +74,9 @@ import {
 import { useFollowUpStore } from '@/lib/stores/followUpStore';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // Import preference store
 
-// --- NEW: Import the hook ---
-// Use correct alias based on tsconfig.json
+// --- NEW: Import the hooks ---
 import { useDocument } from '@/app/lib/hooks/editor/useDocument';
+import { useInitialChatMessages } from '@/app/lib/hooks/editor/useInitialChatMessages';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -189,8 +189,8 @@ export default function EditorPage() {
     const [pendingInitialSubmission, setPendingInitialSubmission] = useState<string | null>(null);
 
     // Loading/Error States
-    // const [isLoadingDocument, setIsLoadingDocument] = useState(true); // Handled by hook
-    const [isLoadingMessages, setIsLoadingMessages] = useState(true);
+    // const [isLoadingDocument, setIsLoadingDocument] = useState(true); // Handled by useDocument
+    // const [isLoadingMessages, setIsLoadingMessages] = useState(true); // Handled by useInitialChatMessages
     const [isSaving, setIsSaving] = useState(false); // Editor save button state
     // const [error, setError] = useState<string | null>(null); // Replaced by pageError
 
@@ -236,106 +236,14 @@ export default function EditorPage() {
     }, [followUpContext]);
     // --- END DEBUG ---
 
-    // --- Data Fetching ---
-
-    // Fetch Initial Chat Messages for this Document
-    const fetchChatMessages = useCallback(async () => {
-        if (!documentId) {
-            setIsLoadingMessages(false);
-            return;
-        }
-        console.log(`Fetching messages for document: ${documentId}`);
-        setIsLoadingMessages(true);
-        // Don't clear page-level error here, let doc loading handle that
-        try {
-            const response = await fetch(`/api/documents/${documentId}/messages`);
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({ error: { message: `HTTP ${response.status}` } }));
-                throw new Error(
-                    errData.error?.message || `Failed to fetch messages (${response.status})`
-                );
-            }
-            const { data }: { data: MessageWithSignedUrl[] } = await response.json();
-
-            // Map fetched messages to the format expected by useChat
-            // Filter out 'tool' roles if they cause type errors with the current ai/react version/types
-            const allowedRoles: Message['role'][] = ['user', 'assistant', 'system', 'data']; // Removed 'function'
-            const formattedMessages: Message[] = data
-                .filter(msg => allowedRoles.includes(msg.role as any)) // Filter out unsupported roles
-                .map(msg => {
-                    let displayContent = msg.content || '';
-                    // Attempt to parse content if it's a JSON string
-                    let isToolCallContent = false;
-                    if (displayContent.startsWith('[') && displayContent.endsWith(']')) { // Basic check for JSON array
-                        try {
-                            const parsedContent = JSON.parse(displayContent);
-                            // Check if it's specifically a tool call structure
-                            if (Array.isArray(parsedContent) && parsedContent.length > 0 && parsedContent[0]?.type === 'tool-call') {
-                                isToolCallContent = true;
-                                console.log(`[fetchChatMessages] Identified tool call content for message ${msg.id}`);
-                            // Check if it's the text content structure
-                            } else if (Array.isArray(parsedContent) && parsedContent.length > 0 && parsedContent[0] && typeof parsedContent[0].text === 'string') {
-                                displayContent = parsedContent[0].text; // Extract text content
-                                console.log(`[fetchChatMessages] Extracted text content from JSON for message ${msg.id}`);
-                            } else {
-                                console.warn(`[fetchChatMessages] Parsed JSON content for message ${msg.id} is not a recognized tool call or text format:`, parsedContent);
-                            }
-                        } catch (parseError) {
-                            // If parsing fails, log it but keep the original string content
-                            console.warn(`[fetchChatMessages] Failed to parse potential JSON content for message ${msg.id}:`, parseError);
-                        }
-                    }
-
-                    return {
-                        id: msg.id,
-                        role: msg.role as Message['role'], // Cast to Message['role'] after filtering
-                        content: isToolCallContent ? '' : displayContent, // Use empty string for tool calls, otherwise use extracted/original
-                        createdAt: new Date(msg.created_at),
-                        // Map image URL to attachment structure for display
-                        experimental_attachments: msg.signedDownloadUrl ? [{
-                            name: msg.image_url?.split('/').pop() || `image_${msg.id}`,
-                            contentType: 'image/*', // Best guess
-                            url: msg.signedDownloadUrl,
-                        }] : undefined,
-                        // Add tool_calls if available and match the structure expected by ai/react Message type
-                        // tool_calls: msg.tool_calls ? msg.tool_calls.map(tc => ({ id: tc.id, type: 'tool_call', function: { name: tc.tool_name, arguments: JSON.stringify(tc.tool_input) } })) : undefined,
-                        // Tool invocations (for display) might need separate mapping if structure differs
-                    };
-                });
-
-            console.log(`Fetched ${formattedMessages.length} messages.`);
-            setChatMessages(formattedMessages);
-            setDisplayedMessagesCount(Math.min(formattedMessages.length, INITIAL_MESSAGE_COUNT));
-
-            // Log state immediately after setting
-            console.log('[fetchChatMessages] State set:', {
-                totalMessages: formattedMessages.length, // Use the variable available here
-                initialDisplayCount: Math.min(formattedMessages.length, INITIAL_MESSAGE_COUNT)
-            });
-
-        } catch (err: any) {
-            console.error('Error fetching messages:', err);
-            setPageError(`Failed to load messages: ${err.message}`); // Use setPageError
-            setChatMessages([]); // Clear messages on error
-        } finally {
-            setIsLoadingMessages(false);
-            // Removed log from here
-        }
-    // }, [documentId, setChatMessages, setDisplayedMessagesCount, setPageError]); // Removed model, originalHandleSubmit, added setPageError dependency
-    // Adjusted dependency: only need documentId, setChatMessages, setDisplayedMessagesCount, setPageError
-    }, [documentId, setChatMessages, setDisplayedMessagesCount, setPageError]);
-
-    // Initial data fetch on component mount or when documentId changes
-    // REMOVED: fetchDocument call (handled within useDocument hook)
-    useEffect(() => {
-        if (documentId) {
-            // fetchDocument(); // No longer needed here
-            fetchChatMessages();
-        }
-        setProcessedToolCallIds(new Set());
-        // Don't reset displayedMessagesCount here, fetchChatMessages handles initial set
-    // }, [documentId, fetchDocument, fetchChatMessages]); // Removed fetchDocument dependency
-    }, [documentId, fetchChatMessages]); // Updated dependencies
+    // --- NEW: Use hook for initial message fetching ---
+    const { isLoadingMessages } = useInitialChatMessages({
+        documentId,
+        setChatMessages,
+        setDisplayedMessagesCount,
+        setPageError
+    });
+    // --- END NEW ---
 
     // --- NEW: Effect to read initial message from query parameter ---
     const routerForReplace = useRouter(); // Get router instance for replace
@@ -1627,7 +1535,7 @@ export default function EditorPage() {
                     <div className="flex-1 overflow-y-auto styled-scrollbar pr-2 pt-4">
                         {/* Load More */}
                         {chatMessages.length > displayedMessagesCount && <button onClick={() => setDisplayedMessagesCount(prev => Math.min(prev + MESSAGE_LOAD_BATCH_SIZE, chatMessages.length))} className="text-sm text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 py-2 focus:outline-none mb-2 mx-auto block">Load More ({chatMessages.length - displayedMessagesCount} older)</button>}
-                        {/* Initial Loading */}
+                        {/* Initial Loading - Use state from hook */}
                         {isLoadingMessages && chatMessages.length === 0 && <div className="flex justify-center items-center h-full"><p className="text-zinc-500">Loading messages...</p></div>}
                         {/* No Messages */}
                         {!isLoadingMessages && chatMessages.length === 0 && <motion.div className="h-auto w-full pt-16 px-4 text-center" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}><div className="border rounded-lg p-4 flex flex-col gap-3 text-zinc-500 text-sm dark:text-zinc-400 dark:border-zinc-700"><p className="font-medium text-zinc-700 dark:text-zinc-300">No messages yet.</p><p>Start the conversation below!</p></div></motion.div>}
