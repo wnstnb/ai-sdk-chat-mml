@@ -79,6 +79,8 @@ import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // Import pre
 // --- NEW: Import the hooks ---
 import { useDocument } from '@/app/lib/hooks/editor/useDocument';
 import { useInitialChatMessages } from '@/app/lib/hooks/editor/useInitialChatMessages';
+// --- NEW: Import the useTitleManagement hook ---
+import { useTitleManagement } from '@/lib/hooks/editor/useTitleManagement'; // Corrected path
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -159,8 +161,32 @@ export default function EditorPage() {
     }, [documentError]);
     // --- END NEW ---
 
-    const [isEditingTitle, setIsEditingTitle] = useState(false);
-    const [newTitleValue, setNewTitleValue] = useState('');
+    // --- NEW: Use the useTitleManagement hook ---
+    // Ensure documentData exists and has a name before calling the hook
+    const {
+        currentTitle,
+        isEditingTitle,
+        newTitleValue,
+        isInferringTitle,
+        handleEditTitleClick,
+        handleCancelEditTitle,
+        handleSaveTitle,
+        handleTitleInputKeyDown,
+        handleInferTitle,
+        setNewTitleValue,
+    } = useTitleManagement({
+        documentId,
+        initialName: documentData?.name || '', // Provide a fallback if documentData is null initially
+        editorRef,
+        // Optionally pass onTitleSaveSuccess if needed to update documentData locally,
+        // but the hook now manages the 'currentTitle' state internally.
+        // onTitleSaveSuccess: (savedTitle) => {
+        //     // Optional: Update local documentData state if necessary, though maybe redundant
+        //     // setDocumentData(prev => prev ? { ...prev, name: savedTitle } : null);
+        // }
+    });
+    // --- END NEW ---
+
     const [processedToolCallIds, setProcessedToolCallIds] = useState<Set<string>>(
         new Set()
     );
@@ -177,9 +203,6 @@ export default function EditorPage() {
     const inputRef = useRef<HTMLTextAreaElement>(null); // Chat input textarea
     const fileInputRef = useRef<HTMLInputElement>(null); // Hidden file input
     const messagesEndRef = useRef<HTMLDivElement>(null); // Chat scroll anchor
-
-    // --- NEW: Infer Title State ---
-    const [isInferringTitle, setIsInferringTitle] = useState(false);
 
     // --- NEW: Upload State ---
     const [isUploading, setIsUploading] = useState(false);
@@ -1232,149 +1255,6 @@ export default function EditorPage() {
     // Navigation Handlers
     const handleNewDocument = () => { console.log("Navigating to /launch"); router.push('/launch'); };
 
-    // --- Title Editing Handlers ---
-    const handleEditTitleClick = () => {
-        if (!documentData) return;
-        setNewTitleValue(documentData.name);
-        setIsEditingTitle(true);
-    };
-
-    const handleCancelEditTitle = () => {
-        setIsEditingTitle(false);
-        setNewTitleValue(''); // Clear temporary value
-    };
-
-    const handleSaveTitle = async (titleToSave?: string) => {
-        // Determine the title to actually save
-        const finalTitle = titleToSave !== undefined ? titleToSave.trim() : newTitleValue.trim();
-
-        if (!documentData || !finalTitle || finalTitle === documentData.name) {
-            // If name is empty or unchanged, just cancel edit mode
-            if (!finalTitle) {
-                toast.error("Document name cannot be empty.");
-            }
-            handleCancelEditTitle(); // Also cancels if name is unchanged
-            return;
-        }
-
-        // const originalTitle = documentData.name;
-        // Use finalTitle for optimistic update and API call
-        const optimisticNewTitle = finalTitle;
-
-        // Optimistic UI update - TEMPORARILY DISABLED
-        // TODO: Move title state management (incl. optimistic updates) to useTitleManagement hook (Step 8)
-        // setDocumentData(prevData => prevData ? { ...prevData, name: optimisticNewTitle } : null);
-        setIsEditingTitle(false); // Exit edit mode after initiating save
-
-        try {
-            const response = await fetch(`/api/documents/${documentId}`,
-                {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: optimisticNewTitle }), // Send finalTitle
-                }
-            );
-
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({ error: { message: `HTTP ${response.status}` } }));
-                throw new Error(errData.error?.message || `Failed to rename document (${response.status})`);
-            }
-
-            const { data: updatedDoc } = await response.json();
-            // Update timestamp from response if needed, though name change might not update it server-side unless explicit
-            // TODO: Re-enable and refine when state is in useTitleManagement
-            // setDocumentData(prevData => prevData ? { ...prevData, updated_at: updatedDoc.updated_at || prevData.updated_at } : null);
-            toast.success('Document renamed successfully!');
-
-        } catch (err: any) {
-            console.error('Error saving title:', err);
-            toast.error(`Failed to rename: ${err.message}`);
-            // Rollback optimistic update - TEMPORARILY DISABLED
-            // TODO: Re-enable and refine when state is in useTitleManagement
-            // setDocumentData(prevData => prevData ? { ...prevData, name: originalTitle } : null);
-            // Optionally re-enter edit mode?
-            // setIsEditingTitle(true);
-        }
-    };
-
-    // Add handler for Enter key in title input
-    const handleTitleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-        if (event.key === 'Enter') {
-            handleSaveTitle(); // No argument - uses state from input
-        } else if (event.key === 'Escape') {
-            handleCancelEditTitle();
-        }
-    };
-    // --- END Added Title Editing Handlers ---
-
-    // --- NEW: Handle Infer Title Click ---
-    const handleInferTitle = async () => {
-        const editor = editorRef.current;
-        if (!editor) {
-            toast.error("Editor not ready.");
-            return;
-        }
-
-        setIsInferringTitle(true);
-        toast.info("Generating title based on content..."); // Inform user
-
-        try {
-            // 1. Get editor content as Markdown
-            const blocks = editor.document;
-            const markdown = await editor.blocksToMarkdownLossy(blocks);
-
-            // 2. Extract snippet (first 500 chars, as per PRD)
-            const snippet = markdown.substring(0, 500);
-
-            // Basic check if snippet is empty after conversion/extraction
-            if (!snippet.trim()) {
-                 toast.warning("Cannot generate title from empty content.");
-                 setIsInferringTitle(false);
-                 return;
-            }
-
-            // 3. Call the backend API
-            const response = await fetch('/api/generate-title', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ content: snippet }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-                throw new Error(errorData.error || `Failed to generate title (${response.status})`);
-            }
-
-            const { title } = await response.json();
-
-            if (!title) {
-                throw new Error("Received empty title from API.");
-            }
-
-            // 4. Update the title using existing logic
-            toast.success("Title suggested!");
-            // Set the input field value directly
-            setNewTitleValue(title);
-            // Trigger the save mechanism (which also handles optimistic UI update if isEditingTitle is true)
-            setIsEditingTitle(true); // Ensure save button appears if not already editing
-            // We might need a slight delay or focus management here if needed,
-            // but handleSaveTitle should pick up the new value from `newTitleValue`
-            // No, actually call handleSaveTitle directly to persist it immediately
-            await handleSaveTitle(title); // Call without arguments, uses newTitleValue state
-            // setIsEditingTitle(false); // Exit edit mode after successful save // Keep edit mode active so user sees the change and can modify/confirm
-
-
-        } catch (error) {
-            console.error("Error inferring title:", error);
-            const message = error instanceof Error ? error.message : "Unknown error occurred";
-            toast.error(`Title generation failed: ${message}`);
-        } finally {
-            setIsInferringTitle(false);
-        }
-    };
-
     // --- Render Logic ---
 
     // Add log before returning JSX
@@ -1417,38 +1297,38 @@ export default function EditorPage() {
 
             {/* Editor Pane */}
             <div className="flex-1 flex flex-col p-4 border-r border-[--border-color] relative overflow-hidden">
-                {/* Title Bar */}
+                {/* Title Bar - UPDATED TO USE HOOK STATE/HANDLERS */}
                 <div className="flex justify-between items-center mb-2 flex-shrink-0">
                     <div className="flex items-center gap-2 flex-grow min-w-0">
                         {isEditingTitle ? (
                             <>
                                 <input
                                     type="text"
-                                    value={newTitleValue}
-                                    onChange={(e) => setNewTitleValue(e.target.value)}
-                                    onKeyDown={handleTitleInputKeyDown}
+                                    value={newTitleValue} // Use hook state
+                                    onChange={(e) => setNewTitleValue(e.target.value)} // Use hook setter
+                                    onKeyDown={handleTitleInputKeyDown} // Use hook handler
                                     className="flex-grow px-2 py-1 border border-[--border-color] rounded bg-[--input-bg] text-[--text-color] focus:outline-none focus:ring-1 focus:ring-[--primary-color] text-lg font-semibold"
                                     autoFocus
                                 />
-                                <button onClick={() => handleSaveTitle()} className="p-1 text-green-600 hover:bg-green-100 dark:hover:bg-green-900 rounded" title="Save Title"><Save size={18} /></button>
-                                <button onClick={handleCancelEditTitle} className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900 rounded" title="Cancel"><X size={18} /></button>
+                                <button onClick={() => handleSaveTitle()} className="p-1 text-green-600 hover:bg-green-100 dark:hover:bg-green-900 rounded" title="Save Title"><Save size={18} /></button> {/* Use hook handler */}
+                                <button onClick={handleCancelEditTitle} className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900 rounded" title="Cancel"><X size={18} /></button> {/* Use hook handler */}
                             </>
                         ) : (
                             <>
-                                <h2 className="text-lg font-semibold text-[--text-color] truncate" title={documentData.name}>{documentData.name}</h2>
-                                {/* --- NEW: Infer Title Button (Re-added) --- */}
+                                <h2 className="text-lg font-semibold text-[--text-color] truncate" title={currentTitle}>{currentTitle}</h2> {/* Use currentTitle from hook */}
+                                {/* --- Infer Title Button --- */}
                                 <button
-                                    onClick={handleInferTitle}
+                                    onClick={handleInferTitle} // Use hook handler
                                     className="p-1 rounded hover:bg-[--hover-bg] text-[--muted-text-color] hover:text-[--text-color] disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
                                     aria-label="Suggest title from content"
                                     title="Suggest title from content"
-                                    disabled={isInferringTitle || !editorRef.current} // Disable while inferring or if editor not ready
+                                    disabled={isInferringTitle || !editorRef.current} // Use hook state
                                 >
-                                    {isInferringTitle ? (
+                                    {isInferringTitle ? ( // Use hook state
                                          <motion.div
                                             animate={{ rotate: 360 }}
                                             transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                                            style={{ display: 'flex' }} // Keep layout consistent
+                                            style={{ display: 'flex' }}
                                          >
                                              <Sparkles size={16} className="text-yellow-500" />
                                          </motion.div>
@@ -1457,7 +1337,7 @@ export default function EditorPage() {
                                     )}
                                 </button>
                                 {/* --- End: Infer Title Button --- */}
-                                <button onClick={handleEditTitleClick} className="p-1 text-[--muted-text-color] hover:text-[--text-color] hover:bg-[--hover-bg] rounded flex-shrink-0" title="Rename Document"><Edit size={16} /></button>
+                                <button onClick={handleEditTitleClick} className="p-1 text-[--muted-text-color] hover:text-[--text-color] hover:bg-[--hover-bg] rounded flex-shrink-0" title="Rename Document"><Edit size={16} /></button> {/* Use hook handler */}
                             </>
                         )}
                     </div>
