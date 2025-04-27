@@ -90,6 +90,7 @@ import { useFileUpload } from '@/lib/hooks/editor/useFileUpload';
 // --- NEW: Import the useChatInteractions hook ---
 import { useChatInteractions } from '@/lib/hooks/editor/useChatInteractions';
 import { ChatInputArea } from '@/components/editor/ChatInputArea'; // Import the new component
+import { ChatMessagesList } from '@/components/editor/ChatMessagesList'; // Import the new component
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -770,64 +771,57 @@ export default function EditorPage() {
                 {!isChatCollapsed && <div ref={dragHandleRef} onMouseDown={handleMouseDownResize} className="absolute top-0 bottom-0 left-0 w-1.5 cursor-col-resize bg-gray-300/50 dark:bg-gray-600/50 hover:bg-blue-400 dark:hover:bg-blue-600 transition-colors duration-150 z-30" style={{ transform: 'translateX(-50%)' }} />}
                 {/* Chat Content Area */}
                 {!isChatCollapsed &&
-                    // Messages Area (scrolls internally)
-                    <div className="flex-1 overflow-y-auto styled-scrollbar pr-2 pt-4">
-                        {/* Load More */}
-                        {chatMessages.length > displayedMessagesCount && <button onClick={() => setDisplayedMessagesCount(prev => Math.min(prev + MESSAGE_LOAD_BATCH_SIZE, chatMessages.length))} className="text-sm text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 py-2 focus:outline-none mb-2 mx-auto block">Load More ({chatMessages.length - displayedMessagesCount} older)</button>}
-                        {/* Initial Loading - Use state from hook */}
-                        {isChatLoading && chatMessages.length === 0 && <div className="flex justify-center items-center h-full"><p className="text-zinc-500">Loading messages...</p></div>}
-                        {/* No Messages */}
-                        {!isChatLoading && chatMessages.length === 0 && <motion.div className="h-auto w-full pt-16 px-4 text-center" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}><div className="border rounded-lg p-4 flex flex-col gap-3 text-zinc-500 text-sm dark:text-zinc-400 dark:border-zinc-700"><p className="font-medium text-zinc-700 dark:text-zinc-300">No messages yet.</p><p>Start the conversation below!</p></div></motion.div>}
-                        {/* Messages */}
-                        {chatMessages.length > 0 && chatMessages.slice(-displayedMessagesCount).map((message, index) => {
-                            console.log('Rendering message content:', JSON.stringify(message.content)); // Log before returning JSX
-                            return (
-                            <motion.div
-                                key={message.id || `msg-${index}`}
-                                className={`flex flex-row gap-2 w-full mb-4 md:px-0 ${index === 0 && chatMessages.length <= displayedMessagesCount ? 'pt-4' : ''}`}
-                                initial={{ y: 5, opacity: 0 }}
-                                animate={{ y: 0, opacity: 1 }}
-                                transition={{ duration: 0.2 }}
-                            >
-                                <div className="size-[24px] flex flex-col justify-start items-center flex-shrink-0 text-zinc-400 pt-1">{message.role === 'assistant' ? <BotIcon /> : <UserIcon />}</div>
-                                <div className="flex flex-col gap-1 flex-grow break-words overflow-hidden p-2 rounded-md bg-[--message-bg] shadow-sm">
-                                    <div className="text-zinc-800 dark:text-zinc-300 flex flex-col gap-4"><Markdown>{message.content}</Markdown></div>
-                                    {message.role === 'assistant' && message.content && message.content.trim() !== '' && <div className="mt-1 flex justify-end"><button onClick={() => handleSendToEditor(message.content)} className="p-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-md focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500" title="Send to Editor"><SendToBack size={14} /></button></div>}
-                                    {message.role === 'assistant' && message.toolInvocations && message.toolInvocations.length > 0 && <div className="mt-2 flex flex-col gap-2 border-t border-zinc-200 dark:border-zinc-700 pt-2">{message.toolInvocations.map((toolCall) => (<div key={toolCall.toolCallId} className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400"><Wrench size={12} className="flex-shrink-0" /><span>Using tool: <strong>{toolCall.toolName}</strong></span></div>))}</div>}
-                                    <div className="flex flex-row gap-2 flex-wrap mt-2">{message.experimental_attachments?.map((attachment, idx) => attachment.contentType?.startsWith("image") ? <img className="rounded-md w-32 mb-2 object-cover" key={attachment.name || `attach-${idx}`} src={attachment.url} alt={attachment.name || 'Attachment'} onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : attachment.contentType?.startsWith("text") ? <div key={attachment.name || `attach-${idx}`} className="text-xs w-32 h-20 overflow-hidden text-zinc-400 border p-1 rounded-md dark:bg-zinc-800 dark:border-zinc-700 mb-2">{attachment.url.startsWith('data:') ? getTextFromDataUrl(attachment.url).slice(0, 100) + '...' : `[${attachment.name || 'Text File'}]`}</div> : null)}</div>
-                                </div>
-                            </motion.div>
-                        );
-                      })}
-                        {/* Assistant Loading */}
-                        {isChatLoading && <div className="flex flex-row gap-2 w-full md:px-0 mt-2"><div className="size-[24px] flex flex-col justify-start items-center flex-shrink-0 text-zinc-400 pt-1"> <BotIcon /> </div><div className="flex items-center gap-1 text-zinc-400 p-2"><span className="h-2 w-2 bg-zinc-400 rounded-full animate-pulse [animation-delay:-0.3s]"></span><span className="h-2 w-2 bg-zinc-400 rounded-full animate-pulse [animation-delay:-0.15s]"></span><span className="h-2 w-2 bg-zinc-400 rounded-full animate-pulse"></span></div></div>}
-                        <div ref={messagesEndRef} /> {/* Scroll Anchor */}
-                    </div>
-                }
-                {/* Chat Input Area (fixed at bottom) */}
-                {!isChatCollapsed &&
-                    <ChatInputArea 
-                        input={input}
-                        handleInputChange={handleInputChange}
-                        handleSubmit={handleSubmit}
-                        isLoading={isChatLoading}
-                        model={model}
-                        setModel={setModel}
-                        stop={stop}
-                        files={files}
-                        handleFileChange={handleFileChange}
-                        handlePaste={handlePaste}
-                        handleUploadClick={handleUploadClick}
-                        isUploading={isUploading}
-                        uploadError={uploadError}
-                        uploadedImagePath={uploadedImagePath}
-                        followUpContext={followUpContext}
-                        setFollowUpContext={setFollowUpContext}
-                        formRef={formRef}
-                        inputRef={inputRef}
-                        fileInputRef={fileInputRef}
-                        handleKeyDown={handleKeyDown}
-                    />
+                    <>
+                        {/* --- NEW: Use ChatMessagesList Component --- */}
+                        <ChatMessagesList
+                            chatMessages={chatMessages}
+                            displayedMessagesCount={displayedMessagesCount}
+                            isLoadingMessages={isLoadingMessages} // Pass initial loading state
+                            isChatLoading={isChatLoading} // Pass assistant loading state
+                            setDisplayedMessagesCount={setDisplayedMessagesCount}
+                            handleSendToEditor={handleSendToEditor} // Pass the handler
+                            messagesEndRef={messagesEndRef}
+                            messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE} // Pass constant
+                        />
+                        {/* --- REMOVED: Original Message List JSX --- */}
+                        {/* <div className="flex-1 overflow-y-auto styled-scrollbar pr-2 pt-4">
+                            {shouldShowLoadMore && <button ...>Load More...</button>}
+                            {isLoadingMessages && totalMessages === 0 && <div>Loading messages...</div>}
+                            {!isLoadingMessages && totalMessages === 0 && <div>No messages yet...</div>}
+                            {totalMessages > 0 && chatMessages.slice(...).map((message, index) => (
+                                <motion.div ...>
+                                     // Message bubble content 
+                                </motion.div>
+                            ))}
+                            {isChatLoading && <div>Assistant loading...</div>}
+                            <div ref={messagesEndRef} />
+                        </div> */}
+                        {/* --- END REMOVED --- */}
+                        
+                        {/* Chat Input Area (Rendered using ChatInputArea component) */}
+                        <ChatInputArea 
+                            input={input}
+                            handleInputChange={handleInputChange}
+                            handleSubmit={handleSubmit}
+                            isLoading={isChatLoading}
+                            model={model}
+                            setModel={setModel}
+                            stop={stop}
+                            files={files}
+                            handleFileChange={handleFileChange}
+                            handlePaste={handlePaste}
+                            handleUploadClick={handleUploadClick}
+                            isUploading={isUploading}
+                            uploadError={uploadError}
+                            uploadedImagePath={uploadedImagePath}
+                            followUpContext={followUpContext}
+                            setFollowUpContext={setFollowUpContext}
+                            formRef={formRef}
+                            inputRef={inputRef}
+                            fileInputRef={fileInputRef}
+                            handleKeyDown={handleKeyDown}
+                        />
+                    </>
                 }
             </motion.div>
         </div>
