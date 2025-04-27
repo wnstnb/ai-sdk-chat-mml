@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Message } from 'ai/react';
-import type { MessageWithSignedUrl } from '@/types/supabase';
+// Import Supabase types
+import type { Message as SupabaseMessage, ToolCall as SupabaseToolCall } from '@/types/supabase';
+
+// Type matching the API response structure
+interface MessageWithDetails extends SupabaseMessage {
+    signedDownloadUrl: string | null;
+    tool_calls: SupabaseToolCall[] | null; // Array of tool calls made BY this message (if assistant)
+}
 
 // Define constants or import them
 const INITIAL_MESSAGE_COUNT = 20;
@@ -23,7 +30,7 @@ export function useInitialChatMessages({
     setChatMessages,
     setDisplayedMessagesCount,
     setPageError,
-}: UseInitialChatMessagesProps): UseInitialChatMessagesReturn { 
+}: UseInitialChatMessagesProps): UseInitialChatMessagesReturn {
     const [isLoadingMessages, setIsLoadingMessages] = useState(true);
     // const [fetchError, setFetchError] = useState<string | null>(null); // Replaced by setPageError
 
@@ -49,42 +56,87 @@ export function useInitialChatMessages({
                     errData.error?.message || `Failed to fetch messages (${response.status})`
                 );
             }
-            const { data }: { data: MessageWithSignedUrl[] } = await response.json();
+            // Expect the API to return MessageWithDetails[]
+            const { data }: { data: MessageWithDetails[] } = await response.json();
 
-            // Map fetched messages (Similar logic as before)
-            const allowedRoles: Message['role'][] = ['user', 'assistant', 'system', 'data'];
-            const formattedMessages: Message[] = data
-                .filter(msg => allowedRoles.includes(msg.role as any))
-                .map(msg => {
-                    let displayContent = msg.content || '';
-                    let isToolCallContent = false;
-                    if (displayContent.startsWith('[') && displayContent.endsWith(']')) {
-                        try {
-                            const parsedContent = JSON.parse(displayContent);
-                            if (Array.isArray(parsedContent) && parsedContent.length > 0 && parsedContent[0]?.type === 'tool-call') {
-                                isToolCallContent = true;
-                            } else if (Array.isArray(parsedContent) && parsedContent.length > 0 && parsedContent[0] && typeof parsedContent[0].text === 'string') {
-                                displayContent = parsedContent[0].text;
-                            }
-                        } catch (parseError) {
-                            // ignore parse error, keep original content
-                        }
-                    }
+            // --- REVISED MESSAGE FORMATTING ---
+            const formattedMessages: Message[] = [];
+            const allowedRoles: Message['role'][] = ['user', 'assistant', 'system']; // 'tool' role is constructed manually
 
-                    return {
+            for (const msg of data) {
+                 if (!allowedRoles.includes(msg.role as any)) {
+                    console.warn(`[useInitialChatMessages] Skipping message ${msg.id} with unknown role: ${msg.role}`);
+                    continue;
+                 }
+
+                // 1. Handle User and System messages directly
+                if (msg.role === 'user' || msg.role === 'system') {
+                    formattedMessages.push({
                         id: msg.id,
-                        role: msg.role as Message['role'],
-                        content: isToolCallContent ? '' : displayContent,
+                        role: msg.role,
+                        content: msg.content || '',
                         createdAt: new Date(msg.created_at),
                         experimental_attachments: msg.signedDownloadUrl ? [{
                             name: msg.image_url?.split('/').pop() || `image_${msg.id}`,
-                            contentType: 'image/*',
+                            contentType: 'image/*', // Assuming image for now
                             url: msg.signedDownloadUrl,
                         }] : undefined,
-                    };
-                });
+                    });
+                    continue; // Move to next message
+                }
 
-            console.log(`[useInitialChatMessages] Fetched ${formattedMessages.length} messages.`);
+                // 2. Handle Assistant messages
+                if (msg.role === 'assistant') {
+                    const hasToolCalls = Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
+
+                    // Add the assistant message itself
+                    formattedMessages.push({
+                        id: msg.id,
+                        role: 'assistant',
+                        content: msg.content || '', // Text content from assistant
+                        createdAt: new Date(msg.created_at),
+                        // Use toolCalls property to align with CoreMessage/streamText expectations
+                        ...(hasToolCalls && {
+                             toolCalls: msg.tool_calls!.map(tc => ({ // Use toolCalls
+                                toolCallId: tc.tool_call_id,
+                                toolName: tc.tool_name,
+                                args: tc.tool_input // Assuming tool_input is the args object
+                            }))
+                        }),
+                    } as Message); // Add type assertion
+
+                    // 3. Add corresponding Tool messages for each tool call result
+                    if (hasToolCalls) {
+                        msg.tool_calls!.forEach(tc => {
+                            // Check if the tool call has output (meaning it was executed and has a result)
+                            if (tc.tool_output !== null && tc.tool_output !== undefined) {
+                                formattedMessages.push({
+                                    // Generate a unique-ish ID for the tool message
+                                    id: `${msg.id}-tool-${tc.tool_call_id}`,
+                                    role: 'tool',
+                                    // Vercel SDK expects tool content as stringified array of ToolContentPart
+                                    // Let's ensure the structure is correct
+                                    content: JSON.stringify([{
+                                        type: 'tool-result',
+                                        toolCallId: tc.tool_call_id,
+                                        toolName: tc.tool_name,
+                                        result: tc.tool_output // Use tool_output as the result
+                                    }]),
+                                    createdAt: new Date(tc.created_at), // Use tool call creation time
+                                } as unknown as Message); // Add type assertion via unknown
+                            } else {
+                                // It's normal for tool_output to be null if the result hasn't been saved yet
+                                // or if the call didn't produce output. Only log if unexpected.
+                                // console.warn(`[useInitialChatMessages] Tool call ${tc.tool_call_id} for message ${msg.id} has no output. Skipping tool result message.`);
+                            }
+                        });
+                    }
+                }
+            }
+            // --- END REVISED MESSAGE FORMATTING ---
+
+
+            console.log(`[useInitialChatMessages] Fetched and formatted ${formattedMessages.length} messages.`);
             setChatMessages(formattedMessages);
             setDisplayedMessagesCount(Math.min(formattedMessages.length, INITIAL_MESSAGE_COUNT));
             // Log state immediately after setting
@@ -94,7 +146,7 @@ export function useInitialChatMessages({
             });
 
         } catch (err: any) {
-            console.error('[useInitialChatMessages] Error fetching messages:', err);
+            console.error('[useInitialChatMessages] Error fetching/formatting messages:', err);
             // setFetchError(`Failed to load messages: ${err.message}`);
             setPageError(`Failed to load messages: ${err.message}`); // Use the passed setter
             setChatMessages([]); // Clear messages on error
