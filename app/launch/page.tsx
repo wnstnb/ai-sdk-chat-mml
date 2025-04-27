@@ -12,6 +12,7 @@ import { ChatInputUI } from '@/components/editor/ChatInputUI'; // Import the cha
 // import { ModelSelector } from '@/components/ModelSelector'; // Import if needed directly, ChatInputUI uses it
 // Import the new file manager component
 import NewFileManager from '@/components/file-manager/NewFileManager';
+import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // ADDED: Import preference store
 
 // --- NEW: Import Omnibar ---
 import { Omnibar } from '@/components/search/Omnibar';
@@ -58,11 +59,27 @@ const mapToCuboneFiles = (documents: Document[], folders: Folder[]): CuboneFileT
 //     { name: "Another Doc.md", isDirectory: false, path: "/test-doc-uuid-2", updatedAt: new Date().toISOString() }
 // ];
 
+// Define a default model fallback (used if store isn't ready)
+const defaultModelFallback = 'gemini-1.5-flash';
+
 export default function LaunchPage() {
   const router = useRouter();
+  // --- Preference Store --- ADDED
+  const {
+      default_model: preferredModel,
+      isInitialized: isPreferencesInitialized,
+  } = usePreferenceStore();
+
   // --- State for Chat Input ---
   const [input, setInput] = useState(''); // Replaces initialInputValue
-  const [model, setModel] = useState('gemini-1.5-flash'); // Default model for input
+  // UPDATED: Initialize model state using preference store
+  const [model, setModel] = useState<string>(() => {
+      if (isPreferencesInitialized && preferredModel) {
+          return preferredModel;
+      } 
+      // If store isn't ready yet, use the hardcoded fallback for initial render
+      return defaultModelFallback;
+  }); 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<FileList | null>(null);
@@ -82,6 +99,16 @@ export default function LaunchPage() {
   const [isTypingComplete, setIsTypingComplete] = useState(false);
   const fullText = "What do you want to focus on?";
   const typingSpeed = 40; // milliseconds per character
+
+  // ADDED: Effect to update local model state if preference loads *after* initial render
+  useEffect(() => {
+      if (isPreferencesInitialized && preferredModel && model !== preferredModel) {
+           console.log(`[LaunchPage] Preference store initialized. Setting model state to preferred: ${preferredModel}`);
+           setModel(preferredModel);
+      }
+      // Only run when the preference becomes available or changes.
+      // Don't include `model` in deps to avoid loops.
+  }, [isPreferencesInitialized, preferredModel]);
 
   // Fetch initial file/folder data
   const fetchData = useCallback(async () => {

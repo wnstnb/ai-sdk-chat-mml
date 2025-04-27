@@ -6,7 +6,7 @@ import { generateText } from 'ai';
 const MODEL_ID = 'gemini-2.0-flash'; // Stick with flash for speed
 
 // System Prompt for title generation
-const systemPrompt = `Generate a concise and relevant title (5-15 words max) for a document starting with the following text. Output only the title itself, with no extra formatting or labels, and no surrounding quotes.`;
+const systemPrompt = `Generate a concise and relevant title (6 words max) for a document starting with the following text. Output only the title itself, with no extra formatting or labels, and no surrounding quotes.`;
 
 export async function POST(req: Request) {
     try {

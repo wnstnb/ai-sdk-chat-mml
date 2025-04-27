@@ -3,9 +3,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SunIcon, MoonIcon, FolderIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '../lib/supabase/client';
 import { PreferencesDropdown } from './PreferencesDropdown';
+import { Omnibar } from './search/Omnibar';
 
 interface HeaderProps {
   onToggleTheme: () => void;
@@ -14,6 +15,7 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme }) => {
   const router = useRouter();
+  const pathname = usePathname();
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -62,6 +64,13 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme }) => {
           </Link>
           <div className="header-logo">tuon.io</div>
         </div>
+
+        {/* Search Bar - Conditionally render */}
+        {pathname !== '/launch' && (
+          <div className="flex-grow max-w-lg mx-auto px-4">
+            <Omnibar displayResultsInline={true} />
+          </div>
+        )}
 
         {/* Actions */}
         <div className="header-actions">
