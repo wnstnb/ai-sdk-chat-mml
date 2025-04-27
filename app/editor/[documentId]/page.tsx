@@ -89,6 +89,7 @@ import { useChatPane } from '@/lib/hooks/editor/useChatPane';
 import { useFileUpload } from '@/lib/hooks/editor/useFileUpload';
 // --- NEW: Import the useChatInteractions hook ---
 import { useChatInteractions } from '@/lib/hooks/editor/useChatInteractions';
+import { ChatInputArea } from '@/components/editor/ChatInputArea'; // Import the new component
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -805,27 +806,28 @@ export default function EditorPage() {
                 }
                 {/* Chat Input Area (fixed at bottom) */}
                 {!isChatCollapsed &&
-                    <div className="w-full px-0 pb-4 border-t border-[--border-color] pt-4 flex-shrink-0 bg-[--bg-secondary]">
-                        <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center">
-                           {/* --- ADDED: Follow Up Context Display --- */}
-                           {followUpContext && (
-                               <div className="w-full mb-2 p-2 border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 rounded-md relative text-sm text-blue-800 dark:text-blue-200">
-                                   <button 
-                                       type="button"
-                                       onClick={() => setFollowUpContext(null)}
-                                       className="absolute top-1 right-1 p-0.5 text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800"
-                                       title="Clear follow-up context"
-                                   >
-                                       <X size={14} />
-                                   </button>
-                                   <p className="font-medium mb-1 text-blue-600 dark:text-blue-300">Follow-up Context:</p>
-                                   <p className="line-clamp-2">{followUpContext}</p>
-                               </div>
-                           )}
-                           {/* --- END ADDED --- */}
-                            <ChatInputUI files={files} fileInputRef={fileInputRef} handleFileChange={handleFileChange} inputRef={inputRef} input={input} handleInputChange={handleInputChange} handleKeyDown={handleKeyDown} handlePaste={handlePaste} model={model} setModel={setModel} handleUploadClick={handleUploadClick} isLoading={isChatLoading} isUploading={isUploading} uploadError={uploadError} uploadedImagePath={uploadedImagePath} onStop={stop} />
-                        </form>
-                    </div>
+                    <ChatInputArea 
+                        input={input}
+                        handleInputChange={handleInputChange}
+                        handleSubmit={handleSubmit}
+                        isLoading={isChatLoading}
+                        model={model}
+                        setModel={setModel}
+                        stop={stop}
+                        files={files}
+                        handleFileChange={handleFileChange}
+                        handlePaste={handlePaste}
+                        handleUploadClick={handleUploadClick}
+                        isUploading={isUploading}
+                        uploadError={uploadError}
+                        uploadedImagePath={uploadedImagePath}
+                        followUpContext={followUpContext}
+                        setFollowUpContext={setFollowUpContext}
+                        formRef={formRef}
+                        inputRef={inputRef}
+                        fileInputRef={fileInputRef}
+                        handleKeyDown={handleKeyDown}
+                    />
                 }
             </motion.div>
         </div>
