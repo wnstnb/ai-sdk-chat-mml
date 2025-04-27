@@ -30,6 +30,8 @@ import {
 import { toast } from 'sonner';
 // Import icons needed for overlay
 import { FileTextIcon, FolderIcon } from 'lucide-react';
+// ADD: Import Trash2 icon for the delete button
+import { Trash2 } from 'lucide-react';
 
 const NewFileManager = () => {
   // Get state and setters from Zustand store
@@ -56,7 +58,7 @@ const NewFileManager = () => {
   } = useSearchStore();
 
   // Get fetch and create functions from the custom hook
-  const { fetchData, createFolder, moveItem } = useFileData();
+  const { fetchData, createFolder, moveItem, deleteFolder, deleteDocument } = useFileData();
 
   // State for inline folder creation UI
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -108,6 +110,65 @@ const NewFileManager = () => {
     setNewFolderName('');
   };
   // --- End Folder Creation Handlers ---
+
+  // --- NEW: Delete Selected Handler ---
+  const handleDeleteSelected = async () => {
+    const itemsToDelete = Array.from(selectedItemIds);
+    if (itemsToDelete.length === 0) {
+      toast.info("No items selected to delete.");
+      return;
+    }
+
+    // Confirmation
+    if (!window.confirm(`Are you sure you want to delete ${itemsToDelete.length} selected item(s)? This action cannot be undone.`)) {
+      return; // User cancelled
+    }
+
+    // Get full item details from the store
+    const { allFolders, allDocuments } = useFileMediaStore.getState();
+
+    // Separate folders and documents
+    const foldersToDelete = itemsToDelete.filter(id => allFolders.some(f => f.id === id));
+    const documentsToDelete = itemsToDelete.filter(id => allDocuments.some(d => d.id === id));
+
+    console.log("[NewFileManager] Deleting selected items:", { foldersToDelete, documentsToDelete });
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    // Use Promise.allSettled to handle individual deletions
+    const folderPromises = foldersToDelete.map(id => deleteFolder(id));
+    const documentPromises = documentsToDelete.map(id => deleteDocument(id));
+
+    const results = await Promise.allSettled([...folderPromises, ...documentPromises]);
+
+    results.forEach(result => {
+      if (result.status === 'fulfilled' && result.value === true) {
+        successCount++;
+      } else {
+        failureCount++;
+        // Errors are already handled by toast within deleteFolder/deleteDocument
+        console.error("Deletion failed for an item:", result.status === 'rejected' ? result.reason : 'Unknown reason');
+      }
+    });
+
+    if (successCount > 0) {
+      toast.success(`${successCount} item(s) deleted successfully.`);
+      // Data is refetched within deleteFolder/deleteDocument on success,
+      // but we might clear local selection state here
+      clearSelection();
+    }
+    if (failureCount > 0) {
+      // Specific errors are already toasted, maybe a summary toast?
+      toast.warning(`${failureCount} item(s) could not be deleted. See console or previous messages for details.`);
+    }
+
+    // Optional: Explicit refetch if individual fetches fail?
+    // if (failureCount > 0) {
+    //   fetchData(currentFolderId);
+    // }
+  };
+  // --- End Delete Selected Handler ---
 
   // --- Drag & Drop Setup ---
   const sensors = useSensors(
@@ -375,6 +436,17 @@ const NewFileManager = () => {
               >
                 <XCircle className="w-4 h-4 mr-1" />
                 Clear Selection ({selectedItemIds.size})
+              </button>
+            )}
+            {/* NEW: Delete Selected Button - Conditionally rendered */}
+            {selectedItemIds.size > 0 && (
+              <button
+                onClick={handleDeleteSelected} // Attach the new handler
+                className="flex items-center px-2 py-1 text-sm bg-red-600 text-white hover:bg-red-700 rounded focus:outline-none focus:ring-1 focus:ring-red-500 focus:ring-offset-1 focus:ring-offset-[--bg-primary]"
+                aria-label="Delete selected items"
+              >
+                <Trash2 className="w-4 h-4 mr-1" /> {/* Use Trash2 icon */}
+                Delete Selected ({selectedItemIds.size})
               </button>
             )}
             {!isCreatingFolder && (

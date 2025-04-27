@@ -198,9 +198,10 @@ export const useFileData = () => {
     // Find the folder name for the confirmation message
     const folderToDelete = useFileMediaStore.getState().allFolders.find(f => f.id === folderId);
     const folderName = folderToDelete ? folderToDelete.name : 'this folder';
-    if (!window.confirm(`Are you sure you want to delete the folder "${folderName}"? This action cannot be undone.`)) {
-      return false; // User cancelled
-    }
+    // REMOVE individual confirmation prompt
+    // if (!window.confirm(`Are you sure you want to delete the folder "${folderName}"? This action cannot be undone.`)) {
+    //  return false; // User cancelled
+    // }
     // --- End Confirmation ---
 
     console.log(`[useFileData] Attempting to delete folder ${folderId}...`);
@@ -306,11 +307,12 @@ export const useFileData = () => {
     }
 
     // --- Confirmation Step ---
-    const docToDelete = useFileMediaStore.getState().currentViewDocuments.find(d => d.id === documentId);
+    const docToDelete = useFileMediaStore.getState().allDocuments.find(d => d.id === documentId);
     const docName = docToDelete ? docToDelete.name : 'this document';
-    if (!window.confirm(`Are you sure you want to delete the document "${docName}"? This action cannot be undone.`)) {
-        return false; // User cancelled
-    }
+    // REMOVE individual confirmation prompt
+    // if (!window.confirm(`Are you sure you want to delete the document "${docName}"? This action cannot be undone.`)) {
+    //     return false; // User cancelled
+    // }
     // --- End Confirmation ---
 
     console.log(`[useFileData] Attempting to delete document ${documentId}...`);

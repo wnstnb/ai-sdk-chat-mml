@@ -70,7 +70,7 @@ export function useInitialChatMessages({
                  }
 
                 // 1. Handle User and System messages directly
-                if (msg.role === 'user' || msg.role === 'system') {
+                if ((msg.role as string) === 'user' || (msg.role as string) === 'system') {
                     formattedMessages.push({
                         id: msg.id,
                         role: msg.role,

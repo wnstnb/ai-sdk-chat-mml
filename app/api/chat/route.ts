@@ -395,16 +395,19 @@ export async function POST(req: Request) {
 
     // --- Existing streamText call setup ---
     const generationConfig: any = {};
+    /* --- Temporarily Disable thinkingConfig --- 
     if (modelId === "gemini-2.5-flash-preview-04-17") {
         generationConfig.thinkingConfig = {
             thinkingBudget: 5120,
         };
         console.log(`Enabling thinkingConfig for model: ${modelId}`);
     }
+    */
 
     console.log(`[API Chat] Calling streamText with ${messages.length} prepared messages. Last message role: ${messages[messages.length - 1]?.role}`);
-    // --> ADDED: Log the final messages array for debugging multimodal structure
-    console.log("[API Chat] Final messages payload for AI:", JSON.stringify(messages, null, 2));
+    // --- DEBUG: Log final payload to AI SDK ---
+    console.log("[API Chat] Final messages payload for AI SDK:", JSON.stringify(messages, null, 2));
+    // --- END DEBUG ---
 
     const result = streamText({
         model: aiModel,
@@ -506,7 +509,8 @@ export async function POST(req: Request) {
                                         break;
                                     }
                                 }
-                                if (potentialToolMsg.role === 'assistant' || potentialToolMsg.role === 'user') {
+                                // Add type assertion to satisfy build-time type checker
+                                if ((potentialToolMsg.role as string) === 'assistant' || (potentialToolMsg.role as string) === 'user') {
                                     console.log(`[onFinish] >> Stopped search for ${toolCall.toolCallId} result at index ${j} (role: ${potentialToolMsg.role})`);
                                     break;
                                 }
