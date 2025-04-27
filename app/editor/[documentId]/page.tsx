@@ -160,7 +160,7 @@ export default function EditorPage() {
         minWidthPx: MIN_CHAT_PANE_WIDTH_PX,
         maxWidthPercent: MAX_CHAT_PANE_WIDTH_PERCENT,
     });
-    const { files, isUploading, uploadError, uploadedImagePath, handleFileSelectEvent, handleFilePasteEvent, handleFileDropEvent, clearPreview } = useFileUpload({ documentId });
+    const { files, isUploading, uploadError, uploadedImagePath, uploadedImageSignedUrl, handleFileSelectEvent, handleFilePasteEvent, handleFileDropEvent, clearPreview } = useFileUpload({ documentId });
     const {
         messages: chatMessages, 
         setMessages: setChatMessages, 
@@ -178,6 +178,7 @@ export default function EditorPage() {
         initialModel,
         editorRef,
         uploadedImagePath,
+        uploadedImageSignedUrl,
         isUploading,
         clearFileUploadPreview: clearPreview,
     });
@@ -385,12 +386,15 @@ export default function EditorPage() {
                 placement = 'after';
                 if (!referenceBlock) {
                     editor.replaceBlocks(editor.document, blocksToInsert);
-                    toast.success("Content added from AI."); return;
+                    toast.success("Content added from AI.");
+                    handleEditorChange(editor);
+                    return;
                 }
             }
             if (referenceBlock && referenceBlock.id) {
                 editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
                 toast.success('Content added from AI.');
+                handleEditorChange(editor);
             } else {
                  toast.error("Failed to insert content: could not find reference block.");
             }
@@ -408,7 +412,7 @@ export default function EditorPage() {
                 if (!targetBlock.content || !Array.isArray(targetBlock.content)) { toast.error(`Modification failed: Block ${targetBlock.id} has no modifiable content.`); return; }
                 const updatedContent = replaceTextInInlineContent(targetBlock.content, targetText, newMarkdownContent);
                 if (updatedContent) {
-                    if (editor.getBlock(targetBlock.id)) { editor.updateBlock(targetBlock.id, { content: updatedContent }); toast.success(`Text "${targetText}" modified in block.`); }
+                    if (editor.getBlock(targetBlock.id)) { editor.updateBlock(targetBlock.id, { content: updatedContent }); toast.success(`Text "${targetText}" modified in block.`); handleEditorChange(editor); }
                     else { toast.error(`Modification failed: Target block ${targetBlock.id} disappeared before update.`); }
                 } else { toast.warning(`Could not find text "${targetText}" to modify in block ${targetBlock.id}.`); }
             } else if (typeof newMarkdownContent === 'string') {
@@ -430,8 +434,8 @@ export default function EditorPage() {
                 const existingBlockIds = blockIdsToReplace.filter(id => editor.getBlock(id));
                 if (existingBlockIds.length === 0) { toast.error("Modification failed: Target blocks disappeared before replacement."); return; }
                 if (existingBlockIds.length !== blockIdsToReplace.length) { toast.warning("Some target blocks were missing, replacing the ones found."); }
-                if (blocksToReplaceWith.length > 0) { editor.replaceBlocks(existingBlockIds, blocksToReplaceWith); toast.success('Block content modified by AI.'); }
-                else { editor.removeBlocks(existingBlockIds); toast.success('Original block(s) removed as replacement was empty.'); }
+                if (blocksToReplaceWith.length > 0) { editor.replaceBlocks(existingBlockIds, blocksToReplaceWith); toast.success('Block content modified by AI.'); handleEditorChange(editor); }
+                else { editor.removeBlocks(existingBlockIds); toast.success('Original block(s) removed as replacement was empty.'); handleEditorChange(editor); }
             } else { toast.error("Invalid arguments for modifyContent: newMarkdownContent must be a string."); }
         } catch (error: any) { console.error('Failed to execute modifyContent:', error); toast.error(`Error modifying content: ${error.message}`); }
     };
@@ -450,8 +454,8 @@ export default function EditorPage() {
                 if (updatedContent !== null) {
                     if (editor.getBlock(targetBlock.id)) {
                         const newText = getInlineContentText(updatedContent);
-                        if (!newText.trim()) { editor.removeBlocks([targetBlock.id]); toast.success(`Removed block ${targetBlock.id}.`); }
-                        else { editor.updateBlock(targetBlock.id, { content: updatedContent }); toast.success(`Text "${targetText}" deleted.`); }
+                        if (!newText.trim()) { editor.removeBlocks([targetBlock.id]); toast.success(`Removed block ${targetBlock.id}.`); handleEditorChange(editor); }
+                        else { editor.updateBlock(targetBlock.id, { content: updatedContent }); toast.success(`Text "${targetText}" deleted.`); handleEditorChange(editor); }
                     } else { toast.error(`Deletion failed: Target block ${targetBlock.id} disappeared.`); }
                 } else { toast.warning(`Could not find text "${targetText}" to delete in block ${targetBlock.id}.`); }
             } else {
@@ -461,6 +465,7 @@ export default function EditorPage() {
                 if (existingBlockIds.length !== blockIdsToDelete.length) { toast.warning("Some target blocks were missing, removing the ones found."); }
                 editor.removeBlocks(existingBlockIds);
                 toast.success(`Removed ${existingBlockIds.length} block(s).`);
+                handleEditorChange(editor);
             }
         } catch (error: any) { console.error('Failed to execute deleteContent:', error); toast.error(`Error deleting content: ${error.message}`); }
     };
@@ -632,6 +637,7 @@ export default function EditorPage() {
             if (referenceBlockId) { editor.insertBlocks(blocksToInsert, referenceBlockId, 'after'); }
             else { editor.replaceBlocks(editor.document, blocksToInsert); } 
             toast.success('Content sent to editor.');
+            handleEditorChange(editor);
         } catch (error: any) { console.error('Send to editor error:', error); toast.error(`Send to editor error: ${error.message}`); }
     };
     // --- END Handler Definitions ---

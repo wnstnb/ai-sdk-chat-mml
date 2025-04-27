@@ -347,6 +347,8 @@ export async function POST(req: Request) {
     }
 
     console.log(`[API Chat] Calling streamText with ${messages.length} prepared messages. Last message role: ${messages[messages.length - 1]?.role}`);
+    // --> ADDED: Log the final messages array for debugging multimodal structure
+    console.log("[API Chat] Final messages payload for AI:", JSON.stringify(messages, null, 2));
 
     const result = streamText({
         model: aiModel,

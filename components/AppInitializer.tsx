@@ -1,28 +1,60 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore';
-// Optional: Import auth hook if needed to check auth status before fetching
-// import { useAuth } from '@/hooks/useAuth'; // Example hook name
+import { createClient } from '@/lib/supabase/client';
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 
 interface AppInitializerProps {
   children: React.ReactNode;
 }
 
 export default function AppInitializer({ children }: AppInitializerProps) {
-  // Optional: Check auth status if preferences are strictly for logged-in users
-  // const { isAuthenticated } = useAuth(); // Example usage
   const { fetchPreferences, isInitialized } = usePreferenceStore();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const supabase = createClient();
 
   useEffect(() => {
-    // Fetch preferences only if not already initialized 
-    // and optionally if the user is authenticated
-    if (!isInitialized /* && isAuthenticated */) {
-      console.log('[AppInitializer] Fetching preferences...');
-      fetchPreferences();
-    }
-  }, [isInitialized, fetchPreferences /*, isAuthenticated */]); // Add auth state if used
+    supabase.auth.getUser().then(({ data: { user } }: { data: { user: User | null } }) => {
+        if (user) {
+            console.log('[AppInitializer] Initial auth check: User is authenticated.');
+            setIsAuthenticated(true);
+        } else {
+             console.log('[AppInitializer] Initial auth check: User is not authenticated.');
+            setIsAuthenticated(false);
+        }
+    });
 
-  // This component just initializes things and renders its children
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+        (event: AuthChangeEvent, session: Session | null) => {
+        console.log('[AppInitializer] Auth state changed:', event);
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
+             if (session?.user) {
+                console.log('[AppInitializer] Auth Listener: User signed in or session refreshed.');
+                setIsAuthenticated(true);
+             } else {
+                 console.log('[AppInitializer] Auth Listener: Signed in event but no user in session.');
+                 setIsAuthenticated(false);
+             }
+        } else if (event === 'SIGNED_OUT') {
+            console.log('[AppInitializer] Auth Listener: User signed out.');
+            setIsAuthenticated(false);
+        }
+    });
+
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
+  }, [supabase.auth]);
+
+  useEffect(() => {
+    if (!isInitialized && isAuthenticated) {
+      console.log('[AppInitializer] Fetching preferences (user authenticated)...');
+      fetchPreferences();
+    } else if (!isInitialized && !isAuthenticated) {
+         console.log('[AppInitializer] Waiting for authentication to fetch preferences...');
+    }
+  }, [isInitialized, isAuthenticated, fetchPreferences]);
+
   return <>{children}</>;
 }

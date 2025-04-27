@@ -16,7 +16,8 @@ interface UseChatInteractionsProps {
     documentId: string;
     initialModel: string; // Preferred model from preferences
     editorRef: React.RefObject<BlockNoteEditor<any>>;
-    uploadedImagePath: string | null; // From useFileUpload
+    uploadedImagePath: string | null; // ADDED BACK: Storage path for DB
+    uploadedImageSignedUrl: string | null; // Signed download URL for AI/UI
     isUploading: boolean; // From useFileUpload
     clearFileUploadPreview: () => void; // From useFileUpload
     apiEndpoint?: string; // Optional override for API endpoint
@@ -49,7 +50,8 @@ export function useChatInteractions({
     documentId,
     initialModel,
     editorRef,
-    uploadedImagePath,
+    uploadedImagePath, // ADDED BACK
+    uploadedImageSignedUrl,
     isUploading,
     clearFileUploadPreview,
     apiEndpoint = '/api/chat',
@@ -116,11 +118,12 @@ export function useChatInteractions({
         
         const contextPrefix = followUpContext ? `${followUpContext}\n\n---\n\n` : '';
         const finalInput = contextPrefix + input;
-        const imagePathToSend = uploadedImagePath;
+        const signedUrlToSend = uploadedImageSignedUrl; // Use the signed download URL for AI
+        const imagePathForDb = uploadedImagePath; // Use the storage path for DB
         const currentModel = model;
 
-        if (isLoading || isUploading || (!finalInput.trim() && !imagePathToSend)) {
-            console.log('[useChatInteractions handleSubmit] Submission prevented:', { isLoading, isUploading, finalInput, imagePathToSend });
+        if (isLoading || isUploading || (!finalInput.trim() && !signedUrlToSend)) {
+            console.log('[useChatInteractions handleSubmit] Submission prevented:', { isLoading, isUploading, finalInput, signedUrlToSend });
             return; 
         }
 
@@ -128,11 +131,11 @@ export function useChatInteractions({
         const isSummarizationTask = /\b(summar(y|ize|ies)|bullet|points?|outline|sources?|citations?)\b/i.test(finalInput) && finalInput.length > 25;
 
         try {
-            console.log(`[useChatInteractions handleSubmit] Saving user message to DB: imagePath='${imagePathToSend}'`);
+            console.log(`[useChatInteractions handleSubmit] Saving user message to DB. Image path: ${imagePathForDb}`);
             const saveMessageResponse = await fetch(`/api/documents/${documentId}/messages`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ role: 'user', content: finalInput.trim() || null, imageUrlPath: imagePathToSend }),
+                body: JSON.stringify({ role: 'user', content: finalInput.trim() || null, imageUrlPath: imagePathForDb }),
             });
             if (!saveMessageResponse.ok) {
                 const errorData = await saveMessageResponse.json().catch(() => ({}));
@@ -141,12 +144,23 @@ export function useChatInteractions({
             await saveMessageResponse.json(); 
             console.log('[useChatInteractions handleSubmit] User message saved.');
 
+            // Prepare attachments for optimistic UI update using the SIGNED URL
+            const attachmentsForOptimisticUI = signedUrlToSend ? [
+                {
+                    contentType: 'image/*', // Assuming it's always an image for now
+                    name: imagePathForDb?.split('/').pop() || 'uploaded_image', // Use path for name if available
+                    url: signedUrlToSend
+                }
+            ] : undefined;
+
             const submitOptions = {
-                data: { model: currentModel, documentId, ...editorContextData, firstImagePath: imagePathToSend, taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined },
-                options: { /* experimental_attachments: undefined */ } 
+                data: { model: currentModel, documentId, ...editorContextData, firstImageSignedUrl: signedUrlToSend, taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined },
+                // Pass attachments (using signed URL) for optimistic UI update
+                options: { experimental_attachments: attachmentsForOptimisticUI } 
             };
 
-            console.log('[useChatInteractions handleSubmit] Calling original useChat submit.');
+            console.log('[useChatInteractions handleSubmit] Calling original useChat submit with options:', submitOptions);
+            // Pass both data (for backend) and options (for optimistic UI)
             originalHandleSubmit(event, { ...submitOptions, data: submitOptions.data as any });
 
             clearFileUploadPreview();
@@ -156,7 +170,7 @@ export function useChatInteractions({
              console.error("[useChatInteractions handleSubmit] Error saving user message or submitting:", saveError);
              toast.error(`Failed to send message: ${saveError.message}`);
         }
-    }, [documentId, followUpContext, input, model, uploadedImagePath, isLoading, isUploading, getEditorContext, originalHandleSubmit, clearFileUploadPreview, setFollowUpContext]);
+    }, [documentId, followUpContext, input, model, uploadedImagePath, uploadedImageSignedUrl, isLoading, isUploading, getEditorContext, originalHandleSubmit, clearFileUploadPreview, setFollowUpContext]);
 
     // --- Initial Message Processing ---
     useEffect(() => {
