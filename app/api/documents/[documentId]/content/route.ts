@@ -35,18 +35,27 @@ export async function PUT(
     } catch (e) {
       return NextResponse.json({ error: { code: 'INVALID_INPUT', message: 'Invalid JSON body.' } }, { status: 400 });
     }
-    const { content } = body;
+    const { content, searchable_content } = body;
 
     // Validate input - content can be null, text, or jsonb, allow it for now.
-    // Add more specific validation if needed based on editor format.
+    // searchable_content should be text or null.
     if (content === undefined) {
        return NextResponse.json({ error: { code: 'VALIDATION_ERROR', message: '`content` field is required for update.' } }, { status: 400 });
     }
+    // Add validation for searchable_content type if desired (optional)
+    if (searchable_content !== undefined && typeof searchable_content !== 'string' && searchable_content !== null) {
+         return NextResponse.json({ error: { code: 'VALIDATION_ERROR', message: '`searchable_content` must be a string or null.' } }, { status: 400 });
+    }
 
-    const updateData = {
+    const updateData: { content: any; searchable_content?: string | null; updated_at: string } = {
         content: content,
         updated_at: new Date().toISOString() // Always update timestamp
     };
+
+    // Only include searchable_content in the update if it was provided in the request
+    if (searchable_content !== undefined) {
+        updateData.searchable_content = searchable_content;
+    }
 
     // Update document content - RLS ensures user owns the document
     const { data: updatedDocInfo, error: updateError } = await supabase

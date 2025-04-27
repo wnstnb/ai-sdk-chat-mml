@@ -3,8 +3,11 @@
 import React from 'react';
 import { SunIcon, MoonIcon, FolderIcon } from '@heroicons/react/24/outline'; // Removed DocumentPlusIcon and ArrowDownTrayIcon, added FolderIcon
 import Link from 'next/link'; // Add Link import
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { useRouter, usePathname } from 'next/navigation'; // Import useRouter AND usePathname
 import { supabase } from '../lib/supabase/client'; // Import Supabase client
+
+// --- NEW: Import Omnibar --- 
+import { Omnibar } from '@/components/search/Omnibar';
 
 // Define props if needed, e.g., for theme toggling and logout function
 interface HeaderProps {
@@ -15,6 +18,7 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onToggleTheme, /* onLogout, */ currentTheme }) => {
   const router = useRouter(); // Initialize router
+  const pathname = usePathname(); // --- NEW: Get current pathname ---
 
   // Updated onLogout function
   const onLogout = async () => {
@@ -43,6 +47,14 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, /* onLogout, */ currentT
             tuon.io
           </div>
         </div>
+
+        {/* --- NEW: Conditionally Render Omnibar in Editor --- */}
+        <div className="flex-grow mx-4"> {/* Wrapper to take available space */}
+          {pathname?.startsWith('/editor/') && (
+            <Omnibar displayResultsInline={true} />
+          )}
+        </div>
+        {/* --- END NEW --- */}
 
         {/* Actions */}
         <div className="header-actions">

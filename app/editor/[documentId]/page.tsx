@@ -906,6 +906,45 @@ export default function EditorPage() {
     }, [handleMouseMoveResize, handleMouseUpResize]);
 
 
+    // --- NEW: Trigger Embedding Generation on Unmount/Navigation --- <<< NEW
+    useEffect(() => {
+        // This function will run when the component unmounts
+        return () => {
+            if (!documentId) {
+                console.log("[Unmount Embedding] No documentId, skipping embedding trigger.");
+                return;
+            }
+            
+            console.log(`[Unmount Embedding] Triggering embedding generation for document: ${documentId}`);
+            
+            // Fire-and-forget POST request to the embedding endpoint
+            fetch('/api/generate-embedding', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ documentId }),
+                keepalive: true // Use keepalive to increase chance of request completing during page unload
+            })
+            .then(response => {
+                // We don't necessarily need to wait for the response or handle it deeply,
+                // but we can log success/failure status if it completes quickly.
+                if (!response.ok) {
+                    console.warn(`[Unmount Embedding] API call failed immediately with status: ${response.status}`);
+                    // Avoid showing error toasts here as the user is navigating away.
+                } else {
+                    console.log(`[Unmount Embedding] Successfully initiated embedding generation for ${documentId}.`);
+                }
+            })
+            .catch(error => {
+                // Catch network errors during the fetch itself
+                console.error("[Unmount Embedding] Error sending embedding request:", error);
+            });
+        };
+    }, [documentId]); // Depend only on documentId
+    // --- END NEW ---
+
+
     // Send message content to editor
     const handleSendToEditor = async (content: string) => {
         const editor = editorRef.current;
@@ -997,43 +1036,89 @@ export default function EditorPage() {
         const newTimerId = setTimeout(async () => {
             console.log("[Autosave Timer] --- Timer FIRED ---"); // <<< ADDED DEBUG LOG
             // Check refs and ID right before saving
-            if (!editorRef.current || !documentId || !latestEditorContentRef.current) {
-                console.warn("[Autosave Timer] Missing editorRef, documentId, or latest content. Aborting save.");
-                setAutosaveTimerId(null);
+            const editor = editorRef.current; // Get editor instance
+            const currentBlocks = latestEditorBlocksRef.current; // Get blocks
+            const currentContentString = latestEditorContentRef.current;
+
+            if (!editor || !documentId || !currentContentString || !currentBlocks) {
+                console.warn("[Autosave Timer] Aborting save: Missing editor, documentId, content string, or blocks.");
+                setAutosaveStatus('error'); // Indicate an issue
                 return;
             }
-            const currentContentStr = latestEditorContentRef.current;
 
-            console.log("[Autosave Timer] Setting status to 'saving'."); // <<< ADDED DEBUG LOG
             setAutosaveStatus('saving');
-            try {
-                console.log("[Autosave Timer] Calling triggerSaveDocument..."); // <<< ADDED DEBUG LOG
-                await triggerSaveDocument(currentContentStr, documentId);
-                console.log("[Autosave Timer] triggerSaveDocument SUCCESS. Setting status to 'saved'."); // <<< ADDED DEBUG LOG
-                setAutosaveStatus('saved');
 
-                // Set timer to revert status
-                console.log("[Autosave Timer] Setting REVERT timer (2000ms)..."); // <<< ADDED DEBUG LOG
-                const newRevertTimerId = setTimeout(() => {
-                    console.log("[Revert Timer] --- Timer FIRED --- Setting status to 'idle'."); // <<< ADDED DEBUG LOG
-                    setAutosaveStatus('idle');
-                    setRevertStatusTimerId(null);
-                }, 2000);
-                setRevertStatusTimerId(newRevertTimerId);
-
-            } catch (error) {
-                console.error("[Autosave Timer] triggerSaveDocument FAILED:", error); // <<< ADDED DEBUG LOG
-                setAutosaveStatus('error');
-            } finally {
-                console.log("[Autosave Timer] Clearing main autosave timer ID state."); // <<< ADDED DEBUG LOG
-                setAutosaveTimerId(null);
+            // --- Generate Markdown --- <<< NEW
+            let markdownContent: string | null = null;
+            if (currentBlocks.length > 0) {
+                try {
+                    console.log("[Autosave Timer] Generating markdown...");
+                    markdownContent = await editor.blocksToMarkdownLossy(currentBlocks);
+                    markdownContent = markdownContent.trim() || null; // Store null if empty/whitespace
+                    console.log(`[Autosave Timer] Markdown generated (length: ${markdownContent?.length ?? 0}).`);
+                } catch (markdownError) {
+                    console.error("[Autosave Timer] Error generating markdown:", markdownError);
+                    // Decide if save should proceed without markdown, or fail
+                    // For now, let's proceed but log the error
+                    toast.error("Failed to generate markdown for search.");
+                    // Optionally set status to error and return?
+                    // setAutosaveStatus('error');
+                    // return;
+                }
             }
-        }, 3000); // 3-second debounce
+            // --- End Generate Markdown ---
 
-        console.log("[handleEditorChange] Storing NEW autosave timer ID:", newTimerId); // <<< ADDED DEBUG LOG
+            // --- Prepare JSON Content --- <<< MODIFIED
+            let jsonContent: Block[] | null = null;
+            try {
+                jsonContent = JSON.parse(currentContentString);
+            } catch (parseError) {
+                console.error("[Autosave Timer] Failed to parse content string for saving:", parseError);
+                setAutosaveStatus('error');
+                return;
+            }
+
+            // --- Call Save API --- <<< MODIFIED
+            try {
+                // Use triggerSaveDocument or call fetch directly if more control is needed
+                // Calling fetch directly here to include both content types
+                console.log("[Autosave Timer] Calling save API...");
+                const response = await fetch(`/api/documents/${documentId}/content`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        content: jsonContent, // Send parsed JSON blocks
+                        searchable_content: markdownContent // Send generated markdown (or null)
+                    }), 
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error?.message || `Autosave failed (${response.status})`);
+                }
+
+                // Success
+                console.log("[Autosave Timer] Save successful.");
+                setAutosaveStatus('saved');
+                // Set timer to revert status back to 'idle' after a delay (Step 9)
+                const revertTimer = setTimeout(() => {
+                    console.log("[Autosave Status Revert Timer] Reverting status from 'saved' to 'idle'."); // <<< ADDED DEBUG LOG
+                    setAutosaveStatus(status => status === 'saved' ? 'idle' : status); // Only revert if still 'saved'
+                    setRevertStatusTimerId(null); // Clear self
+                }, 2000); // Revert after 2 seconds
+                console.log("[Autosave Timer] Setting REVERT timer:", revertTimer);
+                setRevertStatusTimerId(revertTimer);
+
+            } catch (saveError: any) {
+                console.error("[Autosave Timer] Save failed:", saveError);
+                toast.error(`Autosave failed: ${saveError.message}`);
+                setAutosaveStatus('error');
+            }
+            // --- End Call Save API ---
+
+        }, 3000); // Autosave after 3 seconds of inactivity
         setAutosaveTimerId(newTimerId);
-
-    }, [documentId, triggerSaveDocument, autosaveTimerId, revertStatusTimerId]); // Include timers in deps to clear them correctly
+    }, [documentId, autosaveTimerId, revertStatusTimerId]); // Removed triggerSaveDocument
     // --- END NEW ---
 
     // --- NEW: beforeunload Hook for Unsaved Changes (Step 7) ---
