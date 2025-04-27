@@ -83,6 +83,10 @@ import { useDocument } from '@/app/lib/hooks/editor/useDocument';
 import { useInitialChatMessages } from '@/app/lib/hooks/editor/useInitialChatMessages';
 // --- NEW: Import the useTitleManagement hook ---
 import { useTitleManagement } from '@/lib/hooks/editor/useTitleManagement'; // Corrected path
+// --- NEW: Import the useChatPane hook ---
+import { useChatPane } from '@/lib/hooks/editor/useChatPane';
+// --- NEW: Import the useFileUpload hook ---
+import { useFileUpload } from '@/lib/hooks/editor/useFileUpload';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -106,232 +110,229 @@ const schema = BlockNoteSchema.create();
 
 // --- Main Editor Page Component ---
 export default function EditorPage() {
+    // --- Top-Level Hooks (React, Next.js) ---
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
-    // Use assertion or check, assertion is simpler if we expect it to always exist here
-    const documentId = params?.documentId as string;
-    // NEW: Pathname for navigation handling (Step 8)
     const pathname = usePathname();
-
-    // --- Preference Store ---
-    const {
-        default_model: preferredModel,
-        isInitialized: isPreferencesInitialized,
-    } = usePreferenceStore();
-
-    // --- State Variables ---
-    // Initialize model state: Use preference if available and initialized, otherwise use fallback
-    const [model, setModel] = useState<string>(() => {
-        if (isPreferencesInitialized && preferredModel) {
-            return preferredModel;
-        }
-        // If store isn't ready yet, use the hardcoded fallback for initial render
-        return defaultModelFallback;
-    });
-
-    // Effect to update local model state if preference loads *after* initial render
-    useEffect(() => {
-        if (isPreferencesInitialized && preferredModel && model !== preferredModel) {
-             console.log(`[EditorPage] Preference store initialized. Setting model state to preferred: ${preferredModel}`);
-             setModel(preferredModel);
-        }
-        // We only want to run this when the preference becomes available or changes.
-        // Don't include `model` in deps, as that would cause a loop.
-    }, [isPreferencesInitialized, preferredModel]);
-
-    const editorRef = useRef<BlockNoteEditor<typeof schema.blockSchema>>(null); // Specify schema type
-    // --- REMOVED: State variables handled by useDocument ---
-    // const [initialEditorContent, setInitialEditorContent] = useState<
-    //     PartialBlock<typeof schema.blockSchema>[] | undefined 
-    // >(undefined); // For initializing editor
-    // const [documentData, setDocumentData] = useState<SupabaseDocument | null>(
-    //     null
-    // ); // Store fetched document metadata
-    // const [isLoadingDocument, setIsLoadingDocument] = useState(true);
-    // const [error, setError] = useState<string | null>(null); // General page error
-    // --- END REMOVED ---
-
-    // --- NEW: Use the useDocument hook ---
-    const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
-    // Use a separate state for page-level error, potentially combining hook errors
-    const [pageError, setPageError] = useState<string | null>(null);
-    useEffect(() => {
-        if (documentError) {
-            setPageError(documentError); // Set page error if hook reports one
-        }
-    }, [documentError]);
-    // --- END NEW ---
-
-    // --- NEW: Use the useTitleManagement hook ---
-    // Ensure documentData exists and has a name before calling the hook
-    const {
-        currentTitle,
-        isEditingTitle,
-        newTitleValue,
-        isInferringTitle,
-        handleEditTitleClick,
-        handleCancelEditTitle,
-        handleSaveTitle,
-        handleTitleInputKeyDown,
-        handleInferTitle,
-        setNewTitleValue,
-    } = useTitleManagement({
-        documentId,
-        initialName: documentData?.name || '', // Provide a fallback if documentData is null initially
-        editorRef,
-        // Optionally pass onTitleSaveSuccess if needed to update documentData locally,
-        // but the hook now manages the 'currentTitle' state internally.
-        // onTitleSaveSuccess: (savedTitle) => {
-        //     // Optional: Update local documentData state if necessary, though maybe redundant
-        //     // setDocumentData(prev => prev ? { ...prev, name: savedTitle } : null);
-        // }
-    });
-    // --- END NEW ---
-
-    const [processedToolCallIds, setProcessedToolCallIds] = useState<Set<string>>(
-        new Set()
-    );
-    const [displayedMessagesCount, setDisplayedMessagesCount] = useState(
-        INITIAL_MESSAGE_COUNT
-    );
-    const [includeEditorContent, setIncludeEditorContent] = useState(false);
-    const [isChatCollapsed, setIsChatCollapsed] = useState(false);
-    const [chatPaneWidth, setChatPaneWidth] = useState<number | null>(null);
-    const [isResizing, setIsResizing] = useState(false);
-    const [files, setFiles] = useState<FileList | null>(null); // Files staged for chat upload PREVIEW
-    const [isDragging, setIsDragging] = useState(false);
+    const documentId = params?.documentId as string; 
+    
+    // --- Refs --- (Declare refs early if needed by custom hooks)
+    const editorRef = useRef<BlockNoteEditor<typeof schema.blockSchema>>(null);
     const formRef = useRef<HTMLFormElement>(null);
-    const inputRef = useRef<HTMLTextAreaElement>(null); // Chat input textarea
-    const fileInputRef = useRef<HTMLInputElement>(null); // Hidden file input
-    const messagesEndRef = useRef<HTMLDivElement>(null); // Chat scroll anchor
+    const inputRef = useRef<HTMLTextAreaElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const latestEditorContentRef = useRef<string | null>(null);
+    const latestEditorBlocksRef = useRef<BlockNoteEditorType['document'] | null>(null);
+    const isContentLoadedRef = useRef<boolean>(false);
+    const previousPathnameRef = useRef(pathname);
+    const routerForReplace = useRouter(); 
 
-    // --- NEW: Upload State ---
-    const [isUploading, setIsUploading] = useState(false);
-    const [uploadError, setUploadError] = useState<string | null>(null);
-    const [uploadedImagePath, setUploadedImagePath] = useState<string | null>(null);
-    // --- END NEW ---
-
-    // --- NEW: State for pending initial submission ---
+    // --- State Variables --- (Declare state early)
+    const { default_model: preferredModel, isInitialized: isPreferencesInitialized } = usePreferenceStore();
+    const [model, setModel] = useState<string>(() => (isPreferencesInitialized && preferredModel) ? preferredModel : defaultModelFallback);
+    const [pageError, setPageError] = useState<string | null>(null);
+    const [processedToolCallIds, setProcessedToolCallIds] = useState<Set<string>>(new Set());
+    const [displayedMessagesCount, setDisplayedMessagesCount] = useState(INITIAL_MESSAGE_COUNT);
+    const [includeEditorContent, setIncludeEditorContent] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
     const [pendingInitialSubmission, setPendingInitialSubmission] = useState<string | null>(null);
-
-    // Loading/Error States
-    // const [isLoadingDocument, setIsLoadingDocument] = useState(true); // Handled by useDocument
-    // const [isLoadingMessages, setIsLoadingMessages] = useState(true); // Handled by useInitialChatMessages
-    const [isSaving, setIsSaving] = useState(false); // Editor save button state
-    // const [error, setError] = useState<string | null>(null); // Replaced by pageError
-
-    // --- NEW: Autosave State & Refs (Step 2) ---
+    const [isSaving, setIsSaving] = useState(false);
     const [autosaveTimerId, setAutosaveTimerId] = useState<NodeJS.Timeout | null>(null);
-    const [revertStatusTimerId, setRevertStatusTimerId] = useState<NodeJS.Timeout | null>(null); // For reverting 'saved' -> 'idle' (Step 9)
+    const [revertStatusTimerId, setRevertStatusTimerId] = useState<NodeJS.Timeout | null>(null);
     const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved' | 'error'>('idle');
-    const latestEditorContentRef = useRef<string | null>(null); // JSON stringified content
-    const latestEditorBlocksRef = useRef<BlockNoteEditorType['document'] | null>(null); // Blocks for direct use
-    const isContentLoadedRef = useRef<boolean>(false); // To prevent save on initial load
-    const previousPathnameRef = useRef(pathname); // For navigation detection (Step 8)
 
-    // --- useChat Hook Integration ---
-    const {
-        messages: chatMessages, // Renamed to avoid conflict
-        input,
-        handleInputChange,
-        handleSubmit: originalHandleSubmit, // Renamed to wrap it
-        isLoading: isChatLoading, // Renamed for clarity
-        reload,
-        stop,
-        setMessages: setChatMessages, // Needed to set initial messages
-        setInput, // <-- ADDED: Need setInput to populate from query param
-    } = useChat({
-        api: '/api/chat', // API endpoint for chat interactions
-        id: documentId, // Pass documentId for context (also sent in body)
-        initialMessages: [], // Start empty, fetch initial messages separately
+    // --- Custom Hooks --- (Now safe to call, state/refs declared)
+    const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
+    const { messages: chatMessages, input, handleInputChange, handleSubmit: originalHandleSubmit, isLoading: isChatLoading, reload, stop, setMessages: setChatMessages, setInput } = useChat({
+        api: '/api/chat',
+        id: documentId,
+        initialMessages: [],
         onError: (err) => {
             const errorMsg = `Chat Error: ${err.message || 'Unknown error'}`;
             toast.error(errorMsg);
-            setPageError(errorMsg); // Use setPageError
+            setPageError(errorMsg); 
         },
-        // Body is handled dynamically in the wrapped handleSubmit
     });
-
-    // --- Zustand Follow Up Store ---
     const followUpContext = useFollowUpStore((state) => state.followUpContext);
     const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
-
-    // --- DEBUG: Log followUpContext changes ---
-    useEffect(() => {
-        console.log("[EditorPage] followUpContext state updated:", followUpContext);
-    }, [followUpContext]);
-    // --- END DEBUG ---
-
-    // --- NEW: Use hook for initial message fetching ---
     const { isLoadingMessages } = useInitialChatMessages({
         documentId,
         setChatMessages,
-        setDisplayedMessagesCount,
-        setPageError
+        setDisplayedMessagesCount, // Pass the state setter
+        setPageError             // Pass the state setter
     });
-    // --- END NEW ---
+    const { currentTitle, isEditingTitle, newTitleValue, isInferringTitle, handleEditTitleClick, handleCancelEditTitle, handleSaveTitle, handleTitleInputKeyDown, handleInferTitle, setNewTitleValue } = useTitleManagement({
+        documentId,
+        initialName: documentData?.name || '', // Use documentData AFTER useDocument hook
+        editorRef,
+    });
+    const { isChatCollapsed, setIsChatCollapsed, chatPaneWidth, isResizing, dragHandleRef, handleMouseDownResize } = useChatPane({
+        initialWidthPercent: INITIAL_CHAT_PANE_WIDTH_PERCENT,
+        minWidthPx: MIN_CHAT_PANE_WIDTH_PX,
+        maxWidthPercent: MAX_CHAT_PANE_WIDTH_PERCENT,
+    });
+    const { files, isUploading, uploadError, uploadedImagePath, handleFileSelectEvent, handleFilePasteEvent, handleFileDropEvent, clearPreview } = useFileUpload({ documentId });
 
-    // --- NEW: Effect to read initial message from query parameter ---
-    const routerForReplace = useRouter(); // Get router instance for replace
-    useEffect(() => {
-        const initialMsg = searchParams?.get('initialMsg'); // Add optional chaining
-        if (initialMsg) {
-            const decodedMsg = decodeURIComponent(initialMsg);
-            console.log("[EditorPage Mount] Found initialMsg query param:", decodedMsg);
-            setInput(decodedMsg); // Update chat input state
-            setPendingInitialSubmission(decodedMsg); // Set pending submission trigger
-
-            // Clean the URL by removing the query parameter
-            // Use router.replace to avoid adding a new entry to history
-            const currentPath = window.location.pathname; // Get current path without query
-            routerForReplace.replace(currentPath, { scroll: false }); // scroll: false prevents jumping
-        }
-    // Run only once when the component mounts or documentId changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps 
-    }, [documentId]);
-
-    // --- NEW: Effect to trigger submission once input state matches pending message ---
-    useEffect(() => {
-        // Only proceed if there's a message pending submission and it matches the current input
-        if (pendingInitialSubmission && input === pendingInitialSubmission) {
-            console.log("[EditorPage Submit Effect] Input matches pending submission. Triggering submit:", input);
-
-            // Call the original useChat submit handler
-            originalHandleSubmit(undefined, {
-                data: {
-                    model: model, // Use the current model state
-                    documentId: documentId, // Use the current documentId
-                    // Pass the input content explicitly in case useChat internal state is lagging?
-                    // Let's try without first, relying on the check `input === pendingInitialSubmission`
-                } as any // Cast as any to match useChat options type
+    // --- Callback Hooks (Defined BEFORE Early Returns) ---
+    const triggerSaveDocument = useCallback(async (content: string, docId: string) => {
+        console.log(`[Autosave] Triggering save for document ${docId}`);
+        try {
+            const response = await fetch(`/api/documents/${docId}/content`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: JSON.parse(content) }),
             });
-
-            // Clear the pending state ONLY after attempting submission
-            // to prevent re-submission if the component re-renders before submit completes
-            setPendingInitialSubmission(null);
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error?.message || `Autosave failed (${response.status})`);
+            }
+            console.log(`[Autosave] Document ${docId} saved successfully.`);
+            return true;
+        } catch (err: any) {
+            console.error(`[Autosave] Failed to save document ${docId}:`, err);
+            throw err;
         }
-    // Dependencies: Run when input or pendingInitialSubmission changes
-    // Also include other values used inside (originalHandleSubmit, model, documentId) as per exhaustive-deps rule
-    // eslint-disable-next-line react-hooks/exhaustive-deps 
-    }, [input, pendingInitialSubmission, originalHandleSubmit, model, documentId]);
+    }, []); 
 
-    // Effect to sync displayedMessagesCount with incoming messages up to the initial limit
-    useEffect(() => {
-        const newPotentialCount = Math.min(chatMessages.length, INITIAL_MESSAGE_COUNT);
-        if (newPotentialCount > displayedMessagesCount) {
-            setDisplayedMessagesCount(newPotentialCount);
+    const handleEditorChange = useCallback((editor: BlockNoteEditorType) => {
+        const editorContent = editor.document;
+        if (!isContentLoadedRef.current) {
+            isContentLoadedRef.current = true;
+            latestEditorBlocksRef.current = editorContent;
+            latestEditorContentRef.current = JSON.stringify(editorContent);
+            return;
         }
-        // This effect ensures that as messages stream in or are added by useChat
-        // after the initial fetch, the displayed count increases automatically
-        // up to INITIAL_MESSAGE_COUNT. If the user has clicked "Load More"
-        // and displayedMessagesCount > INITIAL_MESSAGE_COUNT, this effect won't
-        // decrease it, allowing the manual loading to persist.
-    }, [chatMessages.length, displayedMessagesCount]); // Added displayedMessagesCount
+        latestEditorBlocksRef.current = editorContent;
+        try {
+            latestEditorContentRef.current = JSON.stringify(editorContent);
+        } catch (stringifyError) {
+             console.error("[handleEditorChange] Failed to stringify editor content:", stringifyError);
+             setAutosaveStatus('error');
+             return;
+        }
+        setAutosaveStatus('unsaved');
+        if (revertStatusTimerId) {
+            clearTimeout(revertStatusTimerId);
+            setRevertStatusTimerId(null);
+        }
+        if (autosaveTimerId) {
+            clearTimeout(autosaveTimerId);
+        }
+        const newTimerId = setTimeout(async () => {
+            const editorInstance = editorRef.current;
+            const currentBlocks = latestEditorBlocksRef.current;
+            const currentContentString = latestEditorContentRef.current;
+            if (!editorInstance || !documentId || !currentContentString || !currentBlocks) {
+                console.warn("[Autosave Timer] Aborting save: Missing editor, documentId, content string, or blocks.");
+                setAutosaveStatus('error');
+                return;
+            }
+            setAutosaveStatus('saving');
+            let markdownContent: string | null = null;
+            if (currentBlocks.length > 0) {
+                try {
+                    markdownContent = await editorInstance.blocksToMarkdownLossy(currentBlocks);
+                    markdownContent = markdownContent.trim() || null;
+                } catch (markdownError) {
+                    console.error("[Autosave Timer] Error generating markdown:", markdownError);
+                    toast.error("Failed to generate markdown for search.");
+                }
+            }
+            let jsonContent: Block[] | null = null;
+            try {
+                jsonContent = JSON.parse(currentContentString);
+            } catch (parseError) {
+                console.error("[Autosave Timer] Failed to parse content string for saving:", parseError);
+                setAutosaveStatus('error');
+                return;
+            }
+            try {
+                const response = await fetch(`/api/documents/${documentId}/content`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: jsonContent, searchable_content: markdownContent }), 
+                });
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error?.message || `Autosave failed (${response.status})`);
+                }
+                setAutosaveStatus('saved');
+                const revertTimer = setTimeout(() => {
+                    setAutosaveStatus(status => status === 'saved' ? 'idle' : status);
+                    setRevertStatusTimerId(null);
+                }, 2000);
+                setRevertStatusTimerId(revertTimer);
+            } catch (saveError: any) {
+                console.error("[Autosave Timer] Save failed:", saveError);
+                toast.error(`Autosave failed: ${saveError.message}`);
+                setAutosaveStatus('error');
+            }
+        }, 3000);
+        setAutosaveTimerId(newTimerId);
+    }, [documentId, autosaveTimerId, revertStatusTimerId]);
 
-    // --- Editor Interaction Logic ---
+    const handleSaveContent = useCallback(async () => {
+        const editor = editorRef.current;
+        if (!documentId || !editor?.document || isSaving) return;
+        console.log("[Manual Save] Triggered.");
+        if (autosaveTimerId) {
+            clearTimeout(autosaveTimerId);
+            setAutosaveTimerId(null);
+        }
+        if (revertStatusTimerId) {
+            clearTimeout(revertStatusTimerId);
+            setRevertStatusTimerId(null);
+        }
+        setAutosaveStatus('saving');
+        setIsSaving(true);
+        setPageError(null);
+        try {
+            const currentEditorContent = editor.document;
+            const stringifiedContent = JSON.stringify(currentEditorContent);
+            latestEditorBlocksRef.current = currentEditorContent;
+            latestEditorContentRef.current = stringifiedContent;
+            // TODO: Add markdown generation here too?
+            await triggerSaveDocument(stringifiedContent, documentId);
+            toast.success('Document saved!');
+            setAutosaveStatus('saved');
+             const newRevertTimerId = setTimeout(() => {
+                 setAutosaveStatus('idle');
+                 setRevertStatusTimerId(null);
+             }, 2000);
+             setRevertStatusTimerId(newRevertTimerId);
+        } catch (err: any) {
+            console.error("[Manual Save] Save error:", err);
+            setPageError(`Save failed: ${err.message}`);
+            toast.error(`Save failed: ${err.message}`);
+            setAutosaveStatus('error');
+        } finally {
+            setIsSaving(false);
+        }
+    }, [documentId, isSaving, autosaveTimerId, revertStatusTimerId, triggerSaveDocument]);
 
-    // Function to get editor content as Markdown (for AI context)
+    const handleNewDocument = useCallback(() => {
+        router.push('/launch');
+    }, [router]);
+    
+    const scrollToBottom = useCallback(() => {
+         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, []);
+
+    const handleKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+        if (event.key === 'Enter' && !event.shiftKey && !isChatLoading && !isUploading) {
+            event.preventDefault();
+            if (input.trim() || uploadedImagePath) {
+                formRef.current?.requestSubmit();
+            } else {
+                toast.info("Please type a message or attach an image.");
+            }
+        }
+    }, [isChatLoading, isUploading, input, uploadedImagePath]);
+
+    // Define getEditorMarkdownContent before handleSubmitWithContext
+    // Note: This is async but not wrapped in useCallback as it's called within another useCallback
     const getEditorMarkdownContent = async (): Promise<string | null> => {
         const editor = editorRef.current;
         if (!editor) {
@@ -339,20 +340,10 @@ export default function EditorPage() {
             return null;
         }
         try {
-            // Ensure document exists and has content before accessing
-            if (editor.document.length === 0 || !editor.document[0]) {
-                 console.log("Editor content is empty, returning empty string for markdown.");
-                 return "";
-            }
-            // Check if the first block's content is array-like before calling helper
+            if (editor.document.length === 0 || !editor.document[0]) return "";
             const firstBlockContent = editor.document[0].content;
-            if (editor.document.length === 1 && (!Array.isArray(firstBlockContent) || getInlineContentText(firstBlockContent).trim() === '')) {
-                console.log("Editor content is empty or only contains whitespace, returning empty string for markdown.");
-                return "";
-            }
-            // Proceed with markdown conversion if content looks valid
+            if (editor.document.length === 1 && (!Array.isArray(firstBlockContent) || getInlineContentText(firstBlockContent).trim() === '')) return "";
             const markdown = await editor.blocksToMarkdownLossy(editor.document);
-            console.log('Retrieved editor content as Markdown:', markdown.slice(0, 100) + '...');
             return markdown;
         } catch (error) {
             console.error('Failed to get editor content as Markdown:', error);
@@ -361,43 +352,91 @@ export default function EditorPage() {
         }
     };
 
-    // --- Tool Execution Logic ---
-    // (Identical to the logic from the previous merged version)
+    const handleSubmitWithContext = useCallback(async (event?: React.FormEvent<HTMLFormElement>) => {
+        if (event) event.preventDefault();
+        if (!documentId) { toast.error("Cannot send message: Document context missing."); return; }
+        
+        const contextPrefix = followUpContext ? `${followUpContext}\n\n---\n\n` : '';
+        const currentInput = contextPrefix + input;
+        const currentModel = model;
+        const imagePathToSend = uploadedImagePath;
+
+        if (isChatLoading || isUploading || (!currentInput.trim() && !imagePathToSend && !followUpContext)) {
+            return;
+        }
+
+        let editorContextData = {}; 
+        const editor = editorRef.current;
+        if (includeEditorContent && editor) {
+            const markdownContent = await getEditorMarkdownContent(); // Call the function
+            if (markdownContent !== null) { editorContextData = { editorMarkdownContent: markdownContent }; }
+            setIncludeEditorContent(false);
+        } else if (editor) {
+            try {
+                const currentBlocks = editor.document;
+                if (currentBlocks?.length > 0) {
+                    editorContextData = { editorBlocksContext: currentBlocks.map(b => ({ id: b.id, contentSnippet: (Array.isArray(b.content) ? getInlineContentText(b.content).slice(0, 100) : '') || `[${b.type}]` })) };
+                }
+            } catch (e) { console.error('Failed to get editor snippets:', e); toast.error('⚠️ Error getting editor context.'); }
+        }
+
+        const isSummarizationTask = /\b(summar(y|ize|ies)|bullet|points?|outline|sources?|citations?)\b/i.test(currentInput) && currentInput.length > 25;
+        
+        try {
+            // Save user message (assuming API exists and works)
+            const saveMessageResponse = await fetch(`/api/documents/${documentId}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role: 'user', content: currentInput.trim() || null, imageUrlPath: imagePathToSend }),
+            });
+            if (!saveMessageResponse.ok) {
+                 const errorData = await saveMessageResponse.json().catch(() => ({}));
+                 throw new Error(errorData.error?.message || `Failed to save message (${saveMessageResponse.status})`);
+             }
+            await saveMessageResponse.json(); // Consume response body
+
+            // Trigger AI chat submission
+            const submitOptions = {
+                data: { model: currentModel, documentId, ...editorContextData, firstImagePath: imagePathToSend, taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined },
+                options: { experimental_attachments: files ? Array.from(files) : undefined }
+            };
+            originalHandleSubmit(event, { ...submitOptions, data: submitOptions.data as any });
+
+            clearPreview();
+            setFollowUpContext(null);
+            requestAnimationFrame(() => { if (inputRef.current) inputRef.current.style.height = 'auto'; });
+
+        } catch (saveError: any) {
+             console.error("Error saving user message or submitting:", saveError);
+             toast.error(`Failed to send message: ${saveError.message}`);
+        }
+    }, [documentId, followUpContext, input, model, uploadedImagePath, isChatLoading, isUploading, includeEditorContent, originalHandleSubmit, files, clearPreview, setFollowUpContext /* removed getEditorMarkdownContent from deps */ ]);
+    
+    // Define execute* functions (not wrapped in useCallback as they are called within useEffect)
     const executeAddContent = async (args: any) => {
         const editor = editorRef.current;
         if (!editor) { toast.error('Editor not available to add content.'); return; }
-        console.log('Executing addContent with args:', args);
         try {
             const { markdownContent, targetBlockId } = args;
             if (typeof markdownContent !== 'string') { toast.error("Invalid content provided for addContent."); return; }
             let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(markdownContent);
             if (blocksToInsert.length === 0 && markdownContent.trim() !== '') {
-                console.warn("Markdown parsing resulted in empty blocks, inserting as paragraph.");
-                // Wrap string content in the expected InlineContent structure
-                // Cast to PartialBlock to satisfy linter
                 blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: markdownContent, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
-            } else if (blocksToInsert.length === 0) {
-                toast.info('AI suggested adding content, but it was empty.'); return;
-            }
+            } else if (blocksToInsert.length === 0) return;
             let referenceBlock: Block | PartialBlock | undefined | null = targetBlockId ? editor.getBlock(targetBlockId) : editor.getTextCursorPosition().block;
             let placement: 'before' | 'after' = 'after';
             if (!referenceBlock) {
-                console.warn(`addContent: Could not find reference block ID ${targetBlockId} or no cursor. Inserting at end.`);
                 referenceBlock = editor.document[editor.document.length - 1];
                 placement = 'after';
                 if (!referenceBlock) {
-                    console.log(`Document empty, replacing content with ${blocksToInsert.length} blocks.`);
                     editor.replaceBlocks(editor.document, blocksToInsert);
                     toast.success("Content added from AI."); return;
                 }
             }
-            // Ensure referenceBlock and its ID exist before inserting
             if (referenceBlock && referenceBlock.id) {
-                console.log(`Inserting ${blocksToInsert.length} blocks`, placement, referenceBlock.id);
                 editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
                 toast.success('Content added from AI.');
             } else {
-                 console.warn(`Could not insert blocks: referenceBlock or referenceBlock.id is missing. Reference block:`, referenceBlock);
                  toast.error("Failed to insert content: could not find reference block.");
             }
         } catch (error: any) { console.error('Failed to execute addContent:', error); toast.error(`Error adding content: ${error.message}`); }
@@ -405,14 +444,12 @@ export default function EditorPage() {
     const executeModifyContent = async (args: any) => {
         const editor = editorRef.current;
         if (!editor) { toast.error('Editor not available to modify content.'); return; }
-        console.log('Executing modifyContent with args:', args);
         try {
             const { targetBlockId, targetText, newMarkdownContent } = args;
             if (!targetBlockId) { toast.error('Modification failed: Missing target block ID.'); return; }
             const targetBlock = editor.getBlock(targetBlockId);
             if (!targetBlock) { toast.error(`Modification failed: Block ID ${targetBlockId} not found.`); return; }
             if (targetText && typeof newMarkdownContent === 'string') {
-                console.log(`Attempting to modify text "${targetText}" in block ${targetBlock.id}`);
                 if (!targetBlock.content || !Array.isArray(targetBlock.content)) { toast.error(`Modification failed: Block ${targetBlock.id} has no modifiable content.`); return; }
                 const updatedContent = replaceTextInInlineContent(targetBlock.content, targetText, newMarkdownContent);
                 if (updatedContent) {
@@ -422,8 +459,6 @@ export default function EditorPage() {
             } else if (typeof newMarkdownContent === 'string') {
                 let blocksToReplaceWith: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(newMarkdownContent);
                 if (blocksToReplaceWith.length === 0 && newMarkdownContent.trim() !== '') {
-                     // Wrap string content in the expected InlineContent structure
-                     // Cast to PartialBlock to satisfy linter
                     blocksToReplaceWith.push({ type: 'paragraph', content: [{ type: 'text', text: newMarkdownContent, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
                  }
                 const listBlockTypes = ['bulletListItem', 'numberedListItem', 'checkListItem'];
@@ -435,22 +470,19 @@ export default function EditorPage() {
                         while (startIndex > 0 && allBlocks[startIndex - 1].type === targetBlock.type && ((allBlocks[startIndex - 1].props as any).level ?? 0) === targetLevel) startIndex--;
                         let currentIndex = startIndex;
                         while (currentIndex < allBlocks.length && allBlocks[currentIndex].type === targetBlock.type && ((allBlocks[currentIndex].props as any).level ?? 0) === targetLevel) { blockIdsToReplace.push(allBlocks[currentIndex].id); currentIndex++; }
-                        console.log(`Replacing ${blockIdsToReplace.length} related list items.`);
                     } else { blockIdsToReplace = [targetBlock.id]; }
                 }
-                console.log(`Attempting to replace block(s) [${blockIdsToReplace.join(', ')}] with ${blocksToReplaceWith.length} new blocks.`);
                 const existingBlockIds = blockIdsToReplace.filter(id => editor.getBlock(id));
                 if (existingBlockIds.length === 0) { toast.error("Modification failed: Target blocks disappeared before replacement."); return; }
                 if (existingBlockIds.length !== blockIdsToReplace.length) { toast.warning("Some target blocks were missing, replacing the ones found."); }
                 if (blocksToReplaceWith.length > 0) { editor.replaceBlocks(existingBlockIds, blocksToReplaceWith); toast.success('Block content modified by AI.'); }
-                else { console.log("Replacement content is empty, deleting original blocks:", existingBlockIds); editor.removeBlocks(existingBlockIds); toast.success('Original block(s) removed as replacement was empty.'); }
+                else { editor.removeBlocks(existingBlockIds); toast.success('Original block(s) removed as replacement was empty.'); }
             } else { toast.error("Invalid arguments for modifyContent: newMarkdownContent must be a string."); }
         } catch (error: any) { console.error('Failed to execute modifyContent:', error); toast.error(`Error modifying content: ${error.message}`); }
     };
     const executeDeleteContent = async (args: any) => {
         const editor = editorRef.current;
         if (!editor) { toast.error('Editor not available to delete content.'); return; }
-        console.log('Executing deleteContent with args:', args);
         try {
             const { targetBlockId, targetText } = args;
             if (!targetBlockId) { toast.error('Deletion failed: Missing target block ID(s).'); return; }
@@ -458,13 +490,12 @@ export default function EditorPage() {
             if (targetText && blockIdsToDelete.length === 1) {
                 const targetBlock = editor.getBlock(blockIdsToDelete[0]);
                 if (!targetBlock) { toast.error(`Deletion failed: Block ID ${blockIdsToDelete[0]} not found.`); return; }
-                console.log(`Attempting to delete text "${targetText}" in block ${targetBlock.id}`);
                 if (!targetBlock.content || !Array.isArray(targetBlock.content)) { toast.error(`Deletion failed: Block ${targetBlock.id} has no deletable content.`); return; }
                 const updatedContent = deleteTextInInlineContent(targetBlock.content, targetText);
                 if (updatedContent !== null) {
                     if (editor.getBlock(targetBlock.id)) {
                         const newText = getInlineContentText(updatedContent);
-                        if (!newText.trim()) { console.log(`Content empty after delete, removing block ${targetBlock.id}`); editor.removeBlocks([targetBlock.id]); toast.success(`Removed block ${targetBlock.id}.`); }
+                        if (!newText.trim()) { editor.removeBlocks([targetBlock.id]); toast.success(`Removed block ${targetBlock.id}.`); }
                         else { editor.updateBlock(targetBlock.id, { content: updatedContent }); toast.success(`Text "${targetText}" deleted.`); }
                     } else { toast.error(`Deletion failed: Target block ${targetBlock.id} disappeared.`); }
                 } else { toast.warning(`Could not find text "${targetText}" to delete in block ${targetBlock.id}.`); }
@@ -473,800 +504,160 @@ export default function EditorPage() {
                 const existingBlockIds = blockIdsToDelete.filter(id => editor.getBlock(id));
                 if (existingBlockIds.length === 0) { toast.error("Deletion failed: Target blocks disappeared."); return; }
                 if (existingBlockIds.length !== blockIdsToDelete.length) { toast.warning("Some target blocks were missing, removing the ones found."); }
-                console.log(`Removing blocks: ${existingBlockIds.join(', ')}`);
                 editor.removeBlocks(existingBlockIds);
                 toast.success(`Removed ${existingBlockIds.length} block(s).`);
             }
         } catch (error: any) { console.error('Failed to execute deleteContent:', error); toast.error(`Error deleting content: ${error.message}`); }
     };
 
-
-    // --- Chat Interaction Logic ---
-
-    // --- NEW: Upload Function --- 
-    const handleStartUpload = useCallback(async (file: File) => {
-        if (!documentId) {
-            toast.error("Cannot upload: Document context missing.");
-            return;
+    // --- Effect Hooks (Defined BEFORE Early Returns) ---
+    useEffect(() => { /* Effect for model sync */
+        if (isPreferencesInitialized && preferredModel && model !== preferredModel) {
+            setModel(preferredModel);
         }
-        if (isUploading) { // Prevent concurrent uploads from UI for simplicity
-            toast.info("Please wait for the current upload to finish.");
-            return;
+    }, [isPreferencesInitialized, preferredModel]);
+
+    useEffect(() => { /* Effect for page error */
+        if (documentError) {
+            setPageError(documentError);
         }
+    }, [documentError]);
 
-        setIsUploading(true);
-        setUploadError(null);
-        setUploadedImagePath(null); // Reset previous path if a new upload starts
-        toast.info(`Uploading ${file.name}...`);
+    useEffect(() => { /* Effect for follow-up context logging */
+        console.log("[EditorPage] followUpContext state updated:", followUpContext);
+    }, [followUpContext]);
 
-        try {
-            // 1. Get Signed URL
-            const signedUrlRes = await fetch('/api/storage/signed-url/upload', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fileName: file.name, contentType: file.type, documentId })
+    useEffect(() => { /* Effect for initial message query param */
+        const initialMsg = searchParams?.get('initialMsg');
+        if (initialMsg) {
+            const decodedMsg = decodeURIComponent(initialMsg);
+            setInput(decodedMsg);
+            setPendingInitialSubmission(decodedMsg);
+            const currentPath = window.location.pathname;
+            routerForReplace.replace(currentPath, { scroll: false });
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps 
+    }, [documentId]); // Only run on mount/docId change
+
+    useEffect(() => { /* Effect for pending initial submission */
+        if (pendingInitialSubmission && input === pendingInitialSubmission) {
+            originalHandleSubmit(undefined, {
+                data: { model: model, documentId: documentId } as any
             });
-            if (!signedUrlRes.ok) {
-                const err = await signedUrlRes.json().catch(() => ({}));
-                throw new Error(err.error?.message || `Upload URL error for ${file.name} (${signedUrlRes.status})`);
-            }
-            const { data: urlData } = await signedUrlRes.json(); // Gets { signedUrl, path }
-
-            // 2. Upload File using Signed URL
-            const uploadRes = await fetch(urlData.signedUrl, {
-                method: 'PUT',
-                headers: { 'Content-Type': file.type },
-                body: file
-            });
-            if (!uploadRes.ok) {
-                // Attempt to get error details from storage response if possible
-                const storageErrorText = await uploadRes.text();
-                console.error("Storage Upload Error Text:", storageErrorText); 
-                throw new Error(`Upload failed for ${file.name} (${uploadRes.status})`);
-            }
-
-            // 3. Success
-            setUploadedImagePath(urlData.path);
-            toast.success(`${file.name} uploaded successfully!`);
-
-        } catch (err: any) {
-            console.error(`Upload error (${file.name}):`, err);
-            const errorMsg = `Failed to upload ${file.name}: ${err.message}`;
-            setUploadError(errorMsg);
-            toast.error(errorMsg);
-            setFiles(null); // Clear preview on error
-            setUploadedImagePath(null);
-        } finally {
-            setIsUploading(false);
+            setPendingInitialSubmission(null);
         }
-    }, [documentId, isUploading]); // Include isUploading to prevent overlap
-    // --- END NEW --- 
+    // eslint-disable-next-line react-hooks/exhaustive-deps 
+    }, [input, pendingInitialSubmission, originalHandleSubmit, model, documentId]);
 
-    const handlePaste = (event: React.ClipboardEvent) => {
-        const items = event.clipboardData?.items; if (!items) return;
-        const clipboardFiles = Array.from(items).map(item => item.getAsFile()).filter((f): f is File => f !== null);
-        if (clipboardFiles.length > 0) {
-            const imageFiles = clipboardFiles.filter(f => f.type.startsWith('image/'));
-            if (imageFiles.length > 0) {
-                const firstImage = imageFiles[0]; // Handle one file at a time for simplicity now
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(firstImage);
-                setFiles(dataTransfer.files); // Set for preview
-                setUploadError(null); // Clear previous errors
-                setUploadedImagePath(null); // Clear previous path
-                handleStartUpload(firstImage); // Start upload immediately
-            } else if (clipboardFiles.some(f => f.type.startsWith('text/'))) {
-                console.log("Pasted content includes non-image files, allowing default paste behavior.");
-            } else if (clipboardFiles.length > 0) {
-                toast.error('Only image files can be pasted as attachments.');
-            }
+    useEffect(() => { /* Effect for displayed message count */
+        const newPotentialCount = Math.min(chatMessages.length, INITIAL_MESSAGE_COUNT);
+        if (newPotentialCount > displayedMessagesCount) {
+            setDisplayedMessagesCount(newPotentialCount);
         }
-    };
-    const handleDragOver = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(true); };
-    const handleDragLeave = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(false); };
-    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-        event.preventDefault(); setIsDragging(false);
-        const droppedFiles = event.dataTransfer.files;
-        if (droppedFiles && droppedFiles.length > 0) {
-            const imageFiles = Array.from(droppedFiles).filter(f => f.type.startsWith('image/'));
-            if (imageFiles.length > 0) {
-                const firstImage = imageFiles[0]; // Handle one file at a time
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(firstImage);
-                setFiles(dataTransfer.files); // Set for preview
-                setUploadError(null); // Clear previous errors
-                setUploadedImagePath(null); // Clear previous path
-                handleStartUpload(firstImage); // Start upload immediately
-                if (imageFiles.length > 1) { toast.info("Attached the first image. Multiple file uploads coming soon!"); }
-            } else { toast.error('Only image files accepted via drop.'); }
-        }
-    };
-    const scrollToBottom = useCallback(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, []);
-    useEffect(() => { scrollToBottom(); }, [chatMessages, scrollToBottom]);
-    const handleUploadClick = () => { 
-        if (isUploading) { toast.info("Please wait for the current upload to finish."); return; } 
-        fileInputRef.current?.click(); 
-    };
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (event.target.files && event.target.files.length > 0) {
-            const imageFiles = Array.from(event.target.files).filter(f => f.type.startsWith('image/'));
-            if (imageFiles.length > 0) {
-                const firstImage = imageFiles[0]; // Handle one file at a time
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(firstImage);
-                setFiles(dataTransfer.files); // Set for preview
-                setUploadError(null); // Clear previous errors
-                setUploadedImagePath(null); // Clear previous path
-                handleStartUpload(firstImage); // Start upload immediately
-                if (imageFiles.length > 1) { toast.info("Selected the first image. Multiple file uploads coming soon!"); }
-            } else { toast.error("No valid image files selected."); setFiles(null); }
-        } else { setFiles(null); }
-        if (event.target) event.target.value = ''; // Reset input
-    };
-    const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-        // Submit on Enter unless Shift is pressed OR upload is in progress
-        if (event.key === 'Enter' && !event.shiftKey && !isChatLoading && !isUploading) { 
-            event.preventDefault(); 
-            // Check if there is content to submit (text or uploaded image)
-            if (input.trim() || uploadedImagePath) {
-                formRef.current?.requestSubmit(); 
-            } else {
-                toast.info("Please type a message or attach an image.");
-            }
-        }
-    };
-
-    // Wrapped handleSubmit for useChat - REVISED
-    const handleSubmitWithContext = async (event?: React.FormEvent<HTMLFormElement>) => {
-        if (event) event.preventDefault();
-        if (!documentId) { toast.error("Cannot send message: Document context missing."); return; }
-        
-        // Combine follow-up context with current input
-        const contextPrefix = followUpContext ? `${followUpContext}\n\n---\n\n` : '';
-        const currentInput = contextPrefix + input;
-        const currentModel = model;
-        const imagePathToSend = uploadedImagePath;
-
-        // Submission Guard: Check if loading, uploading, or no content (text or image)
-        // Adjusted check to account for potentially only having followUpContext
-        if (isChatLoading || isUploading || (!input.trim() && !imagePathToSend && !followUpContext)) {
-            console.log('Submission prevented:', { isChatLoading, isUploading, currentInput: input, imagePathToSend, followUpContext });
-            return; 
-        }
-
-        let editorContextData = {}; 
-        const editor = editorRef.current;
-        if (includeEditorContent && editor) { /* Add full markdown */
-            const markdownContent = await getEditorMarkdownContent();
-            if (markdownContent !== null) { editorContextData = { editorMarkdownContent: markdownContent }; }
-            setIncludeEditorContent(false);
-        } else if (editor) { /* Add snippets */
-            try {
-                const currentBlocks = editor.document;
-                if (currentBlocks?.length > 0) {
-                    // Ensure content is InlineContent[] before passing to getInlineContentText
-                    editorContextData = { editorBlocksContext: currentBlocks.map(b => ({ id: b.id, contentSnippet: (Array.isArray(b.content) ? getInlineContentText(b.content).slice(0, 100) : '') || `[${b.type}]` })) };
-                }
-            } catch (e) { console.error('Failed to get editor snippets:', e); toast.error('⚠️ Error getting editor context.'); }
-        }
-
-        // --- NEW: Detect Summarization Task ---
-        // Basic check: look for keywords related to summarizing outlines/points
-        const isSummarizationTask = /\b(summar(y|ize|ies)|bullet|points?|outline|sources?|citations?)\b/i.test(currentInput) && currentInput.length > 25; // Require some length to avoid triggering on short phrases
-        if (isSummarizationTask) {
-            console.log("[handleSubmitWithContext] Summarization task detected based on input:", currentInput.slice(0, 50) + "...");
-        }
-        // --- END NEW ---
-
-        // --- Save the user message to the database FIRST ---
-        try {
-            console.log(`Saving user message to DB: content='${currentInput.slice(0,30)}...', imagePath='${imagePathToSend}'`);
-            const saveMessageResponse = await fetch(`/api/documents/${documentId}/messages`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    role: 'user', 
-                    content: currentInput.trim() || null, 
-                    imageUrlPath: imagePathToSend // Send the path from state
-                }),
-            });
-
-            if (!saveMessageResponse.ok) {
-                const errorData = await saveMessageResponse.json().catch(() => ({}));
-                throw new Error(errorData.error?.message || `Failed to save message (${saveMessageResponse.status})`);
-            }
-            const { data: savedMessage } = await saveMessageResponse.json();
-            console.log('User message saved to DB:', savedMessage);
-
-            // --- Now, trigger the AI interaction using useChat's handler ---
-            const submitOptions = {
-                data: {
-                    model: currentModel,
-                    documentId,
-                    ...editorContextData, 
-                    firstImagePath: imagePathToSend, // Pass the path from state
-                    // --- MODIFIED: Add taskHint conditionally ---
-                    taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined,
-                    // --- END MODIFIED ---
-                },
-                 // Optimistic UI: Pass the text input. Attachment preview is handled separately.
-                 // We pass the FileList here for the useChat hook to potentially use internally for optimistic updates
-                 // even though the actual upload is done. This mirrors the previous behaviour.
-                 // If this causes issues, we might remove it or pass undefined.
-                 // If this causes issues, we might remove it or pass undefined.
-                 options: { experimental_attachments: files ? Array.from(files) : undefined }
-            };
-
-            // Pass the event and options to the original useChat handler
-            originalHandleSubmit(event, { ...submitOptions, data: submitOptions.data as any });
-
-            // Clear inputs/state AFTER successful submission start
-            setUploadedImagePath(null);
-            setFiles(null); // Clear preview files
-            setFollowUpContext(null); // <-- ADDED: Clear follow-up context
-            // useChat hook should handle clearing the text input (`input`)
-            requestAnimationFrame(() => { if (inputRef.current) inputRef.current.style.height = 'auto'; });
-
-        } catch (saveError: any) {
-             console.error("Error saving user message or submitting:", saveError);
-             toast.error(`Failed to send message: ${saveError.message}`);
-        }
-    };
-
-    // --- Side Effects ---
-
-    // Process tool calls from messages
-    useEffect(() => {
+    }, [chatMessages.length, displayedMessagesCount]);
+    
+    useEffect(() => { /* Effect for tool processing */
         const lastMessage = chatMessages[chatMessages.length - 1];
-        console.log('[Tool Processing Effect Triggered] Last message:', lastMessage); // Log when effect runs
-
         if (lastMessage?.role === 'assistant' && lastMessage.toolInvocations) {
-            console.log(`[Tool Processing Effect] Found ${lastMessage.toolInvocations.length} tool invocations in last message ID: ${lastMessage.id}. Current processed IDs:`, processedToolCallIds); // Log tool invocations found
-
-            const callsToProcess = lastMessage.toolInvocations.filter(tc => {
-                const alreadyProcessed = processedToolCallIds.has(tc.toolCallId);
-                console.log(`[Tool Processing Effect] Checking Tool Call ID: ${tc.toolCallId}. Already processed: ${alreadyProcessed}`); // Log check for each tool call
-                return !alreadyProcessed;
-            });
-
+            const callsToProcess = lastMessage.toolInvocations.filter(tc => !processedToolCallIds.has(tc.toolCallId));
             if (callsToProcess.length > 0) {
-                console.log(`[Tool Processing Effect] Processing ${callsToProcess.length} new tool calls.`); // Log number of new calls to process
                 const newProcessedIds = new Set(processedToolCallIds);
                 callsToProcess.forEach(toolCall => {
-                    newProcessedIds.add(toolCall.toolCallId); // Mark processed now
+                    newProcessedIds.add(toolCall.toolCallId);
                     const { toolName, args } = toolCall;
-                    console.log(`[Tool Call Received] ID: ${toolCall.toolCallId}, Name: ${toolName}`);
                     try {
-                        let executed = false;
                         switch (toolName) {
-                            case 'addContent': executeAddContent(args); executed = true; break;
-                            case 'modifyContent': executeModifyContent(args); executed = true; break;
-                            case 'deleteContent': executeDeleteContent(args); executed = true; break;
-                            case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); executed = true; break;
-                            // Add case for webSearch to prevent 'Unknown tool' error
-                            case 'webSearch':
-                                console.log(`[Tool Call Acknowledged] ${toolName} - handled server-side.`);
-                                // No client-side action needed, execution happens on backend
-                                executed = true; // Mark as handled to prevent 'Unhandled' warning
-                                break;
+                            case 'addContent': executeAddContent(args); break;
+                            case 'modifyContent': executeModifyContent(args); break;
+                            case 'deleteContent': executeDeleteContent(args); break;
+                            case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); break;
+                            case 'webSearch': break; // Handled server-side
                             default: console.error(`Unknown tool: ${toolName}`); toast.error(`Unknown tool: ${toolName}`);
                         }
-                        if (executed) console.log(`[Tool Call Processed] ${toolName}`);
                     } catch (toolError: any) { console.error(`Tool ${toolName} error:`, toolError); toast.error(`Tool error: ${toolError.message}`); }
                 });
                 setProcessedToolCallIds(newProcessedIds);
             }
         }
-    }, [chatMessages, processedToolCallIds]); // Rerun when messages or processed IDs change
+    // Dependencies need to include execute* functions if they aren't stable (useCallback)
+    // For now, assuming they are stable or defined outside component scope for simplicity
+    }, [chatMessages, processedToolCallIds /*, executeAddContent, executeModifyContent, executeDeleteContent */]); 
 
-
-    // Resizable Pane Logic
-    useEffect(() => {
-        const calculateWidth = () => {
-            if (!isChatCollapsed) { // Only calculate if pane is visible
-                 const windowWidth = window.innerWidth;
-                 const initialWidth = Math.max(MIN_CHAT_PANE_WIDTH_PX, (windowWidth * INITIAL_CHAT_PANE_WIDTH_PERCENT) / 100);
-                 const potentialMaxWidth = (windowWidth * MAX_CHAT_PANE_WIDTH_PERCENT) / 100;
-                 const effectiveMaxWidth = Math.max(potentialMaxWidth, MIN_CHAT_PANE_WIDTH_PX);
-                 if (!isResizing) {
-                     if (chatPaneWidth === null || chatPaneWidth > effectiveMaxWidth || chatPaneWidth < MIN_CHAT_PANE_WIDTH_PX) {
-                         const newWidth = Math.max(MIN_CHAT_PANE_WIDTH_PX, Math.min(initialWidth, effectiveMaxWidth));
-                         setChatPaneWidth(newWidth);
-                     }
-                 }
-             }
-        };
-        calculateWidth(); // Initial calculation
-        window.addEventListener('resize', calculateWidth);
-        return () => window.removeEventListener('resize', calculateWidth);
-    }, [isResizing, chatPaneWidth, isChatCollapsed]); // Recalc on resize, or when pane collapses/expands
-
-    const dragHandleRef = useRef<HTMLDivElement>(null);
-    const startWidthRef = useRef<number>(0);
-    const startXRef = useRef<number>(0);
-    const handleMouseMoveResize = useCallback((me: MouseEvent) => { // Define as useCallback
-        requestAnimationFrame(() => {
-            const currentX = me.clientX;
-            const deltaX = currentX - startXRef.current;
-            const newWidth = startWidthRef.current - deltaX;
-            const windowWidth = window.innerWidth;
-            const maxWidth = Math.max(MIN_CHAT_PANE_WIDTH_PX, (windowWidth * MAX_CHAT_PANE_WIDTH_PERCENT) / 100);
-            const clampedWidth = Math.max(MIN_CHAT_PANE_WIDTH_PX, Math.min(newWidth, maxWidth));
-            setChatPaneWidth(clampedWidth);
-        });
-    }, []); // No dependencies needed as it uses refs
-
-    const handleMouseUpResize = useCallback(() => { // Define as useCallback
-        setIsResizing(false);
-        document.body.style.userSelect = '';
-        document.body.style.cursor = '';
-        window.removeEventListener('mousemove', handleMouseMoveResize);
-        window.removeEventListener('mouseup', handleMouseUpResize); // Remove self
-         console.log("Mouse Up - Resizing stopped");
-    }, [handleMouseMoveResize]); // Depends on the memoized mousemove handler
-
-    const handleMouseDownResize = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        if (!chatPaneWidth) return;
-        console.log("Mouse Down - Resizing started");
-        setIsResizing(true);
-        startXRef.current = e.clientX;
-        startWidthRef.current = chatPaneWidth;
-        document.body.style.userSelect = 'none';
-        document.body.style.cursor = 'col-resize';
-        window.addEventListener('mousemove', handleMouseMoveResize);
-        window.addEventListener('mouseup', handleMouseUpResize);
-    }, [chatPaneWidth, handleMouseMoveResize, handleMouseUpResize]); // Dependencies
-
-    // Cleanup resize listeners on unmount
-    useEffect(() => {
-        return () => {
-            window.removeEventListener('mousemove', handleMouseMoveResize);
-            window.removeEventListener('mouseup', handleMouseUpResize);
-             if (document.body.style.cursor === 'col-resize') { // Restore cursor if unmounted mid-drag
-                 document.body.style.userSelect = '';
-                 document.body.style.cursor = '';
-             }
-        };
-    }, [handleMouseMoveResize, handleMouseUpResize]);
-
-
-    // --- NEW: Trigger Embedding Generation on Unmount/Navigation --- <<< NEW
-    useEffect(() => {
-        // This function will run when the component unmounts
-        return () => {
-            if (!documentId) {
-                console.log("[Unmount Embedding] No documentId, skipping embedding trigger.");
-                return;
-            }
-            
-            console.log(`[Unmount Embedding] Triggering embedding generation for document: ${documentId}`);
-            
-            // Fire-and-forget POST request to the embedding endpoint
-            fetch('/api/generate-embedding', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ documentId }),
-                keepalive: true // Use keepalive to increase chance of request completing during page unload
-            })
-            .then(response => {
-                // We don't necessarily need to wait for the response or handle it deeply,
-                // but we can log success/failure status if it completes quickly.
-                if (!response.ok) {
-                    console.warn(`[Unmount Embedding] API call failed immediately with status: ${response.status}`);
-                    // Avoid showing error toasts here as the user is navigating away.
-                } else {
-                    console.log(`[Unmount Embedding] Successfully initiated embedding generation for ${documentId}.`);
-                }
-            })
-            .catch(error => {
-                // Catch network errors during the fetch itself
-                console.error("[Unmount Embedding] Error sending embedding request:", error);
-            });
-        };
-    }, [documentId]); // Depend only on documentId
-    // --- END NEW ---
-
-
-    // Send message content to editor
-    const handleSendToEditor = async (content: string) => {
-        const editor = editorRef.current;
-        if (!editor) { toast.error('Editor not available.'); return; }
-        if (!content || content.trim() === '') { toast.info('Cannot send empty content to editor.'); return; }
-        try {
-            let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(content);
-             if (blocksToInsert.length === 0 && content.trim() !== '') {
-                 // Wrap string content in the expected InlineContent structure
-                 // Cast to PartialBlock to satisfy linter
-                 blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: content, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
-             }
-            else if (blocksToInsert.length === 0) { toast.info("Content was empty after parsing."); return; }
-
-            const { block: currentBlock } = editor.getTextCursorPosition();
-            let referenceBlockId: string | undefined = currentBlock?.id;
-            if (!referenceBlockId) { referenceBlockId = editor.document[editor.document.length - 1]?.id; }
-
-            if (referenceBlockId) { editor.insertBlocks(blocksToInsert, referenceBlockId, 'after'); }
-            else { editor.replaceBlocks(editor.document, blocksToInsert); } // Handle empty doc
-            toast.success('Content sent to editor.');
-        } catch (error: any) { console.error('Send to editor error:', error); toast.error(`Send to editor error: ${error.message}`); }
-    };
-
-    // --- NEW: Autosave Trigger Function (Step 3) ---
-    const triggerSaveDocument = useCallback(async (content: string, docId: string) => {
-        console.log(`[Autosave] Triggering save for document ${docId}`);
-        try {
-            const response = await fetch(`/api/documents/${docId}/content`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: JSON.parse(content) }), // Parse back to object for API
-            });
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.error?.message || `Autosave failed (${response.status})`);
-            }
-            console.log(`[Autosave] Document ${docId} saved successfully.`);
-            // Return true on success, can be used by caller
-            return true;
-        } catch (err: any) {
-            console.error(`[Autosave] Failed to save document ${docId}:`, err);
-            // Throw the error to be caught by the caller (handleEditorChange)
-            throw err;
-        }
-    }, []); // No dependencies, uses arguments directly
-    // --- END NEW ---
-
-    // --- NEW: Autosave Handler for Editor Changes (Step 4 & 9) ---
-    // MODIFIED: Accept full editor instance from the component
-    const handleEditorChange = useCallback((editor: BlockNoteEditorType) => {
-        console.log("--- handleEditorChange called ---"); // <<< Existing DEBUG LOG
-        const editorContent = editor.document; // Extract document from editor instance
-
-        // Prevent triggering save immediately after initial content load
-        if (!isContentLoadedRef.current) {
-            isContentLoadedRef.current = true;
-            console.log("[handleEditorChange] Initial content flag SET to true. Returning."); // <<< ADDED DEBUG LOG
-            latestEditorBlocksRef.current = editorContent;
-            latestEditorContentRef.current = JSON.stringify(editorContent);
-            return;
-        }
-        console.log("[handleEditorChange] Initial content flag is TRUE. Proceeding..."); // <<< ADDED DEBUG LOG
-
-        console.log("[handleEditorChange] Editor content changed. Setting status to 'unsaved'."); // <<< ADDED DEBUG LOG
-        latestEditorBlocksRef.current = editorContent;
-        try {
-            latestEditorContentRef.current = JSON.stringify(editorContent);
-        } catch (stringifyError) {
-             console.error("[handleEditorChange] Failed to stringify editor content:", stringifyError);
-             setAutosaveStatus('error');
-             return;
-        }
-
-        setAutosaveStatus('unsaved');
-
-        // Clear timers
-        if (revertStatusTimerId) {
-            console.log("[handleEditorChange] Clearing existing REVERT timer:", revertStatusTimerId); // <<< ADDED DEBUG LOG
-            clearTimeout(revertStatusTimerId);
-            setRevertStatusTimerId(null);
-        }
-        if (autosaveTimerId) {
-            console.log("[handleEditorChange] Clearing existing AUTOSAVE timer:", autosaveTimerId); // <<< ADDED DEBUG LOG
-            clearTimeout(autosaveTimerId);
-        }
-
-        console.log("[handleEditorChange] Setting NEW autosave timer (3000ms)..."); // <<< ADDED DEBUG LOG
-        const newTimerId = setTimeout(async () => {
-            console.log("[Autosave Timer] --- Timer FIRED ---"); // <<< ADDED DEBUG LOG
-            // Check refs and ID right before saving
-            const editor = editorRef.current; // Get editor instance
-            const currentBlocks = latestEditorBlocksRef.current; // Get blocks
-            const currentContentString = latestEditorContentRef.current;
-
-            if (!editor || !documentId || !currentContentString || !currentBlocks) {
-                console.warn("[Autosave Timer] Aborting save: Missing editor, documentId, content string, or blocks.");
-                setAutosaveStatus('error'); // Indicate an issue
-                return;
-            }
-
-            setAutosaveStatus('saving');
-
-            // --- Generate Markdown --- <<< NEW
-            let markdownContent: string | null = null;
-            if (currentBlocks.length > 0) {
-                try {
-                    console.log("[Autosave Timer] Generating markdown...");
-                    markdownContent = await editor.blocksToMarkdownLossy(currentBlocks);
-                    markdownContent = markdownContent.trim() || null; // Store null if empty/whitespace
-                    console.log(`[Autosave Timer] Markdown generated (length: ${markdownContent?.length ?? 0}).`);
-                } catch (markdownError) {
-                    console.error("[Autosave Timer] Error generating markdown:", markdownError);
-                    // Decide if save should proceed without markdown, or fail
-                    // For now, let's proceed but log the error
-                    toast.error("Failed to generate markdown for search.");
-                    // Optionally set status to error and return?
-                    // setAutosaveStatus('error');
-                    // return;
-                }
-            }
-            // --- End Generate Markdown ---
-
-            // --- Prepare JSON Content --- <<< MODIFIED
-            let jsonContent: Block[] | null = null;
-            try {
-                jsonContent = JSON.parse(currentContentString);
-            } catch (parseError) {
-                console.error("[Autosave Timer] Failed to parse content string for saving:", parseError);
-                setAutosaveStatus('error');
-                return;
-            }
-
-            // --- Call Save API --- <<< MODIFIED
-            try {
-                // Use triggerSaveDocument or call fetch directly if more control is needed
-                // Calling fetch directly here to include both content types
-                console.log("[Autosave Timer] Calling save API...");
-                const response = await fetch(`/api/documents/${documentId}/content`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        content: jsonContent, // Send parsed JSON blocks
-                        searchable_content: markdownContent // Send generated markdown (or null)
-                    }), 
-                });
-
-                if (!response.ok) {
-                    const errData = await response.json().catch(() => ({}));
-                    throw new Error(errData.error?.message || `Autosave failed (${response.status})`);
-                }
-
-                // Success
-                console.log("[Autosave Timer] Save successful.");
-                setAutosaveStatus('saved');
-                // Set timer to revert status back to 'idle' after a delay (Step 9)
-                const revertTimer = setTimeout(() => {
-                    console.log("[Autosave Status Revert Timer] Reverting status from 'saved' to 'idle'."); // <<< ADDED DEBUG LOG
-                    setAutosaveStatus(status => status === 'saved' ? 'idle' : status); // Only revert if still 'saved'
-                    setRevertStatusTimerId(null); // Clear self
-                }, 2000); // Revert after 2 seconds
-                console.log("[Autosave Timer] Setting REVERT timer:", revertTimer);
-                setRevertStatusTimerId(revertTimer);
-
-            } catch (saveError: any) {
-                console.error("[Autosave Timer] Save failed:", saveError);
-                toast.error(`Autosave failed: ${saveError.message}`);
-                setAutosaveStatus('error');
-            }
-            // --- End Call Save API ---
-
-        }, 3000); // Autosave after 3 seconds of inactivity
-        setAutosaveTimerId(newTimerId);
-    }, [documentId, autosaveTimerId, revertStatusTimerId]); // Removed triggerSaveDocument
-    // --- END NEW ---
-
-    // --- NEW: beforeunload Hook for Unsaved Changes (Step 7) ---
-    useEffect(() => {
+    useEffect(() => { /* Effect for beforeunload */
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-             // Check if there are unsaved changes OR if an autosave is pending
             if (autosaveStatus === 'unsaved' || autosaveTimerId) {
-                console.log('[beforeunload] Unsaved changes detected. Attempting synchronous save.');
-
-                // Clear any pending autosave timer immediately
-                if (autosaveTimerId) {
-                    clearTimeout(autosaveTimerId);
-                    // No need to setAutosaveTimerId(null) here, component is unloading
-                }
-                 // Clear status revert timer too
-                if (revertStatusTimerId) {
-                    clearTimeout(revertStatusTimerId);
-                     // No need to setRevertStatusTimerId(null) here
-                }
-
-
-                // Attempt a synchronous (best-effort) save using fetch with keepalive
-                // Use the latest content from the ref
+                if (autosaveTimerId) clearTimeout(autosaveTimerId);
+                if (revertStatusTimerId) clearTimeout(revertStatusTimerId);
                 if (latestEditorContentRef.current && documentId) {
                     try {
                         const contentToSave = latestEditorContentRef.current;
                         const url = `/api/documents/${documentId}/content`;
-                        const payload = JSON.stringify({ content: JSON.parse(contentToSave) }); // Parse back for API
-
-                        // navigator.sendBeacon is another option, generally preferred for analytics
-                        // but fetch with keepalive is often used for critical data saving like this.
-                        // It's still best-effort.
+                        const payload = JSON.stringify({ content: JSON.parse(contentToSave) });
                          if (navigator.sendBeacon) {
                             const blob = new Blob([payload], { type: 'application/json' });
                             navigator.sendBeacon(url, blob);
-                            console.log('[beforeunload] Sent data via navigator.sendBeacon.');
                          } else {
-                            // Fallback for browsers that don't support sendBeacon (less likely)
-                            fetch(url, {
-                                method: 'PUT',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: payload,
-                                keepalive: true, // Important!
-                            }).catch(err => {
-                                // Errors here are hard to handle reliably as the page is closing. Log attempts.
-                                console.warn('[beforeunload] fetch keepalive error (may be expected):', err);
-                            });
-                             console.log('[beforeunload] Sent data via fetch keepalive.');
+                            fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true })
+                                .catch(err => console.warn('[beforeunload] fetch keepalive error:', err));
                         }
-
-
                     } catch (err) {
-                        // Catch errors during preparation (e.g., JSON.parse)
                         console.error('[beforeunload] Error preparing sync save data:', err);
                     }
-                } else {
-                    console.warn('[beforeunload] Could not attempt sync save: Missing content or document ID.');
-                }
-
-                // Standard way to prompt the user (though modern browsers often show generic messages)
-                // event.preventDefault(); // Standard practice, might be needed for older browsers
-                // event.returnValue = ''; // Standard practice
-                // Note: Browsers are increasingly ignoring custom messages here for security.
-                // The presence of the handler itself might trigger a generic "Leave site?" prompt
-                // if changes were detected, which is often sufficient. We don't explicitly set returnValue.
-            } else {
-                 console.log('[beforeunload] No unsaved changes detected.');
-            }
+                } 
+            } 
         };
-
         window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [autosaveStatus, autosaveTimerId, revertStatusTimerId, documentId]); 
 
-        return () => {
-            window.removeEventListener('beforeunload', handleBeforeUnload);
-            console.log('[beforeunload] Cleanup: Removed listener.');
-        };
-    }, [autosaveStatus, autosaveTimerId, revertStatusTimerId, documentId]); // Dependencies: status, timers, docId
-    // --- END NEW ---
-
-    // --- NEW: Navigation Handling Hook (Step 8) ---
-    useEffect(() => {
-        // Check if navigating away from an editor page
-        // Add check for pathname existence
+    useEffect(() => { /* Effect for navigation handling */
         const isLeavingEditor = !!(previousPathnameRef.current?.startsWith('/editor/') && !pathname?.startsWith('/editor/'));
-
         if (isLeavingEditor && (autosaveStatus === 'unsaved' || autosaveTimerId)) {
-            console.log('[Navigation] Leaving editor with unsaved changes. Triggering save.');
-
-            // Clear pending timers
              if (autosaveTimerId) {
                 clearTimeout(autosaveTimerId);
-                setAutosaveTimerId(null); // Update state since component isn't unmounting yet
+                setAutosaveTimerId(null);
             }
             if (revertStatusTimerId) {
                  clearTimeout(revertStatusTimerId);
                  setRevertStatusTimerId(null);
             }
-
-            // Trigger a save (fire-and-forget)
             if (latestEditorContentRef.current && documentId) {
-                 setAutosaveStatus('saving'); // Show saving status briefly during navigation
+                 setAutosaveStatus('saving');
                  triggerSaveDocument(latestEditorContentRef.current, documentId)
-                    .then(() => {
-                        console.log('[Navigation] Save successful.');
-                         // Optionally update status briefly, though user is navigating away
-                         // setAutosaveStatus('saved'); // Might not be visible
-                    })
-                    .catch(err => {
-                        console.error("[Navigation] Save on navigate failed:", err);
-                         // Don't revert status to 'error' here as user is leaving
-                    });
+                    .catch(err => console.error("[Navigation] Save on navigate failed:", err));
             }
         }
-
-        // Update the ref *after* checking the navigation condition
-        // Add check for pathname existence
         if (pathname) {
            previousPathnameRef.current = pathname;
         }
+    }, [pathname, autosaveStatus, autosaveTimerId, revertStatusTimerId, documentId, triggerSaveDocument]);
 
-    }, [pathname, autosaveStatus, autosaveTimerId, revertStatusTimerId, documentId, triggerSaveDocument]); // Dependencies
-    // --- END NEW ---
-
-    // --- NEW: Unmount Cleanup Hook for Timers (Step 9) ---
-     useEffect(() => {
-        // Return a cleanup function that runs on unmount
+    useEffect(() => { /* Effect for unmount cleanup */
         return () => {
-            console.log('[Unmount Cleanup] Clearing timers.');
-            if (autosaveTimerId) {
-                clearTimeout(autosaveTimerId);
-                console.log('[Unmount Cleanup] Cleared autosaveTimerId:', autosaveTimerId);
-            }
-            if (revertStatusTimerId) {
-                clearTimeout(revertStatusTimerId);
-                 console.log('[Unmount Cleanup] Cleared revertStatusTimerId:', revertStatusTimerId);
-            }
+            if (autosaveTimerId) clearTimeout(autosaveTimerId);
+            if (revertStatusTimerId) clearTimeout(revertStatusTimerId);
         };
-    }, [autosaveTimerId, revertStatusTimerId]); // Re-run only if timer IDs change (to get latest ID for cleanup)
-    // --- END NEW ---
+    }, [autosaveTimerId, revertStatusTimerId]);
 
-    // Manual Save Handler - MODIFIED to interact with autosave
-    const handleSaveContent = useCallback(async () => {
-        const editor = editorRef.current;
-        if (!documentId) { toast.error("Cannot save: Document ID missing."); return; }
-        if (!editor?.document) { console.warn('Save aborted: Editor content ref not available.'); return; }
-        if (isSaving) return; // Prevent multiple manual saves
+    useEffect(() => { /* Effect for scrolling chat */
+         scrollToBottom(); 
+    }, [chatMessages, scrollToBottom]);
+    
+    useEffect(() => { /* Effect for Embedding generation */
+        return () => {
+            if (!documentId) return;
+            fetch('/api/generate-embedding', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ documentId }),
+                keepalive: true
+            })
+            .catch(error => console.error("[Unmount Embedding] Error sending embedding request:", error));
+        };
+    }, [documentId]);
+    // --- END Effect Hooks ---
 
-        // --- NEW: Interact with Autosave ---
-        console.log("[Manual Save] Triggered.");
-        // Clear any pending autosave timer
-        if (autosaveTimerId) {
-            clearTimeout(autosaveTimerId);
-            setAutosaveTimerId(null);
-            console.log("[Manual Save] Cleared pending autosave timer.");
-        }
-         // Clear any pending status revert timer
-        if (revertStatusTimerId) {
-            clearTimeout(revertStatusTimerId);
-            setRevertStatusTimerId(null);
-            console.log("[Manual Save] Cleared pending status revert timer.");
-        }
-         // Set status to saving (overrides autosave status)
-        setAutosaveStatus('saving');
-        // --- END NEW ---
-
-        setIsSaving(true); // Still use isSaving for button state specifically
-        setPageError(null);
-        console.log("Saving document content manually...");
-        try {
-            const currentEditorContent = editor.document; // Get content at time of save
-            const stringifiedContent = JSON.stringify(currentEditorContent); // Use the same format as autosave ref
-
-            // Update refs immediately for consistency
-            latestEditorBlocksRef.current = currentEditorContent;
-            latestEditorContentRef.current = stringifiedContent;
-
-            // Use triggerSaveDocument for consistency (even though it parses back)
-            // Alternatively, could call fetch directly here. Using triggerSaveDocument is slightly cleaner.
-            await triggerSaveDocument(stringifiedContent, documentId);
-
-            toast.success('Document saved!');
-            // --- NEW: Set autosave status to 'saved' after manual save ---
-            setAutosaveStatus('saved');
-            // Set timer to revert to idle
-             const newRevertTimerId = setTimeout(() => {
-                 setAutosaveStatus('idle');
-                 setRevertStatusTimerId(null);
-             }, 2000);
-             setRevertStatusTimerId(newRevertTimerId);
-            // --- END NEW ---
-
-            // Update document metadata timestamp if possible (API should return it)
-            // Refetch or expect updated_at in response? Assuming API returns it.
-            // const { data } = await response.json(); // triggerSaveDocument doesn't return full data
-            // Need to fetch updated doc data or rely on API response structure if changed
-            // For now, just log success.
-
-        } catch (err: any) {
-            console.error("[Manual Save] Save error:", err);
-            setPageError(`Save failed: ${err.message}`);
-            toast.error(`Save failed: ${err.message}`);
-            // --- NEW: Set autosave status to 'error' on manual save failure ---
-            setAutosaveStatus('error');
-            // --- END NEW ---
-        } finally {
-            setIsSaving(false); // Reset manual save button state
-             // Note: Autosave status is now managed independently ('saved' or 'error')
-        }
-    // Include autosave timers in dependencies
-    }, [documentId, isSaving, /* Removed documentData */ autosaveTimerId, revertStatusTimerId, triggerSaveDocument]);
-
-    // Navigation Handlers
-    const handleNewDocument = () => { console.log("Navigating to /launch"); router.push('/launch'); };
-
-    // --- Render Logic ---
-
-    // Add log before returning JSX
-    console.log('[Render Check] State before render:', {
-        totalMessages: chatMessages.length,
-        displayedCount: displayedMessagesCount,
-        shouldShowLoadMore: chatMessages.length > displayedMessagesCount,
-    });
-
-    // Combined Loading State
+    // --- Early Return Checks ---
     if (isLoadingDocument) {
         return <div className="flex justify-center items-center h-screen bg-[--bg-color] text-[--text-color]">Loading document...</div>;
     }
@@ -1291,6 +682,60 @@ export default function EditorPage() {
         // but acts as a safeguard.
         return <div className="flex justify-center items-center h-screen bg-[--bg-color] text-[--text-color]">Preparing document...</div>;
     }
+
+    // --- Handler Definitions (Can be defined here, AFTER hooks but BEFORE return) ---
+    const handlePaste = (event: React.ClipboardEvent) => {
+        handleFilePasteEvent(event);
+    };
+    const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+         event.preventDefault(); 
+         setIsDragging(true);
+    };
+    const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+         event.preventDefault(); 
+         setIsDragging(false);
+    };
+    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault(); 
+        setIsDragging(false);
+        handleFileDropEvent(event);
+    };
+    const handleUploadClick = () => { 
+        if (isUploading) {
+            toast.info("Please wait for the current upload to finish."); 
+            return; 
+        } 
+        fileInputRef.current?.click();
+    };
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        handleFileSelectEvent(event);
+    };
+    // RESTORED: handleSendToEditor definition
+    const handleSendToEditor = async (content: string) => {
+        const editor = editorRef.current;
+        if (!editor || !content || content.trim() === '') return;
+        try {
+            let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(content);
+             if (blocksToInsert.length === 0 && content.trim() !== '') {
+                 blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: content, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
+             }
+            else if (blocksToInsert.length === 0) return;
+            const { block: currentBlock } = editor.getTextCursorPosition();
+            let referenceBlockId: string | undefined = currentBlock?.id;
+            if (!referenceBlockId) { referenceBlockId = editor.document[editor.document.length - 1]?.id; }
+            if (referenceBlockId) { editor.insertBlocks(blocksToInsert, referenceBlockId, 'after'); }
+            else { editor.replaceBlocks(editor.document, blocksToInsert); } 
+            toast.success('Content sent to editor.');
+        } catch (error: any) { console.error('Send to editor error:', error); toast.error(`Send to editor error: ${error.message}`); }
+    };
+    // --- END Handler Definitions ---
+
+    // --- Render Logic ---
+    console.log('[Render Check] State before render:', {
+        totalMessages: chatMessages.length,
+        displayedCount: displayedMessagesCount,
+        shouldShowLoadMore: chatMessages.length > displayedMessagesCount,
+    });
 
     // Main Render
     return (
