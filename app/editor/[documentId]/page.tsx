@@ -91,6 +91,7 @@ import { useFileUpload } from '@/lib/hooks/editor/useFileUpload';
 import { useChatInteractions } from '@/lib/hooks/editor/useChatInteractions';
 import { ChatInputArea } from '@/components/editor/ChatInputArea'; // Import the new component
 import { ChatMessagesList } from '@/components/editor/ChatMessagesList'; // Import the new component
+import { ChatPaneWrapper } from '@/components/editor/ChatPaneWrapper'; // Import the new wrapper
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -765,65 +766,56 @@ export default function EditorPage() {
                 </button>
             </div>
 
-            {/* Chat Pane */}
-            <motion.div className="flex flex-col bg-[--bg-secondary] h-full relative border-l border-[--border-color]" initial={false} animate={{ width: isChatCollapsed ? 0 : chatPaneWidth ?? `${INITIAL_CHAT_PANE_WIDTH_PERCENT}%`, minWidth: isChatCollapsed ? 0 : MIN_CHAT_PANE_WIDTH_PX, opacity: isChatCollapsed ? 0 : 1, paddingLeft: isChatCollapsed ? 0 : '1rem', paddingRight: isChatCollapsed ? 0 : '1rem', borderLeftWidth: isChatCollapsed ? 0 : '1px' }} transition={{ type: 'tween', duration: 0.3 }} style={{ visibility: isChatCollapsed ? 'hidden' : 'visible' }}>
-                {/* Resize Handle */}
-                {!isChatCollapsed && <div ref={dragHandleRef} onMouseDown={handleMouseDownResize} className="absolute top-0 bottom-0 left-0 w-1.5 cursor-col-resize bg-gray-300/50 dark:bg-gray-600/50 hover:bg-blue-400 dark:hover:bg-blue-600 transition-colors duration-150 z-30" style={{ transform: 'translateX(-50%)' }} />}
-                {/* Chat Content Area */}
-                {!isChatCollapsed &&
+            {/* --- NEW: Use ChatPaneWrapper --- */}
+            <ChatPaneWrapper
+                // Props from useChatPane
+                isChatCollapsed={isChatCollapsed}
+                chatPaneWidth={chatPaneWidth}
+                dragHandleRef={dragHandleRef}
+                handleMouseDownResize={handleMouseDownResize}
+                // Props for ChatMessagesList
+                chatMessages={chatMessages}
+                displayedMessagesCount={displayedMessagesCount}
+                isLoadingMessages={isLoadingMessages}
+                isChatLoading={isChatLoading}
+                setDisplayedMessagesCount={setDisplayedMessagesCount}
+                handleSendToEditor={handleSendToEditor}
+                messagesEndRef={messagesEndRef}
+                messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
+                // Props for ChatInputArea
+                input={input}
+                handleInputChange={handleInputChange}
+                handleSubmit={handleSubmit}
+                model={model}
+                setModel={setModel}
+                stop={stop}
+                files={files}
+                handleFileChange={handleFileChange}
+                handlePaste={handlePaste}
+                handleUploadClick={handleUploadClick}
+                isUploading={isUploading}
+                uploadError={uploadError}
+                uploadedImagePath={uploadedImagePath}
+                followUpContext={followUpContext}
+                setFollowUpContext={setFollowUpContext}
+                formRef={formRef}
+                inputRef={inputRef}
+                fileInputRef={fileInputRef}
+                handleKeyDown={handleKeyDown}
+                // Constants
+                initialChatPaneWidthPercent={INITIAL_CHAT_PANE_WIDTH_PERCENT}
+                minChatPaneWidthPx={MIN_CHAT_PANE_WIDTH_PX}
+            />
+            {/* --- REMOVED: Original Chat Pane JSX --- */}
+            {/* <motion.div ... >
+                {!isChatCollapsed && (
                     <>
-                        {/* --- NEW: Use ChatMessagesList Component --- */}
-                        <ChatMessagesList
-                            chatMessages={chatMessages}
-                            displayedMessagesCount={displayedMessagesCount}
-                            isLoadingMessages={isLoadingMessages} // Pass initial loading state
-                            isChatLoading={isChatLoading} // Pass assistant loading state
-                            setDisplayedMessagesCount={setDisplayedMessagesCount}
-                            handleSendToEditor={handleSendToEditor} // Pass the handler
-                            messagesEndRef={messagesEndRef}
-                            messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE} // Pass constant
-                        />
-                        {/* --- REMOVED: Original Message List JSX --- */}
-                        {/* <div className="flex-1 overflow-y-auto styled-scrollbar pr-2 pt-4">
-                            {shouldShowLoadMore && <button ...>Load More...</button>}
-                            {isLoadingMessages && totalMessages === 0 && <div>Loading messages...</div>}
-                            {!isLoadingMessages && totalMessages === 0 && <div>No messages yet...</div>}
-                            {totalMessages > 0 && chatMessages.slice(...).map((message, index) => (
-                                <motion.div ...>
-                                     // Message bubble content 
-                                </motion.div>
-                            ))}
-                            {isChatLoading && <div>Assistant loading...</div>}
-                            <div ref={messagesEndRef} />
-                        </div> */}
-                        {/* --- END REMOVED --- */}
-                        
-                        {/* Chat Input Area (Rendered using ChatInputArea component) */}
-                        <ChatInputArea 
-                            input={input}
-                            handleInputChange={handleInputChange}
-                            handleSubmit={handleSubmit}
-                            isLoading={isChatLoading}
-                            model={model}
-                            setModel={setModel}
-                            stop={stop}
-                            files={files}
-                            handleFileChange={handleFileChange}
-                            handlePaste={handlePaste}
-                            handleUploadClick={handleUploadClick}
-                            isUploading={isUploading}
-                            uploadError={uploadError}
-                            uploadedImagePath={uploadedImagePath}
-                            followUpContext={followUpContext}
-                            setFollowUpContext={setFollowUpContext}
-                            formRef={formRef}
-                            inputRef={inputRef}
-                            fileInputRef={fileInputRef}
-                            handleKeyDown={handleKeyDown}
-                        />
+                        <ChatMessagesList ... />
+                        <ChatInputArea ... />
                     </>
-                }
-            </motion.div>
+                )}
+            </motion.div> */}
+            {/* --- END REMOVED --- */}
         </div>
     );
 } 
