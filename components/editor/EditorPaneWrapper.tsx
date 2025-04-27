@@ -100,7 +100,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
 
             {/* Collapsed Chat Input (Rendered conditionally at the bottom) */}
             {isChatCollapsed && (
-                <div className="p-4 pt-2 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0">
+                <div className="p-4 pt-2 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0 max-w-[800px] mx-auto w-full">
                     <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center">
                         {/* Follow Up Context Display */}
                         {followUpContext && (
@@ -119,6 +119,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                         )}
                         {/* Use ChatInputUI directly here */}
                         <ChatInputUI 
+                            key={isChatCollapsed ? 'collapsed-input' : 'unmounted'}
                             files={files} 
                             fileInputRef={fileInputRef} 
                             handleFileChange={handleFileChange} 

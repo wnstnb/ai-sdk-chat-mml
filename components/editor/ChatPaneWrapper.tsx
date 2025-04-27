@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import type { Message } from 'ai/react';
 import { ChatMessagesList } from './ChatMessagesList';
@@ -84,6 +84,18 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     initialChatPaneWidthPercent,
     minChatPaneWidthPx,
 }) => {
+    // State to force remount of ChatInputArea after animation
+    const [inputAreaKey, setInputAreaKey] = useState(0);
+
+    const handleAnimationComplete = () => {
+        // Check if the animation completed in the EXPANDED state
+        if (!isChatCollapsed) {
+            // Increment key to force remount
+            setInputAreaKey(prev => prev + 1);
+            console.log('Chat pane animation complete (expanded), remounting input.');
+        }
+    };
+
     return (
         <motion.div 
             className="flex flex-col bg-[--bg-secondary] h-full relative border-l border-[--border-color]"
@@ -98,6 +110,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
             }} 
             transition={{ type: 'tween', duration: 0.3 }} 
             style={{ visibility: isChatCollapsed ? 'hidden' : 'visible' }}
+            onAnimationComplete={handleAnimationComplete}
         >
             {/* Resize Handle */}
             {!isChatCollapsed && (
@@ -123,6 +136,8 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                         messageLoadBatchSize={messageLoadBatchSize}
                     />
                     <ChatInputArea 
+                        key={inputAreaKey}
+                        isChatCollapsed={isChatCollapsed}
                         input={input}
                         handleInputChange={handleInputChange}
                         handleSubmit={handleSubmit}

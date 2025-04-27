@@ -33,6 +33,9 @@ interface ChatInputAreaProps {
     
     // General event handlers (might be handled within ChatInputUI or needed here)
     handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+
+    // ADDED: To pass down for height adjustment logic
+    isChatCollapsed?: boolean;
 }
 
 export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
@@ -57,6 +60,7 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     inputRef,
     fileInputRef,
     handleKeyDown,
+    isChatCollapsed,
 }) => {
     return (
         <div className="w-full px-0 pb-4 border-t border-[--border-color] pt-4 flex-shrink-0 bg-[--bg-secondary]">
@@ -78,6 +82,7 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                 )}
                 {/* Re-use ChatInputUI component */}
                 <ChatInputUI 
+                    isChatCollapsed={isChatCollapsed}
                     files={files} 
                     fileInputRef={fileInputRef} 
                     handleFileChange={handleFileChange} 

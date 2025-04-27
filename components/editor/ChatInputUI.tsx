@@ -45,6 +45,7 @@ interface ChatInputUIProps {
     uploadError: string | null; // NEW: Upload error message
     uploadedImagePath: string | null; // NEW: Path of successfully uploaded image
     onStop?: () => void; // Optional handler for stopping generation
+    isChatCollapsed?: boolean; // ADDED: To trigger height adjustment
 }
 
 export const ChatInputUI: React.FC<ChatInputUIProps> = ({
@@ -64,15 +65,18 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     uploadError,
     uploadedImagePath,
     onStop,
+    isChatCollapsed,
 }) => {
     // Adjust textarea height dynamically based on content
     useEffect(() => {
-        // Always adjust height if the ref exists
+        // Run on mount (due to key change) and when input changes
         if (inputRef.current) {
-            inputRef.current.style.height = 'auto';
+            console.log('ChatInputUI useEffect: Adjusting height'); // Debug log
+            inputRef.current.style.height = 'auto'; // Reset height first
             inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
         }
-    }, [input, inputRef]);
+        // No timeout needed here anymore
+    }, [input, inputRef]); // Remove isChatCollapsed dependency
 
     // Determine if send button should be enabled for *submitting*
     // The button itself might be active for stopping
