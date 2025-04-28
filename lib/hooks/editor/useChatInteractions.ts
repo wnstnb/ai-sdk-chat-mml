@@ -62,6 +62,14 @@ export function useChatInteractions({
     const [pendingInitialSubmission, setPendingInitialSubmission] = useState<string | null>(null);
     const initialMsgProcessedRef = useRef(false);
 
+    // Audio Recording State
+    const [isRecording, setIsRecording] = useState<boolean>(false);
+    const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+    const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+    const [recordingTimerId, setRecordingTimerId] = useState<NodeJS.Timeout | null>(null);
+    const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
+    const [micPermissionError, setMicPermissionError] = useState<boolean>(false);
+
     // --- External Hooks ---
     const router = useRouter();
     const searchParams = useSearchParams();
