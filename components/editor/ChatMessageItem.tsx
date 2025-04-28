@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import type { Message } from 'ai/react';
+import { type ToolInvocation } from '@ai-sdk/ui-utils';
 import { BotIcon, UserIcon, Wrench, SendToBack } from 'lucide-react';
 import { Markdown } from '@/components/markdown';
 import { getTextFromDataUrl } from '@/lib/editorUtils';
@@ -16,6 +17,12 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 }) => {
     // Memoize the component to prevent unnecessary re-renders if props haven't changed
     
+    // Phase 2 Refactor: Extract tool invocation parts
+    const toolInvocationParts = message.parts?.filter(
+      (part): part is { type: 'tool-invocation'; toolInvocation: ToolInvocation } => part.type === 'tool-invocation'
+    ) || [];
+    const hasToolInvocations = toolInvocationParts.length > 0;
+
     return (
         <motion.div
             key={message.id} // Key is now handled by the parent map
@@ -46,12 +53,12 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                 )}
                 
                 {/* Tool Invocations */}
-                {message.role === 'assistant' && message.toolInvocations && message.toolInvocations.length > 0 && (
+                {message.role === 'assistant' && hasToolInvocations && (
                     <div className="mt-2 flex flex-col gap-2 border-t border-zinc-200 dark:border-zinc-700 pt-2">
-                        {message.toolInvocations.map((toolCall) => (
-                            <div key={toolCall.toolCallId} className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+                        {toolInvocationParts.map((part) => (
+                            <div key={part.toolInvocation.toolCallId} className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
                                 <Wrench size={12} className="flex-shrink-0" />
-                                <span>Using tool: <strong>{toolCall.toolName}</strong></span>
+                                <span>Using tool: <strong>{part.toolInvocation.toolName}</strong></span>
                             </div>
                         ))}
                     </div>
