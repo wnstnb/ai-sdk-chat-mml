@@ -347,11 +347,37 @@ export function useChatInteractions({
         }
     }, [handleProcessRecordedAudio, recordingTimerId]); // Added handleProcessRecordedAudio, recordingTimerId dependencies
 
-    // --- Stop Recording Logic Placeholder (NEW) ---
+    // --- Stop Recording Logic (IMPLEMENTED) ---
     const handleStopRecording = useCallback((timedOut = false) => {
-        console.log(`handleStopRecording called. Timed out: ${timedOut}`);
-        // Implementation in Step 1.4
-    }, []);
+        console.log(`handleStopRecording called. Timed out: ${timedOut}, Current recorder state: ${mediaRecorder?.state}`);
+        
+        // Clear the timeout regardless of recorder state
+        if (recordingTimerId) {
+            clearTimeout(recordingTimerId);
+            setRecordingTimerId(null);
+            console.log("Cleared recording timer.");
+        }
+
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            console.log("Stopping MediaRecorder...");
+            mediaRecorder.stop(); // This triggers the onstop handler defined in startRecording
+                                 // onstop handles stream track cleanup and setMediaRecorder(null)
+            setIsRecording(false); // Set recording state immediately 
+            if (timedOut) {
+                toast.info("Recording stopped automatically after 30 seconds.");
+            }
+        } else {
+             console.log("MediaRecorder not active or already stopped, ensuring isRecording is false.");
+            // If recorder wasn't active or already stopped, ensure state is correct
+            setIsRecording(false);
+             // If the recorder exists but isn't recording (e.g., inactive), clean up its stream tracks just in case
+            if (mediaRecorder?.stream) {
+                console.log("Cleaning up tracks for non-recording recorder.");
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
+            setMediaRecorder(null); // Also ensure recorder state is cleared if stop was called without active recorder
+        }
+    }, [mediaRecorder, recordingTimerId, setIsRecording, setRecordingTimerId]); // Dependencies: recorder instance and timer ID state/setter
 
     // --- Initial Message Processing ---
     useEffect(() => {
@@ -393,7 +419,7 @@ export function useChatInteractions({
         isTranscribing,
         micPermissionError,
         startRecording: handleStartRecording, // Export the actual function
-        stopRecording: handleStopRecording,   // Export the placeholder
+        stopRecording: handleStopRecording,   // Export the implemented function
         // --- END NEW AUDIO PROPS ---
     };
 } 
