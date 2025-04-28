@@ -12,15 +12,15 @@ const SIGNED_URL_EXPIRY = 60 * 5; // Signed URLs expire in 5 minutes
 
 // Helper function (can be shared or defined locally)
 async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerClient>) {
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) {
-    console.error('Session Error:', sessionError.message);
-    return { errorResponse: NextResponse.json({ error: { code: 'SERVER_ERROR', message: 'Failed to get session.' } }, { status: 500 }) };
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) {
+    console.error('Auth User Error:', userError.message);
+    return { errorResponse: NextResponse.json({ error: { code: 'SERVER_ERROR', message: 'Failed to get user.' } }, { status: 500 }) };
   }
-  if (!session) {
+  if (!user) {
     return { errorResponse: NextResponse.json({ error: { code: 'UNAUTHENTICATED', message: 'User not authenticated.' } }, { status: 401 }) };
   }
-  return { userId: session.user.id };
+  return { userId: user.id };
 }
 
 // Helper to check if user owns the document (needed for RLS checks simulation/verification)

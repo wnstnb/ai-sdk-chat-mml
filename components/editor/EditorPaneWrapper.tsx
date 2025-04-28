@@ -51,6 +51,14 @@ interface EditorPaneWrapperProps {
     fileInputRef: React.RefObject<HTMLInputElement>;
     // General event handlers
     handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+
+    // --- NEW AUDIO PROPS ADDED ---
+    isRecording: boolean;
+    isTranscribing: boolean;
+    micPermissionError: boolean;
+    startRecording: () => void;
+    stopRecording: (timedOut?: boolean) => void;
+    // --- END NEW AUDIO PROPS ---
 }
 
 export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
@@ -80,6 +88,13 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     inputRef,
     fileInputRef,
     handleKeyDown,
+    // --- NEW AUDIO PROPS DESTRUCTURED ---
+    isRecording,
+    isTranscribing,
+    micPermissionError,
+    startRecording,
+    stopRecording,
+    // --- END NEW AUDIO PROPS DESTRUCTURED ---
 }) => {
     return (
         <div className="flex-1 flex flex-col relative border rounded-lg bg-[--editor-bg] border-[--border-color] shadow-sm overflow-hidden">
@@ -135,7 +150,12 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                             isUploading={isUploading} 
                             uploadError={uploadError} 
                             uploadedImagePath={uploadedImagePath} 
-                            onStop={stop} 
+                            onStop={stop}
+                            isRecording={isRecording}
+                            isTranscribing={isTranscribing}
+                            micPermissionError={micPermissionError}
+                            startRecording={startRecording}
+                            stopRecording={stopRecording}
                         />
                     </form>
                 </div>

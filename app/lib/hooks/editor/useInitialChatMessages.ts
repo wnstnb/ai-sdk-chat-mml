@@ -69,19 +69,61 @@ export function useInitialChatMessages({
                     continue;
                  }
 
-                // 1. Handle User and System messages directly
-                if ((msg.role as string) === 'user' || (msg.role as string) === 'system') {
+                // 1. Handle User and System messages - REVISED to use parts array for User messages
+                if ((msg.role as string) === 'system') { // Keep system messages simple
                     formattedMessages.push({
                         id: msg.id,
-                        role: msg.role,
+                        role: 'system',
                         content: msg.content || '',
                         createdAt: new Date(msg.created_at),
+                    });
+                    continue;
+                }
+
+                if ((msg.role as string) === 'user') {
+                    const messageParts: any[] = [];
+
+                    // Add text part (always exists for user message)
+                    messageParts.push({ type: 'text', text: msg.content || '' });
+
+                    // Add image attachment if present (using experimental_attachments for now)
+                    // The hook populates experimental_attachments based on signedDownloadUrl
+                    // The ChatMessageItem component renders from experimental_attachments
+
+                    // --- TEMPORARILY REMOVED WHISPER TOOL CALL PART FOR USER MESSAGES ---
+                    // // Find associated Whisper tool call (assuming tool_calls are fetched with the message)
+                    // const whisperCall = Array.isArray(msg.tool_calls)
+                    //     ? msg.tool_calls.find(tc => tc.tool_name === 'whisper_transcription' && tc.message_id === msg.id)
+                    //     : null;
+                    //
+                    // if (whisperCall) {
+                    //     messageParts.push({
+                    //         type: 'tool-invocation',
+                    //         toolInvocation: {
+                    //             state: 'result' as const,
+                    //             toolCallId: whisperCall.tool_call_id,
+                    //             toolName: whisperCall.tool_name,
+                    //             args: whisperCall.tool_input,
+                    //             result: whisperCall.tool_output
+                    //         }
+                    //     });
+                    // }
+                    // --- END TEMPORARY REMOVAL ---
+
+                    // Add the user message with parts (will just contain text part for now)
+                    formattedMessages.push({
+                        id: msg.id,
+                        role: 'user',
+                        content: msg.content || '', // Keep original content for user message display
+                        createdAt: new Date(msg.created_at),
+                        parts: messageParts.length > 1 ? messageParts : undefined, // Only add parts if more than just text exists (though currently won't)
+                        // Also ensure experimental_attachments are added if they exist
                         experimental_attachments: msg.signedDownloadUrl ? [{
                             name: msg.image_url?.split('/').pop() || `image_${msg.id}`,
                             contentType: 'image/*', // Assuming image for now
                             url: msg.signedDownloadUrl,
                         }] : undefined,
-                    });
+                    } as Message); // Add type assertion if necessary
                     continue; // Move to next message
                 }
 
@@ -110,15 +152,18 @@ export function useInitialChatMessages({
                         });
                     }
                     
+                    // Find the text part, if it exists
+                    const textPart = messageParts.find(part => part.type === 'text');
+
                     // Add the assistant message with reconstructed parts
                     formattedMessages.push({
                         id: msg.id,
                         role: 'assistant',
-                        // Ensure content is consistent (e.g., use text part's content or empty string)
-                        content: msg.content || '', 
+                        // Use text from parts, or empty string if no text part
+                        content: textPart?.text || '', 
                         createdAt: new Date(msg.created_at),
                         // Assign the reconstructed parts array
-                        parts: messageParts.length > 0 ? messageParts : undefined 
+                        parts: messageParts // Assign parts (will be empty if no text/tools)
                     } as Message); // Add type assertion if necessary
 
                     // --- REMOVED: Logic for creating separate role: 'tool' messages ---
