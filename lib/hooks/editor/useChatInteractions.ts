@@ -31,26 +31,33 @@ interface ReloadOptions {
     // attachments are likely not needed for reload, omitting for now
 }
 
-// Define the return type for the hook
+// Define the return type for the hook - ADDED audio props
 interface UseChatInteractionsReturn {
     messages: Message[];
     setMessages: (messages: Message[]) => void;
     input: string;
     setInput: (input: string) => void;
     handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement> | React.ChangeEvent<HTMLInputElement>) => void;
-    handleSubmit: (event?: React.FormEvent<HTMLFormElement>) => Promise<void>; // Wrapped submit
+    handleSubmit: (event?: React.FormEvent<HTMLFormElement>, options?: { data?: any }) => Promise<void>; // Updated handleSubmit signature
     isLoading: boolean;
     reload: (options?: ReloadOptions | undefined) => Promise<string | null | undefined>;
-    stop: () => void;
+    stop: () => void; // Stop AI generation
     model: string;
     setModel: React.Dispatch<React.SetStateAction<string>>;
+    // --- NEW AUDIO PROPS --- 
+    isRecording: boolean;
+    isTranscribing: boolean;
+    micPermissionError: boolean;
+    startRecording: () => void;
+    stopRecording: (timedOut?: boolean) => void; // Make timedOut optional
+    // --- END NEW AUDIO PROPS ---
 }
 
 export function useChatInteractions({
     documentId,
     initialModel,
     editorRef,
-    uploadedImagePath, // ADDED BACK
+    uploadedImagePath,
     uploadedImageSignedUrl,
     isUploading,
     clearFileUploadPreview,
@@ -65,7 +72,7 @@ export function useChatInteractions({
     // Audio Recording State
     const [isRecording, setIsRecording] = useState<boolean>(false);
     const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-    const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+    const audioChunksRef = useRef<Blob[]>([]); // Use ref for chunks to avoid stale closures in recorder handlers
     const [recordingTimerId, setRecordingTimerId] = useState<NodeJS.Timeout | null>(null);
     const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
     const [micPermissionError, setMicPermissionError] = useState<boolean>(false);
@@ -84,7 +91,7 @@ export function useChatInteractions({
         handleSubmit: originalHandleSubmit,
         isLoading,
         reload,
-        stop,
+        stop: stopAiGeneration, // Renamed to avoid conflict
         setMessages,
         setInput,
     } = useChat({
@@ -130,42 +137,71 @@ export function useChatInteractions({
         return contextData;
     }, [editorRef]);
 
-    // --- Wrapped Submit Handler ---
-    const handleSubmit = useCallback(async (event?: React.FormEvent<HTMLFormElement>) => {
+    // --- Wrapped Submit Handler (Updated Signature) ---
+    const handleSubmit = useCallback(async (event?: React.FormEvent<HTMLFormElement>, options?: { data?: any }) => {
         if (event) event.preventDefault();
         if (!documentId) { toast.error("Cannot send message: Document context missing."); return; }
 
+        // Merge incoming data (like audio details) with standard data
+        const requestData = options?.data || {}; 
+
         const contextPrefix = followUpContext ? `${followUpContext}\n\n---\n\n` : '';
-        const finalInput = contextPrefix + input;
-        const signedUrlToSend = uploadedImageSignedUrl;
-        const imagePathForDb = uploadedImagePath;
+        // If input came from audio, use that content directly, otherwise use the text input state
+        const finalInput = requestData.inputMethod === 'audio' ? requestData.transcription : (contextPrefix + input);
+        const signedUrlToSend = requestData.inputMethod === 'audio' ? null : uploadedImageSignedUrl; // Don't send image if input is audio
+        const imagePathForDb = requestData.inputMethod === 'audio' ? null : uploadedImagePath;
         const currentModel = model;
 
-        if (isLoading || isUploading || (!finalInput.trim() && !signedUrlToSend)) {
+        if (isLoading || isUploading || (!finalInput?.trim() && !signedUrlToSend)) {
              console.log('[useChatInteractions handleSubmit] Submission prevented:', { isLoading, isUploading, finalInput, signedUrlToSend });
             return;
         }
 
         const editorContextData = await getEditorContext();
-        const isSummarizationTask = /\b(summar(y|ize|ies)|bullet|points?|outline|sources?|citations?)\b/i.test(finalInput) && finalInput.length > 25;
+        // Check finalInput for summarization hint, not necessarily the text input state
+        const isSummarizationTask = finalInput ? (/(summar(y|ize|ies)|bullet|points?|outline|sources?|citations?)/i.test(finalInput) && finalInput.length > 25) : false;
 
         try {
-            // --- Save user message to DB (existing logic) ---
-            console.log(`[useChatInteractions handleSubmit] Saving user message to DB. Image path: ${imagePathForDb}`);
+            // --- Save user message to DB ---
+            console.log(`[useChatInteractions handleSubmit] Saving user message to DB. Input Method: ${requestData.inputMethod || 'text'}, Image path: ${imagePathForDb}`);
             const saveMessageResponse = await fetch(`/api/documents/${documentId}/messages`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ role: 'user', content: finalInput.trim() || null, imageUrlPath: imagePathForDb }),
+                // Send finalInput (which could be transcription), image path, and input method metadata
+                body: JSON.stringify({ 
+                    role: 'user', 
+                    content: finalInput?.trim() || null, 
+                    imageUrlPath: imagePathForDb,
+                    metadata: { input_method: requestData.inputMethod || 'text' } // Save input method
+                }), 
             });
             if (!saveMessageResponse.ok) {
                 const errorData = await saveMessageResponse.json().catch(() => ({}));
                 throw new Error(errorData.error?.message || `Failed to save message (${saveMessageResponse.status})`);
             }
-            await saveMessageResponse.json();
-            console.log('[useChatInteractions handleSubmit] User message saved.');
+            const savedMessageData = await saveMessageResponse.json();
+            const savedUserMessageId = savedMessageData?.message?.id; // Assuming response structure
+            console.log('[useChatInteractions handleSubmit] User message saved. ID:', savedUserMessageId);
             // --- End Save user message ---
 
-            // Prepare attachments for optimistic UI update using the SIGNED URL
+            // --- Prepare Tool Call Logging (if audio) --- 
+            if (requestData.inputMethod === 'audio' && savedUserMessageId && requestData.whisperDetails) {
+                console.log('[handleSubmit] Logging Whisper tool call...');
+                fetch('/api/chat/log-tool-call', { // Assuming a dedicated endpoint for simplicity
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message_id: savedUserMessageId,
+                        tool_name: 'whisper_transcription',
+                        tool_input: { duration_ms: requestData.whisperDetails.duration_ms },
+                        tool_output: { status: 'success', cost: requestData.whisperDetails.cost_estimate }
+                    })
+                }).catch(err => console.error("Failed to log Whisper tool call:", err)); 
+                // Don't block submission on logging failure
+            }
+            // --- End Tool Call Logging ---
+
+            // Prepare attachments for optimistic UI update (only if NOT audio input)
             const attachmentsForOptimisticUI = signedUrlToSend ? [
                 {
                     contentType: 'image/*',
@@ -175,22 +211,147 @@ export function useChatInteractions({
             ] : undefined;
 
             const submitOptions = {
-                data: { model: currentModel, documentId, ...editorContextData, firstImageSignedUrl: signedUrlToSend, taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined },
+                // Pass merged data, ensuring editor context is included
+                data: { 
+                    model: currentModel, 
+                    documentId, 
+                    ...editorContextData, 
+                    firstImageSignedUrl: signedUrlToSend, 
+                    taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined,
+                    // Pass audio-related data for backend processing (if needed beyond logging)
+                    // inputMethod: requestData.inputMethod, 
+                    // whisperDetails: requestData.whisperDetails,
+                },
                 options: { experimental_attachments: attachmentsForOptimisticUI }
             };
 
-            // --- Restore original submit logic --- 
-            console.log('[handleSubmit] Calling original useChat submit...');
-            originalHandleSubmit(event, { ...submitOptions, data: submitOptions.data as any });
-            clearFileUploadPreview();
-            setFollowUpContext(null);
-            // --- End Restore original submit logic ---
+            // --- Call original useChat submit --- 
+            console.log('[handleSubmit] Calling original useChat submit with options:', submitOptions);
+            // Use the raw 'finalInput' for the message content sent to the AI service
+            // Ensure the message object structure matches what useChat expects
+            const userMessageForAi: Message = { 
+                id: savedUserMessageId || `temp-user-${Date.now()}`, // Use saved ID or a temporary one
+                role: 'user', 
+                content: finalInput?.trim() || '', // The actual content (text or transcription)
+                createdAt: new Date(),
+                // We handle attachments via submitOptions.options.experimental_attachments
+                // tool_calls: ... (if we were invoking a tool *from* the user message directly)
+            };
+            // Append the user message *manually* first, then call original submit WITHOUT input
+            // This ensures the message content matches 'finalInput' precisely
+            setMessages([...messages, userMessageForAi]);
+            originalHandleSubmit(undefined, { // Pass undefined for event, submitOptions for options/data
+                 ...submitOptions, 
+                 data: submitOptions.data as any // Pass data payload
+             }); 
+            setInput(''); // Clear text input after submission
+            clearFileUploadPreview(); // Clear file preview
+            setFollowUpContext(null); // Clear follow-up context
+            // --- End Call original useChat submit ---
 
         } catch (saveError: any) {
              console.error("[useChatInteractions handleSubmit] Error saving user message or submitting:", saveError);
              toast.error(`Failed to send message: ${saveError.message}`);
         }
-    }, [documentId, followUpContext, input, model, uploadedImagePath, uploadedImageSignedUrl, isLoading, isUploading, getEditorContext, originalHandleSubmit, clearFileUploadPreview, setFollowUpContext]);
+    }, [documentId, followUpContext, input, model, uploadedImagePath, uploadedImageSignedUrl, isLoading, isUploading, getEditorContext, originalHandleSubmit, clearFileUploadPreview, setFollowUpContext, setInput, messages, setMessages]); // Added dependencies
+
+    // --- Audio Processing Placeholder ---
+    const handleProcessRecordedAudio = useCallback(async () => {
+        console.log("handleProcessRecordedAudio called");
+        // Implementation in Step 1.5
+    }, []);
+
+    // --- Start Recording Logic (NEW) ---
+    const handleStartRecording = useCallback(async () => {
+        console.log("Attempting to start recording...");
+        setMicPermissionError(false); // Reset error state
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+            toast.error("Audio recording is not supported by this browser.");
+            console.error("getUserMedia not supported");
+            setMicPermissionError(true); // Set error state
+            return;
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log("Microphone access granted.");
+
+            // Select MIME type
+            const options: MediaRecorderOptions = {};
+            const preferredType = 'audio/webm';
+            if (MediaRecorder.isTypeSupported(preferredType)) {
+                options.mimeType = preferredType;
+                console.log(`Using preferred MIME type: ${preferredType}`);
+            } else {
+                console.log(`Preferred MIME type ${preferredType} not supported, using browser default.`);
+            }
+
+            const recorder = new MediaRecorder(stream, options);
+            audioChunksRef.current = []; // Clear previous chunks using ref
+
+            recorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                    console.log(`Audio chunk received, size: ${event.data.size}, total chunks: ${audioChunksRef.current.length}`);
+                }
+            };
+
+            recorder.onstop = () => {
+                console.log("MediaRecorder stopped.");
+                // Call the processing function when recording stops
+                handleProcessRecordedAudio(); 
+                 // Clean up stream tracks
+                stream.getTracks().forEach(track => track.stop());
+                setMediaRecorder(null); // Clear recorder instance from state
+            };
+            
+            recorder.onerror = (event) => {
+                console.error("MediaRecorder error:", event);
+                toast.error(`Recording error: ${ (event as any)?.error?.name || 'Unknown error' }`);
+                // Ensure recording state is reset even if onstop doesn't fire reliably on error
+                setIsRecording(false);
+                setMediaRecorder(null);
+                stream.getTracks().forEach(track => track.stop()); // Clean up stream tracks
+                 if (recordingTimerId) clearTimeout(recordingTimerId); // Clear timer
+                setRecordingTimerId(null);
+            };
+
+            setMediaRecorder(recorder); // Store recorder instance
+            recorder.start();
+            setIsRecording(true);
+            console.log("Recording started. State:", recorder.state);
+
+            // Start 30-second timer
+            const timerId = setTimeout(() => {
+                console.log("Recording timer (30s) finished.");
+                // Need to call handleStopRecording to ensure cleanup and state change
+                handleStopRecording(true); // Pass true for timedOut 
+            }, 30000); // 30 seconds
+            setRecordingTimerId(timerId);
+            console.log(`Recording timer set with ID: ${timerId}`);
+
+        } catch (err: any) {
+            console.error("Error getting user media or starting recorder:", err);
+            let errorMsg = "Could not start recording.";
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                errorMsg = "Microphone permission denied.";
+            } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+                errorMsg = "No microphone found.";
+            } else {
+                errorMsg = `Mic Error: ${err.name || 'Unknown'}`;
+            }
+            toast.error(errorMsg);
+            setMicPermissionError(true);
+            setIsRecording(false); // Ensure recording state is false on error
+        }
+    }, [handleProcessRecordedAudio, recordingTimerId]); // Added handleProcessRecordedAudio, recordingTimerId dependencies
+
+    // --- Stop Recording Logic Placeholder (NEW) ---
+    const handleStopRecording = useCallback((timedOut = false) => {
+        console.log(`handleStopRecording called. Timed out: ${timedOut}`);
+        // Implementation in Step 1.4
+    }, []);
 
     // --- Initial Message Processing ---
     useEffect(() => {
@@ -208,12 +369,13 @@ export function useChatInteractions({
 
     // --- Auto-Submit Initial Message ---
     useEffect(() => {
-        if (pendingInitialSubmission && input === pendingInitialSubmission && !isLoading) {
+        if (pendingInitialSubmission && input === pendingInitialSubmission && !isLoading && !isRecording && !isTranscribing) { // Also check recording states
             handleSubmit(undefined);
             setPendingInitialSubmission(null);
         }
-    }, [input, pendingInitialSubmission, isLoading, handleSubmit]); 
+    }, [input, pendingInitialSubmission, isLoading, isRecording, isTranscribing, handleSubmit]); // Added recording states
 
+    // Return updated hook values
     return {
         messages,
         setMessages,
@@ -223,8 +385,15 @@ export function useChatInteractions({
         handleSubmit,
         isLoading,
         reload,
-        stop,
+        stop: stopAiGeneration, // Return renamed stop function
         model,
         setModel,
+        // --- NEW AUDIO PROPS ---
+        isRecording,
+        isTranscribing,
+        micPermissionError,
+        startRecording: handleStartRecording, // Export the actual function
+        stopRecording: handleStopRecording,   // Export the placeholder
+        // --- END NEW AUDIO PROPS ---
     };
 } 
