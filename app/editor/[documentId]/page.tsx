@@ -16,6 +16,7 @@ import Link from 'next/link';
 
 // UI/State Libraries
 import { useChat, type Message } from 'ai/react'; // Vercel AI SDK
+import { type ToolInvocation } from '@ai-sdk/ui-utils'; // <-- ADD Import ToolInvocation from here
 import { toast } from 'sonner'; // Notifications
 import { AnimatePresence, motion } from 'framer-motion'; // Animations
 
@@ -490,8 +491,13 @@ export default function EditorPage() {
     
     useEffect(() => { /* Effect for tool processing */
         const lastMessage = chatMessages[chatMessages.length - 1];
-        if (lastMessage?.role === 'assistant' && lastMessage.toolInvocations) {
-            const callsToProcess = lastMessage.toolInvocations.filter(tc => !processedToolCallIds.has(tc.toolCallId));
+        if (lastMessage?.role === 'assistant' && lastMessage.parts && lastMessage.parts.length > 0) {
+            const toolInvocationParts = lastMessage.parts.filter(
+              (part): part is { type: 'tool-invocation'; toolInvocation: ToolInvocation } => part.type === 'tool-invocation'
+            );
+            const currentToolInvocations = toolInvocationParts.map(part => part.toolInvocation);
+
+            const callsToProcess = currentToolInvocations.filter(tc => !processedToolCallIds.has(tc.toolCallId));
             if (callsToProcess.length > 0) {
                 const newProcessedIds = new Set(processedToolCallIds);
                 callsToProcess.forEach(toolCall => {

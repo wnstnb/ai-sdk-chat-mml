@@ -85,52 +85,44 @@ export function useInitialChatMessages({
                     continue; // Move to next message
                 }
 
-                // 2. Handle Assistant messages
+                // 2. Handle Assistant messages - REVISED to use parts array
                 if (msg.role === 'assistant') {
                     const hasToolCalls = Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
+                    const messageParts: any[] = []; // Initialize parts array
 
-                    // Add the assistant message itself
+                    // Add text part if content exists
+                    if (msg.content && msg.content.trim() !== '') {
+                         messageParts.push({ type: 'text', text: msg.content });
+                    }
+
+                    // Add tool invocation parts if tool calls exist
+                    if (hasToolCalls) {
+                        msg.tool_calls!.forEach(tc => {
+                            // Create ToolInvocation object in 'result' state
+                            const toolInvocation = {
+                                state: 'result' as const, // Mark as complete
+                                toolCallId: tc.tool_call_id, 
+                                toolName: tc.tool_name,
+                                args: tc.tool_input,     // From DB
+                                result: tc.tool_output   // From DB (can be null if not saved/no output)
+                            };
+                            messageParts.push({ type: 'tool-invocation', toolInvocation });
+                        });
+                    }
+                    
+                    // Add the assistant message with reconstructed parts
                     formattedMessages.push({
                         id: msg.id,
                         role: 'assistant',
-                        content: msg.content || '', // Text content from assistant
+                        // Ensure content is consistent (e.g., use text part's content or empty string)
+                        content: msg.content || '', 
                         createdAt: new Date(msg.created_at),
-                        // Use toolCalls property to align with CoreMessage/streamText expectations
-                        ...(hasToolCalls && {
-                             toolCalls: msg.tool_calls!.map(tc => ({ // Use toolCalls
-                                toolCallId: tc.tool_call_id,
-                                toolName: tc.tool_name,
-                                args: tc.tool_input // Assuming tool_input is the args object
-                            }))
-                        }),
-                    } as Message); // Add type assertion
+                        // Assign the reconstructed parts array
+                        parts: messageParts.length > 0 ? messageParts : undefined 
+                    } as Message); // Add type assertion if necessary
 
-                    // 3. Add corresponding Tool messages for each tool call result
-                    if (hasToolCalls) {
-                        msg.tool_calls!.forEach(tc => {
-                            // Check if the tool call has output (meaning it was executed and has a result)
-                            if (tc.tool_output !== null && tc.tool_output !== undefined) {
-                                formattedMessages.push({
-                                    // Generate a unique-ish ID for the tool message
-                                    id: `${msg.id}-tool-${tc.tool_call_id}`,
-                                    role: 'tool',
-                                    // Vercel SDK expects tool content as stringified array of ToolContentPart
-                                    // Let's ensure the structure is correct
-                                    content: JSON.stringify([{
-                                        type: 'tool-result',
-                                        toolCallId: tc.tool_call_id,
-                                        toolName: tc.tool_name,
-                                        result: tc.tool_output // Use tool_output as the result
-                                    }]),
-                                    createdAt: new Date(tc.created_at), // Use tool call creation time
-                                } as unknown as Message); // Add type assertion via unknown
-                            } else {
-                                // It's normal for tool_output to be null if the result hasn't been saved yet
-                                // or if the call didn't produce output. Only log if unexpected.
-                                // console.warn(`[useInitialChatMessages] Tool call ${tc.tool_call_id} for message ${msg.id} has no output. Skipping tool result message.`);
-                            }
-                        });
-                    }
+                    // --- REMOVED: Logic for creating separate role: 'tool' messages ---
+                    // The results are now embedded in the assistant message's 'parts' array.
                 }
             }
             // --- END REVISED MESSAGE FORMATTING ---
