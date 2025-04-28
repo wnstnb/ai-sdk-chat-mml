@@ -2,12 +2,13 @@
 
 import { openai } from "@ai-sdk/openai";
 import { google } from "@ai-sdk/google";
-import { LanguageModel, streamText, CoreMessage, tool } from "ai";
+import { LanguageModel, streamText, CoreMessage, tool, ToolCallPart, ToolResultPart } from "ai";
 import { z } from 'zod';
 import { webSearch } from "@/lib/tools/exa-search"; // Import the webSearch tool
 import { createSupabaseServerClient } from '@/lib/supabase/server'; // Supabase server client
 import { Message as SupabaseMessage, ToolCall as SupabaseToolCall } from '@/types/supabase'; // DB types
 import { createClient } from '@supabase/supabase-js'; // <-- ADDED for explicit client for signed URLs if needed
+import crypto from 'crypto'; // Import crypto for UUID generation
 
 // Define Zod schemas for the editor tools based on PRD
 const addContentSchema = z.object({
@@ -167,32 +168,47 @@ const SIGNED_URL_EXPIRES_IN = 60 * 5; // 5 minutes expiration for image URLs sen
 export async function POST(req: Request) {
     const { supabaseUrl, supabaseServiceKey } = getSupabaseCredentials();
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey); // Admin client for storage operations
-
+    
+    console.log("\n--- [API Chat] POST Request Received ---");
     // Read messages and data from the request body
-    const { messages: originalMessages, data: requestData } = await req.json();
+    let requestBody: any;
+    try {
+        requestBody = await req.json();
+    } catch (error: any) {
+        console.error("[API Chat] Failed to parse request body:", error);
+        return new Response(JSON.stringify({ error: { code: 'INVALID_REQUEST_BODY', message: 'Could not parse JSON body.' } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    const { messages: originalMessages, data: requestData } = requestBody;
+    console.log("[API Chat] Raw Request Data:", JSON.stringify(requestData, null, 2));
+    console.log(`[API Chat] Received ${originalMessages?.length ?? 0} messages in initial request.`);
 
-    // Extract relevant data, including the potential image SIGNED URL
+    // Extract relevant data, including the potential image SIGNED URL and potential audio details
     const {
         editorBlocksContext,
         model: modelIdFromData,
         documentId,
         firstImageSignedUrl, // <-- UPDATED: Expect signed URL
-        taskHint
+        taskHint,
+        inputMethod, // <-- Expect inputMethod ('audio')
+        whisperDetails // <-- Expect whisperDetails object
     } = requestData || {};
 
     // --- Existing Validation (Document ID, User Session) ---
     if (!documentId || typeof documentId !== 'string') {
          return new Response(JSON.stringify({ error: { code: 'INVALID_INPUT', message: 'Missing or invalid documentId in request data.' } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
-    const supabaseUserClient = createSupabaseServerClient(); // Use user client for auth check
-    const { data: { session }, error: sessionError } = await supabaseUserClient.auth.getSession();
-    if (sessionError || !session) {
-        const code = sessionError ? 'SERVER_ERROR' : 'UNAUTHENTICATED';
-        const message = sessionError?.message || 'User not authenticated.';
-        const status = sessionError ? 500 : 401;
+    const supabase = createSupabaseServerClient(); // Use user client for auth check and data saving
+    // Use getUser() instead of getSession() for server-side security
+    const { data: { user }, error: userError } = await supabase.auth.getUser(); 
+
+    if (userError || !user) {
+        const code = userError ? 'SERVER_ERROR' : 'UNAUTHENTICATED';
+        const message = userError?.message || 'User not authenticated.';
+        const status = userError ? 500 : 401;
+        console.error(`[API Chat] Auth Error (${status}): ${message}`);
         return new Response(JSON.stringify({ error: { code, message } }), { status, headers: { 'Content-Type': 'application/json' } });
     }
-    const userId = session.user.id;
+    const userId = user.id;
     // --- End Validation ---
 
 
@@ -249,6 +265,90 @@ export async function POST(req: Request) {
              // Log and proceed without image if URL is invalid
         }
     }
+
+    // --- NEW: Save User Message & Whisper Log FIRST if inputMethod was 'audio' ---
+    let savedUserMessageId: string | null = null; // Keep track if we saved it here
+
+    if (inputMethod === 'audio' && whisperDetails && Array.isArray(originalMessages) && originalMessages.length > 0) {
+        const lastClientMessage = originalMessages[originalMessages.length - 1];
+
+        // Extract user message content - Assuming the last message is the user's transcription
+        let userContentText: string = '';
+        if (lastClientMessage && lastClientMessage.role === 'user') {
+           if (typeof lastClientMessage.content === 'string') {
+               userContentText = lastClientMessage.content;
+           } else {
+               console.warn("[API Chat Pre-Save] Could not extract string content from last user message for audio input.");
+           }
+        } else {
+            console.warn("[API Chat Pre-Save] Last message was not from user, cannot save audio input message.");
+        }
+
+        if (userContentText) {
+            console.log(`[API Chat Pre-Save] Saving user message (inputMethod: audio). Content: "${userContentText?.slice(0, 50)}..."`);
+            const userMessageData: Omit<SupabaseMessage, 'id' | 'created_at'> = {
+                document_id: documentId,
+                user_id: userId,
+                role: 'user',
+                content: userContentText,
+                image_url: null,
+                metadata: { input_method: 'audio' },
+            };
+
+            const { data: savedUserData, error: userMsgError } = await supabase
+                .from('messages')
+                .insert(userMessageData)
+                .select('id')
+                .single();
+
+            if (userMsgError || !savedUserData?.id) {
+                console.error(`[API Chat Pre-Save] Error saving user message for audio input:`, userMsgError);
+            } else {
+                savedUserMessageId = savedUserData.id; // Assign the string ID
+                console.log(`[API Chat Pre-Save] Saved user message ID: ${savedUserMessageId} (Audio Input)`);
+
+                // --- Insert Whisper log (only if user message was saved successfully) ---
+                if (typeof savedUserMessageId === 'string') {
+                    const whisperToolCallId = `whisper-${crypto.randomUUID()}`;
+                    // Ensure whisperDetails has the expected properties before accessing them
+                    const fileSize = typeof whisperDetails.file_size_bytes === 'number' ? whisperDetails.file_size_bytes : null;
+                    const fileType = typeof whisperDetails.file_type === 'string' ? whisperDetails.file_type : null;
+                    const costEstimate = typeof whisperDetails.cost_estimate === 'number' ? whisperDetails.cost_estimate : null;
+
+                    const toolInputJson = {
+                        file_size_bytes: fileSize,
+                        file_type: fileType,
+                    };
+                    const toolOutputJson = {
+                        status: "success",
+                        cost_estimate: costEstimate,
+                    };
+
+                    const whisperToolCallData: Omit<SupabaseToolCall, 'id' | 'created_at'> = {
+                        message_id: savedUserMessageId, // Already confirmed it's a string here
+                        user_id: userId,
+                        tool_name: 'whisper_transcription',
+                        tool_call_id: whisperToolCallId,
+                        tool_input: toolInputJson,
+                        tool_output: toolOutputJson,
+                    };
+
+                    const { error: whisperLogError } = await supabase
+                        .from('tool_calls')
+                        .insert(whisperToolCallData);
+
+                    if (whisperLogError) {
+                        console.error(`[API Chat Pre-Save] SUPABASE WHISPER LOG INSERT ERROR for user message ${savedUserMessageId}:`, whisperLogError);
+                    } else {
+                        console.log(`[API Chat Pre-Save] Successfully saved Whisper tool log for user message ${savedUserMessageId}.`);
+                    }
+                } else {
+                    console.error("[API Chat Pre-Save] Logic error: savedUserMessageId is null after supposedly successful user message save.");
+                }
+            }
+        }
+    }
+    // --- END NEW Pre-Save Logic ---
 
     // --- REVISED Message Processing Loop (Take 2) ---
     // Input: originalMessages are now in the ai/react Message[] format
@@ -417,142 +517,114 @@ export async function POST(req: Request) {
         maxSteps: 10, // Increased maxSteps slightly to accommodate potential multi-step (search then edit)
          ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
 
-        // --- onFinish callback for saving assistant response ---
+        // --- onFinish callback MODIFIED for saving user message + Whisper log first ---
          async onFinish({ usage, response }) {
             console.log(`[onFinish] Stream finished. Usage: ${JSON.stringify(usage)}`);
-            // --- DEBUG: Log entire response structure ---
-            // console.log('[onFinish] Full response object:', JSON.stringify(response, null, 2));
-            // --- END DEBUG ---
 
-            // --- NEW: Prepare metadata object ONCE for this turn ---
             const assistantMetadata = {
-                usage: usage, // From onFinish args
-                raw_content: response.messages // The full message sequence from this turn
+                usage: usage,
+                raw_content: response.messages
             };
-            // --- END NEW ---
 
-            const allResponseMessages = response.messages;
-            const supabase = createSupabaseServerClient(); // Ensure supabase client is initialized
-            const userId = session?.user?.id; // Ensure userId is available
+            const allResponseMessages: CoreMessage[] = response.messages;
+            // Note: Supabase client (user scope) is already available from the outer scope
 
             if (!userId) {
-                console.error("[onFinish] Cannot save messages: User ID not found.");
+                // This check might be redundant now but kept as a safeguard
+                console.error("[onFinish] Cannot save messages: User ID somehow became unavailable.");
                 return;
             }
             if (allResponseMessages.length === 0) {
-                // console.log("[onFinish] No messages in response to save.");
                 return;
             }
 
             try {
+                // --- Save Assistant Message(s) and their Tool Calls ---
                 for (let i = 0; i < allResponseMessages.length; i++) {
-                    const message = allResponseMessages[i]; // message is CoreMessage
+                    const message = allResponseMessages[i];
 
+                    // Skip non-assistant messages
                     if (message.role !== 'assistant') { continue; }
 
-                    // console.log(`[onFinish] Processing assistant message index ${i}, ID: ${message.id}`);
-
-                    // --- Extract tool calls from content --- CORRECTED LOGIC ---
-                    let assistantToolCalls: Array<{ toolCallId: string; toolName: string; args: any }> = [];
+                    // Extract tool calls (if any) from assistant message content
+                    let assistantToolCalls: ToolCallPart[] = [];
                     if (Array.isArray(message.content)) {
-                        assistantToolCalls = message.content
-                            .filter((part): part is { type: 'tool-call'; toolCallId: string; toolName: string; args: any } => part.type === 'tool-call')
-                            .map(part => ({
-                                toolCallId: part.toolCallId,
-                                toolName: part.toolName,
-                                args: part.args
-                            }));
+                        assistantToolCalls = message.content.filter((part): part is ToolCallPart => part.type === 'tool-call');
                     }
                     const hasToolCalls = assistantToolCalls.length > 0;
-                    // --- END Tool Call Extraction ---
 
-                    // --- Save Assistant Message Content (extract text part if content is array) ---
-                    let plainTextContent: string | null = null;
+                    // Save Assistant Message Content
+                    // Initialize to empty string
+                    let plainTextContent: string = '';
                     if (typeof message.content === 'string') {
-                        plainTextContent = message.content.trim() || null;
+                        plainTextContent = message.content.trim() || ''; // Ensure empty string if trim results in falsy
                     } else if (Array.isArray(message.content)) {
                         const textPart = message.content.find((part): part is { type: 'text'; text: string } => part.type === 'text');
-                        plainTextContent = textPart?.text?.trim() || null;
-                         // If content only had tool calls, plainTextContent will correctly be null here
+                        plainTextContent = textPart?.text?.trim() ?? ''; // Use empty string if not found or empty after trim
                     }
+
                     const messageData: Omit<SupabaseMessage, 'id' | 'created_at'> = {
                         document_id: documentId,
                         user_id: userId,
                         role: 'assistant',
-                        content: plainTextContent, // Saves null if only tool calls were present
+                        content: plainTextContent, // Now guaranteed to be string
                         image_url: null,
-                        metadata: assistantMetadata, // <-- Assign the metadata object
+                        metadata: assistantMetadata,
                     };
                     const { data: savedMsgData, error: msgError } = await supabase.from('messages').insert(messageData).select('id').single();
 
                     if (msgError || !savedMsgData?.id) {
                         console.error(`[onFinish] Error saving assistant message content or getting ID:`, msgError);
-                        continue; // Skip to next message in response
+                        continue;
                     }
-                    const savedMessageId = savedMsgData.id;
-                    // console.log(`[onFinish] Saved assistant message ID: ${savedMessageId}. Content saved: "${plainTextContent?.slice(0, 50)}..."`);
+                    const savedAssistantMessageId = savedMsgData.id;
+                    console.log(`[onFinish] Saved assistant message ID: ${savedAssistantMessageId}.`);
 
-
-                    // --- REVISED (Take 3): Save Tool Calls WITH Output ---
+                    // Save Tool Calls with Output
                     if (hasToolCalls) {
-                        // Use the extracted assistantToolCalls
-                        // console.log(`[onFinish] Assistant message ${savedMessageId} HAS ${assistantToolCalls.length} toolCalls (extracted from content):`, JSON.stringify(assistantToolCalls));
                         const toolCallsToSave: Omit<SupabaseToolCall, 'id' | 'created_at'>[] = [];
 
-                        // Use the extracted assistantToolCalls array
                         for (const toolCall of assistantToolCalls) {
                             let toolOutput: any = null;
-                            // console.log(`[onFinish] > Searching for result for toolCallId: ${toolCall.toolCallId}`);
+                            // Find the corresponding tool result in subsequent messages
                             for (let j = i + 1; j < allResponseMessages.length; j++) {
                                 const potentialToolMsg = allResponseMessages[j];
                                 if (potentialToolMsg.role === 'tool' && Array.isArray(potentialToolMsg.content)) {
-                                     // console.log(`[onFinish] >> Found potential tool message at index ${j}`);
-                                     const toolResultPart = potentialToolMsg.content.find(part =>
+                                    const toolResultPart = potentialToolMsg.content.find((part): part is ToolResultPart =>
                                         part.type === 'tool-result' && part.toolCallId === toolCall.toolCallId
                                     );
                                     if (toolResultPart) {
                                         toolOutput = toolResultPart.result;
-                                        // console.log(`[onFinish] >>> Found matching toolResultPart! Output:`, JSON.stringify(toolOutput));
                                         break;
                                     }
                                 }
-                                // Add type assertion to satisfy build-time type checker
-                                if ((potentialToolMsg.role as string) === 'assistant' || (potentialToolMsg.role as string) === 'user') {
-                                    // console.log(`[onFinish] >> Stopped search for ${toolCall.toolCallId} result at index ${j} (role: ${potentialToolMsg.role})`);
+                                // Stop searching if we hit the next user/assistant message
+                                if (potentialToolMsg.role === 'assistant' || potentialToolMsg.role === 'user') {
                                     break;
                                 }
                             }
 
-                            if (toolOutput === null) {
-                                 // console.warn(`[onFinish] Could not find tool_output for tool call ${toolCall.toolCallId} associated with message ${savedMessageId}. Saving with null output.`);
-                            }
-
                             toolCallsToSave.push({
-                                message_id: savedMessageId,
+                                message_id: savedAssistantMessageId,
                                 user_id: userId,
-                                tool_call_id: toolCall.toolCallId, // Use data from extracted call
-                                tool_name: toolCall.toolName,     // Use data from extracted call
-                                tool_input: toolCall.args,        // Use data from extracted call
-                                tool_output: toolOutput
+                                tool_call_id: toolCall.toolCallId,
+                                tool_name: toolCall.toolName,
+                                tool_input: toolCall.args,
+                                tool_output: toolOutput // Will be null if not found
                             });
                         }
 
-                        // console.log(`[onFinish] Attempting to insert ${toolCallsToSave.length} tool calls for message ${savedMessageId}:`, JSON.stringify(toolCallsToSave));
                         if (toolCallsToSave.length > 0) {
                             const { error: toolError } = await supabase
                                 .from('tool_calls')
                                 .insert(toolCallsToSave);
 
                             if (toolError) {
-                                console.error(`[onFinish] SUPABASE TOOL INSERT ERROR for message ${savedMessageId}:`, toolError);
+                                console.error(`[onFinish] SUPABASE TOOL INSERT ERROR for assistant message ${savedAssistantMessageId}:`, toolError);
                             } else {
-                                // console.log(`[onFinish] Successfully saved tool calls for message ${savedMessageId}.`);
+                                console.log(`[onFinish] Successfully saved ${toolCallsToSave.length} tool calls for assistant message ${savedAssistantMessageId}.`);
                             }
-                        } else {
-                             // console.log(`[onFinish] No tool calls prepared for saving for message ${savedMessageId}.`);
                         }
-                    } else {
-                        // console.log(`[onFinish] Assistant message ${savedMessageId} had no tool calls in its content.`); // Updated log
                     }
                 }
             } catch (dbError: any) {

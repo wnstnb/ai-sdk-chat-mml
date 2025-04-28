@@ -67,6 +67,8 @@ export function useChatInteractions({
     // --- Internal State ---
     const [model, setModel] = useState<string>(initialModel);
     const [pendingInitialSubmission, setPendingInitialSubmission] = useState<string | null>(null);
+    const [pendingSubmissionMethod, setPendingSubmissionMethod] = useState<'audio' | 'text' | null>(null); // Track pending type
+    const [pendingWhisperDetails, setPendingWhisperDetails] = useState<any | null>(null); // Store whisper details
     const initialMsgProcessedRef = useRef(false);
 
     // Audio Recording State
@@ -142,14 +144,34 @@ export function useChatInteractions({
         if (event) event.preventDefault();
         if (!documentId) { toast.error("Cannot send message: Document context missing."); return; }
 
-        // Merge incoming data (like audio details) with standard data
-        const requestData = options?.data || {}; 
+        // --- NEW: Check for pending audio submission ---
+        let isAudioSubmission = false;
+        let audioWhisperDetails: any = null;
+        // Check if the current input matches the pending one AND the method is audio
+        if (pendingSubmissionMethod === 'audio' && input === pendingInitialSubmission && input.trim() !== '') {
+            isAudioSubmission = true;
+            audioWhisperDetails = pendingWhisperDetails;
+            console.log("[handleSubmit] Detected pending audio submission.");
+            // Reset pending state related to audio - pendingInitialSubmission will be cleared by auto-submit effect later
+            setPendingSubmissionMethod(null);
+            setPendingWhisperDetails(null);
+        } else if (pendingSubmissionMethod === 'audio') {
+            // If method is audio but input doesn't match (e.g., user edited), clear audio state
+            console.log("[handleSubmit] Pending audio submission detected but input changed. Resetting audio state.");
+            setPendingSubmissionMethod(null);
+            setPendingWhisperDetails(null);
+        }
+        // --- END NEW Check ---
+
+        // Note: `options.data` might be passed by manual tool calls in future,
+        // for now, we prioritize the pending audio state detected above.
+        // const requestData = options?.data || {}; 
 
         const contextPrefix = followUpContext ? `${followUpContext}\n\n---\n\n` : '';
         // If input came from audio, use that content directly, otherwise use the text input state
-        const finalInput = requestData.inputMethod === 'audio' ? requestData.transcription : (contextPrefix + input);
-        const signedUrlToSend = requestData.inputMethod === 'audio' ? null : uploadedImageSignedUrl; // Don't send image if input is audio
-        const imagePathForDb = requestData.inputMethod === 'audio' ? null : uploadedImagePath;
+        const finalInput = isAudioSubmission ? input : (contextPrefix + input); // Use current input if audio
+        const signedUrlToSend = isAudioSubmission ? null : uploadedImageSignedUrl; // Don't send image if input is audio
+        const imagePathForDb = isAudioSubmission ? null : uploadedImagePath; // Path only relevant for manual save, keep null for audio
         const currentModel = model;
 
         if (isLoading || isUploading || (!finalInput?.trim() && !signedUrlToSend)) {
@@ -158,48 +180,15 @@ export function useChatInteractions({
         }
 
         const editorContextData = await getEditorContext();
-        // Check finalInput for summarization hint, not necessarily the text input state
-        const isSummarizationTask = finalInput ? (/(summar(y|ize|ies)|bullet|points?|outline|sources?|citations?)/i.test(finalInput) && finalInput.length > 25) : false;
+        const isSummarizationTask = finalInput ? (/ (summar(y|ize|ies)|bullet|points?|outline|sources?|citations?) /i.test(finalInput) && finalInput.length > 25) : false;
 
         try {
-            // --- Save user message to DB ---
-            console.log(`[useChatInteractions handleSubmit] Saving user message to DB. Input Method: ${requestData.inputMethod || 'text'}, Image path: ${imagePathForDb}`);
-            const saveMessageResponse = await fetch(`/api/documents/${documentId}/messages`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                // Send finalInput (which could be transcription), image path, and input method metadata
-                body: JSON.stringify({ 
-                    role: 'user', 
-                    content: finalInput?.trim() || null, 
-                    imageUrlPath: imagePathForDb,
-                    metadata: { input_method: requestData.inputMethod || 'text' } // Save input method
-                }), 
-            });
-            if (!saveMessageResponse.ok) {
-                const errorData = await saveMessageResponse.json().catch(() => ({}));
-                throw new Error(errorData.error?.message || `Failed to save message (${saveMessageResponse.status})`);
-            }
-            const savedMessageData = await saveMessageResponse.json();
-            const savedUserMessageId = savedMessageData?.message?.id; // Assuming response structure
-            console.log('[useChatInteractions handleSubmit] User message saved. ID:', savedUserMessageId);
-            // --- End Save user message ---
+            // --- REMOVED: Manual user message saving via /api/documents/.../messages ---
+            // The backend /api/chat route now handles saving the user message
+            // when inputMethod === 'audio' is detected in the requestData passed below.
 
-            // --- Prepare Tool Call Logging (if audio) --- 
-            if (requestData.inputMethod === 'audio' && savedUserMessageId && requestData.whisperDetails) {
-                console.log('[handleSubmit] Logging Whisper tool call...');
-                fetch('/api/chat/log-tool-call', { // Assuming a dedicated endpoint for simplicity
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message_id: savedUserMessageId,
-                        tool_name: 'whisper_transcription',
-                        tool_input: { duration_ms: requestData.whisperDetails.duration_ms },
-                        tool_output: { status: 'success', cost: requestData.whisperDetails.cost_estimate }
-                    })
-                }).catch(err => console.error("Failed to log Whisper tool call:", err)); 
-                // Don't block submission on logging failure
-            }
-            // --- End Tool Call Logging ---
+            // --- REMOVED: Manual Whisper tool call logging ---
+            // The backend /api/chat route now handles this logging.
 
             // Prepare attachments for optimistic UI update (only if NOT audio input)
             const attachmentsForOptimisticUI = signedUrlToSend ? [
@@ -210,48 +199,75 @@ export function useChatInteractions({
                 }
             ] : undefined;
 
-            const submitOptions = {
-                // Pass merged data, ensuring editor context is included
-                data: { 
-                    model: currentModel, 
-                    documentId, 
-                    ...editorContextData, 
-                    firstImageSignedUrl: signedUrlToSend, 
-                    taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined,
-                    // Pass audio-related data for backend processing (if needed beyond logging)
-                    // inputMethod: requestData.inputMethod, 
-                    // whisperDetails: requestData.whisperDetails,
-                },
-                options: { experimental_attachments: attachmentsForOptimisticUI }
+            // Prepare data payload for the /api/chat call via originalHandleSubmit
+            const submitDataPayload = {
+                model: currentModel,
+                documentId,
+                ...editorContextData,
+                firstImageSignedUrl: signedUrlToSend,
+                taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined,
+                // ---> NEW: Conditionally add audio metadata <--- 
+                ...(isAudioSubmission && {
+                    inputMethod: 'audio',
+                    whisperDetails: audioWhisperDetails,
+                })
             };
 
-            // --- Call original useChat submit --- 
-            console.log('[handleSubmit] Calling original useChat submit with options:', submitOptions);
-            // Use the raw 'finalInput' for the message content sent to the AI service
-            // Ensure the message object structure matches what useChat expects
-            const userMessageForAi: Message = { 
-                id: savedUserMessageId || `temp-user-${Date.now()}`, // Use saved ID or a temporary one
-                role: 'user', 
-                content: finalInput?.trim() || '', // The actual content (text or transcription)
+            // ---> RE-ADD: Construct the user message object for useChat <---
+            const userMessageForAi: Message = {
+                id: `temp-user-${Date.now()}`,
+                role: 'user',
+                content: finalInput?.trim() || '', // Use finalInput (text or transcription)
                 createdAt: new Date(),
-                // We handle attachments via submitOptions.options.experimental_attachments
             };
-            // Pass the constructed message object as the first argument to originalHandleSubmit
-            // This allows useChat to handle the optimistic UI update correctly.
-            originalHandleSubmit(userMessageForAi as any, { 
-                 ...submitOptions, 
-                 data: submitOptions.data as any // Pass data payload
-             }); 
-            setInput(''); // Clear text input after submission
-            clearFileUploadPreview(); // Clear file preview
-            setFollowUpContext(null); // Clear follow-up context
+
+            // --- Call original useChat submit ---
+            // ---> NEW: Wrap in try...catch <---
+            try {
+                console.log('[handleSubmit] Preparing to call original useChat submit. Current isLoading state:', isLoading);
+                if (isLoading) {
+                    console.warn('[handleSubmit] Aborting call to originalHandleSubmit because isLoading is true!');
+                    toast.error("Chat is still processing the previous request.");
+                    return; // Explicitly prevent call if loading
+                }
+                console.log('[handleSubmit] Calling original useChat submit with message and payload:', { userMessageForAi, submitDataPayload });
+                
+                // ---> NEW: Conditionally construct options object <---
+                const submitOptions: { data: any; experimental_attachments?: any } = {
+                    data: submitDataPayload as any,
+                };
+                if (attachmentsForOptimisticUI) {
+                    submitOptions.experimental_attachments = attachmentsForOptimisticUI;
+                }
+                // --- End Conditional Options --- 
+                
+                // ---> REVERT: Pass the message object as first arg <---
+                originalHandleSubmit(userMessageForAi as any, submitOptions);
+                
+                // ---> Moved state clearing inside try block <---
+                setInput(''); // Clear text input after submission
+                clearFileUploadPreview(); // Clear file preview
+                setFollowUpContext(null); // Clear follow-up context
+                console.log('[handleSubmit] originalHandleSubmit called successfully (request potentially sent).');
+
+            } catch (submitHookError: any) {
+                 console.error("[handleSubmit] Error occurred *during* call to originalHandleSubmit:", submitHookError);
+                 toast.error(`Failed to initiate chat request: ${submitHookError.message || 'Unknown internal error'}`);
+            }
             // --- End Call original useChat submit ---
 
-        } catch (saveError: any) {
-             console.error("[useChatInteractions handleSubmit] Error saving user message or submitting:", saveError);
-             toast.error(`Failed to send message: ${saveError.message}`);
+        } catch (submitError: any) {
+             // Catch potential errors during getEditorContext (less likely now)
+             console.error("[useChatInteractions handleSubmit] Error during submission process (likely pre-submit):", submitError);
+             toast.error(`Failed to send message: ${submitError.message}`);
         }
-    }, [documentId, followUpContext, input, model, uploadedImagePath, uploadedImageSignedUrl, isLoading, isUploading, getEditorContext, originalHandleSubmit, clearFileUploadPreview, setFollowUpContext, setInput, messages, setMessages]); // Added dependencies
+    }, [
+        documentId, followUpContext, input, model, uploadedImagePath, uploadedImageSignedUrl,
+        isLoading, isUploading, getEditorContext, originalHandleSubmit, clearFileUploadPreview,
+        setFollowUpContext, setInput,
+        // ---> NEW: Add pending state dependencies <--- 
+        pendingInitialSubmission, pendingSubmissionMethod, pendingWhisperDetails
+    ]); // Removed messages, setMessages from deps
 
     // --- Audio Processing Logic (IMPLEMENTED) ---
     const handleProcessRecordedAudio = useCallback(async () => {
@@ -273,8 +289,9 @@ export function useChatInteractions({
         try {
             // Try to get mimeType from the recorder if available
             mimeType = mediaRecorder?.mimeType;
-            console.log(`Creating Blob with explicitly set mimeType: ${mimeType || 'not available'}`);
-            audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+            const effectiveMimeType = mimeType || 'audio/webm'; // Default to webm if not available
+            console.log(`Creating Blob with effective mimeType: ${effectiveMimeType}`);
+            audioBlob = new Blob(audioChunksRef.current, { type: effectiveMimeType });
 
              // Basic size check (e.g., < 1KB might be silence or glitch)
             if (audioBlob.size < 1024) {
@@ -290,10 +307,11 @@ export function useChatInteractions({
             console.log(`Audio Blob created. Size: ${audioBlob.size}, Type: ${audioBlob.type}`);
 
             const formData = new FormData();
-            // Use a specific filename, Whisper API needs it. Defaulting to 'audio.webm' if type is unknown
-            const fileName = `audio.${mimeType?.split('/')[1]?.split(';')[0] || 'webm'}`;
+            // Construct filename using the effectiveMimeType's subtype
+            const fileExtension = effectiveMimeType.split('/')[1]?.split(';')[0] || 'webm';
+            const fileName = `audio.${fileExtension}`;
             formData.append('audioFile', audioBlob, fileName);
-            console.log(`Appending blob to FormData with filename: ${fileName}`);
+            console.log(`Appending blob to FormData with filename: ${fileName}, type: ${effectiveMimeType}`);
 
             // Call the transcription API endpoint
             console.log("Sending audio to /api/chat/transcribe...");
@@ -316,19 +334,14 @@ export function useChatInteractions({
                 const transcribedText = result.transcription.trim();
                 if (transcribedText) {
                     console.log(`Transcription successful: "${transcribedText}"`);
-                    setInput(transcribedText); // Set the text input field
                     
-                    // Trigger chat submission with transcription and whisper details
-                    console.log("Triggering handleSubmit with transcribed text and details...");
-                    // Note: We pass undefined for the event object
-                    await handleSubmit(undefined, { 
-                        data: { 
-                            inputMethod: 'audio', 
-                            transcription: transcribedText, // Pass the text for saving
-                            whisperDetails: result.whisperDetails || {} // Pass details for logging
-                        } 
-                    });
-                    console.log("handleSubmit triggered for audio input.");
+                    // ---> NEW: Set pending state instead of direct submit <---
+                    setInput(transcribedText); // Set the input field
+                    setPendingInitialSubmission(transcribedText); // Mark for auto-submit
+                    setPendingSubmissionMethod('audio'); // Mark as audio
+                    setPendingWhisperDetails(result.whisperDetails || null); // Store details
+                    console.log("Set pending state for audio submission.");
+                    
                 } else {
                     console.warn("Transcription result was empty after trimming.");
                     toast.info("Could not understand audio.");
@@ -357,6 +370,37 @@ export function useChatInteractions({
         }
     }, [audioChunksRef, mediaRecorder, setInput, handleSubmit, setIsTranscribing, setIsRecording, setMediaRecorder]); // Added dependencies
 
+    // --- Stop Recording Logic (IMPLEMENTED - Moved Before Start) ---
+    // Defined before handleStartRecording to resolve dependency order
+    const handleStopRecording = useCallback((timedOut = false) => {
+        console.log(`handleStopRecording called. Timed out: ${timedOut}, Current recorder state: ${mediaRecorder?.state}`);
+        
+        // Clear the timeout regardless of recorder state
+        if (recordingTimerId) {
+            clearTimeout(recordingTimerId);
+            setRecordingTimerId(null);
+            console.log("Cleared recording timer.");
+        }
+
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            console.log("Stopping MediaRecorder...");
+            mediaRecorder.stop(); // This triggers the onstop handler defined in startRecording
+            setIsRecording(false); // Set recording state immediately 
+            if (timedOut) {
+                toast.info("Recording stopped automatically after 30 seconds.");
+            }
+        } else {
+             console.log("MediaRecorder not active or already stopped, ensuring isRecording is false.");
+            setIsRecording(false);
+            if (mediaRecorder?.stream) {
+                console.log("Cleaning up tracks for non-recording recorder.");
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
+            setMediaRecorder(null);
+        }
+    // Dependencies: recorder instance and timer ID state/setter - remove setIsRecording/setRecordingTimerId if causing issues, rely on closure
+    }, [mediaRecorder, recordingTimerId]); 
+
     // --- Start Recording Logic (NEW) ---
     const handleStartRecording = useCallback(async () => {
         console.log("Attempting to start recording...");
@@ -366,6 +410,11 @@ export function useChatInteractions({
             toast.error("Audio recording is not supported by this browser.");
             console.error("getUserMedia not supported");
             setMicPermissionError(true); // Set error state
+            setIsRecording(false);
+            // Clear any pending submission if mic access fails
+            setPendingInitialSubmission(null);
+            setPendingSubmissionMethod(null);
+            setPendingWhisperDetails(null);
             return;
         }
 
@@ -398,15 +447,14 @@ export function useChatInteractions({
             recorder.onerror = (event) => {
                 console.error("MediaRecorder error:", event);
                 toast.error(`Recording error: ${ (event as any)?.error?.name || 'Unknown error' }`);
-                // Ensure recording state is reset even if onstop doesn't fire reliably on error
                 setIsRecording(false);
                 setMediaRecorder(null);
-                stream.getTracks().forEach(track => track.stop()); // Clean up stream tracks
-                 if (recordingTimerId) clearTimeout(recordingTimerId); // Clear timer
+                stream.getTracks().forEach(track => track.stop());
+                 if (recordingTimerId) clearTimeout(recordingTimerId);
                 setRecordingTimerId(null);
             };
 
-            setMediaRecorder(recorder); // Store recorder instance
+            setMediaRecorder(recorder);
             recorder.start();
             setIsRecording(true);
             console.log("Recording started. State:", recorder.state);
@@ -414,7 +462,6 @@ export function useChatInteractions({
             // Start 30-second timer
             const timerId = setTimeout(() => {
                 console.log("Recording timer (30s) finished.");
-                // Need to call handleStopRecording to ensure cleanup and state change
                 handleStopRecording(true); // Pass true for timedOut 
             }, 30000); // 30 seconds
             setRecordingTimerId(timerId);
@@ -432,41 +479,14 @@ export function useChatInteractions({
             }
             toast.error(errorMsg);
             setMicPermissionError(true);
-            setIsRecording(false); // Ensure recording state is false on error
-        }
-    }, [handleProcessRecordedAudio, recordingTimerId]); // Added handleProcessRecordedAudio, recordingTimerId dependencies
-
-    // --- Stop Recording Logic (IMPLEMENTED) ---
-    const handleStopRecording = useCallback((timedOut = false) => {
-        console.log(`handleStopRecording called. Timed out: ${timedOut}, Current recorder state: ${mediaRecorder?.state}`);
-        
-        // Clear the timeout regardless of recorder state
-        if (recordingTimerId) {
-            clearTimeout(recordingTimerId);
-            setRecordingTimerId(null);
-            console.log("Cleared recording timer.");
-        }
-
-        if (mediaRecorder && mediaRecorder.state === 'recording') {
-            console.log("Stopping MediaRecorder...");
-            mediaRecorder.stop(); // This triggers the onstop handler defined in startRecording
-                                 // onstop handles stream track cleanup and setMediaRecorder(null)
-            setIsRecording(false); // Set recording state immediately 
-            if (timedOut) {
-                toast.info("Recording stopped automatically after 30 seconds.");
-            }
-        } else {
-             console.log("MediaRecorder not active or already stopped, ensuring isRecording is false.");
-            // If recorder wasn't active or already stopped, ensure state is correct
             setIsRecording(false);
-             // If the recorder exists but isn't recording (e.g., inactive), clean up its stream tracks just in case
-            if (mediaRecorder?.stream) {
-                console.log("Cleaning up tracks for non-recording recorder.");
-                mediaRecorder.stream.getTracks().forEach(track => track.stop());
-            }
-            setMediaRecorder(null); // Also ensure recorder state is cleared if stop was called without active recorder
+            // Clear any pending submission if mic access fails
+            setPendingInitialSubmission(null);
+            setPendingSubmissionMethod(null);
+            setPendingWhisperDetails(null);
         }
-    }, [mediaRecorder, recordingTimerId, setIsRecording, setRecordingTimerId]); // Dependencies: recorder instance and timer ID state/setter
+    // Added handleStopRecording dependency
+    }, [handleProcessRecordedAudio, recordingTimerId, handleStopRecording]); 
 
     // --- Initial Message Processing ---
     useEffect(() => {
@@ -496,7 +516,16 @@ export function useChatInteractions({
         setMessages,
         input,
         setInput,
-        handleInputChange,
+        handleInputChange: (e) => {
+            // ---> NEW: Clear pending audio state on manual input <---
+            if (pendingSubmissionMethod === 'audio') {
+                console.log("[handleInputChange] Manual input detected, clearing pending audio submission state.");
+                setPendingSubmissionMethod(null);
+                setPendingWhisperDetails(null);
+                // Keep pendingInitialSubmission as is, user might be editing the initial message
+            }
+            handleInputChange(e); // Call original handler
+        },
         handleSubmit,
         isLoading,
         reload,
