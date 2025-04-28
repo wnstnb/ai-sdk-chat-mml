@@ -255,11 +255,109 @@ export function useChatInteractions({
         }
     }, [documentId, followUpContext, input, model, uploadedImagePath, uploadedImageSignedUrl, isLoading, isUploading, getEditorContext, originalHandleSubmit, clearFileUploadPreview, setFollowUpContext, setInput, messages, setMessages]); // Added dependencies
 
-    // --- Audio Processing Placeholder ---
+    // --- Audio Processing Logic (IMPLEMENTED) ---
     const handleProcessRecordedAudio = useCallback(async () => {
         console.log("handleProcessRecordedAudio called");
-        // Implementation in Step 1.5
-    }, []);
+        if (audioChunksRef.current.length === 0) {
+            console.warn("No audio chunks recorded.");
+            toast.info("No audio detected.");
+            // Ensure recording state is false if somehow called without stopping properly
+            setIsRecording(false); 
+            return;
+        }
+
+        setIsTranscribing(true);
+        console.log("Processing audio chunks...");
+
+        let audioBlob: Blob;
+        let mimeType: string | undefined;
+
+        try {
+            // Try to get mimeType from the recorder if available
+            mimeType = mediaRecorder?.mimeType;
+            console.log(`Creating Blob with explicitly set mimeType: ${mimeType || 'not available'}`);
+            audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+
+             // Basic size check (e.g., < 1KB might be silence or glitch)
+            if (audioBlob.size < 1024) {
+                console.warn(`Audio blob size (${audioBlob.size} bytes) is very small. Aborting transcription.`);
+                toast.info("Recording too short or silent.");
+                setIsTranscribing(false); // Reset transcribing state
+                setIsRecording(false); // Ensure recording state is off
+                audioChunksRef.current = []; // Clear chunks
+                return;
+            }
+
+            audioChunksRef.current = []; // Reset chunks early
+            console.log(`Audio Blob created. Size: ${audioBlob.size}, Type: ${audioBlob.type}`);
+
+            const formData = new FormData();
+            // Use a specific filename, Whisper API needs it. Defaulting to 'audio.webm' if type is unknown
+            const fileName = `audio.${mimeType?.split('/')[1]?.split(';')[0] || 'webm'}`;
+            formData.append('audioFile', audioBlob, fileName);
+            console.log(`Appending blob to FormData with filename: ${fileName}`);
+
+            // Call the transcription API endpoint
+            console.log("Sending audio to /api/chat/transcribe...");
+            const response = await fetch('/api/chat/transcribe', { 
+                method: 'POST',
+                body: formData,
+            });
+
+            console.log(`Transcription API response status: ${response.status}`);
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => 'Failed to read error response');
+                console.error(`Transcription API error: ${response.statusText}`, errorText);
+                throw new Error(`Transcription failed: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            console.log("Transcription API response data:", result);
+
+            if (result?.transcription && typeof result.transcription === 'string') {
+                const transcribedText = result.transcription.trim();
+                if (transcribedText) {
+                    console.log(`Transcription successful: "${transcribedText}"`);
+                    setInput(transcribedText); // Set the text input field
+                    
+                    // Trigger chat submission with transcription and whisper details
+                    console.log("Triggering handleSubmit with transcribed text and details...");
+                    // Note: We pass undefined for the event object
+                    await handleSubmit(undefined, { 
+                        data: { 
+                            inputMethod: 'audio', 
+                            transcription: transcribedText, // Pass the text for saving
+                            whisperDetails: result.whisperDetails || {} // Pass details for logging
+                        } 
+                    });
+                    console.log("handleSubmit triggered for audio input.");
+                } else {
+                    console.warn("Transcription result was empty after trimming.");
+                    toast.info("Could not understand audio.");
+                }
+            } else {
+                console.error("Invalid transcription response format:", result);
+                throw new Error("Received invalid transcription format from API.");
+            }
+
+        } catch (error: any) {
+            console.error("Error during audio processing or transcription:", error);
+            toast.error(`Transcription Error: ${error.message || 'An unknown error occurred'}`);
+            // Ensure recording state is false on error
+            setIsRecording(false);
+        } finally {
+            console.log("Finished processing audio. Resetting isTranscribing.");
+            setIsTranscribing(false);
+            // Explicitly clear chunks again in finally, just in case
+            audioChunksRef.current = []; 
+            // Explicitly clear recorder state in finally, as onstop might not have fired on error
+            if (mediaRecorder?.stream) {
+                console.log("Cleaning up media stream tracks in finally block.");
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
+            setMediaRecorder(null);
+        }
+    }, [audioChunksRef, mediaRecorder, setInput, handleSubmit, setIsTranscribing, setIsRecording, setMediaRecorder]); // Added dependencies
 
     // --- Start Recording Logic (NEW) ---
     const handleStartRecording = useCallback(async () => {
@@ -297,14 +395,7 @@ export function useChatInteractions({
                 }
             };
 
-            recorder.onstop = () => {
-                console.log("MediaRecorder stopped.");
-                // Call the processing function when recording stops
-                handleProcessRecordedAudio(); 
-                 // Clean up stream tracks
-                stream.getTracks().forEach(track => track.stop());
-                setMediaRecorder(null); // Clear recorder instance from state
-            };
+            recorder.onstop = handleProcessRecordedAudio;
             
             recorder.onerror = (event) => {
                 console.error("MediaRecorder error:", event);
