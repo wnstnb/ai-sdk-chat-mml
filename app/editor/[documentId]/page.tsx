@@ -174,6 +174,11 @@ export default function EditorPage() {
         stop,
         model,
         setModel,
+        isRecording,
+        isTranscribing,
+        micPermissionError,
+        startRecording,
+        stopRecording,
     } = useChatInteractions({
         documentId,
         initialModel,
@@ -626,7 +631,7 @@ export default function EditorPage() {
     const handleDragOver = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(true); };
     const handleDragLeave = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(false); };
     const handleDrop = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(false); handleFileDropEvent(event); };
-    const handleUploadClick = () => { if (isUploading) { toast.info("Please wait..."); return; } fileInputRef.current?.click(); };
+    const handleUploadClick = () => { if (isUploading || isRecording || isTranscribing) { toast.info("Busy, please wait..."); return; } fileInputRef.current?.click(); };
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => handleFileSelectEvent(event);
     const handleSendToEditor = async (content: string) => {
         const editor = editorRef.current;
@@ -708,6 +713,11 @@ export default function EditorPage() {
                     inputRef={inputRef}
                     fileInputRef={fileInputRef}
                     handleKeyDown={handleKeyDown}
+                    isRecording={isRecording}
+                    isTranscribing={isTranscribing}
+                    micPermissionError={micPermissionError}
+                    startRecording={startRecording}
+                    stopRecording={stopRecording}
                 />
                 <button onClick={() => setIsChatCollapsed(!isChatCollapsed)} className="absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 z-20 p-1 bg-[--toggle-button-bg] border border-[--border-color] rounded-full text-[--text-color] hover:bg-[--hover-bg] focus:outline-none" title={isChatCollapsed ? 'Expand chat' : 'Collapse chat'}>
                     {isChatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
@@ -750,6 +760,11 @@ export default function EditorPage() {
                 handleKeyDown={handleKeyDown}
                 initialChatPaneWidthPercent={INITIAL_CHAT_PANE_WIDTH_PERCENT}
                 minChatPaneWidthPx={MIN_CHAT_PANE_WIDTH_PX}
+                isRecording={isRecording}
+                isTranscribing={isTranscribing}
+                micPermissionError={micPermissionError}
+                startRecording={startRecording}
+                stopRecording={stopRecording}
             />
         </div>
     );

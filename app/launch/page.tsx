@@ -100,6 +100,15 @@ export default function LaunchPage() {
   const fullText = "What do you want to focus on?";
   const typingSpeed = 40; // milliseconds per character
 
+  // --- NEW: State for Audio Recording ---
+  const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+  const [recordingTimerId, setRecordingTimerId] = useState<NodeJS.Timeout | null>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [micPermissionError, setMicPermissionError] = useState(false);
+  // --- END: State for Audio Recording ---
+
   // ADDED: Effect to update local model state if preference loads *after* initial render
   useEffect(() => {
       if (isPreferencesInitialized && preferredModel && model !== preferredModel) {
@@ -225,17 +234,180 @@ export default function LaunchPage() {
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !isSubmitting) {
         event.preventDefault();
-        // Only submit if input is not empty
-        if (input.trim()) {
+        // Only submit if input is not empty OR if recording (prevents accidental submits while recording)
+        if (input.trim() && !isRecording) {
             formRef.current?.requestSubmit(); // Trigger form submission
         }
     }
   };
 
+  // --- NEW: Audio Recording Handlers ---
+  // Process recorded audio (called by recorder onstop)
+  const handleProcessRecordedAudio = useCallback(async () => {
+    if (audioChunks.length === 0) {
+        console.warn("No audio chunks recorded.");
+        toast.info("No audio detected.");
+        setIsTranscribing(false); // Ensure state is reset
+        return;
+    }
+
+    // Check size (e.g., < 1KB might indicate silence)
+    const totalSize = audioChunks.reduce((sum, chunk) => sum + chunk.size, 0);
+    if (totalSize < 1024) { // 1KB threshold
+        console.warn("Recorded audio size is very small, likely silence:", totalSize);
+        toast.info("No significant audio detected.");
+        setAudioChunks([]); // Clear chunks
+        setIsTranscribing(false);
+        return;
+    }
+
+    setIsTranscribing(true);
+    const audioBlob = new Blob(audioChunks, { type: mediaRecorder?.mimeType || 'audio/webm' });
+    setAudioChunks([]); // Clear chunks after creating blob
+
+    // Clean up media tracks and recorder instance
+    if (mediaRecorder) {
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        setMediaRecorder(null);
+    }
+
+    const formData = new FormData();
+    formData.append('audioFile', audioBlob, 'recording.webm'); // Filename can be fixed
+
+    try {
+        console.log("Sending audio to /api/chat/transcribe");
+        const response = await fetch('/api/chat/transcribe', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("Transcription API error:", response.status, errorText);
+            throw new Error(`Transcription failed: ${response.statusText || 'Server error'}`);
+        }
+
+        const result = await response.json();
+        console.log("Transcription result:", result);
+
+        if (result.transcription) {
+            // ONLY set the input field on the launch page
+            setInput(result.transcription);
+            // Do NOT call handleLaunchSubmit here - user needs to click Send/Enter
+            toast.success("Audio transcribed!");
+        } else {
+            throw new Error("Transcription returned no text.");
+        }
+    } catch (error: any) {
+        console.error('Error during transcription request:', error);
+        toast.error(`Transcription Error: ${error.message || 'Could not transcribe audio.'}`);
+    } finally {
+        setIsTranscribing(false);
+    }
+  }, [audioChunks, mediaRecorder]); // Dependencies
+
+  // Stop recording handler
+  const handleStopRecording = useCallback((timedOut = false) => {
+    if (recordingTimerId) {
+        clearTimeout(recordingTimerId);
+        setRecordingTimerId(null);
+    }
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        console.log("Stopping recording...");
+        mediaRecorder.stop(); // This will trigger the 'onstop' event -> handleProcessRecordedAudio
+        setIsRecording(false);
+        if (timedOut) {
+            toast.info("Recording stopped after 30 seconds.");
+        }
+    } else {
+        console.warn("Stop recording called but recorder not active or found.");
+        setIsRecording(false); // Ensure state is reset
+    }
+  }, [mediaRecorder, recordingTimerId]); // Dependencies
+
+  // Start recording handler
+  const handleStartRecording = useCallback(async () => {
+    console.log("Attempting to start recording...");
+    setMicPermissionError(false); // Reset permission error on new attempt
+    setInput(''); // Clear text input when starting recording
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.error("getUserMedia not supported on this browser.");
+        toast.error("Audio recording is not supported on this browser.");
+        setMicPermissionError(true); // Set error state
+        return;
+    }
+
+    try {
+        console.log("Requesting microphone permission...");
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log("Microphone permission granted.");
+
+        // Determine MIME type
+        const options = { mimeType: '' };
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            options.mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+            options.mimeType = 'audio/webm';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+            options.mimeType = 'audio/ogg;codecs=opus';
+        }
+        console.log("Using MIME type:", options.mimeType || "Browser default");
+
+        const recorder = new MediaRecorder(stream, options.mimeType ? options : undefined);
+        setMediaRecorder(recorder); // Store recorder instance
+        setAudioChunks([]); // Clear previous chunks
+
+        recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                // console.log("Audio data available:", event.data.size);
+                setAudioChunks((prev) => [...prev, event.data]);
+            }
+        };
+
+        recorder.onstop = () => {
+            console.log("MediaRecorder stopped naturally.");
+            // Use the specific handler for processing
+            handleProcessRecordedAudio();
+        };
+
+        recorder.onerror = (event) => {
+            console.error("MediaRecorder error:", event);
+            toast.error("An error occurred during recording.");
+            handleStopRecording(); // Attempt to clean up
+            setMicPermissionError(true); // Indicate potential issue
+        }
+
+        recorder.start();
+        console.log("Recording started.");
+        setIsRecording(true);
+
+        // Start 30-second timer
+        const timerId = setTimeout(() => {
+            console.log("Recording timer expired.");
+            handleStopRecording(true); // Pass true for timed out
+        }, 30000); // 30 seconds
+        setRecordingTimerId(timerId);
+
+    } catch (err) {
+        console.error("Error getting user media or starting recorder:", err);
+        if ((err as Error).name === 'NotAllowedError' || (err as Error).name === 'PermissionDeniedError') {
+            toast.error("Microphone permission denied. Please allow access in your browser settings.");
+        } else if ((err as Error).name === 'NotFoundError' || (err as Error).name === 'DevicesNotFoundError') {
+             toast.error("No microphone found. Please ensure a microphone is connected and enabled.");
+        } else {
+            toast.error("Could not start recording. Please ensure microphone access is allowed.");
+        }
+        setMicPermissionError(true);
+    }
+  }, [handleProcessRecordedAudio, handleStopRecording]); // Dependencies
+  // --- END: Audio Recording Handlers ---
+
+
   // --- Handler for Launch Submission (triggered by form onSubmit) ---
   const handleLaunchSubmit = async (event?: React.FormEvent<HTMLFormElement>) => {
     if (event) event.preventDefault(); // Prevent default form submission
-    if (!input.trim() || isSubmitting) return; // Check the 'input' state
+    if ((!input.trim() && !isRecording) || isSubmitting) return; // Prevent submit if empty, recording, or already submitting
 
     console.log("[LaunchPage] Submitting with initial content:", input);
     setIsSubmitting(true);
@@ -270,8 +442,7 @@ export default function LaunchPage() {
   };
 
 
-  // --- Handlers for Cubone File Manager Actions --- 
-  // (Keep existing Cubone handlers as they are)
+  // --- Handlers for Cubone File Manager Actions ---
   const handleCreateFolder = useCallback(async (name: string /*, parentFolder: CuboneFileType | null */) => {
     console.log('Create Folder Request:', name /*, parentFolder?.path */);
     setError(null);
@@ -339,7 +510,7 @@ export default function LaunchPage() {
         // await fetchData();
     }, []); // Removed fetchData dependency
 
-
+  // --- Return JSX ---
   return (
     <div className="flex flex-col h-full p-4 bg-[--bg-secondary] text-[--text-color]">
       {/* Updated Heading with Conditional Content */}
@@ -381,6 +552,14 @@ export default function LaunchPage() {
             isUploading={isUploading} // Pass state (false initially)
             uploadError={uploadError} // Pass state (null initially)
             uploadedImagePath={uploadedImagePath} // Pass state (null initially)
+            // --- NEW: Pass Audio Props ---
+            isRecording={isRecording}
+            isTranscribing={isTranscribing}
+            micPermissionError={micPermissionError}
+            startRecording={handleStartRecording}
+            stopRecording={handleStopRecording}
+            // --- END: Pass Audio Props ---
+            // Removed onStop prop as it's not defined here and ChatInputUI doesn't need it directly for launch submit
           />
           {/* The submit button is now inside ChatInputUI */}
         </form>

@@ -235,12 +235,10 @@ export function useChatInteractions({
                 content: finalInput?.trim() || '', // The actual content (text or transcription)
                 createdAt: new Date(),
                 // We handle attachments via submitOptions.options.experimental_attachments
-                // tool_calls: ... (if we were invoking a tool *from* the user message directly)
             };
-            // Append the user message *manually* first, then call original submit WITHOUT input
-            // This ensures the message content matches 'finalInput' precisely
-            setMessages([...messages, userMessageForAi]);
-            originalHandleSubmit(undefined, { // Pass undefined for event, submitOptions for options/data
+            // Pass the constructed message object as the first argument to originalHandleSubmit
+            // This allows useChat to handle the optimistic UI update correctly.
+            originalHandleSubmit(userMessageForAi as any, { 
                  ...submitOptions, 
                  data: submitOptions.data as any // Pass data payload
              }); 

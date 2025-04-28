@@ -36,6 +36,14 @@ interface ChatInputAreaProps {
 
     // ADDED: To pass down for height adjustment logic
     isChatCollapsed?: boolean;
+
+    // --- NEW AUDIO PROPS ---
+    isRecording: boolean;
+    isTranscribing: boolean;
+    micPermissionError: boolean;
+    startRecording: () => void;
+    stopRecording: (timedOut?: boolean) => void;
+    // --- END NEW AUDIO PROPS ---
 }
 
 export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
@@ -47,6 +55,13 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     model,
     setModel,
     stop,
+    // --- NEW AUDIO PROPS DESTRUCTURED ---
+    isRecording,
+    isTranscribing,
+    micPermissionError,
+    startRecording,
+    stopRecording,
+    // --- END NEW AUDIO PROPS DESTRUCTURED ---
     files,
     handleFileChange,
     handlePaste,
@@ -80,7 +95,7 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                         <p className="line-clamp-2">{followUpContext}</p>
                     </div>
                 )}
-                {/* Re-use ChatInputUI component */}
+                {/* Re-use ChatInputUI component, passing down audio props */}
                 <ChatInputUI 
                     isChatCollapsed={isChatCollapsed}
                     files={files} 
@@ -99,6 +114,13 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     uploadError={uploadError} 
                     uploadedImagePath={uploadedImagePath} 
                     onStop={stop} 
+                    // --- NEW AUDIO PROPS PASSED DOWN ---
+                    isRecording={isRecording}
+                    isTranscribing={isTranscribing}
+                    micPermissionError={micPermissionError}
+                    startRecording={startRecording}
+                    stopRecording={stopRecording}
+                    // --- END NEW AUDIO PROPS PASSED DOWN ---
                 />
             </form>
         </div>
