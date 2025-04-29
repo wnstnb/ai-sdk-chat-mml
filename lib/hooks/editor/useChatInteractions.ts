@@ -96,6 +96,7 @@ export function useChatInteractions({
         stop: stopAiGeneration, // Renamed to avoid conflict
         setMessages,
         setInput,
+        append
     } = useChat({
         api: apiEndpoint,
         id: documentId,
@@ -203,7 +204,6 @@ export function useChatInteractions({
                 inputMethod: 'audio',
                 whisperDetails: audioWhisperDetails,
             }),
-            followUpContext: followUpContext || null // Add follow-up context to data payload
         };
 
         // --- Create the user message object with combined content --- 
@@ -217,53 +217,54 @@ export function useChatInteractions({
         };
 
         // --- Manually update UI state BEFORE sending API request --- 
-        setMessages([...messages, userMessageForAi]);
-        
+        // REMOVED: setMessages([...messages, userMessageForAi]); // Let append handle this
+
         // --- Set hook input state for API call & Clear context state --- 
-        setInput(finalInput); // Set hook's input to the combined value
+        // Keep setting finalInput for potential internal use by the hook before API call? Let's test removing this too if append works.
+        // setInput(finalInput); // Set hook's input to the combined value - Let's comment this out, append takes the message object.
         clearFileUploadPreview(); // Clear file preview
         setFollowUpContext(null); // Clear follow-up context store
 
-        // --- Prepare options for the API call (NO message argument needed now) --- 
+        // --- Remove temporary input clearing ---
+        // const currentInput = input; 
+        // setInput(''); 
+
+        // --- Prepare options for the API call --- 
         const submitOptions: { data: any; } = {
             data: submitDataPayload as any,
-            // No need for experimental_attachments here anymore, it's part of the message object added via setMessages
+            // experimental_attachments are already IN the userMessageForAi object passed to append
         };
 
-        // --- Call original useChat submit with ONLY options to trigger API call ---
+        // --- Call append with the message object and options ---
         try {
-            console.log('[handleSubmit] Preparing to call original useChat submit (API only). Current isLoading state:', isLoading);
+            console.log('[handleSubmit] Preparing to call append. Current isLoading state:', isLoading);
             if (isLoading) {
-                console.warn('[handleSubmit] Aborting call to originalHandleSubmit because isLoading is true!');
+                console.warn('[handleSubmit] Aborting call to append because isLoading is true!');
                 toast.error("Chat is still processing the previous request.");
-                // Clear the message we optimistically added if we abort?
-                // setMessages(currentMessages => currentMessages.filter(m => m.id !== userMessageForAi.id)); 
-                // ^ Consider adding this rollback if needed
+                // If we were manually adding, we'd rollback here. append should handle its own state.
                 return; // Explicitly prevent call if loading
             }
-            console.log('[handleSubmit] Calling original useChat submit with options:', submitOptions);
+            console.log('[handleSubmit] Calling append with message:', userMessageForAi, 'and options:', submitOptions);
             
-            // ---> Pass undefined for message, only options <---
-            originalHandleSubmit(undefined, submitOptions);
+            // ---> Call append instead of originalHandleSubmit <---
+            append(userMessageForAi, submitOptions);
             
-            console.log('[handleSubmit] originalHandleSubmit (API only) called successfully (request potentially sent).');
+            console.log('[handleSubmit] append called successfully (request potentially sent).');
 
-            // ---> Clear visual input field AFTER submit call <---
-            setInput('');
+            // ---> Clear visual input field AFTER append call? Append might do this itself. Let's clear it explicitly. <---
+            setInput(''); 
 
-        } catch (submitHookError: any) {
-             console.error("[handleSubmit] Error occurred *during* call to originalHandleSubmit (API only):", submitHookError);
-             toast.error(`Failed to initiate chat request: ${submitHookError.message || 'Unknown internal error'}`);
-             // Rollback the optimistically added message on error?
-             // setMessages(currentMessages => currentMessages.filter(m => m.id !== userMessageForAi.id)); 
-             // ^ Consider adding this rollback if needed
+        } catch (appendError: any) {
+             console.error("[handleSubmit] Error occurred *during* call to append:", appendError);
+             toast.error(`Failed to initiate chat request: ${appendError.message || 'Unknown internal error'}`);
+             // append should manage its own state rollback on error.
         }
-        // Removed outer try...catch as errors should be caught within the inner one now
         
     }, [
         documentId, followUpContext, input, model, uploadedImagePath, uploadedImageSignedUrl,
-        isLoading, isUploading, getEditorContext, originalHandleSubmit, clearFileUploadPreview,
-        setFollowUpContext, setInput, messages, setMessages, // Added messages, setMessages
+        isLoading, isUploading, getEditorContext, /* removed originalHandleSubmit */ clearFileUploadPreview, // Removed originalHandleSubmit
+        setFollowUpContext, setInput, messages, setMessages, // Keep setMessages/messages if needed elsewhere, but not for the optimistic update here
+        append, // <-- Add append
         pendingInitialSubmission, pendingSubmissionMethod, pendingWhisperDetails
     ]);
 

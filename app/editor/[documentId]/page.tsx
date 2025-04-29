@@ -666,9 +666,9 @@ export default function EditorPage() {
         <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
-            {/* Editor Pane Container - Takes remaining space */}
-            <div className="flex-1 flex flex-col relative overflow-hidden">
-                 {/* Moved EditorTitleBar inside */}
+            {/* Editor Pane Container - Takes remaining space, add padding here */}
+            <div className="flex-1 flex flex-col relative overflow-hidden p-4">
+                 {/* EditorTitleBar is now the first item, will benefit from parent padding */}
                 <EditorTitleBar
                     currentTitle={currentTitle}
                     isEditingTitle={isEditingTitle}
@@ -687,10 +687,10 @@ export default function EditorPage() {
                     isSaving={isSaving}
                 />
                 {pageError && !pageError.startsWith("Chat Error:") && (
-                    <div className="m-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
+                    <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
                 )}
-                {/* Added padding around the editor wrapper */}
-                <div className="flex-1 flex flex-col p-4 overflow-hidden relative">
+                {/* EditorPaneWrapper now directly inside, remove intermediate div */}
+                <div className="flex-1 flex flex-col overflow-hidden relative"> {/* REMOVED mt-4 */}
                     <EditorPaneWrapper
                         documentId={documentId}
                         initialContent={initialEditorContent}
