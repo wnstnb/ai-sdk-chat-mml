@@ -27,42 +27,66 @@ export function useChatPane({
     const startWidthRef = useRef<number>(0);
     const startXRef = useRef<number>(0);
 
-    // Resize Mouse Move Handler
-    const handleMouseMoveResize = useCallback((me: MouseEvent) => {
-        requestAnimationFrame(() => {
-            const currentX = me.clientX;
-            const deltaX = currentX - startXRef.current;
-            const newWidth = startWidthRef.current - deltaX;
-            const windowWidth = window.innerWidth;
-            const maxWidth = Math.max(minWidthPx, (windowWidth * maxWidthPercent) / 100);
-            const clampedWidth = Math.max(minWidthPx, Math.min(newWidth, maxWidth));
-            setChatPaneWidth(clampedWidth);
-        });
-    }, [minWidthPx, maxWidthPercent]); // Use props in dependency array
+    // Refs to store the latest logic for event handlers
+    const mouseMoveLogicRef = useRef<(me: MouseEvent) => void>(() => {});
+    const mouseUpLogicRef = useRef<() => void>(() => {});
 
-    // Resize Mouse Up Handler (Cleanup)
-    const handleMouseUpResize = useCallback(() => {
-        if (!isResizing) return; // Prevent running if not resizing
-        setIsResizing(false);
-        document.body.style.userSelect = '';
-        document.body.style.cursor = '';
-        window.removeEventListener('mousemove', handleMouseMoveResize);
-        window.removeEventListener('mouseup', handleMouseUpResize); // Remove self
-        console.log("Mouse Up - Resizing stopped");
-    }, [isResizing, handleMouseMoveResize]); // Add isResizing dependency
+    // Update mouse move logic ref when dependencies change
+    useEffect(() => {
+        mouseMoveLogicRef.current = (me: MouseEvent) => {
+            requestAnimationFrame(() => {
+                const currentX = me.clientX;
+                const deltaX = currentX - startXRef.current;
+                const newWidth = startWidthRef.current - deltaX;
+                const windowWidth = window.innerWidth;
+                const maxWidth = Math.max(minWidthPx, (windowWidth * maxWidthPercent) / 100);
+                const clampedWidth = Math.max(minWidthPx, Math.min(newWidth, maxWidth));
+                setChatPaneWidth(clampedWidth);
+            });
+        };
+    }, [minWidthPx, maxWidthPercent]); // Keep original dependencies
 
-    // Resize Mouse Down Handler (Initiation)
+    // Stable mouse move handler that calls the logic ref
+    const handleMouseMoveStable = useCallback((me: MouseEvent) => {
+        mouseMoveLogicRef.current(me);
+    }, []);
+
+    // Update mouse up logic ref when dependencies change
+    useEffect(() => {
+        mouseUpLogicRef.current = () => {
+            // Check isResizing state directly, no need to pass as arg
+            if (!isResizing) return;
+            setIsResizing(false);
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+            window.removeEventListener('mousemove', handleMouseMoveStable);
+            window.removeEventListener('mouseup', handleMouseUpStable); // Use stable handler
+            console.log("Mouse Up - Resizing stopped (Stable Ref)");
+        };
+        // Add handleMouseMoveStable dependency? No, it's stable.
+    }, [isResizing, handleMouseMoveStable]); // Add isResizing here
+
+    // Stable mouse up handler that calls the logic ref
+    const handleMouseUpStable = useCallback(() => {
+        mouseUpLogicRef.current();
+    }, []);
+
+    // Resize Mouse Down Handler (Initiation) - Uses stable handlers
     const handleMouseDownResize = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        if (!chatPaneWidth) return;
-        console.log("Mouse Down - Resizing started");
+        // Read chatPaneWidth directly, no need for it to be a dependency if logic is simple
+        const currentWidth = chatPaneWidth; // Read latest value
+        if (currentWidth === null) return;
+        console.log("Mouse Down - Resizing started (Stable Ref)");
         setIsResizing(true);
         startXRef.current = e.clientX;
-        startWidthRef.current = chatPaneWidth;
+        startWidthRef.current = currentWidth; // Use the read value
         document.body.style.userSelect = 'none';
         document.body.style.cursor = 'col-resize';
-        window.addEventListener('mousemove', handleMouseMoveResize);
-        window.addEventListener('mouseup', handleMouseUpResize);
-    }, [chatPaneWidth, handleMouseMoveResize, handleMouseUpResize]); // Include handlers in dependencies
+        // Add the STABLE handlers
+        window.addEventListener('mousemove', handleMouseMoveStable);
+        window.addEventListener('mouseup', handleMouseUpStable);
+    // Depend only on stable handlers and state setters
+    }, [chatPaneWidth, handleMouseMoveStable, handleMouseUpStable, setIsResizing]); 
 
     // Effect for Initial Width Calculation and Window Resize Handling
     useEffect(() => {
@@ -91,23 +115,20 @@ export function useChatPane({
     // Dependencies: Include props and state affecting calculation
     }, [isResizing, chatPaneWidth, isChatCollapsed, initialWidthPercent, minWidthPx, maxWidthPercent]);
 
-    // Effect for Cleaning Up Global Listeners on Unmount or if resizing stops unexpectedly
+    // Effect for Cleaning Up Global Listeners (Use stable handlers)
     useEffect(() => {
         return () => {
-            // Ensure listeners are removed if the hook unmounts during a resize
             if (isResizing) {
-                window.removeEventListener('mousemove', handleMouseMoveResize);
-                window.removeEventListener('mouseup', handleMouseUpResize);
-                // Restore body styles if necessary
+                window.removeEventListener('mousemove', handleMouseMoveStable);
+                window.removeEventListener('mouseup', handleMouseUpStable);
                 if (document.body.style.cursor === 'col-resize') {
                     document.body.style.userSelect = '';
                     document.body.style.cursor = '';
                 }
-                console.log("[useChatPane Cleanup] Removed resize listeners on unmount.");
+                console.log("[useChatPane Cleanup] Removed stable resize listeners on unmount.");
             }
         };
-    // Include isResizing and handlers in dependency array
-    }, [isResizing, handleMouseMoveResize, handleMouseUpResize]);
+    }, [isResizing, handleMouseMoveStable, handleMouseUpStable]); // Depend on isResizing and stable handlers
 
     return {
         isChatCollapsed,

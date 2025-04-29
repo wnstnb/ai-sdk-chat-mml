@@ -11,6 +11,24 @@ interface ChatMessageItemProps {
     handleSendToEditor: (content: string) => void;
 }
 
+// --- Helper Function to Extract User Display Content ---
+const FOLLOW_UP_PREFIX = "Follow-up Context:";
+const FOLLOW_UP_SEPARATOR = "\n\n---\n\n";
+
+function extractUserDisplayContent(content: string, role: Message['role']): string {
+    if (role === 'user') {
+        const separatorIndex = content.indexOf(FOLLOW_UP_SEPARATOR);
+        // Check if it starts with the prefix AND the separator exists
+        if (content.startsWith(FOLLOW_UP_PREFIX) && separatorIndex !== -1) {
+            // Return the part after the separator
+            return content.substring(separatorIndex + FOLLOW_UP_SEPARATOR.length);
+        }
+    }
+    // Return original content if not user or pattern doesn't match
+    return content;
+}
+// --- End Helper Function ---
+
 export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({ 
     message, 
     handleSendToEditor 
@@ -23,9 +41,11 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     ) || [];
     const hasToolInvocations = toolInvocationParts.length > 0;
 
-    // Determine if there's any text content in parts OR the main content field
-    const hasTextContent = (message.parts?.some(part => part.type === 'text' && part.text.trim() !== '') ?? false)
-                         || (!!message.content && message.content.trim() !== '');
+    // Get text content from parts or main content field
+    const rawTextContent = message.parts?.find(part => part.type === 'text')?.text || message.content || '';
+    // Check if there's any text content *after* potential parsing
+    const displayContent = extractUserDisplayContent(rawTextContent, message.role);
+    const hasDisplayableTextContent = displayContent.trim() !== '';
 
     return (
         <motion.div
@@ -39,30 +59,18 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                 {message.role === 'assistant' ? <BotIcon /> : <UserIcon />}
             </div>
             <div className="flex flex-col gap-1 flex-grow break-words overflow-hidden p-2 rounded-md bg-[--message-bg] shadow-sm">
-                {/* Message Content - REVISED to iterate through parts for TEXT only */}
-                <div className="text-zinc-800 dark:text-zinc-300 flex flex-col gap-4">
-                    {/* Render text parts using Markdown */}
-                    {message.parts?.map((part, index) => {
-                         if (part.type === 'text') {
-                             return <Markdown key={`text-${index}`}>{part.text}</Markdown>;
-                         }
-                         return null; // Ignore non-text parts here
-                    })}
-                    {/* Fallback for messages without parts OR if parts only contained non-text types */}
-                    {(!message.parts?.some(p => p.type === 'text') && message.content) && (
-                         <Markdown>{message.content}</Markdown>
-                    )}
-                </div>
+                {/* Message Content - Use the processed displayContent */}
+                {hasDisplayableTextContent && (
+                    <div className="text-zinc-800 dark:text-zinc-300 flex flex-col gap-4">
+                        <Markdown>{displayContent}</Markdown>
+                    </div>
+                )}
                 
-                {/* Send to Editor Button - Uses combined hasTextContent check */}
-                {message.role === 'assistant' && hasTextContent && (
+                {/* Send to Editor Button - Use raw content for sending */}
+                {message.role === 'assistant' && rawTextContent.trim() !== '' && (
                     <div className="mt-1 flex justify-end">
                         <button
-                            onClick={() => {
-                                // Extract text from parts OR content to send
-                                const textToSend = message.parts?.find(part => part.type === 'text')?.text || message.content || '';
-                                handleSendToEditor(textToSend);
-                            }}
+                            onClick={() => handleSendToEditor(rawTextContent)} // Send raw content
                             className="p-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-md focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500"
                             title="Send to Editor">
                             <SendToBack size={14} />

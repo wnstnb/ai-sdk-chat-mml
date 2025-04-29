@@ -50,6 +50,7 @@ CONTEXT PROVIDED:
 - User Messages: The history of the conversation provides context for the current request.
 - Editor Content (Optional): A structured array of editor blocks, editorBlocksContext, where each element is an object like { id: string, contentSnippet: string }. This represents the current state of the document.
 !IMPORTANT: Do not discuss any block information or UUIDs for blocks (eg. Block e86357ab-a882-4a3b-9ffa-18550d63c272) when user asks about content in the editor. They are asking about the content in the editor, not specific blocks.
+- Follow-up Context (Optional): Some user messages may start with a specific block of text labeled "Follow-up Context:", followed by "-". Treat this text as crucial, user-provided context for their immediate query that follows the separator. Always consider this context when formulating your response or action.
 
 YOUR TASK:
 
@@ -211,6 +212,80 @@ export async function POST(req: Request) {
     const userId = user.id;
     // --- End Validation ---
 
+    // --- BEGIN: Save User Message --- 
+    let savedUserMessageId: string | null = null; // Track saved ID if needed elsewhere
+    const lastClientMessage = Array.isArray(originalMessages) && originalMessages.length > 0 
+        ? originalMessages[originalMessages.length - 1] 
+        : null;
+
+    if (lastClientMessage && lastClientMessage.role === 'user') {
+        // Determine input method for metadata
+        const messageInputMethod = inputMethod === 'audio' ? 'audio' : 'text';
+        // Determine image URL (use signed URL only if it's a text input)
+        const imageUrlForDb = messageInputMethod === 'text' ? firstImageSignedUrl : null;
+        // Extract text content and prepend follow-up context if available
+        let userContentText = '';
+        const originalUserText = typeof lastClientMessage.content === 'string' ? lastClientMessage.content : '';
+        const contextFromRequest = typeof requestData?.followUpContext === 'string' ? requestData.followUpContext : null;
+
+        if (contextFromRequest) {
+            userContentText = `${contextFromRequest}\n\n---\n\n${originalUserText}`;
+        } else {
+            userContentText = originalUserText;
+        }
+
+        console.log(`[API Chat Save User Msg] Saving user message (inputMethod: ${messageInputMethod}). Content: "${userContentText?.slice(0, 50)}..." Image: ${imageUrlForDb ? 'Yes' : 'No'}`);
+        const userMessageData: Omit<SupabaseMessage, 'id' | 'created_at'> = {
+            document_id: documentId,
+            user_id: userId,
+            role: 'user',
+            content: userContentText,
+            image_url: typeof imageUrlForDb === 'string' ? imageUrlForDb : '', // Explicit type check
+            metadata: { input_method: messageInputMethod },
+        };
+
+        const { data: savedUserData, error: userMsgError } = await supabase
+            .from('messages')
+            .insert(userMessageData)
+            .select('id')
+            .single();
+
+        if (userMsgError || !savedUserData?.id) {
+            console.error(`[API Chat Save User Msg] Error saving user message:`, userMsgError);
+            // Decide if we should abort or continue? For now, log and continue.
+        } else {
+            savedUserMessageId = savedUserData.id;
+            console.log(`[API Chat Save User Msg] Saved user message ID: ${savedUserMessageId}`);
+
+            // --- Log Whisper details ONLY if it was an audio input AND saved successfully ---
+            if (messageInputMethod === 'audio' && whisperDetails && typeof savedUserMessageId === 'string') {
+                const whisperToolCallId = `whisper-${crypto.randomUUID()}`;
+                const fileSize = typeof whisperDetails.file_size_bytes === 'number' ? whisperDetails.file_size_bytes : null;
+                const fileType = typeof whisperDetails.file_type === 'string' ? whisperDetails.file_type : null;
+                const costEstimate = typeof whisperDetails.cost_estimate === 'number' ? whisperDetails.cost_estimate : null;
+                const toolInputJson = { file_size_bytes: fileSize, file_type: fileType };
+                const toolOutputJson = { status: "success", cost_estimate: costEstimate };
+
+                const whisperToolCallData: Omit<SupabaseToolCall, 'id' | 'created_at'> = {
+                    message_id: savedUserMessageId, // Now guaranteed to be string
+                    user_id: userId,
+                    tool_name: 'whisper_transcription',
+                    tool_call_id: whisperToolCallId,
+                    tool_input: toolInputJson,
+                    tool_output: toolOutputJson,
+                };
+                const { error: whisperLogError } = await supabase.from('tool_calls').insert(whisperToolCallData);
+                if (whisperLogError) {
+                    console.error(`[API Chat Save User Msg] SUPABASE WHISPER LOG INSERT ERROR for msg ${savedUserMessageId}:`, whisperLogError);
+                } else {
+                    console.log(`[API Chat Save User Msg] Successfully saved Whisper tool log for msg ${savedUserMessageId}.`);
+                }
+            }
+        }
+    } else {
+        console.warn("[API Chat Save User Msg] Could not save user message: Last message not found or not from user.");
+    }
+    // --- END: Save User Message --- 
 
     // Determine the model ID
     const modelId = typeof modelIdFromData === 'string' && modelIdFromData in modelProviders
@@ -265,90 +340,6 @@ export async function POST(req: Request) {
              // Log and proceed without image if URL is invalid
         }
     }
-
-    // --- NEW: Save User Message & Whisper Log FIRST if inputMethod was 'audio' ---
-    let savedUserMessageId: string | null = null; // Keep track if we saved it here
-
-    if (inputMethod === 'audio' && whisperDetails && Array.isArray(originalMessages) && originalMessages.length > 0) {
-        const lastClientMessage = originalMessages[originalMessages.length - 1];
-
-        // Extract user message content - Assuming the last message is the user's transcription
-        let userContentText: string = '';
-        if (lastClientMessage && lastClientMessage.role === 'user') {
-           if (typeof lastClientMessage.content === 'string') {
-               userContentText = lastClientMessage.content;
-           } else {
-               console.warn("[API Chat Pre-Save] Could not extract string content from last user message for audio input.");
-           }
-        } else {
-            console.warn("[API Chat Pre-Save] Last message was not from user, cannot save audio input message.");
-        }
-
-        if (userContentText) {
-            console.log(`[API Chat Pre-Save] Saving user message (inputMethod: audio). Content: "${userContentText?.slice(0, 50)}..."`);
-            const userMessageData: Omit<SupabaseMessage, 'id' | 'created_at'> = {
-                document_id: documentId,
-                user_id: userId,
-                role: 'user',
-                content: userContentText,
-                image_url: null,
-                metadata: { input_method: 'audio' },
-            };
-
-            const { data: savedUserData, error: userMsgError } = await supabase
-                .from('messages')
-                .insert(userMessageData)
-                .select('id')
-                .single();
-
-            if (userMsgError || !savedUserData?.id) {
-                console.error(`[API Chat Pre-Save] Error saving user message for audio input:`, userMsgError);
-            } else {
-                savedUserMessageId = savedUserData.id; // Assign the string ID
-                console.log(`[API Chat Pre-Save] Saved user message ID: ${savedUserMessageId} (Audio Input)`);
-
-                // --- Insert Whisper log (only if user message was saved successfully) ---
-                if (typeof savedUserMessageId === 'string') {
-                    const whisperToolCallId = `whisper-${crypto.randomUUID()}`;
-                    // Ensure whisperDetails has the expected properties before accessing them
-                    const fileSize = typeof whisperDetails.file_size_bytes === 'number' ? whisperDetails.file_size_bytes : null;
-                    const fileType = typeof whisperDetails.file_type === 'string' ? whisperDetails.file_type : null;
-                    const costEstimate = typeof whisperDetails.cost_estimate === 'number' ? whisperDetails.cost_estimate : null;
-
-                    const toolInputJson = {
-                        file_size_bytes: fileSize,
-                        file_type: fileType,
-                    };
-                    const toolOutputJson = {
-                        status: "success",
-                        cost_estimate: costEstimate,
-                    };
-
-                    const whisperToolCallData: Omit<SupabaseToolCall, 'id' | 'created_at'> = {
-                        message_id: savedUserMessageId, // Already confirmed it's a string here
-                        user_id: userId,
-                        tool_name: 'whisper_transcription',
-                        tool_call_id: whisperToolCallId,
-                        tool_input: toolInputJson,
-                        tool_output: toolOutputJson,
-                    };
-
-                    const { error: whisperLogError } = await supabase
-                        .from('tool_calls')
-                        .insert(whisperToolCallData);
-
-                    if (whisperLogError) {
-                        console.error(`[API Chat Pre-Save] SUPABASE WHISPER LOG INSERT ERROR for user message ${savedUserMessageId}:`, whisperLogError);
-                    } else {
-                        console.log(`[API Chat Pre-Save] Successfully saved Whisper tool log for user message ${savedUserMessageId}.`);
-                    }
-                } else {
-                    console.error("[API Chat Pre-Save] Logic error: savedUserMessageId is null after supposedly successful user message save.");
-                }
-            }
-        }
-    }
-    // --- END NEW Pre-Save Logic ---
 
     // --- REVISED Message Processing Loop (Take 2) ---
     // Input: originalMessages are now in the ai/react Message[] format
@@ -507,6 +498,15 @@ export async function POST(req: Request) {
     console.log(`[API Chat] Calling streamText with ${messages.length} prepared messages. Last message role: ${messages[messages.length - 1]?.role}`);
     // --- DEBUG: Log final payload to AI SDK ---
     // console.log("[API Chat] Final messages payload for AI SDK:", JSON.stringify(messages, null, 2));
+    // ---> ADDED: Log content of the last message explicitly < ---
+    const lastMessageForLog = messages[messages.length - 1];
+    if (lastMessageForLog) {
+        console.log("[API Chat] Content of LAST message being sent to AI SDK (Role: " + lastMessageForLog.role + "):", 
+            typeof lastMessageForLog.content === 'string' ? lastMessageForLog.content : JSON.stringify(lastMessageForLog.content)
+        );
+    } else {
+        console.log("[API Chat] No messages found to send to AI SDK.");
+    }
     // --- END DEBUG ---
 
     const result = streamText({

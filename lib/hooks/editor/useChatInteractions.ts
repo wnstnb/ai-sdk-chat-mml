@@ -179,95 +179,93 @@ export function useChatInteractions({
             return;
         }
 
+        // --- Get editor context (no change) ---
         const editorContextData = await getEditorContext();
         const isSummarizationTask = finalInput ? (/ (summar(y|ize|ies)|bullet|points?|outline|sources?|citations?) /i.test(finalInput) && finalInput.length > 25) : false;
 
-        try {
-            // --- REMOVED: Manual user message saving via /api/documents/.../messages ---
-            // The backend /api/chat route now handles saving the user message
-            // when inputMethod === 'audio' is detected in the requestData passed below.
-
-            // --- REMOVED: Manual Whisper tool call logging ---
-            // The backend /api/chat route now handles this logging.
-
-            // Prepare attachments for optimistic UI update (only if NOT audio input)
-            const attachmentsForOptimisticUI = signedUrlToSend ? [
-                {
-                    contentType: 'image/*',
-                    name: imagePathForDb?.split('/').pop() || 'uploaded_image',
-                    url: signedUrlToSend
-                }
-            ] : undefined;
-
-            // Prepare data payload for the /api/chat call via originalHandleSubmit
-            const submitDataPayload = {
-                model: currentModel,
-                documentId,
-                ...editorContextData,
-                firstImageSignedUrl: signedUrlToSend,
-                taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined,
-                // ---> NEW: Conditionally add audio metadata <--- 
-                ...(isAudioSubmission && {
-                    inputMethod: 'audio',
-                    whisperDetails: audioWhisperDetails,
-                })
-            };
-
-            // ---> RE-ADD: Construct the user message object for useChat <---
-            const userMessageForAi: Message = {
-                id: `temp-user-${Date.now()}`,
-                role: 'user',
-                content: finalInput?.trim() || '', // Use finalInput (text or transcription)
-                createdAt: new Date(),
-            };
-
-            // --- Call original useChat submit ---
-            // ---> NEW: Wrap in try...catch <---
-            try {
-                console.log('[handleSubmit] Preparing to call original useChat submit. Current isLoading state:', isLoading);
-                if (isLoading) {
-                    console.warn('[handleSubmit] Aborting call to originalHandleSubmit because isLoading is true!');
-                    toast.error("Chat is still processing the previous request.");
-                    return; // Explicitly prevent call if loading
-                }
-                console.log('[handleSubmit] Calling original useChat submit with message and payload:', { userMessageForAi, submitDataPayload });
-                
-                // ---> NEW: Conditionally construct options object <---
-                const submitOptions: { data: any; experimental_attachments?: any } = {
-                    data: submitDataPayload as any,
-                };
-                if (attachmentsForOptimisticUI) {
-                    submitOptions.experimental_attachments = attachmentsForOptimisticUI;
-                }
-                // --- End Conditional Options --- 
-                
-                // ---> REVERT: Pass the message object as first arg <---
-                originalHandleSubmit(userMessageForAi as any, submitOptions);
-                
-                // ---> Moved state clearing inside try block <---
-                setInput(''); // Clear text input after submission
-                clearFileUploadPreview(); // Clear file preview
-                setFollowUpContext(null); // Clear follow-up context
-                console.log('[handleSubmit] originalHandleSubmit called successfully (request potentially sent).');
-
-            } catch (submitHookError: any) {
-                 console.error("[handleSubmit] Error occurred *during* call to originalHandleSubmit:", submitHookError);
-                 toast.error(`Failed to initiate chat request: ${submitHookError.message || 'Unknown internal error'}`);
+        // --- Prepare attachments for optimistic UI update (no change) ---
+        const attachmentsForOptimisticUI = signedUrlToSend ? [
+            {
+                contentType: 'image/*',
+                name: imagePathForDb?.split('/').pop() || 'uploaded_image',
+                url: signedUrlToSend
             }
-            // --- End Call original useChat submit ---
+        ] : undefined;
 
-        } catch (submitError: any) {
-             // Catch potential errors during getEditorContext (less likely now)
-             console.error("[useChatInteractions handleSubmit] Error during submission process (likely pre-submit):", submitError);
-             toast.error(`Failed to send message: ${submitError.message}`);
+        // --- Prepare data payload for the API call (no change) ---
+        const submitDataPayload = {
+            model: currentModel,
+            documentId,
+            ...editorContextData,
+            firstImageSignedUrl: signedUrlToSend,
+            taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined,
+            ...(isAudioSubmission && {
+                inputMethod: 'audio',
+                whisperDetails: audioWhisperDetails,
+            }),
+            followUpContext: followUpContext || null // Add follow-up context to data payload
+        };
+
+        // --- Create the user message object with combined content --- 
+        const userMessageForAi: Message = {
+            id: `temp-user-${Date.now()}`,
+            role: 'user',
+            content: finalInput?.trim() || '', // Use combined input
+            createdAt: new Date(),
+            // Add attachments to the message object itself IF they exist
+            ...(attachmentsForOptimisticUI && { experimental_attachments: attachmentsForOptimisticUI })
+        };
+
+        // --- Manually update UI state BEFORE sending API request --- 
+        setMessages([...messages, userMessageForAi]);
+        
+        // --- Set hook input state for API call & Clear context state --- 
+        setInput(finalInput); // Set hook's input to the combined value
+        clearFileUploadPreview(); // Clear file preview
+        setFollowUpContext(null); // Clear follow-up context store
+
+        // --- Prepare options for the API call (NO message argument needed now) --- 
+        const submitOptions: { data: any; } = {
+            data: submitDataPayload as any,
+            // No need for experimental_attachments here anymore, it's part of the message object added via setMessages
+        };
+
+        // --- Call original useChat submit with ONLY options to trigger API call ---
+        try {
+            console.log('[handleSubmit] Preparing to call original useChat submit (API only). Current isLoading state:', isLoading);
+            if (isLoading) {
+                console.warn('[handleSubmit] Aborting call to originalHandleSubmit because isLoading is true!');
+                toast.error("Chat is still processing the previous request.");
+                // Clear the message we optimistically added if we abort?
+                // setMessages(currentMessages => currentMessages.filter(m => m.id !== userMessageForAi.id)); 
+                // ^ Consider adding this rollback if needed
+                return; // Explicitly prevent call if loading
+            }
+            console.log('[handleSubmit] Calling original useChat submit with options:', submitOptions);
+            
+            // ---> Pass undefined for message, only options <---
+            originalHandleSubmit(undefined, submitOptions);
+            
+            console.log('[handleSubmit] originalHandleSubmit (API only) called successfully (request potentially sent).');
+
+            // ---> Clear visual input field AFTER submit call <---
+            setInput('');
+
+        } catch (submitHookError: any) {
+             console.error("[handleSubmit] Error occurred *during* call to originalHandleSubmit (API only):", submitHookError);
+             toast.error(`Failed to initiate chat request: ${submitHookError.message || 'Unknown internal error'}`);
+             // Rollback the optimistically added message on error?
+             // setMessages(currentMessages => currentMessages.filter(m => m.id !== userMessageForAi.id)); 
+             // ^ Consider adding this rollback if needed
         }
+        // Removed outer try...catch as errors should be caught within the inner one now
+        
     }, [
         documentId, followUpContext, input, model, uploadedImagePath, uploadedImageSignedUrl,
         isLoading, isUploading, getEditorContext, originalHandleSubmit, clearFileUploadPreview,
-        setFollowUpContext, setInput,
-        // ---> NEW: Add pending state dependencies <--- 
+        setFollowUpContext, setInput, messages, setMessages, // Added messages, setMessages
         pendingInitialSubmission, pendingSubmissionMethod, pendingWhisperDetails
-    ]); // Removed messages, setMessages from deps
+    ]);
 
     // --- Audio Processing Logic (IMPLEMENTED) ---
     const handleProcessRecordedAudio = useCallback(async () => {

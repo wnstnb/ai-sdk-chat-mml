@@ -651,6 +651,7 @@ export default function EditorPage() {
             handleEditorChange(editor);
         } catch (error: any) { console.error('Send to editor error:', error); toast.error(`Send to editor error: ${error.message}`); }
     };
+    const handleToggleChat = () => setIsChatCollapsed(!isChatCollapsed);
     // --- END Handler Definitions ---
 
     // --- Render Logic ---
@@ -665,8 +666,9 @@ export default function EditorPage() {
         <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
-            {/* --- NEW: Use EditorPaneWrapper --- */}
-            <div className="flex-1 flex flex-col p-4 border-r border-[--border-color] relative overflow-hidden">
+            {/* Editor Pane Container - Takes remaining space */}
+            <div className="flex-1 flex flex-col relative overflow-hidden">
+                 {/* Moved EditorTitleBar inside */}
                 <EditorTitleBar
                     currentTitle={currentTitle}
                     isEditingTitle={isEditingTitle}
@@ -685,87 +687,135 @@ export default function EditorPage() {
                     isSaving={isSaving}
                 />
                 {pageError && !pageError.startsWith("Chat Error:") && (
-                    <div className="mb-2 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
+                    <div className="m-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
                 )}
-                <EditorPaneWrapper
-                    documentId={documentId}
-                    initialContent={initialEditorContent}
-                    editorRef={editorRef}
-                    onEditorContentChange={handleEditorChange}
-                    isChatCollapsed={isChatCollapsed}
-                    input={input}
-                    handleInputChange={handleInputChange}
-                    handleSubmit={handleSubmit}
-                    isLoading={isChatLoading}
-                    model={model}
-                    setModel={setModel}
-                    stop={stop}
-                    files={files}
-                    handleFileChange={handleFileChange}
-                    handlePaste={handlePaste}
-                    handleUploadClick={handleUploadClick}
-                    isUploading={isUploading}
-                    uploadError={uploadError}
-                    uploadedImagePath={uploadedImagePath}
-                    followUpContext={followUpContext}
-                    setFollowUpContext={setFollowUpContext}
-                    formRef={formRef}
-                    inputRef={inputRef}
-                    fileInputRef={fileInputRef}
-                    handleKeyDown={handleKeyDown}
-                    isRecording={isRecording}
-                    isTranscribing={isTranscribing}
-                    micPermissionError={micPermissionError}
-                    startRecording={startRecording}
-                    stopRecording={stopRecording}
-                />
-                <button onClick={() => setIsChatCollapsed(!isChatCollapsed)} className="absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 z-20 p-1 bg-[--toggle-button-bg] border border-[--border-color] rounded-full text-[--text-color] hover:bg-[--hover-bg] focus:outline-none" title={isChatCollapsed ? 'Expand chat' : 'Collapse chat'}>
-                    {isChatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
-                </button>
+                {/* Added padding around the editor wrapper */}
+                <div className="flex-1 flex flex-col p-4 overflow-hidden relative">
+                    <EditorPaneWrapper
+                        documentId={documentId}
+                        initialContent={initialEditorContent}
+                        editorRef={editorRef}
+                        onEditorContentChange={handleEditorChange}
+                        isChatCollapsed={isChatCollapsed}
+                        input={input}
+                        handleInputChange={handleInputChange}
+                        handleSubmit={handleSubmit}
+                        isLoading={isChatLoading}
+                        model={model}
+                        setModel={setModel}
+                        stop={stop}
+                        files={files}
+                        handleFileChange={handleFileChange}
+                        handlePaste={handlePaste}
+                        handleUploadClick={handleUploadClick}
+                        isUploading={isUploading}
+                        uploadError={uploadError}
+                        uploadedImagePath={uploadedImagePath}
+                        followUpContext={followUpContext}
+                        setFollowUpContext={setFollowUpContext}
+                        formRef={formRef}
+                        inputRef={inputRef}
+                        fileInputRef={fileInputRef}
+                        handleKeyDown={handleKeyDown}
+                        isRecording={isRecording}
+                        isTranscribing={isTranscribing}
+                        micPermissionError={micPermissionError}
+                        startRecording={startRecording}
+                        stopRecording={stopRecording}
+                    />
+                </div>
             </div>
-            {/* --- REMOVED: Original Editor Pane JSX (including title bar, error, wrapper div, button) --- */}
 
-            {/* Use ChatPaneWrapper */}
-            <ChatPaneWrapper
-                isChatCollapsed={isChatCollapsed}
-                chatPaneWidth={chatPaneWidth}
-                dragHandleRef={dragHandleRef}
-                handleMouseDownResize={handleMouseDownResize}
-                chatMessages={chatMessages}
-                displayedMessagesCount={displayedMessagesCount}
-                isLoadingMessages={isLoadingMessages}
-                isChatLoading={isChatLoading}
-                setDisplayedMessagesCount={setDisplayedMessagesCount}
-                handleSendToEditor={handleSendToEditor}
-                messagesEndRef={messagesEndRef}
-                messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
-                input={input}
-                handleInputChange={handleInputChange}
-                handleSubmit={handleSubmit}
-                model={model}
-                setModel={setModel}
-                stop={stop}
-                files={files}
-                handleFileChange={handleFileChange}
-                handlePaste={handlePaste}
-                handleUploadClick={handleUploadClick}
-                isUploading={isUploading}
-                uploadError={uploadError}
-                uploadedImagePath={uploadedImagePath}
-                followUpContext={followUpContext}
-                setFollowUpContext={setFollowUpContext}
-                formRef={formRef}
-                inputRef={inputRef}
-                fileInputRef={fileInputRef}
-                handleKeyDown={handleKeyDown}
-                initialChatPaneWidthPercent={INITIAL_CHAT_PANE_WIDTH_PERCENT}
-                minChatPaneWidthPx={MIN_CHAT_PANE_WIDTH_PX}
-                isRecording={isRecording}
-                isTranscribing={isTranscribing}
-                micPermissionError={micPermissionError}
-                startRecording={startRecording}
-                stopRecording={stopRecording}
-            />
+            {/* Resize Handle - Rendered conditionally based on chat pane state */}
+            {!isChatCollapsed && (
+                 <div
+                     ref={dragHandleRef}
+                     onMouseDown={handleMouseDownResize}
+                     className="w-2 h-full cursor-col-resize bg-transparent hover:bg-[--accent-color]/20 transition-colors z-20 flex-shrink-0 border-l border-[--border-color]"
+                     style={{ flexBasis: '8px' }} // Ensure handle has base width
+                 />
+             )}
+
+            {/* Chat Pane with Animation */}
+            <AnimatePresence>
+                {!isChatCollapsed && (
+                    <motion.div
+                        key="chat-pane" // Added key for AnimatePresence
+                        initial={{ width: 0, opacity: 0 }}
+                        animate={{
+                            width: chatPaneWidth ? `${chatPaneWidth}px` : `${INITIAL_CHAT_PANE_WIDTH_PERCENT}%`,
+                            opacity: 1
+                        }}
+                        exit={{ width: 0, opacity: 0 }}
+                        transition={{ duration: 0.3, ease: 'easeInOut' }}
+                        style={{
+                            flexShrink: 0, // Prevent shrinking during layout changes
+                            // width is handled by animate
+                            overflow: 'hidden', // Hide content during animation
+                        }}
+                        // Added flex flex-col and bg color directly here
+                        className="h-full flex flex-col bg-[--bg-secondary] relative" // Added relative for potential internal absolute positioning
+                        // No border needed here if handle has it
+                    >
+                        {/* Render ChatPaneWrapper inside the motion.div */}
+                        <ChatPaneWrapper
+                            isChatCollapsed={isChatCollapsed}
+                            chatMessages={chatMessages}
+                            displayedMessagesCount={displayedMessagesCount}
+                            isLoadingMessages={isLoadingMessages}
+                            isChatLoading={isChatLoading}
+                            setDisplayedMessagesCount={setDisplayedMessagesCount}
+                            handleSendToEditor={handleSendToEditor}
+                            messagesEndRef={messagesEndRef}
+                            messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
+                            input={input}
+                            handleInputChange={handleInputChange}
+                            handleSubmit={handleSubmit}
+                            model={model}
+                            setModel={setModel}
+                            stop={stop}
+                            files={files}
+                            handleFileChange={handleFileChange}
+                            handlePaste={handlePaste}
+                            handleUploadClick={handleUploadClick}
+                            isUploading={isUploading}
+                            uploadError={uploadError}
+                            uploadedImagePath={uploadedImagePath}
+                            followUpContext={followUpContext}
+                            setFollowUpContext={setFollowUpContext}
+                            formRef={formRef}
+                            inputRef={inputRef}
+                            fileInputRef={fileInputRef}
+                            handleKeyDown={handleKeyDown}
+                            initialChatPaneWidthPercent={INITIAL_CHAT_PANE_WIDTH_PERCENT}
+                            minChatPaneWidthPx={MIN_CHAT_PANE_WIDTH_PX}
+                            isRecording={isRecording}
+                            isTranscribing={isTranscribing}
+                            micPermissionError={micPermissionError}
+                            startRecording={startRecording}
+                            stopRecording={stopRecording}
+                        />
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+             {/* Toggle Button - Positioned absolutely relative to the main container */}
+             {/* Position depends on whether the handle exists */}
+             <button
+                 onClick={handleToggleChat} // Use dedicated handler
+                 className={`absolute top-1/2 transform -translate-y-1/2 z-30 p-1.5 rounded-full bg-[--toggle-button-bg] border border-[--border-color] shadow-md text-[--text-color] hover:bg-[--hover-bg] transition-all duration-300 ease-in-out`}
+                 style={{
+                     right: isChatCollapsed
+                         ? '-8px' // Position near the edge when collapsed
+                         : chatPaneWidth
+                           ? `${chatPaneWidth + 4}px` // Position just right of the handle/pane edge
+                           : `${(INITIAL_CHAT_PANE_WIDTH_PERCENT / 100) * window.innerWidth + 4}px`, // Fallback position calculation
+                     transform: 'translate(50%, -50%)' // Adjust horizontal position correctly
+                 }}
+                 aria-label={isChatCollapsed ? "Open chat pane" : "Close chat pane"}
+             >
+                 {isChatCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+             </button>
         </div>
     );
 } 
