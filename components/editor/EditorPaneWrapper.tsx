@@ -59,6 +59,9 @@ interface EditorPaneWrapperProps {
     startRecording: () => void;
     stopRecording: (timedOut?: boolean) => void;
     // --- END NEW AUDIO PROPS ---
+    // --- ADD AUDIO VISUALIZATION PROP ---
+    audioTimeDomainData: Uint8Array | null;
+    // --- END AUDIO VISUALIZATION PROP ---
 }
 
 export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
@@ -95,6 +98,9 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     startRecording,
     stopRecording,
     // --- END NEW AUDIO PROPS DESTRUCTURED ---
+    // --- DESTRUCTURE AUDIO VISUALIZATION PROP ---
+    audioTimeDomainData,
+    // --- END AUDIO VISUALIZATION PROP ---
 }) => {
     return (
         <div className="flex-1 flex flex-col relative border rounded-lg bg-[--editor-bg] border-[--border-color] shadow-sm overflow-hidden">
@@ -156,6 +162,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                             micPermissionError={micPermissionError}
                             startRecording={startRecording}
                             stopRecording={stopRecording}
+                            audioTimeDomainData={audioTimeDomainData}
                         />
                     </form>
                 </div>

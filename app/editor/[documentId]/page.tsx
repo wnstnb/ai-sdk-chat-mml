@@ -723,6 +723,7 @@ export default function EditorPage() {
                         micPermissionError={micPermissionError}
                         startRecording={startRecording}
                         stopRecording={stopRecording}
+                        audioTimeDomainData={audioTimeDomainData}
                     />
                 </div>
             </div>
