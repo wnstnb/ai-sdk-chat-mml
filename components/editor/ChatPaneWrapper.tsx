@@ -5,6 +5,7 @@ import { ChatMessagesList } from './ChatMessagesList';
 import { ChatInputArea } from './ChatInputArea';
 // import { Resizable } from 're-resizable'; // No longer needed
 import { type ToolInvocation } from '@ai-sdk/ui-utils';
+import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions';
 
 // Define props required by ChatPaneWrapper and its children
 interface ChatPaneWrapperProps {
@@ -55,6 +56,7 @@ interface ChatPaneWrapperProps {
     micPermissionError: boolean;
     startRecording: () => void;
     stopRecording: (timedOut?: boolean) => void;
+    audioTimeDomainData: AudioTimeDomainData;
     // --- END NEW AUDIO PROPS --- 
 }
 
@@ -99,6 +101,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     micPermissionError,
     startRecording,
     stopRecording,
+    audioTimeDomainData,
     // --- END NEW AUDIO PROPS --- 
 }) => {
     // State to force remount of ChatInputArea after animation - Keep if still needed
@@ -164,6 +167,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                     micPermissionError={micPermissionError}
                     startRecording={startRecording}
                     stopRecording={stopRecording}
+                    audioTimeDomainData={audioTimeDomainData}
                 />
             </div>
         // </Resizable> // REMOVED

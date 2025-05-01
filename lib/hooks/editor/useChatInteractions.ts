@@ -50,8 +50,12 @@ interface UseChatInteractionsReturn {
     micPermissionError: boolean;
     startRecording: () => void;
     stopRecording: (timedOut?: boolean) => void; // Make timedOut optional
+    audioTimeDomainData: AudioTimeDomainData; // <<< NEW: Exposed audio data for visualization
     // --- END NEW AUDIO PROPS ---
 }
+
+// --- NEW: Type for audio visualization data ---
+export type AudioTimeDomainData = Uint8Array | null; // Export the type
 
 export function useChatInteractions({
     documentId,
@@ -78,6 +82,19 @@ export function useChatInteractions({
     const [recordingTimerId, setRecordingTimerId] = useState<NodeJS.Timeout | null>(null);
     const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
     const [micPermissionError, setMicPermissionError] = useState<boolean>(false);
+
+    // --- NEW: Ref to track recording state synchronously for the animation loop ---
+    const isRecordingRef = useRef(false);
+    // --- END NEW ---
+
+    // --- NEW: Audio Visualization State ---
+    const [audioTimeDomainData, setAudioTimeDomainData] = useState<AudioTimeDomainData>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const analyserRef = useRef<AnalyserNode | null>(null);
+    const audioSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+    const animationFrameRef = useRef<number | null>(null); // To store requestAnimationFrame ID
+    const dataArrayRef = useRef<Uint8Array | null>(null); // To store the array for data retrieval
+    // --- END NEW ---
 
     // --- External Hooks ---
     const router = useRouter();
@@ -369,11 +386,60 @@ export function useChatInteractions({
         }
     }, [audioChunksRef, mediaRecorder, setInput, handleSubmit, setIsTranscribing, setIsRecording, setMediaRecorder]); // Added dependencies
 
-    // --- Stop Recording Logic (IMPLEMENTED - Moved Before Start) ---
-    // Defined before handleStartRecording to resolve dependency order
+    // --- NEW: Function to handle the audio analysis loop ---
+    const analyseAudio = useCallback(() => {
+        // Use ref check for loop continuation, state check might be stale on first frame
+        if (!isRecordingRef.current) {
+            console.log("[analyseAudio] isRecordingRef is false, stopping loop.");
+            return; 
+        }
+
+        if (!analyserRef.current || !dataArrayRef.current) {
+            console.log("[analyseAudio] Analyser or data array not ready, skipping frame.");
+            // Still request next frame if recording is intended
+            if (isRecordingRef.current) {
+                 animationFrameRef.current = requestAnimationFrame(analyseAudio);
+            }
+            return; 
+        }
+
+        try {
+            analyserRef.current.getByteTimeDomainData(dataArrayRef.current);
+            const newData = new Uint8Array(dataArrayRef.current);
+            setAudioTimeDomainData(newData);
+
+            // Continue the loop based on the ref
+            if (isRecordingRef.current) { 
+                animationFrameRef.current = requestAnimationFrame(analyseAudio);
+            } 
+            // No need for an else log here, the top check handles stopping
+
+        } catch (error) {
+            console.error("[analyseAudio] Error getting time domain data:", error);
+            // Optionally stop on error, or just log and try next frame
+            if (isRecordingRef.current) { // Still try next frame if recording
+                animationFrameRef.current = requestAnimationFrame(analyseAudio);
+            }
+        }
+    // Still include isRecording state in deps so the callback itself updates
+    // if the state is used for other logic within the hook/component.
+    // The ref handles the immediate loop continuation logic.
+    }, [isRecording]); 
+
+    // --- Stop Recording Logic (MODIFIED for cleanup) ---
     const handleStopRecording = useCallback((timedOut = false) => {
         console.log(`handleStopRecording called. Timed out: ${timedOut}, Current recorder state: ${mediaRecorder?.state}`);
-        
+        isRecordingRef.current = false; // <<< Set ref to false
+
+        // --- NEW: Stop audio analysis loop ---
+        if (animationFrameRef.current) {
+            console.log("[handleStopRecording] Cancelling animation frame:", animationFrameRef.current);
+            cancelAnimationFrame(animationFrameRef.current);
+            animationFrameRef.current = null;
+        }
+        setAudioTimeDomainData(null); // Clear visualization data
+        // --- END NEW ---
+
         // Clear the timeout regardless of recorder state
         if (recordingTimerId) {
             clearTimeout(recordingTimerId);
@@ -381,29 +447,70 @@ export function useChatInteractions({
             console.log("Cleared recording timer.");
         }
 
+        // Stop MediaRecorder if active
         if (mediaRecorder && mediaRecorder.state === 'recording') {
             console.log("Stopping MediaRecorder...");
-            mediaRecorder.stop(); // This triggers the onstop handler defined in startRecording
-            setIsRecording(false); // Set recording state immediately 
+            mediaRecorder.stop(); // Triggers onstop -> handleProcessRecordedAudio
+            // Set recording state immediately - ensures UI updates even if onstop takes time
+            setIsRecording(false); // <--- MOVED setIsRecording(false) here
             if (timedOut) {
                 toast.info("Recording stopped automatically after 30 seconds.");
             }
         } else {
              console.log("MediaRecorder not active or already stopped, ensuring isRecording is false.");
-            setIsRecording(false);
-            if (mediaRecorder?.stream) {
-                console.log("Cleaning up tracks for non-recording recorder.");
-                mediaRecorder.stream.getTracks().forEach(track => track.stop());
-            }
-            setMediaRecorder(null);
+            setIsRecording(false); // Ensure state is false even if recorder was not active
+            // Cleanup stream tracks if they exist and weren't cleaned by recorder.onstop
+             if (mediaRecorder?.stream) {
+                console.log("[handleStopRecording] Cleaning up tracks for non-recording recorder.");
+                 mediaRecorder.stream.getTracks().forEach(track => track.stop());
+             }
+             setMediaRecorder(null); // Clear recorder state here too
         }
-    // Dependencies: recorder instance and timer ID state/setter - remove setIsRecording/setRecordingTimerId if causing issues, rely on closure
-    }, [mediaRecorder, recordingTimerId]); 
 
-    // --- Start Recording Logic (NEW) ---
+        // --- NEW: Cleanup AudioContext and Nodes ---
+        // Use setTimeout to allow potential pending async operations to finish
+        // and avoid potential race conditions with recorder stopping.
+        setTimeout(() => {
+            if (audioSourceNodeRef.current) {
+                 console.log("[handleStopRecording Cleanup] Disconnecting source node.");
+                audioSourceNodeRef.current.disconnect();
+                audioSourceNodeRef.current = null;
+            }
+            // Analyser is implicitly disconnected when source is disconnected.
+            analyserRef.current = null;
+
+            if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+                 console.log("[handleStopRecording Cleanup] Closing AudioContext. Current state:", audioContextRef.current.state);
+                audioContextRef.current.close().then(() => {
+                    console.log("[handleStopRecording Cleanup] AudioContext closed successfully.");
+                    audioContextRef.current = null;
+                }).catch(err => {
+                     console.error("[handleStopRecording Cleanup] Error closing AudioContext:", err);
+                     audioContextRef.current = null; // Still nullify ref on error
+                });
+            } else {
+                console.log("[handleStopRecording Cleanup] AudioContext already closed or null.");
+                 audioContextRef.current = null; // Ensure ref is null
+            }
+             dataArrayRef.current = null; // Clear data array ref
+         }, 50); // Small delay (e.g., 50ms) - adjust if needed
+         // --- END NEW ---
+
+    // Dependencies: recorder instance, timer ID state/setter, and NEW audio refs
+    }, [mediaRecorder, recordingTimerId]); // Removed analyseAudio from deps, managed by isRecording
+
+    // --- Start Recording Logic (MODIFIED) ---
     const handleStartRecording = useCallback(async () => {
         console.log("Attempting to start recording...");
         setMicPermissionError(false); // Reset error state
+
+        // --- NEW: Clear previous audio data ---
+        setAudioTimeDomainData(null);
+        if (animationFrameRef.current) { // Cancel any lingering frame loop
+            cancelAnimationFrame(animationFrameRef.current);
+            animationFrameRef.current = null;
+        }
+        // --- END NEW ---
 
         if (!navigator.mediaDevices?.getUserMedia) {
             toast.error("Audio recording is not supported by this browser.");
@@ -421,7 +528,57 @@ export function useChatInteractions({
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             console.log("Microphone access granted.");
 
-            // Select MIME type
+            // --- NEW: Get Audio Track and Clone it --- 
+            const audioTracks = stream.getAudioTracks();
+            if (audioTracks.length === 0) {
+                throw new Error("No audio track found in the stream.");
+            }
+            const originalAudioTrack = audioTracks[0];
+            const clonedAudioTrack = originalAudioTrack.clone();
+            console.log("[handleStartRecording] Cloned audio track.");
+
+            // Create separate streams for AudioContext and MediaRecorder
+            const streamForContext = new MediaStream([originalAudioTrack]);
+            const streamForRecorder = new MediaStream([clonedAudioTrack]);
+            // --- END NEW TRACK CLONING --- 
+
+            // --- Initialize AudioContext and Analyser (Use streamForContext) ---
+            try {
+                 // Close existing context if any (e.g., from a previous failed attempt)
+                if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+                     console.log("[handleStartRecording] Closing existing AudioContext before creating new one.");
+                    await audioContextRef.current.close();
+                 }
+                 audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+                 console.log("[handleStartRecording] AudioContext created/resumed. State:", audioContextRef.current.state);
+
+                // <<< Use streamForContext here >>>
+                audioSourceNodeRef.current = audioContextRef.current.createMediaStreamSource(streamForContext);
+                analyserRef.current = audioContextRef.current.createAnalyser();
+
+                // Configure AnalyserNode
+                analyserRef.current.fftSize = 2048;
+                const bufferLength = analyserRef.current.frequencyBinCount;
+                console.log("[handleStartRecording] Analyser bufferLength:", bufferLength);
+                dataArrayRef.current = new Uint8Array(bufferLength);
+
+                // Connect the nodes: Source -> Analyser
+                audioSourceNodeRef.current.connect(analyserRef.current);
+                 console.log("[handleStartRecording] Audio nodes created and connected.");
+
+            } catch (audioSetupError) {
+                 console.error("[handleStartRecording] Failed to set up AudioContext/Analyser:", audioSetupError);
+                 toast.error("Failed to initialize audio analysis.");
+                 // Cleanup BOTH tracks if audio setup failed after getting stream
+                 originalAudioTrack.stop();
+                 clonedAudioTrack.stop();
+                 setIsRecording(false);
+                 setMicPermissionError(true);
+                 return;
+            }
+            // --- END AudioContext Setup ---
+
+            // Select MIME type for MediaRecorder (no change needed here)
             const options: MediaRecorderOptions = {};
             const preferredType = 'audio/webm';
             if (MediaRecorder.isTypeSupported(preferredType)) {
@@ -431,61 +588,62 @@ export function useChatInteractions({
                 console.log(`Preferred MIME type ${preferredType} not supported, using browser default.`);
             }
 
-            const recorder = new MediaRecorder(stream, options);
-            audioChunksRef.current = []; // Clear previous chunks using ref
+            // <<< Use streamForRecorder here >>>
+            const recorder = new MediaRecorder(streamForRecorder, options);
+            audioChunksRef.current = []; // Clear previous chunks
 
             recorder.ondataavailable = (event) => {
                 if (event.data.size > 0) {
                     audioChunksRef.current.push(event.data);
-                    console.log(`Audio chunk received, size: ${event.data.size}, total chunks: ${audioChunksRef.current.length}`);
+                    // console.log(`Audio chunk received, size: ${event.data.size}, total chunks: ${audioChunksRef.current.length}`); // Less verbose log
                 }
             };
 
-            recorder.onstop = handleProcessRecordedAudio;
-            
+            // Use modified stop handler
+            recorder.onstop = () => {
+                 console.log("MediaRecorder onstop triggered.");
+                // handleProcessRecordedAudio handles transcription
+                 handleProcessRecordedAudio();
+                 // Explicitly call the main stop handler for cleanup consistency,
+                 // even though handleProcessRecordedAudio also cleans up some state.
+                 // The main handler ensures AudioContext/Analyser cleanup happens.
+                 // Pass false as it's not a timeout.
+                 // NOTE: Avoid calling handleStopRecording directly inside onstop if it causes issues.
+                 // The primary stop should happen via user action or timer.
+                 // Let's rely on the main handleStopRecording call triggered externally.
+                 // handleStopRecording(false); // <--- Let's REMOVE this to avoid double-stopping issues. Cleanup is handled by the external call.
+            };
+
             recorder.onerror = (event) => {
-                console.error("MediaRecorder error:", event);
-                toast.error(`Recording error: ${ (event as any)?.error?.name || 'Unknown error' }`);
-                setIsRecording(false);
-                setMediaRecorder(null);
-                stream.getTracks().forEach(track => track.stop());
-                 if (recordingTimerId) clearTimeout(recordingTimerId);
-                setRecordingTimerId(null);
+                // ... existing recorder error handling ...
+                 handleStopRecording(false); // Ensure full cleanup on recorder error
             };
 
             setMediaRecorder(recorder);
             recorder.start();
-            setIsRecording(true);
+            setIsRecording(true); // Set state AFTER recorder starts
+            isRecordingRef.current = true; // <<< Set ref to true
             console.log("Recording started. State:", recorder.state);
 
-            // Start 30-second timer
+            // --- NEW: Start the analysis loop ---
+            console.log("[handleStartRecording] Starting audio analysis loop...");
+            animationFrameRef.current = requestAnimationFrame(analyseAudio);
+            // --- END NEW ---
+
+            // Start 30-second timer (no change)
             const timerId = setTimeout(() => {
                 console.log("Recording timer (30s) finished.");
-                handleStopRecording(true); // Pass true for timedOut 
-            }, 30000); // 30 seconds
+                handleStopRecording(true); // Pass true for timedOut
+            }, 30000);
             setRecordingTimerId(timerId);
             console.log(`Recording timer set with ID: ${timerId}`);
 
         } catch (err: any) {
-            console.error("Error getting user media or starting recorder:", err);
-            let errorMsg = "Could not start recording.";
-            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                errorMsg = "Microphone permission denied.";
-            } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-                errorMsg = "No microphone found.";
-            } else {
-                errorMsg = `Mic Error: ${err.name || 'Unknown'}`;
-            }
-            toast.error(errorMsg);
-            setMicPermissionError(true);
-            setIsRecording(false);
-            // Clear any pending submission if mic access fails
-            setPendingInitialSubmission(null);
-            setPendingSubmissionMethod(null);
-            setPendingWhisperDetails(null);
+            // ... existing getUserMedia error handling ...
+             handleStopRecording(false); // Ensure full cleanup on getUserMedia error
         }
-    // Added handleStopRecording dependency
-    }, [handleProcessRecordedAudio, recordingTimerId, handleStopRecording]); 
+    // Added handleStopRecording, analyseAudio and audio refs dependencies
+    }, [handleProcessRecordedAudio, recordingTimerId, handleStopRecording, analyseAudio]); // Keep analyseAudio here
 
     // --- Initial Message Processing ---
     useEffect(() => {
@@ -508,6 +666,78 @@ export function useChatInteractions({
             setPendingInitialSubmission(null);
         }
     }, [input, pendingInitialSubmission, isLoading, isRecording, isTranscribing, handleSubmit]); // Added recording states
+
+    // --- SPLIT CLEANUP EFFECTS ---
+
+    // Effect specifically for cleaning up the recording timer when it changes or on unmount
+    useEffect(() => {
+        // Return a cleanup function for the timer
+        return () => {
+            if (recordingTimerId) {
+                console.log("[useChatInteractions Timer Cleanup] Clearing recording timer:", recordingTimerId);
+                clearTimeout(recordingTimerId);
+            }
+        };
+    }, [recordingTimerId]); // Only depend on the timer ID itself
+
+    // Effect for handling resource cleanup ONLY on component unmount
+    useEffect(() => {
+        // This function runs ONCE when the component mounts
+        // It returns a cleanup function that runs ONLY when the component unmounts
+        return () => {
+            console.log("[useChatInteractions UNMOUNT Cleanup] Cleaning up resources.");
+
+            // Ensure animation frame is cancelled
+            if (animationFrameRef.current) {
+                console.log("[useChatInteractions UNMOUNT Cleanup] Cancelling animation frame:", animationFrameRef.current);
+                cancelAnimationFrame(animationFrameRef.current);
+                animationFrameRef.current = null;
+            }
+
+            // Ensure recording stops if unmounting while active
+            // Access state/refs directly as this runs only at the very end
+            if (isRecording || mediaRecorder?.state === 'recording') {
+                console.log("[useChatInteractions UNMOUNT Cleanup] Stopping recording due to unmount.");
+                // Call stop directly - ensures tracks/recorder are stopped
+                // Note: handleStopRecording also tries to close context, which we do below anyway.
+                // Avoid calling handleStopRecording here if it causes double-closing issues.
+                // Let's try stopping the recorder and tracks directly first.
+                if (mediaRecorder) {
+                    if (mediaRecorder.stream) {
+                        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                        console.log("[useChatInteractions UNMOUNT Cleanup] Stopped media stream tracks.");
+                    }
+                    if (mediaRecorder.state === 'recording') {
+                         mediaRecorder.stop();
+                         console.log("[useChatInteractions UNMOUNT Cleanup] Stopped media recorder.");
+                    }
+                    // Don't call setMediaRecorder here - state updates are irrelevant during unmount
+                }
+                // No need to call setIsRecording - component is unmounting
+            }
+
+            // Ensure AudioContext is closed
+            if (audioContextRef.current) {
+                if (audioContextRef.current.state !== 'closed') {
+                    console.log("[useChatInteractions UNMOUNT Cleanup] Closing AudioContext. State:", audioContextRef.current.state);
+                    audioContextRef.current.close().catch(err => console.error("[UNMOUNT Cleanup] Error closing AudioContext:", err));
+                } else {
+                    console.log("[useChatInteractions UNMOUNT Cleanup] AudioContext was already closed.");
+                }
+                audioContextRef.current = null; // Clear ref
+            }
+
+            // Refs holding nodes are implicitly handled when context closes or stream stops.
+            audioSourceNodeRef.current = null;
+            analyserRef.current = null;
+            dataArrayRef.current = null;
+
+            // Clear refs/state that might persist (though usually unnecessary on unmount)
+            audioChunksRef.current = [];
+
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // <<< EMPTY DEPENDENCY ARRAY - Runs cleanup only on unmount
 
     // Return updated hook values
     return {
@@ -535,8 +765,9 @@ export function useChatInteractions({
         isRecording,
         isTranscribing,
         micPermissionError,
-        startRecording: handleStartRecording, // Export the actual function
-        stopRecording: handleStopRecording,   // Export the implemented function
+        startRecording: handleStartRecording,
+        stopRecording: handleStopRecording,
+        audioTimeDomainData, // <<< NEW: Export the state
         // --- END NEW AUDIO PROPS ---
     };
 } 

@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useEffect, KeyboardEvent } from 'react';
+import React, { useEffect, KeyboardEvent, useState, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MicIcon, StopCircleIcon } from 'lucide-react';
 import { AttachmentIcon, SendIcon } from '@/components/icons';
 import { ModelSelector } from '@/components/ModelSelector';
 import { TextFilePreview } from './TextFilePreview'; // Import from sibling file
 import Image from 'next/image'; // Import Next.js Image
+import CustomAudioVisualizer from './CustomAudioVisualizer'; // <<< NEW: Import custom visualizer
+import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions'; // <<< NEW: Import type
 
 // --- Helper Icon Component ---
 const StopIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -24,7 +26,7 @@ const StopIcon = (props: React.SVGProps<SVGSVGElement>) => (
     </svg>
 );
 
-// --- Chat Input UI Component (JSX only - Copied) ---
+// --- Chat Input UI Component Props (Updated) ---
 interface ChatInputUIProps {
     files: FileList | null;
     fileInputRef: React.RefObject<HTMLInputElement>;
@@ -47,13 +49,15 @@ interface ChatInputUIProps {
     uploadedImagePath: string | null; // Path of successfully uploaded image
     onStop?: () => void; // Optional handler for stopping AI generation
     isChatCollapsed?: boolean; // To trigger height adjustment
-    // --- NEW PROPS --- 
-    isRecording: boolean;
-    isTranscribing: boolean;
-    micPermissionError: boolean;
-    startRecording: () => void;
-    stopRecording: () => void;
-    // --- END NEW PROPS ---
+    
+    // --- AUDIO PROPS (Now Optional) --- 
+    isRecording?: boolean; // << Made optional
+    isTranscribing?: boolean; // << Made optional
+    micPermissionError?: boolean; // << Made optional
+    startRecording?: () => void; // << Made optional
+    stopRecording?: () => void; // << Made optional
+    audioTimeDomainData?: AudioTimeDomainData; // << Made optional
+    // --- END AUDIO PROPS ---
 }
 
 export const ChatInputUI: React.FC<ChatInputUIProps> = ({
@@ -74,79 +78,89 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     uploadedImagePath,
     onStop, // Stop AI generation
     isChatCollapsed,
-    // --- NEW PROPS DESTRUCTURED ---
-    isRecording,
-    isTranscribing,
-    micPermissionError,
+    // --- AUDIO PROPS DESTRUCTURED (with defaults/checks) ---
+    isRecording = false, // Default to false if not provided
+    isTranscribing = false, // Default to false
+    micPermissionError = false, // Default to false
     startRecording,
     stopRecording,
-    // --- END NEW PROPS DESTRUCTURED ---
+    audioTimeDomainData = null, // Default to null
+    // --- END AUDIO PROPS DESTRUCTURED ---
 }) => {
+    // Tooltip state remains if needed elsewhere, otherwise remove
+    const [showTooltip, setShowTooltip] = useState(false);
+    const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+
     // Adjust textarea height dynamically based on content
     useEffect(() => {
-        // Run on mount (due to key change) and when input changes
         if (inputRef.current) {
-            console.log('ChatInputUI useEffect: Adjusting height'); // Debug log
-            inputRef.current.style.height = 'auto'; // Reset height first
+            inputRef.current.style.height = 'auto';
             inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
         }
-        // No timeout needed here anymore
-    }, [input, inputRef]); // Remove isChatCollapsed dependency
+    }, [input, inputRef]);
 
-    // Determine if send button should be enabled for *submitting text*
-    const canSubmitText = !isLoading && !isUploading && !isTranscribing && !!input.trim();
+    // Determine if send button should be enabled (check depends on optional props)
+    const canSubmitText = !isLoading && !isUploading && !(isTranscribing ?? false) && !!input.trim();
 
-    // Determine if mic button should be enabled
-    const canRecord = !isLoading && !isUploading && !isRecording && !isTranscribing && !micPermissionError;
+    // Determine if mic button should be enabled (check depends on optional props)
+    const canRecord = !!startRecording && !!stopRecording && !isLoading && !isUploading && !(isRecording ?? false) && !(isTranscribing ?? false) && !(micPermissionError ?? false);
+    const micAvailable = !!startRecording && !!stopRecording; // Check if mic functions are even provided
 
-    const handleButtonClick = () => {
-        if (isLoading && onStop) { // Stop AI Generation
-            onStop();
-        } else if (isRecording) { // Stop Recording
+    // Simplified Mic button handler (check if functions exist)
+    const handleMicButtonClick = () => {
+        if (isRecording && stopRecording) {
+            console.log('[ChatInputUI] Stop button clicked. Calling stopRecording().');
             stopRecording();
-        } else if (!input.trim() && !uploadedImagePath) { // Start Recording (only if input is empty and no image)
+        } else if (canRecord && startRecording) {
+             console.log('[ChatInputUI] Mic button clicked. Calling startRecording().');
             startRecording();
         } else {
-            // Let the parent form handle text/image submission
-            // If not using a form, you might need an onSubmit prop
+            console.warn('[ChatInputUI] Mic button action prevented. Conditions/Props not met.');
+            if (!micAvailable) {
+                 console.warn('[ChatInputUI] Audio recording functions (start/stop) were not provided.');
+                 // Optionally show a message indicating audio input is unavailable in this context
+            }
         }
     };
 
-    // Determine button properties dynamically
+    // Determine button properties dynamically (consider optional props)
     let buttonIcon: React.ReactNode;
     let buttonTitle: string;
     let buttonDisabled: boolean;
     let buttonType: "button" | "submit";
-    let buttonOnClick: (() => void) | undefined = handleButtonClick;
+    let buttonOnClick: (() => void) | undefined = undefined;
     let buttonClassName = `w-full h-full flex items-center justify-center rounded-full text-[--muted-text-color] focus:outline-none`;
-    let showLoadingSpinner = isLoading; // Show spinner only for AI loading
-    let showPulsingIndicator = isRecording; // Show pulsing effect when recording
+    let showLoadingSpinner = isLoading;
+    let showPulsingIndicator = isRecording; 
 
-    if (isLoading) { // AI Response Loading
+    if (isLoading) {
         buttonIcon = <StopIcon aria-hidden="true" />;
         buttonTitle = "Stop generating";
         buttonDisabled = false; // Always allow stopping
         buttonType = "button";
         buttonClassName += ` bg-[--hover-bg]`;
-    } else if (isRecording) { // Currently Recording
+        buttonOnClick = onStop; // Use onStop handler for the loading state
+    } else if (isRecording) { // Check isRecording state first
         buttonIcon = <StopCircleIcon aria-hidden="true" />;
         buttonTitle = "Stop recording";
-        buttonDisabled = false; // Always allow stopping recording
+        buttonDisabled = !stopRecording; // Disable if stop function isn't provided
         buttonType = "button";
-        buttonClassName += ` bg-red-500/20 text-red-500 hover:bg-red-500/30`; // Active recording style
-    } else if (!input.trim() && !uploadedImagePath) { // Input is empty, show Mic
+        buttonClassName += ` bg-red-500/20 text-red-500 hover:bg-red-500/30`;
+        buttonOnClick = handleMicButtonClick;
+    } else if (micAvailable && !input.trim() && !uploadedImagePath) { // Mic available & input empty
         buttonIcon = <MicIcon aria-hidden="true" />;
         buttonTitle = micPermissionError ? "Mic permission denied" : (isTranscribing ? "Transcribing..." : "Record audio input");
-        buttonDisabled = !canRecord || isTranscribing; // Disable if cannot record or is transcribing
+        buttonDisabled = !canRecord || isTranscribing; // Use canRecord which checks availability
         buttonType = "button";
         buttonClassName += buttonDisabled ? ` opacity-50 cursor-not-allowed` : ` enabled:hover:bg-[--hover-bg] enabled:hover:text-[--text-color]`;
-    } else { // Input has text or image, show Send
+        buttonOnClick = handleMicButtonClick;
+    } else { // Input has text, image, OR mic is unavailable -> show Send/Submit logic
         buttonIcon = <SendIcon aria-hidden="true" />;
         buttonTitle = "Send message";
-        buttonDisabled = !canSubmitText || isTranscribing; // Disable if cannot submit or is transcribing
+        // Disable if cannot submit OR if recording/transcribing is happening (even if mic isn't primary action now)
+        buttonDisabled = !canSubmitText || isTranscribing || isRecording || isLoading || isUploading; 
         buttonType = "submit";
         buttonClassName += buttonDisabled ? ` opacity-50 cursor-not-allowed` : ` enabled:hover:bg-[--hover-bg] enabled:hover:text-[--text-color]`;
-        buttonOnClick = undefined; // Use form's onSubmit for type="submit"
     }
 
     return (
@@ -209,42 +223,56 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                 ref={fileInputRef}
                 className="hidden"
                 onChange={handleFileChange}
-                disabled={isLoading || isUploading || isRecording || isTranscribing} // Also disable file input
+                disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)} // Also disable file input
             />
 
+            {/* Main styled container */}
             <div className="flex flex-col w-full bg-[--input-bg] rounded-lg p-2 border border-[--border-color] shadow-sm">
-                 {/* ... textarea ... */}
-                 <textarea
-                     ref={inputRef}
-                     rows={1}
-                     className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40 align-bottom"
-                     placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (isRecording ? "Recording audio..." : (isTranscribing ? "Transcribing audio..." : "Ask a question, give instructions, or click mic...") ))}
-                     value={input}
-                     onChange={handleInputChange}
-                     onKeyDown={handleKeyDown}
-                     onPaste={handlePaste}
-                     disabled={isLoading || isUploading || isRecording || isTranscribing} // Disable textarea during busy states
-                 />
-                 {/* ... bottom controls ... */}
+                 {/* Container for textarea or visualizer */}
+                 <div className="relative w-full flex items-center min-h-[40px]">
+                     {/* Conditional Rendering (Check isRecording before rendering visualizer) */}
+                     {isRecording ? (
+                         <div className="absolute inset-0 flex items-center justify-center p-1 z-10">
+                             <CustomAudioVisualizer
+                                 audioTimeDomainData={audioTimeDomainData} // Pass potentially null data
+                             />
+                         </div>
+                     ) : (
+                         <textarea
+                             ref={inputRef}
+                             rows={1}
+                             className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40 align-bottom"
+                             // Adjust placeholder based on optional props
+                             placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (isRecording ? "Recording audio..." : (isTranscribing ? "Transcribing audio..." : (micAvailable ? "Ask a question, give instructions, or click mic..." : "Ask a question or give instructions...") ) ))}
+                             value={input}
+                             onChange={handleInputChange}
+                             onKeyDown={handleKeyDown}
+                             onPaste={handlePaste}
+                             // Disable based on optional props
+                             disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)} 
+                         />
+                     )}
+                 </div>
+                 {/* Bottom controls (Adjust ModelSelector/Button disabled states) */} 
                  <div className="flex items-center justify-between w-full mt-2">
                      <div className="pl-1 pr-2">
                          <ModelSelector 
                              model={model} 
                              setModel={setModel} 
-                             disabled={isRecording || isTranscribing || isLoading || isUploading} 
+                             disabled={(isRecording ?? false) || (isTranscribing ?? false) || isLoading || isUploading} 
                          />
                      </div>
                      <div className="flex items-center space-x-2 ml-auto">
                          <button
                              type="button"
                              onClick={handleUploadClick}
-                             disabled={isLoading || isUploading || isRecording || isTranscribing} // Also disable during recording/transcribing
+                             disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)} 
                              className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                              title="Attach Image"
                          >
                              <span className="w-5 h-5 block"><AttachmentIcon aria-hidden="true" /></span>
                          </button>
-                         <div className="relative w-8 h-8 flex items-center justify-center"> {/* Container for positioning animation */}
+                         <div className="relative w-8 h-8 flex items-center justify-center">
                              {showLoadingSpinner && (
                                  <div className="absolute inset-0 border-2 border-[--primary-color] border-t-transparent rounded-full animate-spin pointer-events-none"></div>
                              )}
@@ -253,7 +281,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                              )}
                              <button
                                  type={buttonType}
-                                 onClick={buttonOnClick}
+                                 onClick={buttonOnClick} // Already checks if functions exist
                                  disabled={buttonDisabled}
                                  className={buttonClassName}
                                  title={buttonTitle}

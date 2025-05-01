@@ -179,6 +179,7 @@ export default function EditorPage() {
         micPermissionError,
         startRecording,
         stopRecording,
+        audioTimeDomainData,
     } = useChatInteractions({
         documentId,
         initialModel,
@@ -794,6 +795,7 @@ export default function EditorPage() {
                             micPermissionError={micPermissionError}
                             startRecording={startRecording}
                             stopRecording={stopRecording}
+                            audioTimeDomainData={audioTimeDomainData}
                         />
                     </motion.div>
                 )}

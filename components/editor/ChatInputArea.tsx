@@ -1,6 +1,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { ChatInputUI } from './ChatInputUI'; // Assuming ChatInputUI is in the same directory or adjust path
+import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions'; // <<< Import type
 
 // Define props based on what the form and ChatInputUI need from the parent (page.tsx hooks)
 interface ChatInputAreaProps {
@@ -43,6 +44,7 @@ interface ChatInputAreaProps {
     micPermissionError: boolean;
     startRecording: () => void;
     stopRecording: (timedOut?: boolean) => void;
+    audioTimeDomainData: AudioTimeDomainData; // <<< Add the prop type here
     // --- END NEW AUDIO PROPS ---
 }
 
@@ -61,6 +63,7 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     micPermissionError,
     startRecording,
     stopRecording,
+    audioTimeDomainData, // <<< Destructure the new prop
     // --- END NEW AUDIO PROPS DESTRUCTURED ---
     files,
     handleFileChange,
@@ -120,6 +123,7 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     micPermissionError={micPermissionError}
                     startRecording={startRecording}
                     stopRecording={stopRecording}
+                    audioTimeDomainData={audioTimeDomainData} // <<< Pass the prop down
                     // --- END NEW AUDIO PROPS PASSED DOWN ---
                 />
             </form>
