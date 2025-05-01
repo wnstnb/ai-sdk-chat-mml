@@ -62,6 +62,10 @@
   --code-bg: #f8f9fa; /* Light gray background for code blocks */
   --link-color: #C77A0A;
   --link-hover-color: #B38A58;
+  /* NEW Chat Message Font Size */
+  --chat-message-font-size: 0.875rem; /* Re-added using rem */
+  /* NEW Chat Input Font Size */
+  --chat-input-font-size: 0.875rem;
 }
 
 [data-theme='dark'] {
@@ -344,6 +348,16 @@ body {
     @apply bg-[--hover-bg] border-[--text-color-secondary];
   }
   /* --- End Header styles --- */
+
+  /* --- Custom Chat Message Text Size --- */
+  .chat-message-text {
+    font-size: var(--chat-message-font-size);
+  }
+
+  /* --- Custom Chat Input Text Size --- */
+  .chat-input-text {
+    font-size: var(--chat-input-font-size);
+  }
 }
 
 @layer utilities {

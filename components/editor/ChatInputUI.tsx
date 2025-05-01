@@ -217,7 +217,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                  <textarea
                      ref={inputRef}
                      rows={1}
-                     className="bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40 align-bottom"
+                     className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40 align-bottom"
                      placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (isRecording ? "Recording audio..." : (isTranscribing ? "Transcribing audio..." : "Ask a question, give instructions, or click mic...") ))}
                      value={input}
                      onChange={handleInputChange}

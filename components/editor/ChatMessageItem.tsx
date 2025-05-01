@@ -61,7 +61,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
             <div className="flex flex-col gap-1 flex-grow break-words overflow-hidden p-2 rounded-md bg-[--message-bg] shadow-sm">
                 {/* Message Content - Use the processed displayContent */}
                 {hasDisplayableTextContent && (
-                    <div className="text-zinc-800 dark:text-zinc-300 flex flex-col gap-4">
+                    <div className="chat-message-text text-zinc-800 dark:text-zinc-300 flex flex-col gap-4">
                         <Markdown>{displayContent}</Markdown>
                     </div>
                 )}

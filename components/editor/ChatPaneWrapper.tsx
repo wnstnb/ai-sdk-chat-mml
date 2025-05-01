@@ -126,7 +126,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     // Adjust className as needed if Resizable applied styles directly
     return (
         // <Resizable ... > // REMOVED
-            <div className="flex flex-col flex-1 overflow-hidden h-full"> {/* Ensure height fills wrapper */}
+            <div className="flex flex-col flex-1 overflow-hidden h-full px-3"> {/* Added px-3 */}
                 <ChatMessagesList
                     chatMessages={chatMessages}
                     displayedMessagesCount={displayedMessagesCount}
