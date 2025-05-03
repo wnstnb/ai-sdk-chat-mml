@@ -1,48 +1,38 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Message } from 'ai/react';
-// Import Supabase types
+// Import core types 
+import type { CoreMessage } from 'ai'; 
+// Keep Message from ai/react for type checking elsewhere if needed
+import type { Message as UIMessage } from 'ai/react'; 
 import type { Message as SupabaseMessage, ToolCall as SupabaseToolCall } from '@/types/supabase';
 
-// Type matching the API response structure
 interface MessageWithDetails extends SupabaseMessage {
     signedDownloadUrl: string | null;
-    tool_calls: SupabaseToolCall[] | null; // Array of tool calls made BY this message (if assistant)
+    tool_calls: SupabaseToolCall[] | null; 
 }
-
-// Define constants or import them
-const INITIAL_MESSAGE_COUNT = 20;
 
 interface UseInitialChatMessagesProps {
     documentId: string | undefined | null;
-    setChatMessages: (messages: Message[]) => void;
-    setDisplayedMessagesCount: React.Dispatch<React.SetStateAction<number>>;
-    setPageError: (error: string | null) => void; // Add error setter from parent
+    setPageError: (error: string | null) => void; 
 }
 
 export interface UseInitialChatMessagesReturn {
     isLoadingMessages: boolean;
-    // Error is now handled via setPageError prop
-    // fetchError: string | null;
+    initialMessages: UIMessage[] | null; 
 }
 
 export function useInitialChatMessages({
     documentId,
-    setChatMessages,
-    setDisplayedMessagesCount,
     setPageError,
 }: UseInitialChatMessagesProps): UseInitialChatMessagesReturn {
     const [isLoadingMessages, setIsLoadingMessages] = useState(true);
-    // const [fetchError, setFetchError] = useState<string | null>(null); // Replaced by setPageError
+    const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
 
     const fetchInitialMessages = useCallback(async () => {
-        // Reset state for fetch
         setIsLoadingMessages(true);
-        // setFetchError(null); // Replaced by setPageError
-        // Don't clear page error here, let the caller manage overall page error state
+        setInitialMessages(null); 
 
         if (!documentId) {
             setIsLoadingMessages(false);
-            // Don't set an error here, the document hook handles missing ID
             return;
         }
 
@@ -56,21 +46,21 @@ export function useInitialChatMessages({
                     errData.error?.message || `Failed to fetch messages (${response.status})`
                 );
             }
-            // Expect the API to return MessageWithDetails[]
             const { data }: { data: MessageWithDetails[] } = await response.json();
 
-            // --- REVISED MESSAGE FORMATTING ---
-            const formattedMessages: Message[] = [];
-            const allowedRoles: Message['role'][] = ['user', 'assistant', 'system']; // 'tool' role is constructed manually
+            const formattedMessages: UIMessage[] = [];
+            const allowedInitialRoles = ['user', 'assistant', 'system'];
 
             for (const msg of data) {
-                 if (!allowedRoles.includes(msg.role as any)) {
-                    console.warn(`[useInitialChatMessages] Skipping message ${msg.id} with unknown role: ${msg.role}`);
+                 const role = msg.role as UIMessage['role'];
+                 
+                 if (!allowedInitialRoles.includes(role)) { 
+                    console.warn(`[useInitialChatMessages] Skipping message ${msg.id} with initial role: ${role}`);
                     continue;
                  }
 
-                // 1. Handle User and System messages - REVISED to use parts array for User messages
-                if ((msg.role as string) === 'system') { // Keep system messages simple
+                // 1. Handle System messages
+                if (role === 'system') {
                     formattedMessages.push({
                         id: msg.id,
                         role: 'system',
@@ -80,127 +70,109 @@ export function useInitialChatMessages({
                     continue;
                 }
 
-                if ((msg.role as string) === 'user') {
-                    const messageParts: any[] = [];
-
-                    // Add text part (always exists for user message)
-                    messageParts.push({ type: 'text', text: msg.content || '' });
-
-                    // Add image attachment if present (using experimental_attachments for now)
-                    // The hook populates experimental_attachments based on signedDownloadUrl
-                    // The ChatMessageItem component renders from experimental_attachments
-
-                    // --- TEMPORARILY REMOVED WHISPER TOOL CALL PART FOR USER MESSAGES ---
-                    // // Find associated Whisper tool call (assuming tool_calls are fetched with the message)
-                    // const whisperCall = Array.isArray(msg.tool_calls)
-                    //     ? msg.tool_calls.find(tc => tc.tool_name === 'whisper_transcription' && tc.message_id === msg.id)
-                    //     : null;
-                    //
-                    // if (whisperCall) {
-                    //     messageParts.push({
-                    //         type: 'tool-invocation',
-                    //         toolInvocation: {
-                    //             state: 'result' as const,
-                    //             toolCallId: whisperCall.tool_call_id,
-                    //             toolName: whisperCall.tool_name,
-                    //             args: whisperCall.tool_input,
-                    //             result: whisperCall.tool_output
-                    //         }
-                    //     });
-                    // }
-                    // --- END TEMPORARY REMOVAL ---
-
-                    // Add the user message with parts (will just contain text part for now)
+                // 2. Handle User messages (TEXT ONLY for simple test)
+                if (role === 'user') {
                     formattedMessages.push({
                         id: msg.id,
                         role: 'user',
-                        content: msg.content || '', // Keep original content for user message display
+                        content: msg.content || '',
                         createdAt: new Date(msg.created_at),
-                        parts: messageParts.length > 1 ? messageParts : undefined, // Only add parts if more than just text exists (though currently won't)
-                        // Also ensure experimental_attachments are added if they exist
-                        experimental_attachments: msg.signedDownloadUrl ? [{
-                            name: msg.image_url?.split('/').pop() || `image_${msg.id}`,
-                            contentType: 'image/*', // Assuming image for now
-                            url: msg.signedDownloadUrl,
-                        }] : undefined,
-                    } as Message); // Add type assertion if necessary
-                    continue; // Move to next message
+                    });
+                    continue; 
                 }
 
-                // 2. Handle Assistant messages - REVISED to use parts array
-                if (msg.role === 'assistant') {
+                // 3. Handle Assistant messages (REVISED LOGIC)
+                if (role === 'assistant') {
+                    const hasContent = msg.content && msg.content.trim() !== '';
                     const hasToolCalls = Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
-                    const messageParts: any[] = []; // Initialize parts array
 
-                    // Add text part if content exists
-                    if (msg.content && msg.content.trim() !== '') {
-                         messageParts.push({ type: 'text', text: msg.content });
+                    // Only create an assistant message if it has text OR tool calls
+                    if (hasContent || hasToolCalls) {
+                        const assistantMessage: UIMessage = {
+                            id: msg.id,
+                            role: 'assistant',
+                            content: '', // Content is derived from parts below
+                            createdAt: new Date(msg.created_at),
+                            parts: [], // Initialize parts array
+                        };
+
+                        // Add text part if content exists
+                        if (hasContent) {
+                            assistantMessage.parts!.push({
+                                type: 'text',
+                                text: msg.content!,
+                            });
+                        }
+
+                        // Add tool invocation parts if tool calls exist
+                        if (hasToolCalls) {
+                            msg.tool_calls!.forEach((tc: SupabaseToolCall) => {
+                                // Check if tool_input and tool_output are valid JSON before parsing
+                                let args: any = {};
+                                let result: any = null; // Default result to null
+                                try {
+                                    // tool_input from DB should be the args object
+                                    args = typeof tc.tool_input === 'string'
+                                        ? JSON.parse(tc.tool_input)
+                                        : tc.tool_input; // Assume it's already an object if not string
+                                } catch (e) {
+                                    console.error(`[useInitialChatMessages] Failed to parse tool_input for tool call ${tc.tool_call_id}:`, e);
+                                    args = { error: "Failed to parse arguments" }; // Provide fallback args
+                                }
+                                try {
+                                     // tool_output from DB should be the result object/value
+                                     result = typeof tc.tool_output === 'string'
+                                        ? JSON.parse(tc.tool_output)
+                                        : tc.tool_output; // Assume it's already an object/value if not string
+                                } catch (e) {
+                                     console.error(`[useInitialChatMessages] Failed to parse tool_output for tool call ${tc.tool_call_id}:`, e);
+                                     result = { error: "Failed to parse result" }; // Provide fallback result
+                                }
+
+                                assistantMessage.parts!.push({
+                                    type: 'tool-invocation',
+                                    toolInvocation: {
+                                        toolCallId: tc.tool_call_id,
+                                        toolName: tc.tool_name,
+                                        args: args, // Parsed arguments
+                                        result: result, // Parsed result
+                                        state: 'result', // Assume 'result' state for historical calls
+                                    },
+                                });
+                            });
+                        }
+                         // Assign concatenated text content to the top-level 'content' property
+                         // for potential compatibility or display purposes, though 'parts' is primary.
+                         assistantMessage.content = assistantMessage.parts!
+                           .filter(part => part.type === 'text')
+                           .map(part => (part as { type: 'text'; text: string }).text) // More specific type assertion
+                           .join('\n');
+
+
+                        formattedMessages.push(assistantMessage);
                     }
-
-                    // Add tool invocation parts if tool calls exist
-                    if (hasToolCalls) {
-                        msg.tool_calls!.forEach(tc => {
-                            // Create ToolInvocation object in 'result' state
-                            const toolInvocation = {
-                                state: 'result' as const, // Mark as complete
-                                toolCallId: tc.tool_call_id, 
-                                toolName: tc.tool_name,
-                                args: tc.tool_input,     // From DB
-                                result: tc.tool_output   // From DB (can be null if not saved/no output)
-                            };
-                            messageParts.push({ type: 'tool-invocation', toolInvocation });
-                        });
-                    }
-                    
-                    // Find the text part, if it exists
-                    const textPart = messageParts.find(part => part.type === 'text');
-
-                    // Add the assistant message with reconstructed parts
-                    formattedMessages.push({
-                        id: msg.id,
-                        role: 'assistant',
-                        // Use text from parts, or empty string if no text part
-                        content: textPart?.text || '', 
-                        createdAt: new Date(msg.created_at),
-                        // Assign the reconstructed parts array
-                        parts: messageParts // Assign parts (will be empty if no text/tools)
-                    } as Message); // Add type assertion if necessary
-
-                    // --- REMOVED: Logic for creating separate role: 'tool' messages ---
-                    // The results are now embedded in the assistant message's 'parts' array.
+                    // If assistant message has no text content AND no tool calls, it's skipped
                 }
             }
-            // --- END REVISED MESSAGE FORMATTING ---
 
-
-            console.log(`[useInitialChatMessages] Fetched and formatted ${formattedMessages.length} messages.`);
-            setChatMessages(formattedMessages);
-            setDisplayedMessagesCount(Math.min(formattedMessages.length, INITIAL_MESSAGE_COUNT));
-            // Log state immediately after setting
-            console.log('[useInitialChatMessages] State setters called:', {
-                totalMessages: formattedMessages.length,
-                initialDisplayCount: Math.min(formattedMessages.length, INITIAL_MESSAGE_COUNT)
-            });
+            console.log(`[useInitialChatMessages] Fetched and formatted ${formattedMessages.length} UIMessages.`);
+            setInitialMessages(formattedMessages); 
 
         } catch (err: any) {
             console.error('[useInitialChatMessages] Error fetching/formatting messages:', err);
-            // setFetchError(`Failed to load messages: ${err.message}`);
-            setPageError(`Failed to load messages: ${err.message}`); // Use the passed setter
-            setChatMessages([]); // Clear messages on error
+            setPageError(`Failed to load messages: ${err.message}`);
+            setInitialMessages([]); 
         } finally {
             setIsLoadingMessages(false);
         }
-    // }, [documentId, setChatMessages, setDisplayedMessagesCount, setPageError]);
-    // Ensure all dependencies passed as props are included
-    }, [documentId, setChatMessages, setDisplayedMessagesCount, setPageError]);
+    }, [documentId, setPageError]);
 
-    // Effect to trigger the fetch when documentId changes
     useEffect(() => {
         fetchInitialMessages();
     }, [fetchInitialMessages]);
 
     return {
         isLoadingMessages,
-        // fetchError, // Error is handled via prop
+        initialMessages,
     };
 } 

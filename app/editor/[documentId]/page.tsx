@@ -141,7 +141,6 @@ export default function EditorPage() {
     const initialModel = (isPreferencesInitialized && preferredModel) ? preferredModel : defaultModelFallback;
     const [pageError, setPageError] = useState<string | null>(null);
     const [processedToolCallIds, setProcessedToolCallIds] = useState<Set<string>>(new Set());
-    const [displayedMessagesCount, setDisplayedMessagesCount] = useState(INITIAL_MESSAGE_COUNT);
     const [includeEditorContent, setIncludeEditorContent] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -162,6 +161,10 @@ export default function EditorPage() {
         maxWidthPercent: MAX_CHAT_PANE_WIDTH_PERCENT,
     });
     const { files, isUploading, uploadError, uploadedImagePath, uploadedImageSignedUrl, handleFileSelectEvent, handleFilePasteEvent, handleFileDropEvent, clearPreview } = useFileUpload({ documentId });
+    const { isLoadingMessages, initialMessages } = useInitialChatMessages({
+        documentId,
+        setPageError
+    });
     const {
         messages: chatMessages, 
         setMessages: setChatMessages, 
@@ -183,17 +186,12 @@ export default function EditorPage() {
     } = useChatInteractions({
         documentId,
         initialModel,
+        initialMessages: initialMessages as any, // Explicit type assertion
         editorRef,
         uploadedImagePath,
         uploadedImageSignedUrl,
         isUploading,
         clearFileUploadPreview: clearPreview,
-    });
-    const { isLoadingMessages } = useInitialChatMessages({
-        documentId,
-        setChatMessages,
-        setDisplayedMessagesCount,
-        setPageError
     });
     const followUpContext = useFollowUpStore((state) => state.followUpContext);
     const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
@@ -549,13 +547,6 @@ export default function EditorPage() {
         console.log("[EditorPage] followUpContext state updated:", followUpContext);
     }, [followUpContext]);
 
-    useEffect(() => { /* Effect for displayed message count */
-        const newPotentialCount = Math.min(chatMessages.length, INITIAL_MESSAGE_COUNT);
-        if (newPotentialCount > displayedMessagesCount) {
-            setDisplayedMessagesCount(newPotentialCount);
-        }
-    }, [chatMessages.length, displayedMessagesCount]);
-    
     useEffect(() => { /* Effect for tool processing */
         const lastMessage = chatMessages[chatMessages.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.parts && lastMessage.parts.length > 0) {
@@ -718,8 +709,7 @@ export default function EditorPage() {
     // --- Render Logic ---
     console.log('[Render Check] State before render:', {
         totalMessages: chatMessages.length,
-        displayedCount: displayedMessagesCount,
-        shouldShowLoadMore: chatMessages.length > displayedMessagesCount,
+        shouldShowLoadMore: false,
     });
 
     // Main Render
@@ -823,10 +813,8 @@ export default function EditorPage() {
                         <ChatPaneWrapper
                             isChatCollapsed={isChatCollapsed}
                             chatMessages={chatMessages}
-                            displayedMessagesCount={displayedMessagesCount}
                             isLoadingMessages={isLoadingMessages}
                             isChatLoading={isChatLoading}
-                            setDisplayedMessagesCount={setDisplayedMessagesCount}
                             handleSendToEditor={handleSendToEditor}
                             messagesEndRef={messagesEndRef}
                             messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}

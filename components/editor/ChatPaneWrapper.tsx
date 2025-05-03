@@ -17,10 +17,8 @@ interface ChatPaneWrapperProps {
     
     // Props for ChatMessagesList
     chatMessages: Message[];
-    displayedMessagesCount: number;
     isLoadingMessages: boolean;
     isChatLoading: boolean; // Passed to ChatMessagesList and ChatInputArea
-    setDisplayedMessagesCount: React.Dispatch<React.SetStateAction<number>>;
     handleSendToEditor: (content: string) => Promise<void>;
     messagesEndRef: RefObject<HTMLDivElement>;
     messageLoadBatchSize: number;
@@ -67,10 +65,8 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     // dragHandleRef, // No longer needed for Resizable
     // handleMouseDownResize, // No longer needed for Resizable
     chatMessages,
-    displayedMessagesCount,
     isLoadingMessages,
     isChatLoading,
-    setDisplayedMessagesCount,
     handleSendToEditor,
     messagesEndRef,
     messageLoadBatchSize,
@@ -132,10 +128,8 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
             <div className="flex flex-col flex-1 overflow-hidden h-full px-3"> {/* Added px-3 */}
                 <ChatMessagesList
                     chatMessages={chatMessages}
-                    displayedMessagesCount={displayedMessagesCount}
                     isLoadingMessages={isLoadingMessages}
                     isChatLoading={isChatLoading}
-                    setDisplayedMessagesCount={setDisplayedMessagesCount}
                     handleSendToEditor={handleSendToEditor}
                     messagesEndRef={messagesEndRef}
                     {...(messageLoadBatchSize && { messageLoadBatchSize })}

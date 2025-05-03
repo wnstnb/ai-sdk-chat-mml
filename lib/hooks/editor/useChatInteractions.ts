@@ -15,6 +15,7 @@ interface EditorContextData {
 interface UseChatInteractionsProps {
     documentId: string;
     initialModel: string; // Preferred model from preferences
+    initialMessages: Message[] | null; // <-- ADDED: Initial messages from history
     editorRef: React.RefObject<BlockNoteEditor<any>>;
     uploadedImagePath: string | null; // ADDED BACK: Storage path for DB
     uploadedImageSignedUrl: string | null; // Signed download URL for AI/UI
@@ -60,6 +61,7 @@ export type AudioTimeDomainData = Uint8Array | null; // Export the type
 export function useChatInteractions({
     documentId,
     initialModel,
+    initialMessages, // <-- ADDED: Receive initial messages
     editorRef,
     uploadedImagePath,
     uploadedImageSignedUrl,
@@ -117,7 +119,7 @@ export function useChatInteractions({
     } = useChat({
         api: apiEndpoint,
         id: documentId,
-        initialMessages: [],
+        initialMessages: initialMessages || [], // <-- MODIFIED: Use passed initialMessages or fallback
         onResponse: (res) => {
             console.log('[useChat onResponse] Received response:', res);
             if (!res.ok) {
