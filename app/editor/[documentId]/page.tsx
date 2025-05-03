@@ -477,6 +477,67 @@ export default function EditorPage() {
         } catch (error: any) { console.error('Failed to execute deleteContent:', error); toast.error(`Error deleting content: ${error.message}`); }
     };
 
+    // --- NEW: executeModifyTable function ---
+    const executeModifyTable = async (args: any) => {
+        const editor = editorRef.current;
+        if (!editor) { toast.error('Editor not available to modify table.'); return; }
+        console.log('[Client Tool] executeModifyTable called with args:', args);
+
+        try {
+            const { tableBlockId, newTableMarkdown } = args;
+
+            if (typeof tableBlockId !== 'string' || typeof newTableMarkdown !== 'string') {
+                toast.error('Invalid arguments for modifyTable.');
+                console.error('Invalid args for modifyTable:', args);
+                return;
+            }
+
+            const targetBlock = editor.getBlock(tableBlockId);
+            if (!targetBlock) {
+                toast.error(`Modification failed: Table block ID ${tableBlockId} not found.`);
+                return;
+            }
+            if (targetBlock.type !== 'table') {
+                 toast.error(`Modification failed: Block ${tableBlockId} is not a table.`);
+                 return;
+            }
+
+            // Parse the new markdown content into BlockNote blocks
+            let newBlocks: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(newTableMarkdown);
+            
+            // Handle potential empty result from parsing (e.g., AI returns empty string)
+            if (newBlocks.length === 0 && newTableMarkdown.trim() === '') {
+                // If the AI intended to empty the table, remove the original block
+                editor.removeBlocks([tableBlockId]);
+                toast.success(`Table block ${tableBlockId} removed as replacement was empty.`);
+                handleEditorChange(editor);
+                return;
+            } else if (newBlocks.length === 0) {
+                 // If parsing failed but markdown wasn't empty, treat as error
+                 console.warn(`Failed to parse new table markdown for ${tableBlockId}. Markdown: ${newTableMarkdown}`);
+                 // Keep the original table or revert? For now, just show error.
+                 toast.error(`Failed to parse the updated table structure. Original table retained.`);
+                 return;
+            }
+            
+            // Ensure the block still exists before replacing
+             if (!editor.getBlock(tableBlockId)) {
+                 toast.error(`Modification failed: Target table block ${tableBlockId} disappeared before update.`);
+                 return;
+             }
+
+            // Replace the original table block with the newly parsed block(s)
+            // Note: Parsing might yield multiple blocks if the markdown is complex, but typically a table markdown yields one table block.
+            editor.replaceBlocks([tableBlockId], newBlocks);
+            toast.success(`Table block ${tableBlockId} updated.`);
+            handleEditorChange(editor); // Trigger state update and autosave
+
+        } catch (error: any) {
+            console.error('Error processing modifyTable tool call:', error);
+            toast.error(`Failed to modify table: ${error.message}`);
+        }
+    };
+
     // --- Effect Hooks (Defined BEFORE Early Returns) ---
     useEffect(() => { /* Effect for page error */
         if (documentError) {
@@ -514,6 +575,7 @@ export default function EditorPage() {
                             case 'addContent': executeAddContent(args); break;
                             case 'modifyContent': executeModifyContent(args); break;
                             case 'deleteContent': executeDeleteContent(args); break;
+                            case 'modifyTable': executeModifyTable(args); break;
                             case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); break;
                             case 'webSearch': break; // Handled server-side
                             default: console.error(`Unknown tool: ${toolName}`); toast.error(`Unknown tool: ${toolName}`);
@@ -523,9 +585,7 @@ export default function EditorPage() {
                 setProcessedToolCallIds(newProcessedIds);
             }
         }
-    // Dependencies need to include execute* functions if they aren't stable (useCallback)
-    // For now, assuming they are stable or defined outside component scope for simplicity
-    }, [chatMessages, processedToolCallIds /*, executeAddContent, executeModifyContent, executeDeleteContent */]); 
+    }, [chatMessages, processedToolCallIds, executeAddContent, executeModifyContent, executeDeleteContent, executeModifyTable]); 
 
     useEffect(() => { /* Effect for beforeunload */
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {

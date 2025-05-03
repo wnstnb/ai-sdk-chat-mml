@@ -138,16 +138,45 @@ export function useChatInteractions({
     // --- Editor Context Retrieval ---
     const getEditorContext = useCallback(async (): Promise<EditorContextData> => {
         const editor = editorRef.current;
-        if (!editor) return {};
+        if (!editor) {
+             console.warn("getEditorContext called but editorRef is null.");
+             return {};
+        }
         let contextData: EditorContextData = {};
         try {
             const currentBlocks = editor.document;
             if (currentBlocks?.length > 0) {
-                contextData = {
-                    editorBlocksContext: currentBlocks.map(b => ({
+                // Use Promise.all to handle the async markdown conversion
+                const editorBlocksContextPromises = currentBlocks.map(async (b) => {
+                    let snippet = '';
+                    if (b.type === 'table') {
+                        // Convert the entire table block to Markdown using editor method
+                        try {
+                            // Use blocksToMarkdownLossy for robustness, passing the single block in an array
+                            snippet = await editor.blocksToMarkdownLossy([b]); 
+                            // Add a hard limit to prevent excessive context length
+                            if (snippet.length > 2000) {
+                                snippet = snippet.substring(0, 2000) + '\n... [Table Markdown Truncated] ...';
+                            }
+                            // Ensure it starts clearly indicating it's table markdown
+                            snippet = `[Table Markdown]\n${snippet}`;
+                        } catch (mdError) {
+                            console.error(`Failed to convert table block ${b.id} to Markdown:`, mdError);
+                            snippet = `[table - Error generating Markdown snippet]`;
+                        }
+                    } else {
+                        // Default behavior for non-table blocks
+                        snippet = (Array.isArray(b.content) ? getInlineContentText(b.content).slice(0, 100) : '') || `[${b.type}]`;
+                    }
+
+                    return {
                         id: b.id,
-                        contentSnippet: (Array.isArray(b.content) ? getInlineContentText(b.content).slice(0, 100) : '') || `[${b.type}]`
-                    }))
+                        type: b.type,
+                        contentSnippet: snippet
+                    };
+                });
+                contextData = {
+                    editorBlocksContext: await Promise.all(editorBlocksContextPromises)
                 };
             }
         } catch (e) {
@@ -261,7 +290,7 @@ export function useChatInteractions({
                 // If we were manually adding, we'd rollback here. append should handle its own state.
                 return; // Explicitly prevent call if loading
             }
-            console.log('[handleSubmit] Calling append with message:', userMessageForAi, 'and options:', submitOptions);
+            console.log('[handleSubmit] Calling append with message:', JSON.stringify(userMessageForAi, null, 2), 'and options:', JSON.stringify(submitOptions, null, 2)); // Log full objects
             
             // ---> Call append instead of originalHandleSubmit <---
             append(userMessageForAi, submitOptions);

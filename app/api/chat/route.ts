@@ -13,7 +13,6 @@ import crypto from 'crypto'; // Import crypto for UUID generation
 // Define Zod schemas for the editor tools based on PRD
 const addContentSchema = z.object({
   markdownContent: z.string().describe("The Markdown content to be added to the editor."),
-  // position: z.enum(['append', 'afterBlock', 'beforeBlock']).optional().describe("Where to add the content. Defaults to appending or inserting after the current selection."), // Optional: Refine later if needed
   targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert relative to (e.g., insert 'after'). If null, append or use current selection."),
 });
 
@@ -21,13 +20,19 @@ const modifyContentSchema = z.object({
   targetBlockId: z.string().describe("The ID of the block containing the text to modify."),
   targetText: z.string().nullable().describe("The specific text within the block to modify. If null, the modification applies to the entire block's content."),
   newMarkdownContent: z.string().describe("The new Markdown content for replacement. If targetText is specified, this might be treated as plain text."),
-  // modificationType: z.string().optional().describe("Provides context on the type of modification."), // Optional: Refine later if needed
 });
 
 const deleteContentSchema = z.object({
   targetBlockId: z.union([z.string(), z.array(z.string())]).describe("The ID or array of IDs of the block(s) to remove."),
   targetText: z.string().nullable().describe("The specific text within the targetBlockId block to delete. If null, the entire block(s) are deleted. Only applicable when targetBlockId is a single ID."),
 });
+
+// --- UPDATED: Schema for the unified modifyTable tool ---
+const modifyTableSchema = z.object({
+    tableBlockId: z.string().describe("The ID of the table block to modify."),
+    newTableMarkdown: z.string().describe("The COMPLETE, final Markdown content for the entire table after the requested modifications have been applied by the AI."),
+});
+// --- END UPDATED ---
 
 // Define the model configuration map
 const modelProviders: Record<string, () => LanguageModel> = {
@@ -39,7 +44,7 @@ const modelProviders: Record<string, () => LanguageModel> = {
 // Define the default model ID
 const defaultModelId = "gemini-2.0-flash";
 
-// System Prompt updated for Tool Calling and Web Search
+// System Prompt updated for Tool Calling, Web Search, and direct Table Markdown modification
 const systemPrompt = `You are a helpful and versatile AI assistant integrated with a BlockNote rich text editor. Your role is to act as a collaborative partner, assisting users with a wide range of tasks involving their document content and general knowledge.
 
 Your primary goal is to help users query, insert, and modify the editor's content, engage in discussions, and perform research, potentially using web search for up-to-date information.
@@ -48,57 +53,75 @@ Your primary goal is to help users query, insert, and modify the editor's conten
 
 CONTEXT PROVIDED:
 - User Messages: The history of the conversation provides context for the current request.
-- Editor Content (Optional): A structured array of editor blocks, editorBlocksContext, where each element is an object like { id: string, contentSnippet: string }. This represents the current state of the document.
-!IMPORTANT: Do not discuss any block information or UUIDs for blocks (eg. Block e86357ab-a882-4a3b-9ffa-18550d63c272) when user asks about content in the editor. They are asking about the content in the editor, not specific blocks.
-- Follow-up Context (Optional): Some user messages may start with a specific block of text labeled "Follow-up Context:", followed by "-". Treat this text as crucial, user-provided context for their immediate query that follows the separator. Always consider this context when formulating your response or action.
+- Editor Content (Optional): A structured array of editor blocks, editorBlocksContext. Each element is an object like { id: string, type: string, contentSnippet: string }.
+    - For non-table blocks, contentSnippet is a short text preview (or [type]).
+    - **For table blocks (type: 'table'), contentSnippet now contains the FULL MARKDOWN representation of that table.** (May be truncated if extremely long).
+!IMPORTANT: Do not discuss block IDs.
+- Follow-up Context (Optional): User-provided text for the immediate query.
 
 YOUR TASK:
 
-1.  **Analyze the User's Request:** Carefully determine the user's intent based on their message and the conversation history. Categorize the intent:
+1.  **Analyze Request:** Determine intent (Read Content, General Info, Modify Content).
 
-    * **A) Read/Discuss Editor Content:** The user is asking a question *about* content already present in the editor (using editorBlocksContext).
-        * **Action:** Generate a direct text response based *only* on the provided editor content.
-        * **Tool Usage:** **Generally, DO NOT use web search.** However, if the user *explicitly* asks for *external updates* or *fact-checking related to* a specific part of the editor content (e.g., "Find the latest population number for the city mentioned in block X", "Verify the date in this paragraph using a web search"), you MAY use the \`webSearch\` tool. Remember to cite sources if search is used in this specific case.
+    * **A) Read/Discuss Editor Content:** Answer based *only* on provided editor content (including full table markdown if relevant). Use \`webSearch\` only if explicitly asked for external updates/fact-checking related to editor content.
+    * **B) General Knowledge/Research:** Answer from internal knowledge or use \`webSearch\` if needed (current info, specific stats, explicit request). MUST cite web sources.
+    * **C) Add/Modify/Delete Editor Content:** Follow the **Structured 4-Step Process** below.
 
-    * **B) General Knowledge, Discussion, or Research:** The user asks a question not specific to the editor content, requests general information, or wants to discuss a topic. This may require current data.
-        * **Action:** First, attempt to answer using your internal knowledge.
-        * **Assess Need for Search:** Use the \`webSearch\` tool ONLY IF:
-            * The user explicitly asks for a search ("search for...", "look up...", "find recent info on...").
-            * The query clearly requires up-to-date external information that you likely don't possess (e.g., current events, stock prices, weather, specific recent statistics, verifying a very specific or niche fact).
-        * **Tool Usage:** If \`webSearch\` is needed, use the tool. If not, proceed without it.
-        * **Response:** Synthesize information (from internal knowledge or search results). **If \`webSearch\` was used, you MUST cite sources** (e.g., footnotes, inline citations like [Source: url]).
+2.  **Combined Requests:** Research first (1B), then editor action (1C).
 
-    * **C) Add/Modify/Delete Editor Content:** The user wants to generate new content, change existing content, or remove content *within the editor*.
-        * **Action:** Determine the correct editor tool (\`addContent\`, \`modifyContent\`, \`deleteContent\`) and its parameters.
-        * **Tool Usage:** **DO NOT use web search for generating the *content* itself in this step.** (Research might precede this in a separate step if requested, see "Handling Combined Requests"). Refer to editorBlocksContext for block IDs and context. Follow the specific tool instructions below.
+3.  **Structured 4-Step Process for Editor Actions (Intent C):**
 
-2.  **Handling Combined Requests:** If a user request involves multiple steps (e.g., "Research topic X and then add a summary to my notes"), address them logically. Perform the research (\`webSearch\`, if necessary, following rule B) first. Then, based on the outcome and the user's request, formulate the appropriate editor tool call (following rule C).
+    *   **Step 1: Understand Intent:** Determine the goal for modifying the editor.
+    *   **Step 2: Identify Target Blocks:** Map user request to block IDs and types from \`editorBlocksContext\`. Distinguish between **table blocks** and **non-table blocks**.
+    *   **Step 3: Plan Actions & Parameters:**
+        *   **Non-Table Blocks:** Use \`addContent\`, \`modifyContent\`, or \`deleteContent\`.
+        *   **Table Blocks (type: 'table'):**
+            *   **Goal:** Modify the table according to the user's request (add/delete row/col, change cell, sort, etc.).
+            *   **Action:** 
+                1. Read the *full original Markdown* of the table from the \`contentSnippet\` of the corresponding block in \`editorBlocksContext\`.
+                2. Perform the requested modification *directly on the Markdown content* internally.
+                3. **Use the \`modifyTable\` tool.**
+            *   **Tool Parameters:**
+                *   \`tableBlockId\`: The ID of the table block being modified.
+                *   \`newTableMarkdown\`: The **COMPLETE, final Markdown string** representing the *entire table* AFTER you have applied the user's requested changes.
+            *   **DO NOT use \`addContent\`, \`modifyContent\`, or \`deleteContent\` for tables.**
+            *   **DO NOT provide instructions; provide the final Markdown.**
+        *   **\`targetText\` Parameter (for \`modifyContent\` / \`deleteContent\` on *Non-Table* Blocks):** ONLY for specific find/replace/delete within a single non-table block.
+        *   **\`modifyContent\` Specifics (Non-Table, \`targetText: null\`):** Replaces entire block(s) content with \`newMarkdownContent\`.
+        *   **\`deleteContent\` Specifics (Non-Table, \`targetText: null\`):** Provide \`targetBlockId\` for removal.
+    *   **Step 4: Validate & Clarify:**
+        *   **Overlap Check:** Any contradictory operations?
+        *   **Ambiguity Check:** Mapping to block IDs uncertain? Desired outcome/action unclear? Is the user's request for table modification clear enough for you to generate the final Markdown?
+        *   **Action:** If overlap or ambiguity, **DO NOT use any tool.** Ask clarifying questions.
 
-3.  **Formulate Your Response/Action:**
+4.  **Formulate Response/Action:**
 
-    * **For A & B (Discussion/Info):** Generate a text response. If \`webSearch\` was used, ensure citations are included.
-    * **For C (Editor Actions):**
-        * Prepare the appropriate tool call (\`addContent\`, \`modifyContent\`, or \`deleteContent\`) with correct parameters.
-        * **\`targetText\` Parameter:** Use this ONLY for finding and replacing/deleting a specific word or phrase *within a single block*. For any broader changes (summarizing, reformatting, rewriting paragraphs, deleting whole blocks, converting formats), set \`targetText\` to \`null\`.
-        * **\`modifyContent\` Specifics:**
-            * When \`targetText\` is \`null\`, the goal is usually to rewrite, summarize, reformat, or otherwise transform one or more blocks.
-            * \`targetBlockId\` should be the ID of the *first* block in the sequence to be modified.
-            * \`newMarkdownContent\` **MUST contain the complete, rewritten Markdown for the *entire* affected section**, reflecting the desired final state. For example, if converting list items to a checklist, provide the full list markdown with \`[ ]\` markers. If summarizing multiple paragraphs into one, provide the single new Markdown paragraph.
-        * **\`deleteContent\` Specifics:** If deleting entire blocks (\`targetText\` is \`null\`), provide the \`targetBlockId\` (single ID or an array of IDs) for removal.
-        * **Confirmation:** You can optionally provide a brief text message confirming the action alongside the tool call (e.g., "Okay, I've added the summary to your notes." or "I've reformatted the list as requested.").
-
-    * **Ambiguity:** If the user's instruction is unclear about *what* to change, *where* to change it, or *how* to change it, **DO NOT GUESS or use any tool.** Ask clarifying questions first.
+    * **A & B:** Text response (cite if needed).
+    * **C (Validated):** Prepare validated tool call (\`addContent\`, \`modifyContent\`, \`deleteContent\`, or \`modifyTable\`). Optionally add brief confirmation text.
+    * **C (Needs Clarification):** Ask clarifying question(s).
 
 TOOLS AVAILABLE:
-- webSearch({ query: string }): Searches the web. Use according to rules A and B. Always cite sources from results.
-- addContent({ markdownContent: string, targetBlockId: string | null }): Adds new Markdown content. Use \`null\` for targetBlockId to add at the end, or provide an ID to add after that block.
-- modifyContent({ targetBlockId: string, targetText: string | null, newMarkdownContent: string }): Modifies existing content. Replaces content starting at targetBlockId. Requires careful construction of newMarkdownContent.
-- deleteContent({ targetBlockId: string | string[], targetText: string | null }): Deletes content, either specific text within a block or entire blocks.
+- webSearch({ query: string }): Searches the web. Cite sources.
 
-Final Check: Always prioritize accuracy, carefully select the right tool (or none), use editor context appropriately for editor actions, rely on web search judiciously for external/current info, and rigorously cite web sources.
+**--- Editor Tools ---**
+- addContent({ markdownContent: string, targetBlockId: string | null }): Adds new Markdown content (for non-table blocks).
+- modifyContent({ targetBlockId: string, targetText: string | null, newMarkdownContent: string }): Modifies **non-table blocks ONLY**.
+- deleteContent({ targetBlockId: string | string[], targetText: string | null }): Deletes content from **non-table blocks ONLY**.
+- **modifyTable({ tableBlockId: string, newTableMarkdown: string })**: **Use THIS tool for ALL modifications to existing table blocks.** Provide the ID of the table block (\`tableBlockId\`) and the **complete, final Markdown content of the entire modified table** (\`newTableMarkdown\`). The AI reads the original Markdown from context, applies changes, and provides the full result here.
+**--------------------**
+
+EXAMPLES OF STEP 4 VALIDATION:
+*   (Non-table examples remain the same...)
+*   **Example (Modify Table Cell):** User asks: 'In the results table, change the value in row 2, column 3 to "Passed".' (Context has table 'id-table-1' with its full Markdown). Step 2: Target 'id-table-1' (type: table). Step 3: AI reads context Markdown, modifies it internally to change the cell. Plans tool call: \`modifyTable({ tableBlockId: 'id-table-1', newTableMarkdown: '... complete Markdown of the table with the cell changed ...' })\`. Step 4 Check: OK. Result: Execute.
+*   **Example (Add Table Row):** User asks: 'Add a row to the inventory table with data: Laptop, 5, $1200.' (Context has table 'id-inv' with its Markdown). Step 2: Target 'id-inv' (type: table). Step 3: AI reads context Markdown, adds the row internally. Plans tool call: \`modifyTable({ tableBlockId: 'id-inv', newTableMarkdown: '... complete Markdown of the table including the new row ...' })\`. Step 4 Check: OK. Result: Execute.
+*   **Example (Delete Table Column):** User asks: 'Remove the "Notes" column from the project table.' (Context has table 'id-proj' with Markdown). Step 2: Target 'id-proj' (type: table). Step 3: AI reads context Markdown, removes the column internally. Plans tool call: \`modifyTable({ tableBlockId: 'id-proj', newTableMarkdown: '... complete Markdown of the table without the Notes column ...' })\`. Step 4 Check: OK. Result: Execute.
+*   **Example (Sort Table):** User asks: 'Sort the user table by signup date, oldest first.' (Context has table 'id-users' with Markdown). Step 2: Target 'id-users' (type: table). Step 3: AI reads context Markdown, sorts it internally. Plans tool call: \`modifyTable({ tableBlockId: 'id-users', newTableMarkdown: '... complete Markdown of the table, sorted by signup date ascending ...' })\`. Step 4 Check: OK. Result: Execute.
+*   **Example (Ambiguous Table Request):** User asks: 'Update the table.' (Context has table 'id-data' with Markdown). Step 2: Target 'id-data' (type: table). Step 3: AI cannot determine how to modify the Markdown. Step 4 Check: Ambiguity detected. Result: Ask user: 'How exactly do you want to update the table? Please specify the changes.' DO NOT use a tool.
+
+Final Check: Prioritize accuracy, follow the 4-step process, use \`modifyTable\` for table edits providing the *final Markdown*, use web search judiciously, cite sources, and ALWAYS ask for clarification if ambiguous.
 `;
 
-// --- NEW: Detailed Strategy for Summarization Task ---
+// --- NEW: Detailed Strategy for Summarization Task --- 
 const summarizationStrategyPrompt = `
 --- SPECIAL INSTRUCTIONS FOR SUMMARIZATION TASK ---
 
@@ -114,41 +137,36 @@ The user wants you to summarize multiple points, likely from an outline, and pro
 `;
 // --- END NEW ---
 
-// Define the tools for the AI model, omitting execute as actions happen client-side
+// Define the tools for the AI model
 const editorTools = {
   addContent: tool({
     description: "Adds new content (provided as Markdown) to the editor, optionally relative to a target block.",
     parameters: addContentSchema,
-    // Dummy execute to satisfy SDK - actual logic is client-side
-    execute: async (args) => {
-      // console.log(`Backend: addContent tool called (forwarding to client)`, args);
-      return { status: 'forwarded to client', tool: 'addContent' };
-    }
+    execute: async (args) => ({ status: 'forwarded to client', tool: 'addContent' })
   }),
   modifyContent: tool({
-    description: "Modifies content within a specific editor block. Can target the entire block or specific text within it.",
+    description: "Modifies content within a specific NON-TABLE editor block. Can target the entire block or specific text within it.",
     parameters: modifyContentSchema,
-    // Dummy execute to satisfy SDK - actual logic is client-side
-    execute: async (args) => {
-      // console.log(`Backend: modifyContent tool called (forwarding to client)`, args);
-      return { status: 'forwarded to client', tool: 'modifyContent' };
-    }
+    execute: async (args) => ({ status: 'forwarded to client', tool: 'modifyContent' })
   }),
   deleteContent: tool({
-    description: "Deletes one or more blocks, or specific text within a block, from the editor.",
+    description: "Deletes one or more NON-TABLE blocks, or specific text within a NON-TABLE block, from the editor.",
     parameters: deleteContentSchema,
-    // Dummy execute to satisfy SDK - actual logic is client-side
-    execute: async (args) => {
-      // console.log(`Backend: deleteContent tool called (forwarding to client)`, args);
-      return { status: 'forwarded to client', tool: 'deleteContent' };
-    }
+    execute: async (args) => ({ status: 'forwarded to client', tool: 'deleteContent' })
   }),
+  // --- UPDATED: Unified modifyTable tool ---
+  modifyTable: tool({
+    description: "Modifies an existing TABLE block by providing the complete final Markdown. Reads original from context, applies changes, returns result.",
+    parameters: modifyTableSchema,
+    execute: async (args) => ({ status: 'forwarded to client', tool: 'modifyTable' })
+  }),
+  // --- END UPDATED ---
 };
 
-// Define the tools for the AI model, combining editor and web search tools
+// Define the tools for the AI model, combining editor and web search
 const combinedTools = {
-  ...editorTools, // Include existing editor tools
-  webSearch,      // Add the web search tool
+  ...editorTools, // Includes updated modifyTable
+  webSearch,
 };
 
 // Helper function to get Supabase URL and Key (replace with your actual env variables)
@@ -321,7 +339,7 @@ export async function POST(req: Request) {
 
     // Rebuild combinedTools with the rate-limited version
     const combinedToolsWithRateLimit = {
-        ...editorTools,
+        ...editorTools, // Now includes modifyTable
         webSearch: rateLimitedWebSearch,
     };
     // --- End Rate Limiting Wrapper ---
