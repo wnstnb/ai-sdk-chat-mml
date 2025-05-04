@@ -403,6 +403,15 @@ export default function LaunchPage() {
   }, [handleProcessRecordedAudio, handleStopRecording]); // Dependencies
   // --- END: Audio Recording Handlers ---
 
+  // --- Placeholder clearPreview function for Launch Page --- 
+  const clearPreview = useCallback(() => {
+      // File uploads are not fully implemented on launch, so this can be empty
+      console.log("[LaunchPage] clearPreview called (no-op)."); 
+      // Reset any related state if necessary, though likely none here
+      setFiles(null);
+      setUploadedImagePath(null);
+  }, []);
+  // --- END Placeholder ---
 
   // --- Handler for Launch Submission (triggered by form onSubmit) ---
   const handleLaunchSubmit = async (event?: React.FormEvent<HTMLFormElement>) => {
@@ -558,6 +567,8 @@ export default function LaunchPage() {
             micPermissionError={micPermissionError}
             startRecording={handleStartRecording}
             stopRecording={handleStopRecording}
+            clearPreview={clearPreview}
+            
             // --- END: Pass Audio Props ---
             // Removed onStop prop as it's not defined here and ChatInputUI doesn't need it directly for launch submit
           />

@@ -245,15 +245,33 @@ export async function POST(req: Request) {
         // Determine input method for metadata
         const messageInputMethod = inputMethod === 'audio' ? 'audio' : 'text';
 
-        // --- REVISED LOGIC v2: Use uploadedImagePathFromRequest --- 
-        let userContentParts: any[] = []; 
+        // --- REVISED LOGIC v2: Use uploadedImagePathFromRequest ---
+
+        // Define types for the processed parts
+        interface BasePart {
+          type: string;
+          [key: string]: any; // Allow other properties from original part
+        }
+        interface TextPart extends BasePart {
+          type: 'text';
+          text: string;
+        }
+        interface ImagePartProcessed extends BasePart {
+          type: 'image';
+          image: string | null; // Path or null if error
+          error?: string;
+        }
+        type ProcessedPart = TextPart | ImagePartProcessed;
+
+        let userContentParts: ProcessedPart[] = []; // Initialize with the correct type
         let imagePartProcessed = false; // Flag to ensure only one image part is added
 
         // 1. Prioritize parts array IF it exists
         if (Array.isArray(lastClientMessage.parts) && lastClientMessage.parts.length > 0) {
             console.log(`[API Chat Save User Msg] Processing 'parts' array received from client.`);
-            userContentParts = lastClientMessage.parts.map((part: any) => {
-                 // --- REVERTED IMAGE PART LOGIC --- 
+            // Map and then filter
+            userContentParts = lastClientMessage.parts.map((part: any): ProcessedPart | null => { // Add return type annotation to map
+                 // --- REVERTED IMAGE PART LOGIC ---
                  if (part.type === 'image' && typeof part.image === 'string' && !imagePartProcessed) {
                     // Assuming part.image is the signed URL string from the client
                     console.log(`[API Chat Save User Msg] Found image part in array, attempting to extract path from URL: ${part.image}`);
@@ -261,52 +279,56 @@ export async function POST(req: Request) {
                     try {
                         const imageUrl = new URL(part.image);
                         // Extract path assuming Supabase storage URL structure
-                        // Example: https://<project_ref>.supabase.co/storage/v1/object/sign/<bucket_name>/<actual_path>
-                        // We want: <actual_path> (e.g., user_id/uuid_filename.ext)
                         const pathSegments = imageUrl.pathname.split('/');
-                        // --- CORRECTED PATH EXTRACTION --- 
-                        const bucketName = process.env.SUPABASE_STORAGE_BUCKET_NAME || 'documents'; // Use the same logic as upload/download routes
+                        const bucketName = process.env.SUPABASE_STORAGE_BUCKET_NAME || 'documents';
                         const bucketNameIndex = pathSegments.indexOf(bucketName);
-                        
+
                         if (bucketNameIndex !== -1 && pathSegments.length > bucketNameIndex + 1) {
-                             const extractedPath = pathSegments.slice(bucketNameIndex + 1).join('/'); // Slice *after* the bucket name
-                        // --- END CORRECTED PATH EXTRACTION --- 
+                             const extractedPath = pathSegments.slice(bucketNameIndex + 1).join('/');
                              console.log(`[API Chat Save User Msg] Extracted storage path: ${extractedPath}`);
-                            // Store the extracted path string
-                            return { ...part, image: extractedPath }; 
+                            // Ensure the returned object conforms to ImagePartProcessed
+                            return { ...part, type: 'image', image: extractedPath };
                         } else {
                              console.warn(`[API Chat Save User Msg] Could not extract valid storage path from ImagePart URL structure: ${part.image}`);
-                            return { ...part, image: null, error: 'Invalid image URL structure' }; // Mark as invalid
+                            // Ensure the returned object conforms to ImagePartProcessed
+                            return { ...part, type: 'image', image: null, error: 'Invalid image URL structure' }; // Mark as invalid
                         }
                     } catch (e) {
                         console.warn(`[API Chat Save User Msg] Failed to parse URL in ImagePart, marking as invalid:`, part.image, e);
-                        return { ...part, image: null, error: 'Invalid image URL' }; // Mark as invalid
+                        // Ensure the returned object conforms to ImagePartProcessed
+                        return { ...part, type: 'image', image: null, error: 'Invalid image URL' }; // Mark as invalid
                     }
-                 // --- END REVERTED IMAGE PART LOGIC --- 
+                 // --- END REVERTED IMAGE PART LOGIC ---
                  } else if (part.type === 'text') {
-                     return part; // Keep text parts
+                     // Ensure the returned object conforms to TextPart
+                     return { ...part, type: 'text', text: part.text }; // Explicitly include text
                  } else {
                       console.warn(`[API Chat Save User Msg] Ignoring unexpected part type in user message parts array: ${part.type}`);
                       return null; // Ignore other unexpected parts like nested images
                  }
-            }).filter(part => part !== null); // Remove nulls
+            // Add type annotation and type predicate to filter
+            // Explicitly type the input parameter 'part' as well
+            }).filter((part: ProcessedPart | null): part is ProcessedPart => part !== null); // Remove nulls and assert type
 
             // If parts existed but we didn't process an image (e.g., only text parts were sent),
             // ensure text content is captured if the top-level content was used.
             if (!imagePartProcessed && typeof lastClientMessage.content === 'string' && lastClientMessage.content.trim()) {
-                if (!userContentParts.some(p => p.type === 'text')) { // Avoid duplicating text if already in parts
+                // Explicitly type 'p' in the .some() callback
+                if (!userContentParts.some((p: ProcessedPart) => p.type === 'text')) { // Avoid duplicating text if already in parts
                      console.log('[API Chat Save User Msg] Adding text from content string as parts array only had other types.');
+                     // Ensure the pushed object conforms to TextPart
                      userContentParts.push({ type: 'text', text: lastClientMessage.content.trim() });
                 }
             }
 
-        } 
+        }
         // 2. Fallback: If no parts array, use content string
         else if (typeof lastClientMessage.content === 'string' && lastClientMessage.content.trim()) {
             console.warn('[API Chat Save User Msg] User message parts array missing or empty, using content string.');
+            // Ensure the pushed object conforms to TextPart
             userContentParts.push({ type: 'text', text: lastClientMessage.content.trim() });
             // Cannot add image part here as we don't have the path
-        } 
+        }
         // 3. Handle totally unexpected format
         else {
              console.error('[API Chat Save User Msg] User message has unexpected format (no parts array or content string): ', lastClientMessage);

@@ -777,6 +777,7 @@ export default function EditorPage() {
                         startRecording={startRecording}
                         stopRecording={stopRecording}
                         audioTimeDomainData={audioTimeDomainData}
+                        clearPreview={clearPreview}
                     />
                 </div>
             </div>
