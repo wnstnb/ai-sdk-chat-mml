@@ -20,6 +20,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 // --- NEW: Import Omnibar ---
 import { Omnibar } from '@/components/search/Omnibar';
 
+import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions'; // <<< ADDED: Import type
+
 // Define the structure expected by Cubone File Manager (matching docs)
 type CuboneFileType = {
     id?: string;
@@ -108,6 +110,16 @@ export default function LaunchPage() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [micPermissionError, setMicPermissionError] = useState(false);
   // --- END: State for Audio Recording ---
+
+  // --- NEW: State & Refs for Audio Visualization ---
+  const [audioTimeDomainData, setAudioTimeDomainData] = useState<AudioTimeDomainData>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null); // To store requestAnimationFrame ID
+  const dataArrayRef = useRef<Uint8Array | null>(null); // To store the array for data retrieval
+  const isRecordingRef = useRef(false); // Ref to track recording state for animation loop
+  // --- END: Audio Visualization ---
 
   // ADDED: Effect to update local model state if preference loads *after* initial render
   useEffect(() => {
@@ -241,70 +253,104 @@ export default function LaunchPage() {
     }
   };
 
-  // --- NEW: Audio Recording Handlers ---
+  // --- NEW: Visualize function ---
+  const visualize = useCallback(() => {
+    if (!analyserRef.current || !dataArrayRef.current || !isRecordingRef.current) {
+      // Stop the loop if analyser isn't ready or recording stopped
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      return;
+    }
+
+    analyserRef.current.getByteTimeDomainData(dataArrayRef.current);
+    // Update state with a *copy* of the data to trigger re-render
+    setAudioTimeDomainData(new Uint8Array(dataArrayRef.current));
+
+    // Continue the loop
+    animationFrameRef.current = requestAnimationFrame(visualize);
+  }, []); // No dependencies needed as it reads refs
+
   // Process recorded audio (called by recorder onstop)
   const handleProcessRecordedAudio = useCallback(async () => {
-    if (audioChunks.length === 0) {
-        console.warn("No audio chunks recorded.");
-        toast.info("No audio detected.");
-        setIsTranscribing(false); // Ensure state is reset
-        return;
-    }
+    // Use a functional update for audioChunks to ensure we get the latest state
+    let processed = false; // Flag to ensure processing runs only once if called multiple times
+    setAudioChunks(currentChunks => {
+        if (processed || currentChunks.length === 0) {
+            if (!processed) { // Only log/toast if this is the first check and chunks are empty
+                console.warn("No audio chunks recorded (or already processed).");
+                toast.info("No audio detected.");
+                setIsTranscribing(false); // Ensure state is reset
+            }
+            return currentChunks; // Return unchanged state
+        }
+        processed = true; // Mark as processed
 
-    // Check size (e.g., < 1KB might indicate silence)
-    const totalSize = audioChunks.reduce((sum, chunk) => sum + chunk.size, 0);
-    if (totalSize < 1024) { // 1KB threshold
-        console.warn("Recorded audio size is very small, likely silence:", totalSize);
-        toast.info("No significant audio detected.");
-        setAudioChunks([]); // Clear chunks
-        setIsTranscribing(false);
-        return;
-    }
-
-    setIsTranscribing(true);
-    const audioBlob = new Blob(audioChunks, { type: mediaRecorder?.mimeType || 'audio/webm' });
-    setAudioChunks([]); // Clear chunks after creating blob
-
-    // Clean up media tracks and recorder instance
-    if (mediaRecorder) {
-        mediaRecorder.stream.getTracks().forEach(track => track.stop());
-        setMediaRecorder(null);
-    }
-
-    const formData = new FormData();
-    formData.append('audioFile', audioBlob, 'recording.webm'); // Filename can be fixed
-
-    try {
-        console.log("Sending audio to /api/chat/transcribe");
-        const response = await fetch('/api/chat/transcribe', {
-            method: 'POST',
-            body: formData,
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error("Transcription API error:", response.status, errorText);
-            throw new Error(`Transcription failed: ${response.statusText || 'Server error'}`);
+        // Check size (e.g., < 1KB might indicate silence)
+        const totalSize = currentChunks.reduce((sum, chunk) => sum + chunk.size, 0);
+        if (totalSize < 1024) { // 1KB threshold
+            console.warn("Recorded audio size is very small, likely silence:", totalSize);
+            toast.info("No significant audio detected.");
+            setIsTranscribing(false);
+            return []; // Clear chunks
         }
 
-        const result = await response.json();
-        console.log("Transcription result:", result);
+        setIsTranscribing(true);
+        // Use currentChunks directly instead of relying on potentially stale state
+        const audioBlob = new Blob(currentChunks, { type: mediaRecorder?.mimeType || 'audio/webm' });
 
-        if (result.transcription) {
-            // ONLY set the input field on the launch page
-            setInput(result.transcription);
-            // Do NOT call handleLaunchSubmit here - user needs to click Send/Enter
-            toast.success("Audio transcribed!");
-        } else {
-            throw new Error("Transcription returned no text.");
-        }
-    } catch (error: any) {
-        console.error('Error during transcription request:', error);
-        toast.error(`Transcription Error: ${error.message || 'Could not transcribe audio.'}`);
-    } finally {
-        setIsTranscribing(false);
-    }
-  }, [audioChunks, mediaRecorder]); // Dependencies
+        // --- Removed mediaRecorder cleanup from here ---
+
+        const formData = new FormData();
+        formData.append('audioFile', audioBlob, 'recording.webm');
+
+        // Async logic needs to be outside the setter function
+        (async () => {
+            try {
+                console.log("Sending audio to /api/chat/transcribe");
+                const response = await fetch('/api/chat/transcribe', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error("Transcription API error:", response.status, errorText);
+                    throw new Error(`Transcription failed: ${response.statusText || 'Server error'}`);
+                }
+
+                const result = await response.json();
+                console.log("Transcription result:", result);
+
+                if (result.transcription) {
+                    const transcribedText = result.transcription; // Store text
+                    setInput(transcribedText); // Update UI state
+                    toast.success("Audio transcribed!");
+
+                    // --- ADDED: Automatically trigger submission --- 
+                    console.log("[LaunchPage] Transcription successful, triggering launch submit...");
+                    // Use a small delay to allow UI update before potential navigation
+                    setTimeout(() => {
+                        handleLaunchSubmit(null, transcribedText);
+                    }, 50); // 50ms delay
+                    // --- END ADDED --- 
+
+                } else {
+                    throw new Error("Transcription returned no text.");
+                }
+            } catch (error: any) {
+                console.error('Error during transcription request:', error);
+                toast.error(`Transcription Error: ${error.message || 'Could not transcribe audio.'}`);
+            } finally {
+                setIsTranscribing(false);
+            }
+        })(); // Immediately invoke the async function
+
+        return []; // Clear chunks after processing is initiated
+    });
+
+  }, [mediaRecorder]); // Keep mediaRecorder dependency for mimeType, but handle its cleanup elsewhere
 
   // Stop recording handler
   const handleStopRecording = useCallback((timedOut = false) => {
@@ -314,80 +360,151 @@ export default function LaunchPage() {
     }
     if (mediaRecorder && mediaRecorder.state === 'recording') {
         console.log("Stopping recording...");
-        mediaRecorder.stop(); // This will trigger the 'onstop' event -> handleProcessRecordedAudio
+        mediaRecorder.stop(); // This triggers onstop -> handleProcessRecordedAudio & cleanup
         setIsRecording(false);
+        isRecordingRef.current = false; // Update ref immediately
         if (timedOut) {
             toast.info("Recording stopped after 30 seconds.");
         }
+        // Note: Visualization cleanup now happens in the recorder's onstop handler
     } else {
         console.warn("Stop recording called but recorder not active or found.");
         setIsRecording(false); // Ensure state is reset
+        isRecordingRef.current = false;
+        // Attempt cleanup even if recorder state is unexpected
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        audioSourceNodeRef.current?.disconnect();
+        analyserRef.current?.disconnect();
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+             audioContextRef.current.close().catch(console.error);
+        }
+        setAudioTimeDomainData(null);
+        audioContextRef.current = null;
+        analyserRef.current = null;
+        audioSourceNodeRef.current = null;
+        animationFrameRef.current = null;
+        dataArrayRef.current = null;
     }
   }, [mediaRecorder, recordingTimerId]); // Dependencies
 
   // Start recording handler
   const handleStartRecording = useCallback(async () => {
     console.log("Attempting to start recording...");
-    setMicPermissionError(false); // Reset permission error on new attempt
-    setInput(''); // Clear text input when starting recording
+    setMicPermissionError(false);
+    setInput('');
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        console.error("getUserMedia not supported on this browser.");
-        toast.error("Audio recording is not supported on this browser.");
-        setMicPermissionError(true); // Set error state
-        return;
+      console.error("getUserMedia not supported on this browser.");
+      toast.error("Audio recording is not supported on this browser.");
+      setMicPermissionError(true);
+      return;
     }
 
+    // --- Reset visualization state on new attempt ---
+    setAudioTimeDomainData(null);
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    animationFrameRef.current = null;
+    audioSourceNodeRef.current?.disconnect();
+    analyserRef.current?.disconnect();
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        await audioContextRef.current.close().catch(console.error); // Ensure previous context is closed
+    }
+    audioContextRef.current = null;
+    analyserRef.current = null;
+    audioSourceNodeRef.current = null;
+    dataArrayRef.current = null;
+
+
     try {
-        console.log("Requesting microphone permission...");
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log("Microphone permission granted.");
+      console.log("Requesting microphone permission...");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log("Microphone permission granted.");
 
-        // Determine MIME type
-        const options = { mimeType: '' };
-        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-            options.mimeType = 'audio/webm;codecs=opus';
-        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-            options.mimeType = 'audio/webm';
-        } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
-            options.mimeType = 'audio/ogg;codecs=opus';
+      // Determine MIME type
+      const options = { mimeType: '' };
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          options.mimeType = 'audio/webm;codecs=opus';
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+          options.mimeType = 'audio/webm';
+      } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+          options.mimeType = 'audio/ogg;codecs=opus';
+      }
+      console.log("Using MIME type:", options.mimeType || "Browser default");
+
+      // --- Initialize Audio Context and Analyser ---
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      analyserRef.current.fftSize = 2048; // Standard FFT size
+      audioSourceNodeRef.current = audioContextRef.current.createMediaStreamSource(stream);
+      audioSourceNodeRef.current.connect(analyserRef.current);
+      // We don't connect analyser to destination as we only need data analysis
+      dataArrayRef.current = new Uint8Array(analyserRef.current.frequencyBinCount);
+      // --- End Initialization ---
+
+      const recorder = new MediaRecorder(stream, options.mimeType ? options : undefined);
+      setAudioChunks([]); // Clear previous chunks *before* setting handlers
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          setAudioChunks((prev) => [...prev, event.data]);
         }
-        console.log("Using MIME type:", options.mimeType || "Browser default");
+      };
 
-        const recorder = new MediaRecorder(stream, options.mimeType ? options : undefined);
-        setMediaRecorder(recorder); // Store recorder instance
-        setAudioChunks([]); // Clear previous chunks
-
-        recorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                // console.log("Audio data available:", event.data.size);
-                setAudioChunks((prev) => [...prev, event.data]);
-            }
-        };
-
-        recorder.onstop = () => {
-            console.log("MediaRecorder stopped naturally.");
-            // Use the specific handler for processing
-            handleProcessRecordedAudio();
-        };
-
-        recorder.onerror = (event) => {
-            console.error("MediaRecorder error:", event);
-            toast.error("An error occurred during recording.");
-            handleStopRecording(); // Attempt to clean up
-            setMicPermissionError(true); // Indicate potential issue
+      recorder.onstop = () => {
+        console.log("MediaRecorder stopped naturally.");
+        // --- Cleanup Visualization ---
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+        audioSourceNodeRef.current?.disconnect();
+        analyserRef.current?.disconnect();
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+            audioContextRef.current.close().catch(console.error);
         }
+        setAudioTimeDomainData(null); // Reset visualization data
+        // Reset refs AFTER cleanup
+        audioContextRef.current = null;
+        analyserRef.current = null;
+        audioSourceNodeRef.current = null;
+        dataArrayRef.current = null;
+        // --- End Cleanup ---
 
-        recorder.start();
-        console.log("Recording started.");
-        setIsRecording(true);
+        // Call the processing function directly
+        handleProcessRecordedAudio();
 
-        // Start 30-second timer
-        const timerId = setTimeout(() => {
-            console.log("Recording timer expired.");
-            handleStopRecording(true); // Pass true for timed out
-        }, 30000); // 30 seconds
-        setRecordingTimerId(timerId);
+        // Clean up stream tracks and recorder state *after* processing is initiated
+        try {
+          stream.getTracks().forEach(track => track.stop());
+          console.log("Media stream tracks stopped.");
+        } catch (e) {
+          console.error("Error stopping media stream tracks:", e);
+        }
+        setMediaRecorder(null); // Clear the recorder state variable
+      };
+
+      recorder.onerror = (event) => {
+        console.error("MediaRecorder error:", event);
+        toast.error("An error occurred during recording.");
+        handleStopRecording(); // Attempt to clean up (includes viz cleanup)
+        setMicPermissionError(true);
+      };
+
+      // Now set the mediaRecorder state *after* handlers are defined
+      setMediaRecorder(recorder);
+
+      recorder.start();
+      console.log("Recording started.");
+      setIsRecording(true);
+      isRecordingRef.current = true; // Set ref for animation loop
+
+      // --- Start Visualization ---
+      visualize(); // Start the animation loop
+
+      // Start 30-second timer
+      const timerId = setTimeout(() => {
+        console.log("Recording timer expired.");
+        handleStopRecording(true); // Pass true for timed out
+      }, 30000);
+      setRecordingTimerId(timerId);
 
     } catch (err) {
         console.error("Error getting user media or starting recorder:", err);
@@ -399,8 +516,21 @@ export default function LaunchPage() {
             toast.error("Could not start recording. Please ensure microphone access is allowed.");
         }
         setMicPermissionError(true);
+        // Ensure cleanup if error occurs during setup
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        audioSourceNodeRef.current?.disconnect();
+        analyserRef.current?.disconnect();
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+             audioContextRef.current.close().catch(console.error);
+        }
+        setAudioTimeDomainData(null);
+        audioContextRef.current = null;
+        analyserRef.current = null;
+        audioSourceNodeRef.current = null;
+        animationFrameRef.current = null;
+        dataArrayRef.current = null;
     }
-  }, [handleProcessRecordedAudio, handleStopRecording]); // Dependencies
+  }, [handleProcessRecordedAudio, handleStopRecording, visualize]);
   // --- END: Audio Recording Handlers ---
 
   // --- Placeholder clearPreview function for Launch Page --- 
@@ -413,20 +543,32 @@ export default function LaunchPage() {
   }, []);
   // --- END Placeholder ---
 
-  // --- Handler for Launch Submission (triggered by form onSubmit) ---
-  const handleLaunchSubmit = async (event?: React.FormEvent<HTMLFormElement>) => {
-    if (event) event.preventDefault(); // Prevent default form submission
-    if ((!input.trim() && !isRecording) || isSubmitting) return; // Prevent submit if empty, recording, or already submitting
+  // --- Handler for Launch Submission (triggered by form onSubmit or audio) ---
+  const handleLaunchSubmit = async (
+      event?: React.FormEvent<HTMLFormElement> | null, // Allow null for direct calls
+      forcedContent?: string // Optional content from audio transcription
+  ) => {
+    if (event) event.preventDefault(); // Prevent default form submission if triggered by event
+    
+    // Use forcedContent if provided, otherwise use state. Trim only if using state.
+    const contentToSubmit = forcedContent ?? input.trim();
 
-    console.log("[LaunchPage] Submitting with initial content:", input);
+    // Check if content is valid or if already submitting/recording
+    // Allow submission even if input state is empty IF forcedContent is provided
+    if ((!contentToSubmit && !forcedContent && !isRecording) || isSubmitting) {
+        console.log("[handleLaunchSubmit] Submission prevented. Conditions not met.", { contentToSubmit, forcedContent, isRecording, isSubmitting });
+        return;
+    }
+
+    console.log("[LaunchPage] Submitting with content:", contentToSubmit);
     setIsSubmitting(true);
     setError(null);
     try {
       const response = await fetch('/api/launch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Send the text content from the 'input' state
-        body: JSON.stringify({ initialContent: input.trim() }), 
+        // Send the determined content
+        body: JSON.stringify({ initialContent: contentToSubmit }), 
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: { message: `Failed to launch (${response.status})`} }));
@@ -435,12 +577,15 @@ export default function LaunchPage() {
       const { data }: { data: { documentId: string } } = await response.json();
       console.log("[LaunchPage] Document created, redirecting to:", `/editor/${data.documentId}`);
       
-      // Pass initial message via query parameter
-      const initialMsgQuery = encodeURIComponent(input.trim());
+      // Pass initial message via query parameter (using the submitted content)
+      const initialMsgQuery = encodeURIComponent(contentToSubmit); 
       router.push(`/editor/${data.documentId}?initialMsg=${initialMsgQuery}`);
       
-      // Clear input after successful submission start
-      setInput(''); 
+      // Clear input only if submission wasn't forced (i.e., came from form event/enter key)
+      // If forcedContent exists (from audio), the page will navigate away anyway.
+      if (!forcedContent) {
+         setInput(''); 
+      }
 
     } catch (err: any) {
       console.error("Launch submit error:", err);
@@ -578,6 +723,7 @@ export default function LaunchPage() {
                    micPermissionError={micPermissionError}
                    startRecording={handleStartRecording}
                    stopRecording={handleStopRecording}
+                   audioTimeDomainData={audioTimeDomainData}
                    clearPreview={clearPreview}
                  />
                </form>
