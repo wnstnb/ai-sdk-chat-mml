@@ -17,7 +17,7 @@ This project is a chat interface combined with a document editor, leveraging AI 
 *   **Document Search:** RAG system powered by Gemini embeddings + models for inroads to assistant creation.
 *   **AI Title Generation:** Automatically suggest titles for documents based on content.
 *   **AI-Powered Chat:** 
-    *   Interact with an AI assistant within the context of the current document.
+    *   Interact with an AI assistant within the context    of the current document.
     *   Uses Vercel AI SDK.
     *   Supports selecting different AI models.
 *   **Image Uploads:** Attach images to messages (uploads handled via Supabase Storage, accessed with signed URLs).

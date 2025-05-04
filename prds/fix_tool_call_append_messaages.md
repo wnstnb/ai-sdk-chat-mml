@@ -1,5 +1,6 @@
 # Investigation: Tool Call Loading and Display Bug
 
+
 ## Problem Description
 
 When loading chat messages from the database, associated tool calls are not being displayed correctly in the UI, despite the underlying functionality being intact. The tool calls appear correctly during the live chat session but are malformed upon reloading the chat history. The suspicion is that the association between the loaded message and its corresponding tool calls (`tool_calls.message_id = messages.id`) is not being handled correctly during the load process for UI display.

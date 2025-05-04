@@ -13,6 +13,9 @@ import { ChatInputUI } from '@/components/editor/ChatInputUI'; // Import the cha
 // Import the new file manager component
 import NewFileManager from '@/components/file-manager/NewFileManager';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // ADDED: Import preference store
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"; // Add Card imports
+import Link from 'next/link'; // Import Link for navigation
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Add Tabs imports
 
 // --- NEW: Import Omnibar ---
 import { Omnibar } from '@/components/search/Omnibar';
@@ -93,12 +96,9 @@ export default function LaunchPage() {
   const [isLoading, setIsLoading] = useState(true); // For initial data fetch
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false); // For launch action
-
-  // --- State for Typing Effect ---
-  const [displayedText, setDisplayedText] = useState('');
-  const [isTypingComplete, setIsTypingComplete] = useState(false);
-  const fullText = "What do you want to focus on?";
-  const typingSpeed = 40; // milliseconds per character
+  // --- NEW: State for Recent Documents (Placeholder) ---
+  // const [recentDocuments, setRecentDocuments] = useState<Document[]>([]); // Placeholder state - REMOVED
+  const [isLoadingRecent, setIsLoadingRecent] = useState(true); // Placeholder loading state - REMOVED
 
   // --- NEW: State for Audio Recording ---
   const [isRecording, setIsRecording] = useState(false);
@@ -119,7 +119,7 @@ export default function LaunchPage() {
       // Don't include `model` in deps to avoid loops.
   }, [isPreferencesInitialized, preferredModel]);
 
-  // Fetch initial file/folder data
+  // Fetch initial file/folder data (for file manager)
   const fetchData = useCallback(async () => {
     console.log("[LaunchPage] Attempting to fetch data..."); // Log start
     setIsLoading(true);
@@ -157,41 +157,41 @@ export default function LaunchPage() {
     }
   }, []);
 
+  // --- NEW: Fetch Recent Documents --- 
+  /* REMOVED fetchRecentDocuments function
+  const fetchRecentDocuments = useCallback(async () => {
+      console.log("[LaunchPage] Attempting to fetch recent documents...");
+      setIsLoadingRecent(true);
+      try {
+          // TODO: Replace with actual API endpoint call
+          console.warn("[LaunchPage] Fetching recent documents - using placeholder data.");
+          // Simulate API call delay
+          await new Promise(resolve => setTimeout(resolve, 800)); 
+          // Placeholder data (replace with actual fetch logic)
+          const placeholderRecent: Document[] = [
+              { id: 'doc-1', name: 'Meeting Notes Q2', updated_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(), created_at: '', user_id: '', content: null, metadata: {} },
+              { id: 'doc-2', name: 'Project Proposal v3', updated_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(), created_at: '', user_id: '', content: null, metadata: {} },
+              { id: 'doc-3', name: 'Draft Blog Post - AI', updated_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), created_at: '', user_id: '', content: null, metadata: {} },
+          ];
+          setRecentDocuments(placeholderRecent);
+          setError(null); // Clear previous errors if successful
+      } catch (err: any) {
+          console.error("[LaunchPage] Error fetching recent documents:", err);
+          setError('Failed to load recent documents.'); // Set specific error or reuse general one
+          setRecentDocuments([]); // Clear data on error
+      } finally {
+          setIsLoadingRecent(false);
+          console.log("[LaunchPage] Finished fetchRecentDocuments execution.");
+      }
+  }, []);
+  */
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    console.log("[LaunchPage] useEffect triggered to call fetchData."); // Log effect trigger
+    console.log("[LaunchPage] useEffect triggered to call fetchData & fetchRecentDocuments."); // Log effect trigger
     fetchData();
-  }, [fetchData]);
-
-  // Effect for typing animation
-  useEffect(() => {
-    let index = 0;
-    setIsTypingComplete(false);
-    setDisplayedText(''); // Reset text on mount/re-render
-
-    const typeCharacter = () => {
-        if (index < fullText.length) {
-            const charToAdd = fullText.charAt(index);
-            // console.log(`[Typing Effect] Index: ${index}, Char: ${charToAdd}`); // <-- Add logging
-            setDisplayedText((prev) => prev + charToAdd);
-            index++;
-            setTimeout(typeCharacter, typingSpeed);
-        } else {
-            console.log("[Typing Effect] Typing complete."); // <-- Add logging
-            setIsTypingComplete(true); // Typing finished
-        }
-    };
-
-    // Start typing after a short delay
-    console.log("[Typing Effect] Starting typing..."); // <-- Add logging
-    const timeoutId = setTimeout(typeCharacter, 500);
-
-    // Cleanup function to clear timeout if component unmounts
-    return () => {
-        console.log("[Typing Effect] Cleanup effect."); // <-- Add logging
-        clearTimeout(timeoutId);
-    }
-  }, [fullText, typingSpeed]); // Rerun if text or speed changes (though they are constant here)
+    // fetchRecentDocuments(); // Fetch recent docs as well - REMOVED
+  }, [fetchData]); // Add fetchRecentDocuments dependency - REMOVED
 
   // Focus the chat input by default on mount 
   useEffect(() => {
@@ -521,9 +521,9 @@ export default function LaunchPage() {
 
   // --- Return JSX ---
   return (
-    <div className="flex flex-col h-full p-4 bg-[--bg-secondary] text-[--text-color]">
-      {/* Updated Heading with Conditional Content */}
-      <h1 className="text-2xl font-semibold mb-4 text-center font-uncut-sans h-8"> {/* Added h-8 for stable height */}
+    <div className="flex flex-col h-full bg-[--bg-secondary] text-[--text-color] p-4"> {/* Add padding back to main container */}
+      {/* Title Centered at the Top */}
+      <h1 className="text-xlg font-semibold mb-4 text-center font-uncut-sans h-8 flex-shrink-0"> 
         {isSubmitting ? (
           <span className="loading-text">
             Loading
@@ -533,63 +533,153 @@ export default function LaunchPage() {
           </span>
         ) : (
           <>
-            <span className="typing-text">{displayedText}</span>
-            <span className="cursor blinking"></span>
+            What do you want to focus on?
+            <span className="cursor blinking"></span> 
           </>
         )}
       </h1>
 
-      {/* Main Content Area (Previously Conditional) */}
-      <> 
-        {/* Launch Input Form using ChatInputUI */}
-        <form ref={formRef} onSubmit={handleLaunchSubmit} className="mb-6">
-          {/* <label htmlFor="launch-input" className="sr-only">What do you want to focus on?</label> */}
-          {/* We can hide the label since ChatInputUI has a placeholder */}
-          <ChatInputUI
-            files={files} // Pass null initially
-            fileInputRef={fileInputRef} // Pass ref
-            handleFileChange={handleFileChange} // Pass placeholder handler
-            inputRef={inputRef} // Pass ref
-            input={input} // Pass input state
-            handleInputChange={handleInputChange} // Pass handler
-            handleKeyDown={handleKeyDown} // Pass handler
-            handlePaste={handlePaste} // Pass placeholder handler
-            model={model} // Pass model state
-            setModel={setModel} // Pass model setter
-            handleUploadClick={handleUploadClick} // Pass placeholder handler
-            isLoading={isSubmitting} // Use isSubmitting to disable input during launch
-            isUploading={isUploading} // Pass state (false initially)
-            uploadError={uploadError} // Pass state (null initially)
-            uploadedImagePath={uploadedImagePath} // Pass state (null initially)
-            // --- NEW: Pass Audio Props ---
-            isRecording={isRecording}
-            isTranscribing={isTranscribing}
-            micPermissionError={micPermissionError}
-            startRecording={handleStartRecording}
-            stopRecording={handleStopRecording}
-            clearPreview={clearPreview}
-            
-            // --- END: Pass Audio Props ---
-            // Removed onStop prop as it's not defined here and ChatInputUI doesn't need it directly for launch submit
-          />
-          {/* The submit button is now inside ChatInputUI */}
-        </form>
+      {/* Row for the two cards below the title */}
+      <div className="flex flex-row flex-grow space-x-4 overflow-hidden max-w-[1400px] mx-auto w-full"> {/* Changed max-width to 1400px */} 
         
-        {/* Error Message Display (Only show errors relevant to chat/launch?) */}
-        {error && <div className="mb-4 p-2 text-red-700 bg-red-100 border border-red-400 rounded text-center">{error}</div>}
-
-        {/* --- MOVED FROM newFileManager VIEW --- */}
-        {/* Add Omnibar */}
-        <div className="mb-4">
-          <Omnibar />
+        {/* Left Card: Chat Input */}
+        <div className="w-1/2 flex flex-col items-center space-y-2"> {/* Removed hover/focus effects */} 
+           <h1 className="text-xlg font-semibold text-[--text-color] pl-1">Start New</h1> {/* Added Title */} 
+           <Card className="flex flex-col bg-[--bg-primary] border-[--border-color] w-full 
+                         transition-all duration-200 ease-in-out 
+                         hover:shadow-lg 
+                         hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* Change border on hover */} 
+             {/* Optional Header */}
+             {/* 
+             <CardHeader className="flex-shrink-0"> 
+               <CardTitle>Start New Document</CardTitle> 
+             </CardHeader> 
+             */}
+             <CardContent className="p-4"> {/* Removed flex-grow, justify-center */} 
+               <form ref={formRef} onSubmit={handleLaunchSubmit} className="w-full"> {/* Make form take full width */}
+                 <ChatInputUI
+                   files={files} 
+                   fileInputRef={fileInputRef} 
+                   handleFileChange={handleFileChange} 
+                   inputRef={inputRef} 
+                   input={input} 
+                   handleInputChange={handleInputChange} 
+                   handleKeyDown={handleKeyDown} 
+                   handlePaste={handlePaste} 
+                   model={model} 
+                   setModel={setModel} 
+                   handleUploadClick={handleUploadClick} 
+                   isLoading={isSubmitting} 
+                   isUploading={isUploading} 
+                   uploadError={uploadError} 
+                   uploadedImagePath={uploadedImagePath} 
+                   isRecording={isRecording}
+                   isTranscribing={isTranscribing}
+                   micPermissionError={micPermissionError}
+                   startRecording={handleStartRecording}
+                   stopRecording={handleStopRecording}
+                   clearPreview={clearPreview}
+                 />
+               </form>
+             </CardContent>
+           </Card>
         </div>
 
-        {/* Render the actual NewFileManager component */}
-        <div className="flex-grow overflow-hidden border border-[--border-color] rounded-md shadow-sm">
-          <NewFileManager />
+        {/* Right Card: Tabs (Recent/Browser) */}
+        <div className="w-1/2 flex flex-col items-center space-y-2"> {/* Removed hover/focus effects */} 
+          <h1 className="text-xlg font-semibold text-[--text-color] pl-1">Continue Working</h1> {/* Added Title */} 
+          <Tabs defaultValue="recent" className="flex flex-col w-full"> {/* Removed h-full, added w-full */} 
+            <TabsList className="grid w-full grid-cols-2 flex-shrink-0 bg-transparent p-1 h-10 rounded-lg"> {/* Make background transparent, adjust padding/height/rounding if needed */} 
+              <TabsTrigger 
+                value="recent" 
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium 
+                           ring-offset-transparent 
+                           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[--card-bg] 
+                           disabled:pointer-events-none disabled:opacity-50 
+                           data-[state=active]:bg-[--tab-active-bg] data-[state=active]:text-[--text-color] data-[state=active]:shadow-sm 
+                           data-[state=active]:border-b-2 data-[state=active]:rounded-b-none /* Add bottom border for active state */
+                           hover:bg-[--hover-bg] hover:text-[--text-color] 
+                           text-[--muted-text-color]"> {/* Default state uses muted text */}
+                Recent Files
+              </TabsTrigger>
+              <TabsTrigger 
+                value="browser" 
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium 
+                           ring-offset-transparent 
+                           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[--card-bg] 
+                           disabled:pointer-events-none disabled:opacity-50 
+                           data-[state=active]:bg-[--tab-active-bg] data-[state=active]:text-[--text-color] data-[state=active]:shadow-sm 
+                           data-[state=active]:border-b-2 data-[state=active]:rounded-b-none /* Add bottom border for active state */
+                           hover:bg-[--hover-bg] hover:text-[--text-color] 
+                           text-[--muted-text-color]"> {/* Default state uses muted text */}
+                File Browser
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Recent Files Tab Content */}
+            <TabsContent value="recent" className="overflow-hidden mt-2"> {/* Added mt-2 for spacing */} 
+              <Card className="flex flex-col bg-[--bg-primary] border-[--border-color] 
+                           transition-all duration-200 ease-in-out 
+                           hover:shadow-lg 
+                           hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* Change border on hover */} 
+                <CardHeader className="flex-shrink-0"> 
+                  <CardTitle className="text-[--text-color]">Recent Documents</CardTitle>
+                  {/* <CardDescription className="text-[--text-muted]">Quickly jump back into your work.</CardDescription> */}
+                </CardHeader>
+                <CardContent className="overflow-y-auto"> {/* Removed flex-grow, kept scroll */} 
+                  {isLoading ? (
+                      <p className="text-center text-[--text-muted]">Loading recent documents...</p>
+                  ) : error ? ( 
+                     <p className="text-center text-red-500">{error}</p> 
+                  ) : (
+                     (() => { 
+                        const recentDocs = cuboneFiles
+                          .filter(file => !file.isDirectory && file.updatedAt) 
+                          .sort((a, b) => new Date(b.updatedAt!).getTime() - new Date(a.updatedAt!).getTime()) 
+                          .slice(0, 10); 
+
+                        return recentDocs.length > 0 ? (
+                            <ul className="space-y-2">
+                                {recentDocs.map((doc) => (
+                                    <li key={doc.id || doc.path}> 
+                                        <Link href={`/editor/${doc.id}`} className="block p-2 rounded hover:bg-[--bg-hover] transition-colors text-[--link-color] hover:text-[--link-hover]">
+                                            {doc.name || 'Untitled Document'}
+                                            {doc.updatedAt && <span className="text-xs text-[--text-muted] block">Updated: {new Date(doc.updatedAt).toLocaleString()}</span>}
+                                        </Link>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <p className="text-center text-[--text-muted]">No recent documents found.</p>
+                        );
+                     })()
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* File Browser Tab Content */}
+            <TabsContent value="browser" className="overflow-hidden flex flex-col mt-2"> {/* Added mt-2 for spacing */} 
+               <Card className="flex flex-col bg-[--bg-primary] border-[--border-color] 
+                            transition-all duration-200 ease-in-out 
+                            hover:shadow-lg 
+                            hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* Change border on hover */} 
+                 <CardContent className="flex flex-col p-4"> {/* Removed flex-grow */} 
+                   {/* Omnibar */}
+                   <div className="mb-4 flex-shrink-0"> 
+                      <Omnibar />
+                   </div>
+                   {/* Render the actual NewFileManager component */}
+                   <div className="overflow-hidden border border-[--border-color] rounded-md shadow-sm">
+                       {/* Removed flex-grow from parent, NewFileManager likely controls its own scroll/size */} 
+                      <NewFileManager />
+                   </div>
+                 </CardContent>
+               </Card>
+            </TabsContent>
+          </Tabs>
         </div>
-        {/* --- END MOVED SECTION --- */}
-      </>
+      </div>
     </div>
   );
 } 

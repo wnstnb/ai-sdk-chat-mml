@@ -74,7 +74,7 @@
   --background-rgb: 15, 19, 23;  /* Midnight Slate #0F1317 */
   --primary-color: #C79553;  /* Ember Gold */
   --secondary-color: #C79553; /* Ember Gold */
-  --title-color: #E5B679; /* White */
+  --title-color: #C79553; /* White */
   --accent-color: #F1C37D; /* Luminous Amber */
   --text-color: #FFFFFF; /* White */
   --muted-text-color: #A8ADB4; /* Keeping Frost Gray for readability */
@@ -323,7 +323,7 @@ body {
   }
 
   .header-logo {
-    @apply text-[1.5rem] font-bold text-[--text-color];
+    @apply text-[1.5rem] font-bold text-[--title-color]; /* Changed from --text-color */
     font-family: 'Newsreader', serif; /* Apply Newsreader font */
   }
 
