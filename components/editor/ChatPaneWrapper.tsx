@@ -56,6 +56,10 @@ interface ChatPaneWrapperProps {
     stopRecording: (timedOut?: boolean) => void;
     audioTimeDomainData: AudioTimeDomainData;
     // --- END NEW AUDIO PROPS --- 
+
+    // --- ADD CLEAR PREVIEW PROP --- 
+    clearPreview: () => void;
+    // --- END CLEAR PREVIEW PROP ---
 }
 
 export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
@@ -98,7 +102,9 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     startRecording,
     stopRecording,
     audioTimeDomainData,
-    // --- END NEW AUDIO PROPS --- 
+    // --- DESTRUCTURE CLEAR PREVIEW PROP ---
+    clearPreview,
+    // --- END DESTRUCTURE CLEAR PREVIEW PROP ---
 }) => {
     // State to force remount of ChatInputArea after animation - Keep if still needed
     // const [inputAreaKey, setInputAreaKey] = useState(0);
@@ -162,6 +168,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                     startRecording={startRecording}
                     stopRecording={stopRecording}
                     audioTimeDomainData={audioTimeDomainData}
+                    clearPreview={clearPreview}
                 />
             </div>
         // </Resizable> // REMOVED

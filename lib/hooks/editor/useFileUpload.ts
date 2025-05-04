@@ -224,12 +224,13 @@ export function useFileUpload({
 
     // Function to manually clear the preview state
     const clearPreview = useCallback(() => {
+        console.log("[useFileUpload] clearPreview called.");
         setFiles(null);
         setUploadedImagePath(null);
-        setUploadedImageSignedUrl(null); // --> ADDED: Reset signed URL
+        setUploadedImageSignedUrl(null);
         setUploadError(null);
         // Note: Does not affect ongoing uploads
-    }, []);
+    }, [setFiles, setUploadedImagePath, setUploadedImageSignedUrl, setUploadError]);
 
     return {
         files,
