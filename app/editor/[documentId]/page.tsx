@@ -710,6 +710,9 @@ export default function EditorPage() {
     // --- END Handler Definitions ---
 
     // --- Render Logic ---
+    // Find the last assistant message to pass down
+    const lastAssistantMessage = [...chatMessages].reverse().find(msg => msg.role === 'assistant');
+
     console.log('[Render Check] State before render:', {
         totalMessages: chatMessages.length,
         shouldShowLoadMore: false,
@@ -751,6 +754,10 @@ export default function EditorPage() {
                         editorRef={editorRef}
                         onEditorContentChange={handleEditorChange}
                         isChatCollapsed={isChatCollapsed}
+                        // --- Pass last message content and send handler ---
+                        lastMessageContent={lastAssistantMessage?.content}
+                        handleSendToEditor={handleSendToEditor}
+                        // --- End pass props ---
                         input={input}
                         handleInputChange={handleInputChange}
                         handleSubmit={handleSubmit}

@@ -3,6 +3,10 @@ import dynamic from 'next/dynamic';
 import { X } from 'lucide-react';
 import type { BlockNoteEditor, PartialBlock } from '@blocknote/core';
 import { ChatInputUI } from './ChatInputUI'; // Assuming it's in the same directory
+import { PinnedMessageBubble } from './PinnedMessageBubble'; // Import the new component
+import { Button } from "@/components/ui/button"; // For the toggle icon button
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { MessageSquare } from 'lucide-react'; // Icon for collapsed state toggle
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 // Define loading state consistent with page.tsx
@@ -24,6 +28,10 @@ interface EditorPaneWrapperProps {
     
     // For Collapsed Chat Input section
     isChatCollapsed: boolean;
+    // NEW props for pinned message bubble
+    lastMessageContent?: string | any; // Can be string or complex content part array
+    handleSendToEditor: (content: string) => Promise<void>; // Or appropriate return type
+    // END NEW props
     
     // Props for the collapsed ChatInputUI (similar to ChatInputArea)
     // From useChatInteractions
@@ -73,6 +81,9 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     editorRef,
     onEditorContentChange,
     isChatCollapsed,
+    // Destructure new props
+    lastMessageContent,
+    handleSendToEditor,
     // Destructure all props needed for collapsed ChatInputUI
     input,
     handleInputChange,
@@ -108,8 +119,49 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     clearPreview,
     // --- END DESTRUCTURE CLEAR PREVIEW PROP ---
 }) => {
+    // State for the pinned message bubble collapse state
+    const [isMessageBubbleCollapsed, setIsMessageBubbleCollapsed] = React.useState(false);
+
+    // Effect to auto-collapse message bubble when follow-up context appears
+    React.useEffect(() => {
+        if (followUpContext) {
+            setIsMessageBubbleCollapsed(true);
+        }
+    }, [followUpContext]);
+
+    // Memoize the toggle button element to avoid re-creating it on every render
+    const collapsedMessageToggle = React.useMemo(() => {
+        if (!lastMessageContent) return null;
+
+        // Extract text for tooltip preview
+        const textPreview = typeof lastMessageContent === 'string' 
+            ? lastMessageContent 
+            : (lastMessageContent as any)?.text || "View last message";
+
+        return (
+            <TooltipProvider delayDuration={100}>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground" // Match other input action buttons style/size
+                            onClick={() => setIsMessageBubbleCollapsed(false)}
+                            aria-label="Show last message"
+                        >
+                            <MessageSquare size={18} />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[300px] whitespace-pre-wrap break-words bg-background text-foreground border shadow-md">
+                        <p className="line-clamp-3">{textPreview}</p>
+                    </TooltipContent>
+                </Tooltip>
+            </TooltipProvider>
+        );
+    }, [lastMessageContent]); // Re-create only if last message content changes
+
     return (
-        <div className="flex-1 flex flex-col relative border rounded-lg bg-[--editor-bg] border-[--border-color] shadow-sm overflow-hidden">
+        <div className="flex-1 flex flex-col relative border rounded-lg bg-[--editor-bg] border-[--border-color] overflow-hidden">
             {/* Editor Area */}
             <div className="flex-1 overflow-y-auto p-4 styled-scrollbar">
                 {initialContent !== undefined ? (
@@ -127,51 +179,71 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
 
             {/* Collapsed Chat Input (Rendered conditionally at the bottom) */}
             {isChatCollapsed && (
-                <div className="p-4 pt-2 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0 max-w-[800px] mx-auto w-full">
-                    <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center">
-                        {/* Follow Up Context Display */}
-                        {followUpContext && (
-                            <div className="w-full mb-2 p-2 border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 rounded-md relative text-sm text-blue-800 dark:text-blue-200">
-                                <button 
-                                    type="button"
-                                    onClick={() => setFollowUpContext(null)}
-                                    className="absolute top-1 right-1 p-0.5 text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800"
-                                    title="Clear follow-up context"
-                                >
-                                    <X size={14} />
-                                </button>
-                                <p className="font-medium mb-1 text-blue-600 dark:text-blue-300">Follow-up Context:</p>
-                                <p className="line-clamp-2">{followUpContext}</p>
-                            </div>
-                        )}
-                        {/* Use ChatInputUI directly here */}
-                        <ChatInputUI 
-                            key={isChatCollapsed ? 'collapsed-input' : 'unmounted'}
-                            files={files} 
-                            fileInputRef={fileInputRef} 
-                            handleFileChange={handleFileChange} 
-                            inputRef={inputRef} 
-                            input={input} 
-                            handleInputChange={handleInputChange} 
-                            handleKeyDown={handleKeyDown} 
-                            handlePaste={handlePaste} 
-                            model={model} 
-                            setModel={setModel} 
-                            handleUploadClick={handleUploadClick} 
-                            isLoading={isLoading} 
-                            isUploading={isUploading} 
-                            uploadError={uploadError} 
-                            uploadedImagePath={uploadedImagePath} 
-                            onStop={stop}
-                            isRecording={isRecording}
-                            isTranscribing={isTranscribing}
-                            micPermissionError={micPermissionError}
-                            startRecording={startRecording}
-                            stopRecording={stopRecording}
-                            audioTimeDomainData={audioTimeDomainData}
-                            clearPreview={clearPreview}
-                        />
-                    </form>
+                // Apply width constraints and centering to this relative parent
+                <div className="relative max-w-[800px] mx-auto w-full">
+                    {/* Conditional Rendering for Bubbles */} 
+                    {!followUpContext && lastMessageContent && !isMessageBubbleCollapsed && (
+                         <PinnedMessageBubble 
+                            messageContent={lastMessageContent} 
+                            onSendToEditor={handleSendToEditor} 
+                            onCollapse={() => setIsMessageBubbleCollapsed(true)}
+                         />
+                    )}
+
+                    {/* Restore original Follow Up Context styling from ChatInputArea */}
+                    {followUpContext && (
+                        <div className="w-full mb-2 p-2 border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 rounded-md relative text-sm text-blue-800 dark:text-blue-200">
+                            <button 
+                                type="button"
+                                onClick={() => setFollowUpContext(null)}
+                                className="absolute top-1 right-1 p-0.5 text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800"
+                                title="Clear follow-up context"
+                            >
+                                <X size={14} />
+                            </button>
+                            <p className="font-medium mb-1 text-blue-600 dark:text-blue-300">Follow-up Context:</p>
+                            <p className="line-clamp-2">{followUpContext}</p>
+                        </div>
+                    )}
+                    
+                    {/* Pinned Input Area - Remove max-width/centering from here */}
+                    <div className="p-4 pt-2 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0 w-full">
+                        <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center">
+                            {/* Use ChatInputUI directly here */}
+                            <ChatInputUI 
+                                key={isChatCollapsed ? 'collapsed-input' : 'unmounted'}
+                                // Pass down the toggle button only when appropriate
+                                renderCollapsedMessageToggle={
+                                    !followUpContext && lastMessageContent && isMessageBubbleCollapsed
+                                        ? collapsedMessageToggle
+                                        : undefined
+                                }
+                                files={files} 
+                                fileInputRef={fileInputRef} 
+                                handleFileChange={handleFileChange} 
+                                inputRef={inputRef} 
+                                input={input} 
+                                handleInputChange={handleInputChange} 
+                                handleKeyDown={handleKeyDown} 
+                                handlePaste={handlePaste} 
+                                model={model} 
+                                setModel={setModel} 
+                                handleUploadClick={handleUploadClick} 
+                                isLoading={isLoading} 
+                                isUploading={isUploading} 
+                                uploadError={uploadError} 
+                                uploadedImagePath={uploadedImagePath} 
+                                onStop={stop}
+                                isRecording={isRecording}
+                                isTranscribing={isTranscribing}
+                                micPermissionError={micPermissionError}
+                                startRecording={startRecording}
+                                stopRecording={stopRecording}
+                                audioTimeDomainData={audioTimeDomainData}
+                                clearPreview={clearPreview}
+                            />
+                        </form>
+                    </div>
                 </div>
             )}
         </div>
