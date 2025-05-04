@@ -222,15 +222,52 @@ export function useFileUpload({
         }
     }, [selectAndUploadFile]);
 
-    // Function to manually clear the preview state
-    const clearPreview = useCallback(() => {
+    // Function to manually clear the preview state AND delete from storage
+    const clearPreview = useCallback(async () => {
         console.log("[useFileUpload] clearPreview called.");
+
+        // --- ADDED: Delete from Storage --- 
+        const pathToDelete = uploadedImagePath; // Capture path before clearing state
+        
+        // Clear client-side state IMMEDIATELY for responsiveness
         setFiles(null);
         setUploadedImagePath(null);
         setUploadedImageSignedUrl(null);
         setUploadError(null);
+        console.log("[useFileUpload] Client-side preview state cleared.");
+
+        // If there was a path stored, attempt deletion
+        if (pathToDelete) {
+            console.log(`[useFileUpload] Attempting to delete file from storage: ${pathToDelete}`);
+            try {
+                const response = await fetch('/api/storage/delete', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filePath: pathToDelete }),
+                });
+
+                if (!response.ok) {
+                    // Attempt to parse error message from backend
+                    const errorData = await response.json().catch(() => ({ error: 'Failed to parse delete error response' }));
+                    const errorMsg = errorData.details || errorData.error || `Failed with status ${response.status}`;
+                    console.error(`[useFileUpload] Failed to delete file '${pathToDelete}' from storage: ${errorMsg}`);
+                    toast.error(`Could not delete file: ${errorMsg}`);
+                    // NOTE: We don't revert UI state here, preview is already cleared.
+                } else {
+                    console.log(`[useFileUpload] Successfully deleted file '${pathToDelete}' from storage.`);
+                    toast.success("Image removed.");
+                }
+            } catch (error: any) {
+                console.error(`[useFileUpload] Error calling delete API for '${pathToDelete}':`, error);
+                toast.error(`Error removing file: ${error.message}`);
+            }
+        } else {
+            console.log("[useFileUpload] No uploadedImagePath found, skipping storage deletion.");
+        }
+        // --- END ADDED --- 
+
         // Note: Does not affect ongoing uploads
-    }, [setFiles, setUploadedImagePath, setUploadedImageSignedUrl, setUploadError]);
+    }, [uploadedImagePath, setFiles, setUploadedImagePath, setUploadedImageSignedUrl, setUploadError]); // Include uploadedImagePath in deps
 
     return {
         files,
