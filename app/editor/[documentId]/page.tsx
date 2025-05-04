@@ -196,6 +196,9 @@ export default function EditorPage() {
     const followUpContext = useFollowUpStore((state) => state.followUpContext);
     const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
 
+    // ---> ADD LOG HERE <---
+    console.log('[EditorPage] Received initialMessages from useInitialChatMessages:', JSON.stringify(initialMessages, null, 2));
+
     // --- Callback Hooks (Defined BEFORE Early Returns) ---
     const triggerSaveDocument = useCallback(async (content: string, docId: string) => {
         console.log(`[Autosave] Triggering save for document ${docId}`);

@@ -209,7 +209,8 @@ export async function POST(req: Request) {
         firstImageSignedUrl, // <-- UPDATED: Expect signed URL
         taskHint,
         inputMethod, // <-- Expect inputMethod ('audio')
-        whisperDetails // <-- Expect whisperDetails object
+        whisperDetails, // <-- Expect whisperDetails object
+        uploadedImagePathFromRequest // <-- ADD: Extract uploadedImagePath from requestData
     } = requestData || {};
 
     // --- Existing Validation (Document ID, User Session) ---
@@ -236,31 +237,95 @@ export async function POST(req: Request) {
         ? originalMessages[originalMessages.length - 1] 
         : null;
 
+    // --- ADDED LOGGING: Inspect received lastClientMessage --- 
+    console.log(`[API Chat Save User Msg] Received lastClientMessage:`, JSON.stringify(lastClientMessage, null, 2));
+    // --- END LOGGING --- 
+
     if (lastClientMessage && lastClientMessage.role === 'user') {
         // Determine input method for metadata
         const messageInputMethod = inputMethod === 'audio' ? 'audio' : 'text';
-        // Determine image URL (use signed URL only if it's a text input)
-        const imageUrlForDb = messageInputMethod === 'text' ? firstImageSignedUrl : null;
-        // Extract text content and prepend follow-up context if available
-        let userContentText = '';
-        const originalUserText = typeof lastClientMessage.content === 'string' ? lastClientMessage.content : '';
-        const contextFromRequest = typeof requestData?.followUpContext === 'string' ? requestData.followUpContext : null;
 
-        if (contextFromRequest) {
-            userContentText = `${contextFromRequest}\n\n---\n\n${originalUserText}`;
-        } else {
-            userContentText = originalUserText;
+        // --- REVISED LOGIC v2: Use uploadedImagePathFromRequest --- 
+        let userContentParts: any[] = []; 
+        let imagePartProcessed = false; // Flag to ensure only one image part is added
+
+        // 1. Prioritize parts array IF it exists
+        if (Array.isArray(lastClientMessage.parts) && lastClientMessage.parts.length > 0) {
+            console.log(`[API Chat Save User Msg] Processing 'parts' array received from client.`);
+            userContentParts = lastClientMessage.parts.map((part: any) => {
+                 // --- REVERTED IMAGE PART LOGIC --- 
+                 if (part.type === 'image' && typeof part.image === 'string' && !imagePartProcessed) {
+                    // Assuming part.image is the signed URL string from the client
+                    console.log(`[API Chat Save User Msg] Found image part in array, attempting to extract path from URL: ${part.image}`);
+                    imagePartProcessed = true; // Process only the first image part found
+                    try {
+                        const imageUrl = new URL(part.image);
+                        // Extract path assuming Supabase storage URL structure
+                        // Example: https://<project_ref>.supabase.co/storage/v1/object/sign/<bucket_name>/<actual_path>
+                        // We want: <actual_path> (e.g., user_id/uuid_filename.ext)
+                        const pathSegments = imageUrl.pathname.split('/');
+                        // --- CORRECTED PATH EXTRACTION --- 
+                        const bucketName = process.env.SUPABASE_STORAGE_BUCKET_NAME || 'documents'; // Use the same logic as upload/download routes
+                        const bucketNameIndex = pathSegments.indexOf(bucketName);
+                        
+                        if (bucketNameIndex !== -1 && pathSegments.length > bucketNameIndex + 1) {
+                             const extractedPath = pathSegments.slice(bucketNameIndex + 1).join('/'); // Slice *after* the bucket name
+                        // --- END CORRECTED PATH EXTRACTION --- 
+                             console.log(`[API Chat Save User Msg] Extracted storage path: ${extractedPath}`);
+                            // Store the extracted path string
+                            return { ...part, image: extractedPath }; 
+                        } else {
+                             console.warn(`[API Chat Save User Msg] Could not extract valid storage path from ImagePart URL structure: ${part.image}`);
+                            return { ...part, image: null, error: 'Invalid image URL structure' }; // Mark as invalid
+                        }
+                    } catch (e) {
+                        console.warn(`[API Chat Save User Msg] Failed to parse URL in ImagePart, marking as invalid:`, part.image, e);
+                        return { ...part, image: null, error: 'Invalid image URL' }; // Mark as invalid
+                    }
+                 // --- END REVERTED IMAGE PART LOGIC --- 
+                 } else if (part.type === 'text') {
+                     return part; // Keep text parts
+                 } else {
+                      console.warn(`[API Chat Save User Msg] Ignoring unexpected part type in user message parts array: ${part.type}`);
+                      return null; // Ignore other unexpected parts like nested images
+                 }
+            }).filter(part => part !== null); // Remove nulls
+
+            // If parts existed but we didn't process an image (e.g., only text parts were sent),
+            // ensure text content is captured if the top-level content was used.
+            if (!imagePartProcessed && typeof lastClientMessage.content === 'string' && lastClientMessage.content.trim()) {
+                if (!userContentParts.some(p => p.type === 'text')) { // Avoid duplicating text if already in parts
+                     console.log('[API Chat Save User Msg] Adding text from content string as parts array only had other types.');
+                     userContentParts.push({ type: 'text', text: lastClientMessage.content.trim() });
+                }
+            }
+
+        } 
+        // 2. Fallback: If no parts array, use content string
+        else if (typeof lastClientMessage.content === 'string' && lastClientMessage.content.trim()) {
+            console.warn('[API Chat Save User Msg] User message parts array missing or empty, using content string.');
+            userContentParts.push({ type: 'text', text: lastClientMessage.content.trim() });
+            // Cannot add image part here as we don't have the path
+        } 
+        // 3. Handle totally unexpected format
+        else {
+             console.error('[API Chat Save User Msg] User message has unexpected format (no parts array or content string): ', lastClientMessage);
+             userContentParts = []; // Save empty content on unexpected format
         }
+        // --- END REVISED LOGIC --- 
 
-        console.log(`[API Chat Save User Msg] Saving user message (inputMethod: ${messageInputMethod}). Content: "${userContentText?.slice(0, 50)}..." Image: ${imageUrlForDb ? 'Yes' : 'No'}`);
-        const userMessageData: Omit<SupabaseMessage, 'id' | 'created_at'> = {
+        console.log(`[API Chat Save User Msg] Saving user message (inputMethod: ${messageInputMethod}). Final Parts to Save:`, JSON.stringify(userContentParts));
+        
+        // --- REFACTOR: Save parts array to content column --- 
+        // Use 'as any' to bypass strict type checking for the content field during insertion
+        const userMessageData = { 
             document_id: documentId,
             user_id: userId,
-            role: 'user',
-            content: userContentText,
-            image_url: typeof imageUrlForDb === 'string' ? imageUrlForDb : '', // Explicit type check
+            role: 'user' as const, // Add 'as const' for role literal type
+            content: userContentParts, // Save the processed parts array as JSON
             metadata: { input_method: messageInputMethod },
-        };
+        } as any; // <-- Use type assertion here
+        // --- END REFACTOR ---
 
         const { data: savedUserData, error: userMsgError } = await supabase
             .from('messages')
@@ -377,38 +442,30 @@ export async function POST(req: Request) {
         const isLastMessage = i === clientMessages.length - 1;
 
         if (msg.role === 'user') {
-            // Handle potential multimodal content for the last user message
+            // --- Extract text content FIRST, regardless of position/image --- 
+            let textContent = '';
+            if (Array.isArray(msg.content)) {
+                const textPart = msg.content.find(p => p.type === 'text');
+                textContent = textPart?.text || '';
+            } else if (typeof msg.content === 'string') {
+                textContent = msg.content;
+            }
+
+            // --- Construct CoreMessage --- 
             if (isLastMessage && finalImageSignedUrl) {
+                // Last user message WITH an image: Use extracted text + image URL
                 messages.push({
                     role: 'user',
                     content: [
-                        { type: 'text', text: msg.content || '' },
+                        // Use the extracted textContent here
+                        { type: 'text', text: textContent }, 
                         { type: 'image', image: finalImageSignedUrl }
                     ]
                 });
             } else {
-                // Handle regular user messages (content should be string)
-                 let contentString = '';
-                 if (typeof msg.content === 'string') {
-                     // Simple case: content is already a string
-                     contentString = msg.content;
-                 } else {
-                     // Attempt to extract text if content is structured (e.g., from old history)
-                     // This is less likely now but kept as a fallback
-                     try {
-                         const parts = Array.isArray(msg.content) ? msg.content : JSON.parse(String(msg.content));
-                         if (Array.isArray(parts)) {
-                             const textPart = parts.find(p => p.type === 'text');
-                             contentString = textPart?.text || '';
-                         }
-                     } catch {
-                         // Ignore parsing errors, leave contentString empty or handle as needed
-                     }
-                     if (!contentString) {
-                        console.warn(`[API Chat Pre-Transform] User message content was not a string and failed to extract text. ID: ${msg.id}`);
-                     }
-                 }
-                messages.push({ role: 'user', content: contentString });
+                 // Other user messages OR last message without image: Send only text content
+                 // (The AI doesn't need historical images unless explicitly handled)
+                 messages.push({ role: 'user', content: textContent });
             }
         } else if (msg.role === 'assistant') {
             // Handle assistant messages. These might come from live interaction (with toolCalls)
@@ -682,9 +739,8 @@ export async function POST(req: Request) {
 
                 // --- REVISED Save Logic: Accumulate ALL parts first ---
                 let finalAssistantTurn = {
-                    textContent: '' as string,
+                    accumulatedParts: [] as Array<TextPart | ToolCallPart>, // New field to hold parts
                     metadata: assistantMetadata, // Use metadata from the callback
-                    toolCalls: [] as ToolCallPart[],
                     toolResults: {} as { [toolCallId: string]: any },
                     hasData: false // Flag to indicate if *any* assistant content was found
                 };
@@ -692,29 +748,28 @@ export async function POST(req: Request) {
                 try {
                     // Loop through ALL messages to gather parts for ONE final assistant turn
                     for (const message of allResponseMessages) {
+                        // --- ADDED LOGGING: Inspect each message from AI response --- 
+                        console.log(`[onFinish Loop] Processing message part:`, JSON.stringify(message, null, 2));
+                        // --- END LOGGING --- 
+
                         if (message.role === 'assistant') {
                             finalAssistantTurn.hasData = true; // Mark that we found assistant content
 
-                            let textPartContent = '';
-                            let toolCallParts: ToolCallPart[] = [];
-
+                            // --- REFACTOR: Ensure content is always parts array --- 
+                            let assistantParts: Array<TextPart | ToolCallPart> = [];
                             if (typeof message.content === 'string') {
-                                textPartContent = message.content.trim();
+                                if (message.content.trim()) {
+                                    assistantParts.push({ type: 'text', text: message.content.trim() });
+                                }
                             } else if (Array.isArray(message.content)) {
-                                const textPart = message.content.find((part): part is TextPart => part.type === 'text');
-                                textPartContent = textPart?.text?.trim() ?? '';
-                                toolCallParts = message.content.filter((part): part is ToolCallPart => part.type === 'tool-call');
+                                // Filter for valid TextPart and ToolCallPart
+                                assistantParts = message.content.filter(
+                                     (part): part is TextPart | ToolCallPart => 
+                                        part.type === 'text' || part.type === 'tool-call'
+                                );
                             }
-
-                            // Append text content (handle potential multiple text parts)
-                            if (textPartContent) {
-                                finalAssistantTurn.textContent = (finalAssistantTurn.textContent ? finalAssistantTurn.textContent + "\n" : "") + textPartContent;
-                            }
-                            
-                            // Accumulate tool calls
-                            if (toolCallParts.length > 0) {
-                                finalAssistantTurn.toolCalls.push(...toolCallParts);
-                            }
+                            finalAssistantTurn.accumulatedParts.push(...assistantParts); // Accumulate parts
+                            // --- END REFACTOR ---
 
                         } else if (message.role === 'tool') {
                             // Collect tool results
@@ -732,19 +787,42 @@ export async function POST(req: Request) {
                         // Ignore user/system messages within the AI response itself
                     } // End of loop
 
-                    // --- Save the accumulated turn AFTER the loop ---
+                    // --- Save the accumulated turn AFTER the loop --- 
                     if (finalAssistantTurn.hasData) {
-                        console.log(`[onFinish SaveTurn] Saving accumulated assistant turn. Text: "${finalAssistantTurn.textContent.slice(0, 30)}...", Tool Calls: ${finalAssistantTurn.toolCalls.length}`);
+                         console.log(`[onFinish SaveTurn] Saving accumulated assistant turn. Parts Count: ${finalAssistantTurn.accumulatedParts.length}, Tool Results: ${Object.keys(finalAssistantTurn.toolResults).length}`);
                         
-                        // Save the primary message (contains accumulated text or is base for tool calls)
-                        const messageData: Omit<SupabaseMessage, 'id' | 'created_at'> = {
+                        // --- ADDED LOGGING: Inspect final accumulated parts before save --- 
+                        console.log(`[onFinish SaveTurn] Final accumulatedParts before insert:`, JSON.stringify(finalAssistantTurn.accumulatedParts, null, 2));
+                        // --- END LOGGING --- 
+
+                        // --- Step 2 & 3: Merge results into parts --- 
+                        const partsWithResults = finalAssistantTurn.accumulatedParts.map(part => {
+                            if (part.type === 'tool-call' && finalAssistantTurn.toolResults.hasOwnProperty(part.toolCallId)) {
+                                console.log(`[onFinish SaveTurn] Merging result for toolCallId: ${part.toolCallId}`);
+                                return {
+                                    ...part, 
+                                    result: finalAssistantTurn.toolResults[part.toolCallId] // Add result property
+                                };
+                            }
+                            return part; // Return original part if not a tool-call or no result found
+                        });
+                         // --- ADDED LOGGING: Inspect parts after merging results --- 
+                        console.log(`[onFinish SaveTurn] Parts after merging results:`, JSON.stringify(partsWithResults, null, 2));
+                        // --- END LOGGING --- 
+
+                        // Save the primary message (contains accumulated parts or is base for tool calls)
+                         // --- REFACTOR: Save parts array to content --- 
+                         // Use 'as any' to bypass strict type checking for the content field during insertion
+                        const messageData = { 
                             document_id: documentId,
                             user_id: userId!,
-                            role: 'assistant',
-                            content: finalAssistantTurn.textContent, // Use accumulated text content
-                            image_url: null,
+                            role: 'assistant' as const, // Add 'as const' for role literal type
+                            // --- MODIFICATION: Save partsWithResults and stringify --- 
+                            content: JSON.stringify(partsWithResults), // Save the array with results included
+                            // --- END MODIFICATION ---
                             metadata: finalAssistantTurn.metadata,
-                        };
+                        } as any; // <-- Use type assertion here
+                        // --- END REFACTOR ---
                         const { data: savedMsgData, error: msgError } = await supabase.from('messages').insert(messageData).select('id').single();
 
                         if (msgError || !savedMsgData?.id) {
@@ -755,14 +833,14 @@ export async function POST(req: Request) {
                             console.log(`[onFinish SaveTurn] Saved accumulated assistant message ID: ${savedMessageId}`);
 
                             // Save associated Tool Calls using the obtained ID
-                            if (finalAssistantTurn.toolCalls.length > 0) {
-                                const toolCallsToSave: Omit<SupabaseToolCall, 'id' | 'created_at'>[] = finalAssistantTurn.toolCalls.map(tc => ({
+                            if (finalAssistantTurn.toolResults.length > 0) {
+                                const toolCallsToSave: Omit<SupabaseToolCall, 'id' | 'created_at'>[] = Object.entries(finalAssistantTurn.toolResults).map(([toolCallId, result]) => ({
                                     message_id: savedMessageId, // Use the ID of the single message saved above
                                     user_id: userId!,
-                                    tool_call_id: tc.toolCallId,
-                                    tool_name: tc.toolName,
-                                    tool_input: tc.args,
-                                    tool_output: finalAssistantTurn.toolResults[tc.toolCallId] ?? null // Get result from collected map
+                                    tool_call_id: toolCallId,
+                                    tool_name: toolCallId, // Use toolCallId as toolName
+                                    tool_input: result,
+                                    tool_output: result
                                 }));
 
                                 const { error: toolError } = await supabase.from('tool_calls').insert(toolCallsToSave);

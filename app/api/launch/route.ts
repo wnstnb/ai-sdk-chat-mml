@@ -61,13 +61,15 @@ export async function POST(request: Request) {
 
     // 4. Create Initial Message linked to the new document
     console.log(`Creating initial message for document ${newDocumentId}`);
+    const initialMessageParts = [{ type: 'text', text: initialContent.trim() }];
     const { data: newMessage, error: msgInsertError } = await supabase
       .from('messages')
       .insert({
         document_id: newDocumentId,
         user_id: userId, // Associate message with user
         role: 'user',
-        content: initialContent.trim(),
+        content: initialMessageParts,
+        metadata: { input_method: 'text' },
       })
       .select('id') // Optionally return message ID if needed
       .single();

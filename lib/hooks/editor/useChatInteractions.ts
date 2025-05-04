@@ -61,7 +61,7 @@ export type AudioTimeDomainData = Uint8Array | null; // Export the type
 export function useChatInteractions({
     documentId,
     initialModel,
-    initialMessages, // <-- ADDED: Receive initial messages
+    initialMessages, // Prop containing messages from useInitialChatMessages
     editorRef,
     uploadedImagePath,
     uploadedImageSignedUrl,
@@ -69,6 +69,8 @@ export function useChatInteractions({
     clearFileUploadPreview,
     apiEndpoint = '/api/chat',
 }: UseChatInteractionsProps): UseChatInteractionsReturn {
+    
+    console.log('[useChatInteractions] Received initialMessages prop:', JSON.stringify(initialMessages, null, 2));
     
     // --- Internal State ---
     const [model, setModel] = useState<string>(initialModel);
@@ -112,14 +114,15 @@ export function useChatInteractions({
         handleSubmit: originalHandleSubmit,
         isLoading,
         reload,
-        stop: stopAiGeneration, // Renamed to avoid conflict
-        setMessages,
+        stop: stopAiGeneration, 
+        setMessages, // Need setMessages from the hook
         setInput,
         append
     } = useChat({
         api: apiEndpoint,
         id: documentId,
-        initialMessages: initialMessages || [], // <-- MODIFIED: Use passed initialMessages or fallback
+        // --- Pass initialMessages directly, fallback to empty array ---
+        initialMessages: initialMessages || [], 
         onResponse: (res) => {
             console.log('[useChat onResponse] Received response:', res);
             if (!res.ok) {
@@ -136,6 +139,8 @@ export function useChatInteractions({
             console.log('[useChat onFinish] Stream finished. Final message:', message);
         },
     });
+
+    console.log('[useChatInteractions] Messages state FROM useChat hook IMMEDIATELY AFTER init:', JSON.stringify(messages, null, 2));
 
     // --- Editor Context Retrieval ---
     const getEditorContext = useCallback(async (): Promise<EditorContextData> => {
@@ -241,12 +246,13 @@ export function useChatInteractions({
             }
         ] : undefined;
 
-        // --- Prepare data payload for the API call (no change) ---
+        // --- Prepare data payload for the API call (includes image URL if present) ---
         const submitDataPayload = {
             model: currentModel,
             documentId,
             ...editorContextData,
             firstImageSignedUrl: signedUrlToSend,
+            uploadedImagePath: imagePathForDb,
             taskHint: isSummarizationTask ? 'summarize_and_cite_outline' : undefined,
             ...(isAudioSubmission && {
                 inputMethod: 'audio',
@@ -254,15 +260,38 @@ export function useChatInteractions({
             }),
         };
 
-        // --- Create the user message object with combined content --- 
+        // --- Create the user message object for the hook (content as string) ---
+        const contentValue = finalInput?.trim() || '';
+        
+        // --- START MODIFICATION: Create parts array --- 
+        // Define Part types inline or import if needed
+        type TextPart = { type: 'text'; text: string };
+        type ImagePart = { type: 'image'; image: URL }; // Assuming URL object is correct based on docs
+        const parts: Array<TextPart | ImagePart> = [];
+        if (contentValue) {
+            parts.push({ type: 'text', text: contentValue });
+        }
+        if (signedUrlToSend) { // Assuming signedUrlToSend is the image URL string
+            try {
+                const imageUrl = new URL(signedUrlToSend);
+                parts.push({ type: 'image', image: imageUrl });
+            } catch (e) {
+                console.error(`[handleSubmit] Invalid URL provided for image: ${signedUrlToSend}`, e);
+                toast.error("Invalid image URL provided.");
+                // Decide how to handle: prevent submission? Send only text? 
+                return; // Example: Prevent submission on invalid URL
+            }
+        }
+
+        // --- Create message with BOTH string content AND parts array --- 
         const userMessageForAi: Message = {
             id: `temp-user-${Date.now()}`,
             role: 'user',
-            content: finalInput?.trim() || '', // Use combined input
+            content: contentValue, // <-- Use the plain string here
+            parts: parts as any,   // <-- Add the parts array here
             createdAt: new Date(),
-            // Add attachments to the message object itself IF they exist
-            ...(attachmentsForOptimisticUI && { experimental_attachments: attachmentsForOptimisticUI })
         };
+        // --- END MODIFICATION --- 
 
         // --- Manually update UI state BEFORE sending API request --- 
         // REMOVED: setMessages([...messages, userMessageForAi]); // Let append handle this
@@ -277,13 +306,12 @@ export function useChatInteractions({
         // const currentInput = input; 
         // setInput(''); 
 
-        // --- Prepare options for the API call --- 
+        // --- Prepare options for the API call (contains the data payload) ---
         const submitOptions: { data: any; } = {
             data: submitDataPayload as any,
-            // experimental_attachments are already IN the userMessageForAi object passed to append
         };
 
-        // --- Call append with the message object and options ---
+        // --- Call append with the string-content message and options data ---
         try {
             console.log('[handleSubmit] Preparing to call append. Current isLoading state:', isLoading);
             if (isLoading) {
@@ -292,12 +320,13 @@ export function useChatInteractions({
                 // If we were manually adding, we'd rollback here. append should handle its own state.
                 return; // Explicitly prevent call if loading
             }
-            console.log('[handleSubmit] Calling append with message:', JSON.stringify(userMessageForAi, null, 2), 'and options:', JSON.stringify(submitOptions, null, 2)); // Log full objects
+            console.log('[handleSubmit] Calling append with message (parts content): ', JSON.stringify(userMessageForAi, null, 2), 'and options:', JSON.stringify(submitOptions, null, 2)); 
             
-            // ---> Call append instead of originalHandleSubmit <---
+            // ---> Call append with the parts-based message object <--- 
             append(userMessageForAi, submitOptions);
             
-            console.log('[handleSubmit] append called successfully (request potentially sent).');
+            console.log('[handleSubmit] append called successfully.');
+            console.log('[handleSubmit] Messages state immediately after append call:', JSON.stringify(messages, null, 2));
 
             // ---> Clear visual input field AFTER append call? Append might do this itself. Let's clear it explicitly. <---
             setInput(''); 
@@ -310,9 +339,9 @@ export function useChatInteractions({
         
     }, [
         documentId, followUpContext, input, model, uploadedImagePath, uploadedImageSignedUrl,
-        isLoading, isUploading, getEditorContext, /* removed originalHandleSubmit */ clearFileUploadPreview, // Removed originalHandleSubmit
-        setFollowUpContext, setInput, messages, setMessages, // Keep setMessages/messages if needed elsewhere, but not for the optimistic update here
-        append, // <-- Add append
+        isLoading, isUploading, getEditorContext, clearFileUploadPreview,
+        setFollowUpContext, setInput, messages,
+        append,
         pendingInitialSubmission, pendingSubmissionMethod, pendingWhisperDetails
     ]);
 
@@ -415,7 +444,7 @@ export function useChatInteractions({
             }
             setMediaRecorder(null);
         }
-    }, [audioChunksRef, mediaRecorder, setInput, handleSubmit, setIsTranscribing, setIsRecording, setMediaRecorder]); // Added dependencies
+    }, [audioChunksRef, mediaRecorder, setInput, setIsTranscribing, setIsRecording, setMediaRecorder]); // Removed handleSubmit as it's unlikely needed here and causes changes
 
     // --- NEW: Function to handle the audio analysis loop ---
     const analyseAudio = useCallback(() => {
@@ -455,7 +484,7 @@ export function useChatInteractions({
     // Still include isRecording state in deps so the callback itself updates
     // if the state is used for other logic within the hook/component.
     // The ref handles the immediate loop continuation logic.
-    }, [isRecording]); 
+    }, []); 
 
     // --- Stop Recording Logic (MODIFIED for cleanup) ---
     const handleStopRecording = useCallback((timedOut = false) => {
@@ -528,7 +557,7 @@ export function useChatInteractions({
          // --- END NEW ---
 
     // Dependencies: recorder instance, timer ID state/setter, and NEW audio refs
-    }, [mediaRecorder, recordingTimerId]); // Removed analyseAudio from deps, managed by isRecording
+    }, [mediaRecorder]); // Removed recordingTimerId from deps, managed by isRecording
 
     // --- Start Recording Logic (MODIFIED) ---
     const handleStartRecording = useCallback(async () => {
@@ -674,7 +703,7 @@ export function useChatInteractions({
              handleStopRecording(false); // Ensure full cleanup on getUserMedia error
         }
     // Added handleStopRecording, analyseAudio and audio refs dependencies
-    }, [handleProcessRecordedAudio, recordingTimerId, handleStopRecording, analyseAudio]); // Keep analyseAudio here
+    }, [handleProcessRecordedAudio, handleStopRecording, analyseAudio]); // Keep analyseAudio here
 
     // --- Initial Message Processing ---
     useEffect(() => {
