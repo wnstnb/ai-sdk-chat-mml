@@ -422,25 +422,66 @@ body {
 [data-theme='dark'] .bn-container [role="toolbar"],
 [data-theme='dark'] .bn-container [data-toolbar="true"] {
   background-color: var(--header-bg) !important;
-  border-color: var(--border-color) !important;
+  border: 1px solid var(--border-color) !important;
 }
 
 /* Style all buttons and controls in the editor for dark mode */
-[data-theme='dark'] .bn-container button,
+[data-theme='dark'] .bn-container [role="toolbar"] button,
+[data-theme='dark'] .bn-container [data-toolbar="true"] button,
 [data-theme='dark'] .bn-container .bn-toolbar-item {
   color: var(--text-color) !important;
   background-color: transparent !important;
+  box-shadow: none !important; /* Re-apply for specificity */
+  text-shadow: none !important; /* Re-apply for specificity */
+  filter: none !important; /* Add this to remove potential drop-shadow */
+  outline: 1px solid transparent !important; /* Ensure outline overrides defaults */
+  border: none !important; /* Ensure border overrides defaults */
 }
 
-[data-theme='dark'] .bn-container button:hover,
+[data-theme='dark'] .bn-container [role="toolbar"] button:hover,
+[data-theme='dark'] .bn-container [data-toolbar="true"] button:hover,
 [data-theme='dark'] .bn-container .bn-toolbar-item:hover {
   background-color: var(--hover-bg) !important;
+  box-shadow: none !important; /* Ensure no shadow on hover */
+  filter: none !important;
 }
 
-[data-theme='dark'] .bn-container button.active,
+/* Add focus style for accessibility */
+[data-theme='dark'] .bn-container [role="toolbar"] button:focus-visible,
+[data-theme='dark'] .bn-container [data-toolbar="true"] button:focus-visible,
+[data-theme='dark'] .bn-container .bn-toolbar-item:focus-visible {
+  outline: 1px solid var(--primary-color) !important; /* Highlight on focus */
+  outline-offset: 1px !important;
+  box-shadow: none !important; /* Ensure no shadow on focus */
+  filter: none !important;
+}
+
+[data-theme='dark'] .bn-container [role="toolbar"] button.active,
+[data-theme='dark'] .bn-container [data-toolbar="true"] button.active,
 [data-theme='dark'] .bn-container .bn-toolbar-item.active {
   background-color: var(--active-bg) !important;
+  box-shadow: none !important; /* Ensure no shadow when active */
+  filter: none !important;
 }
+
+/* Style tooltips specifically within BlockNote for dark mode */
+/* Targeting common tooltip attributes/classes - adjust if necessary */
+[data-theme='dark'] .bn-container [role="tooltip"],
+[data-theme='dark'] .bn-container .bn-tooltip /* Assuming a .bn-tooltip class might exist */ {
+  background-color: var(--card-bg); /* Use a dark background */
+  color: var(--text-color) !important; /* Use light text */
+  border: 0px solid var(--border-color) !important;
+  box-shadow: var(--shadow-md) !important;
+  font-size: 0.8rem !important; /* Adjust font size if needed */
+  padding: 2px 4px !important; /* Adjust padding if needed */
+  border-radius: 4px !important; /* Add border-radius */
+}
+
+/* Make Mantine tooltip arrow transparent in dark mode */
+/* [data-theme='dark'] .bn-container .mantine-Tooltip-arrow {
+    background-color: transparent !important;
+    border-color: transparent !important;
+} */
 
 /* Style dropdowns and menus in dark mode */
 [data-theme='dark'] .bn-container [role="menu"],
@@ -1148,4 +1189,31 @@ html {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* --- Pinned Message Bubble Styles --- */
+.pinned-message-bubble {
+    @apply absolute bottom-full left-4 right-4 mb-1; /* Positioning, added left/right padding (4 = 1rem) */
+    @apply z-10; /* Ensure it's above editor content but below modals/popovers */
+    @apply p-2; /* Adjusted padding (p-2 -> 8px) */
+    @apply rounded-md border; /* Use theme radius and border */
+    @apply flex items-center justify-between gap-2; /* Layout */
+    @apply text-sm; /* Slightly larger than follow-up */
+    /* Use CSS vars for theme awareness */
+    @apply bg-[--info-bg] border-[--info-border] text-[--info-text];
+}
+
+/* Utility for line clamping (if not globally available) */
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }

@@ -49,6 +49,8 @@ interface ChatInputUIProps {
     uploadedImagePath: string | null; // Path of successfully uploaded image
     onStop?: () => void; // Optional handler for stopping AI generation
     isChatCollapsed?: boolean; // To trigger height adjustment
+    // NEW: Prop to render the collapsed message toggle icon
+    renderCollapsedMessageToggle?: React.ReactNode;
     
     // --- AUDIO PROPS (Now Optional) --- 
     isRecording?: boolean; // << Made optional
@@ -79,6 +81,8 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     uploadedImagePath,
     onStop, // Stop AI generation
     isChatCollapsed,
+    // DESTRUCTURE NEW PROP
+    renderCollapsedMessageToggle,
     clearPreview, // Destructure the new prop
     // --- AUDIO PROPS DESTRUCTURED (with defaults/checks) ---
     isRecording = false, // Default to false if not provided
@@ -305,6 +309,8 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                                  </span>
                              </button>
                          </div>
+                        {/* Render the passed-in toggle icon button if it exists */}
+                        {renderCollapsedMessageToggle}
                      </div>
                  </div>
             </div>
