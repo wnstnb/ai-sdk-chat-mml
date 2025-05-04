@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { Message, ToolCall as DbToolCall } from '@/types/supabase';
+import type { Message as FrontendMessage } from 'ai/react';
+import { createClient } from '@supabase/supabase-js';
 
 interface MessageWithDetails extends Message {
   signedDownloadUrl: string | null;
@@ -40,6 +42,18 @@ async function checkDocumentOwnership(supabase: ReturnType<typeof createSupabase
     return !!data; // True if data is not null (document found and owned by user)
 }
 
+// Helper function to get Supabase URL and Key (replace with your actual env variables)
+function getSupabaseCredentials() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // Use service key on backend
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+        console.error('Supabase URL or Service Key is missing in environment variables.');
+        throw new Error('Server configuration error.');
+    }
+    return { supabaseUrl, supabaseServiceKey };
+}
+
 // GET handler for fetching messages for a document
 export async function GET(
   request: Request,
@@ -48,6 +62,8 @@ export async function GET(
   const documentId = params.documentId;
   const cookieStore = cookies();
   const supabase = createSupabaseServerClient();
+  const { supabaseUrl, supabaseServiceKey } = getSupabaseCredentials();
+  const supabaseAdminClient = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
     const { userId, errorResponse } = await getUserOrError(supabase);
@@ -58,10 +74,11 @@ export async function GET(
     // if (!isOwner) { ... return 403 ... }
 
     // Fetch messages - RLS ensures user can only access messages for owned documents
-    const { data: messages, error: fetchError } = await supabase
+    const { data: messagesData, error: fetchError } = await supabase
       .from('messages')
-      .select('id, created_at, role, content, image_url, user_id')
+      .select('id, user_id, role, content, created_at, metadata')
       .eq('document_id', documentId)
+      .eq('user_id', userId)
       .order('created_at', { ascending: true });
 
     if (fetchError) {
@@ -69,12 +86,12 @@ export async function GET(
       return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch messages: ${fetchError.message}` } }, { status: 500 });
     }
 
-    if (!messages || messages.length === 0) {
+    if (!messagesData || messagesData.length === 0) {
       return NextResponse.json({ data: [] }, { status: 200 }); // Return empty array if no messages
     }
 
     // --- Fetch Tool Calls for these Messages --- 
-    const messageIds = messages.map(m => m.id);
+    const messageIds = messagesData.map(m => m.id);
     const { data: toolCalls, error: toolFetchError } = await supabase
         .from('tool_calls')
         .select('*')
@@ -88,48 +105,119 @@ export async function GET(
         return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch tool calls: ${toolFetchError.message}` } }, { status: 500 });
     }
 
-    // Combine messages with tool calls and generate signed URLs
-    const messagesWithDetails: MessageWithDetails[] = await Promise.all(
-        (messages as Message[]).map(async (msg) => {
-            // Find associated tool calls for this message
-            const associatedToolCalls = toolCalls?.filter(tc => tc.message_id === msg.id) || null;
+    // --- START REFACTOR: Process messages to handle JSON content and generate signed URLs --- 
+    const processedMessages: FrontendMessage[] = [];
+    for (const dbMsg of messagesData as Message[]) {
+        let parts: any[] = [];
+        let originalContent = dbMsg.content; // Keep original content for reference
 
-            let signedDownloadUrl: string | null = null;
-            if (msg.image_url) {
-                console.log(`[GET /messages] Attempting to generate signed URL for message ${msg.id}, image path: ${msg.image_url}`);
-                try {
-                    const { data, error: urlError } = await supabase.storage
-                        .from('message-images') // Ensure this matches your bucket name
-                        .createSignedUrl(msg.image_url, SIGNED_URL_EXPIRY);
-
-                    if (urlError) {
-                        console.error(`[GET /messages] Failed to create signed URL for image ${msg.image_url} (message ID: ${msg.id}):`, urlError.message);
-                    } else if (data?.signedUrl) {
-                        signedDownloadUrl = data.signedUrl;
-                        console.log(`[GET /messages] Successfully generated signed URL for message ${msg.id}`);
-                    } else {
-                        console.warn(`[GET /messages] createSignedUrl returned ok but no signedUrl data for message ${msg.id}`);
-                    }
-                } catch (e: any) {
-                     console.error(`[GET /messages] EXCEPTION generating signed URL for message ${msg.id}:`, e.message); 
-                }
+        // 1. Parse the content JSON
+        try { // Wrap parsing in try-catch
+            if (typeof originalContent === 'object' && originalContent !== null) {
+                parts = Array.isArray(originalContent) ? originalContent : [];
+            } else if (typeof originalContent === 'string') {
+                parts = JSON.parse(originalContent);
+                if (!Array.isArray(parts)) parts = [];
             } else {
-                // Optional log for messages without images
-                // console.log(`[GET /messages] Message ${msg.id} has no image_url.`);
+                console.warn(`[Messages GET] Msg ${dbMsg.id} (Role: ${dbMsg.role}) has unexpected content type:`, typeof originalContent);
+                parts = [];
             }
-            // Return the complete MessageWithDetails object
-            return {
-                ...msg,
-                signedDownloadUrl,
-                tool_calls: associatedToolCalls
-            };
-        })
-    );
+        } catch (e) {
+            console.warn(`[Messages GET] Msg ${dbMsg.id} (Role: ${dbMsg.role}) Failed to parse content JSON, treating as plain text. Content:`, originalContent, e);
+            // If original content was string, create text part. Otherwise, parts remain empty.
+            parts = typeof originalContent === 'string' ? [{ type: 'text', text: originalContent }] : [];
+        }
+        
+        // --- Log parsed parts --- 
+        // console.log(`[Messages GET] Msg ${dbMsg.id} (Role: ${dbMsg.role}) - Parsed parts:`, JSON.stringify(parts));
 
-    return NextResponse.json({ data: messagesWithDetails }, { status: 200 });
+        // 2. Process parts (generate signed URLs for images)
+        const processedParts = [];
+        let hasImagePart = false;
+        let hasToolCallPart = false;
+        let textOnly = true; // Assume text only initially
+        
+        for (const part of parts) {
+            if (part.type === 'image') {
+                const bucketName = process.env.SUPABASE_STORAGE_BUCKET_NAME || 'documents'; // Use consistent bucket name logic
+                hasImagePart = true;
+                textOnly = false;
+                if (typeof part.image === 'string') {
+                    const imagePath = part.image;
+                    const { data: signedUrlData, error: signedUrlError } = await supabaseAdminClient.storage
+                        .from(bucketName) // Use the determined bucket name
+                        .createSignedUrl(imagePath, SIGNED_URL_EXPIRY);
+                    if (signedUrlError) {
+                        console.error(`[Messages GET] Error generating signed URL for ${imagePath}:`, signedUrlError.message);
+                        processedParts.push({ ...part, image: null, error: 'Failed to load image' });
+                    } else {
+                        processedParts.push({ ...part, image: signedUrlData.signedUrl });
+                    }
+                } else {
+                     console.warn(`[Messages GET] Msg ${dbMsg.id} ImagePart has non-string image data:`, part.image);
+                     processedParts.push({ ...part, image: null, error: 'Invalid image data' });
+                }
+            } else if (part.type === 'tool-call') {
+                 hasToolCallPart = true;
+                 textOnly = false;
+                 processedParts.push(part); // Pass tool call part through
+            } else if (part.type === 'text') {
+                 processedParts.push(part); // Pass text part through
+                 if (!part.text?.trim()) { // Check if text part is effectively empty
+                     // Don't set textOnly=false if it's just whitespace
+                 } else {
+                      textOnly = false; // Contains actual text
+                 }
+            } else {
+                // Handle unknown part types if necessary
+                 console.warn(`[Messages GET] Msg ${dbMsg.id} Unknown part type: ${part.type}`);
+                 textOnly = false;
+                 processedParts.push(part);
+            }
+        }
+
+        // 3. Determine final content structure for frontend
+        let finalContent: string | any[] = ''; // Default to empty string
+        if (processedParts.length > 0) {
+            // --- REVISED LOGIC --- 
+            // If the original content was JSON (meaning parts array existed),
+            // always send the processed parts array to the frontend,
+            // even if it only contains a single text part after processing.
+            // If the original content was a simple string (and resulted in a single text part), 
+            // send that as a string.
+            if (typeof originalContent === 'string' && parts.length === 1 && parts[0].type === 'text') {
+                // Original was string, resulted in single text part -> send string
+                finalContent = parts[0].text || '';
+            } else {
+                // Original was JSON array OR resulted in multiple/non-text parts -> send array
+                finalContent = processedParts;
+            }
+            // --- END REVISED LOGIC --- 
+        } else {
+             // If parts array was empty after parsing/processing, use empty string
+             finalContent = '';
+             console.log(`[Messages GET] Msg ${dbMsg.id} (Role: ${dbMsg.role}) resulted in empty content.`);
+        }
+
+        // --- Log final content determination ---
+        // console.log(`[Messages GET] Msg ${dbMsg.id} (Role: ${dbMsg.role}) - Final content type: ${typeof finalContent}, IsArray: ${Array.isArray(finalContent)}`);
+
+        // 4. Construct the final message object for the frontend (using ai/react Message type)
+        const frontendMessage: FrontendMessage = {
+             id: dbMsg.id,
+             role: dbMsg.role as FrontendMessage['role'], 
+             content: finalContent as any, // Use type assertion 
+             createdAt: new Date(dbMsg.created_at),
+             // Include other relevant fields if needed
+        };
+        processedMessages.push(frontendMessage);
+    }
+    // --- END REFACTOR --- 
+
+    return NextResponse.json({ data: processedMessages }, { status: 200 });
 
   } catch (error: any) {
-    console.error('Messages GET Error:', error.message);
+    console.error('Messages GET Error (Outer Catch):', error.message);
     return NextResponse.json({ error: { code: 'SERVER_ERROR', message: `An unexpected error occurred: ${error.message}` } }, { status: 500 });
   }
 }

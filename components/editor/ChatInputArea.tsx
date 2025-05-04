@@ -46,6 +46,10 @@ interface ChatInputAreaProps {
     stopRecording: (timedOut?: boolean) => void;
     audioTimeDomainData: AudioTimeDomainData; // <<< Add the prop type here
     // --- END NEW AUDIO PROPS ---
+
+    // --- ADD CLEAR PREVIEW PROP --- 
+    clearPreview: () => void;
+    // --- END CLEAR PREVIEW PROP ---
 }
 
 export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
@@ -79,6 +83,9 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     fileInputRef,
     handleKeyDown,
     isChatCollapsed,
+    // --- DESTRUCTURE CLEAR PREVIEW PROP ---
+    clearPreview,
+    // --- END DESTRUCTURE CLEAR PREVIEW PROP ---
 }) => {
     return (
         <div className="w-full px-0 pb-4 border-t border-[--border-color] pt-4 flex-shrink-0 bg-[--bg-secondary]">
@@ -124,6 +131,7 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     startRecording={startRecording}
                     stopRecording={stopRecording}
                     audioTimeDomainData={audioTimeDomainData} // <<< Pass the prop down
+                    clearPreview={clearPreview} // <-- PASS PROP DOWN
                     // --- END NEW AUDIO PROPS PASSED DOWN ---
                 />
             </form>

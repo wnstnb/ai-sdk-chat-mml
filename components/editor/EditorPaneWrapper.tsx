@@ -62,6 +62,9 @@ interface EditorPaneWrapperProps {
     // --- ADD AUDIO VISUALIZATION PROP ---
     audioTimeDomainData: Uint8Array | null;
     // --- END AUDIO VISUALIZATION PROP ---
+    // --- ADD CLEAR PREVIEW PROP --- 
+    clearPreview: () => void;
+    // --- END CLEAR PREVIEW PROP ---
 }
 
 export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
@@ -101,6 +104,9 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     // --- DESTRUCTURE AUDIO VISUALIZATION PROP ---
     audioTimeDomainData,
     // --- END AUDIO VISUALIZATION PROP ---
+    // --- DESTRUCTURE CLEAR PREVIEW PROP ---
+    clearPreview,
+    // --- END DESTRUCTURE CLEAR PREVIEW PROP ---
 }) => {
     return (
         <div className="flex-1 flex flex-col relative border rounded-lg bg-[--editor-bg] border-[--border-color] shadow-sm overflow-hidden">
@@ -163,6 +169,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                             startRecording={startRecording}
                             stopRecording={stopRecording}
                             audioTimeDomainData={audioTimeDomainData}
+                            clearPreview={clearPreview}
                         />
                     </form>
                 </div>

@@ -2,7 +2,7 @@
 
 import React, { useEffect, KeyboardEvent, useState, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { MicIcon, StopCircleIcon } from 'lucide-react';
+import { MicIcon, StopCircleIcon, X } from 'lucide-react';
 import { AttachmentIcon, SendIcon } from '@/components/icons';
 import { ModelSelector } from '@/components/ModelSelector';
 import { TextFilePreview } from './TextFilePreview'; // Import from sibling file
@@ -57,6 +57,7 @@ interface ChatInputUIProps {
     startRecording?: () => void; // << Made optional
     stopRecording?: () => void; // << Made optional
     audioTimeDomainData?: AudioTimeDomainData; // << Made optional
+    clearPreview: () => void; // Add clearPreview from useFileUpload hook
     // --- END AUDIO PROPS ---
 }
 
@@ -78,6 +79,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     uploadedImagePath,
     onStop, // Stop AI generation
     isChatCollapsed,
+    clearPreview, // Destructure the new prop
     // --- AUDIO PROPS DESTRUCTURED (with defaults/checks) ---
     isRecording = false, // Default to false if not provided
     isTranscribing = false, // Default to false
@@ -195,8 +197,8 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                                                 alt={file.name}
                                                 width={64}
                                                 height={64}
-                                                className={`rounded-md object-cover ${isUploading ? 'opacity-50' : ''}`}
-                                                onLoad={() => URL.revokeObjectURL(URL.createObjectURL(file))} // Clean up object URL
+                                                className={`rounded-md object-cover ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}
+                                                onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)} // Clean up object URL
                                             />
                                         )}
                                         {/* Uploading Indicator */}
@@ -207,6 +209,18 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                                 </svg>
                                             </div>
+                                        )}
+                                        {/* Close Button - only show if NOT uploading */}
+                                        {!isUploading && (
+                                            <button
+                                                type="button"
+                                                onClick={clearPreview} // Call clearPreview on click
+                                                className="absolute top-0 right-0 -mt-1 -mr-1 p-0.5 bg-gray-600 hover:bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity focus:outline-none focus:ring-1 focus:ring-red-500"
+                                                aria-label="Remove image preview"
+                                                title="Remove image"
+                                            >
+                                                <X size={12} strokeWidth={3} />
+                                            </button>
                                         )}
                                     </div>
                                 ))}

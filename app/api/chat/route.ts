@@ -2,7 +2,7 @@
 
 import { openai } from "@ai-sdk/openai";
 import { google } from "@ai-sdk/google";
-import { LanguageModel, streamText, CoreMessage, tool, ToolCallPart, ToolResultPart } from "ai";
+import { LanguageModel, streamText, CoreMessage, tool, ToolCallPart, ToolResultPart, TextPart, ToolCall, ToolResult } from "ai";
 import { z } from 'zod';
 import { webSearch } from "@/lib/tools/exa-search"; // Import the webSearch tool
 import { createSupabaseServerClient } from '@/lib/supabase/server'; // Supabase server client
@@ -209,7 +209,8 @@ export async function POST(req: Request) {
         firstImageSignedUrl, // <-- UPDATED: Expect signed URL
         taskHint,
         inputMethod, // <-- Expect inputMethod ('audio')
-        whisperDetails // <-- Expect whisperDetails object
+        whisperDetails, // <-- Expect whisperDetails object
+        uploadedImagePathFromRequest // <-- ADD: Extract uploadedImagePath from requestData
     } = requestData || {};
 
     // --- Existing Validation (Document ID, User Session) ---
@@ -236,31 +237,95 @@ export async function POST(req: Request) {
         ? originalMessages[originalMessages.length - 1] 
         : null;
 
+    // --- ADDED LOGGING: Inspect received lastClientMessage --- 
+    console.log(`[API Chat Save User Msg] Received lastClientMessage:`, JSON.stringify(lastClientMessage, null, 2));
+    // --- END LOGGING --- 
+
     if (lastClientMessage && lastClientMessage.role === 'user') {
         // Determine input method for metadata
         const messageInputMethod = inputMethod === 'audio' ? 'audio' : 'text';
-        // Determine image URL (use signed URL only if it's a text input)
-        const imageUrlForDb = messageInputMethod === 'text' ? firstImageSignedUrl : null;
-        // Extract text content and prepend follow-up context if available
-        let userContentText = '';
-        const originalUserText = typeof lastClientMessage.content === 'string' ? lastClientMessage.content : '';
-        const contextFromRequest = typeof requestData?.followUpContext === 'string' ? requestData.followUpContext : null;
 
-        if (contextFromRequest) {
-            userContentText = `${contextFromRequest}\n\n---\n\n${originalUserText}`;
-        } else {
-            userContentText = originalUserText;
+        // --- REVISED LOGIC v2: Use uploadedImagePathFromRequest --- 
+        let userContentParts: any[] = []; 
+        let imagePartProcessed = false; // Flag to ensure only one image part is added
+
+        // 1. Prioritize parts array IF it exists
+        if (Array.isArray(lastClientMessage.parts) && lastClientMessage.parts.length > 0) {
+            console.log(`[API Chat Save User Msg] Processing 'parts' array received from client.`);
+            userContentParts = lastClientMessage.parts.map((part: any) => {
+                 // --- REVERTED IMAGE PART LOGIC --- 
+                 if (part.type === 'image' && typeof part.image === 'string' && !imagePartProcessed) {
+                    // Assuming part.image is the signed URL string from the client
+                    console.log(`[API Chat Save User Msg] Found image part in array, attempting to extract path from URL: ${part.image}`);
+                    imagePartProcessed = true; // Process only the first image part found
+                    try {
+                        const imageUrl = new URL(part.image);
+                        // Extract path assuming Supabase storage URL structure
+                        // Example: https://<project_ref>.supabase.co/storage/v1/object/sign/<bucket_name>/<actual_path>
+                        // We want: <actual_path> (e.g., user_id/uuid_filename.ext)
+                        const pathSegments = imageUrl.pathname.split('/');
+                        // --- CORRECTED PATH EXTRACTION --- 
+                        const bucketName = process.env.SUPABASE_STORAGE_BUCKET_NAME || 'documents'; // Use the same logic as upload/download routes
+                        const bucketNameIndex = pathSegments.indexOf(bucketName);
+                        
+                        if (bucketNameIndex !== -1 && pathSegments.length > bucketNameIndex + 1) {
+                             const extractedPath = pathSegments.slice(bucketNameIndex + 1).join('/'); // Slice *after* the bucket name
+                        // --- END CORRECTED PATH EXTRACTION --- 
+                             console.log(`[API Chat Save User Msg] Extracted storage path: ${extractedPath}`);
+                            // Store the extracted path string
+                            return { ...part, image: extractedPath }; 
+                        } else {
+                             console.warn(`[API Chat Save User Msg] Could not extract valid storage path from ImagePart URL structure: ${part.image}`);
+                            return { ...part, image: null, error: 'Invalid image URL structure' }; // Mark as invalid
+                        }
+                    } catch (e) {
+                        console.warn(`[API Chat Save User Msg] Failed to parse URL in ImagePart, marking as invalid:`, part.image, e);
+                        return { ...part, image: null, error: 'Invalid image URL' }; // Mark as invalid
+                    }
+                 // --- END REVERTED IMAGE PART LOGIC --- 
+                 } else if (part.type === 'text') {
+                     return part; // Keep text parts
+                 } else {
+                      console.warn(`[API Chat Save User Msg] Ignoring unexpected part type in user message parts array: ${part.type}`);
+                      return null; // Ignore other unexpected parts like nested images
+                 }
+            }).filter(part => part !== null); // Remove nulls
+
+            // If parts existed but we didn't process an image (e.g., only text parts were sent),
+            // ensure text content is captured if the top-level content was used.
+            if (!imagePartProcessed && typeof lastClientMessage.content === 'string' && lastClientMessage.content.trim()) {
+                if (!userContentParts.some(p => p.type === 'text')) { // Avoid duplicating text if already in parts
+                     console.log('[API Chat Save User Msg] Adding text from content string as parts array only had other types.');
+                     userContentParts.push({ type: 'text', text: lastClientMessage.content.trim() });
+                }
+            }
+
+        } 
+        // 2. Fallback: If no parts array, use content string
+        else if (typeof lastClientMessage.content === 'string' && lastClientMessage.content.trim()) {
+            console.warn('[API Chat Save User Msg] User message parts array missing or empty, using content string.');
+            userContentParts.push({ type: 'text', text: lastClientMessage.content.trim() });
+            // Cannot add image part here as we don't have the path
+        } 
+        // 3. Handle totally unexpected format
+        else {
+             console.error('[API Chat Save User Msg] User message has unexpected format (no parts array or content string): ', lastClientMessage);
+             userContentParts = []; // Save empty content on unexpected format
         }
+        // --- END REVISED LOGIC --- 
 
-        console.log(`[API Chat Save User Msg] Saving user message (inputMethod: ${messageInputMethod}). Content: "${userContentText?.slice(0, 50)}..." Image: ${imageUrlForDb ? 'Yes' : 'No'}`);
-        const userMessageData: Omit<SupabaseMessage, 'id' | 'created_at'> = {
+        console.log(`[API Chat Save User Msg] Saving user message (inputMethod: ${messageInputMethod}). Final Parts to Save:`, JSON.stringify(userContentParts));
+        
+        // --- REFACTOR: Save parts array to content column --- 
+        // Use 'as any' to bypass strict type checking for the content field during insertion
+        const userMessageData = { 
             document_id: documentId,
             user_id: userId,
-            role: 'user',
-            content: userContentText,
-            image_url: typeof imageUrlForDb === 'string' ? imageUrlForDb : '', // Explicit type check
+            role: 'user' as const, // Add 'as const' for role literal type
+            content: userContentParts, // Save the processed parts array as JSON
             metadata: { input_method: messageInputMethod },
-        };
+        } as any; // <-- Use type assertion here
+        // --- END REFACTOR ---
 
         const { data: savedUserData, error: userMsgError } = await supabase
             .from('messages')
@@ -372,90 +437,105 @@ export async function POST(req: Request) {
         // Note: experimental_attachments might exist but CoreMessage uses a different format
     }>;
 
-
     for (let i = 0; i < clientMessages.length; i++) {
         const msg = clientMessages[i];
         const isLastMessage = i === clientMessages.length - 1;
 
         if (msg.role === 'user') {
-            // Handle potential multimodal content for the last user message
-            // The actual image data (signed URL) comes from requestData.firstImageSignedUrl
+            // --- Extract text content FIRST, regardless of position/image --- 
+            let textContent = '';
+            if (Array.isArray(msg.content)) {
+                const textPart = msg.content.find(p => p.type === 'text');
+                textContent = textPart?.text || '';
+            } else if (typeof msg.content === 'string') {
+                textContent = msg.content;
+            }
+
+            // --- Construct CoreMessage --- 
             if (isLastMessage && finalImageSignedUrl) {
-                // console.log(`[API Chat] Formatting last user message (ID: ${msg.id || 'N/A'}) as multimodal.`);
+                // Last user message WITH an image: Use extracted text + image URL
                 messages.push({
                     role: 'user',
                     content: [
-                        { type: 'text', text: msg.content || '' }, // Assume msg.content is text for multimodal
+                        // Use the extracted textContent here
+                        { type: 'text', text: textContent }, 
                         { type: 'image', image: finalImageSignedUrl }
                     ]
                 });
             } else {
-                 // Check if msg.content is structured (from potential previous multimodal history)
-                 // Although simple string is expected from client now for non-last messages
-                 let contentString = '';
-                 if (typeof msg.content === 'string') {
-                     // Attempt to parse if it looks like Vercel AI SDK's structured content string
-                     if (msg.content.startsWith('[') && msg.content.includes('"type":"text"')) {
-                         try {
-                             const parts = JSON.parse(msg.content);
-                             if (Array.isArray(parts)) {
-                                const textPart = parts.find(p => p.type === 'text');
-                                contentString = textPart?.text || '';
-                                if (contentString === '' && msg.content.length > 2) { // Parsing failed or no text part
-                                     // console.warn(`[API Chat] User message (ID: ${msg.id || 'N/A'}) content looks structured but failed to extract text. Using original string.`);
-                                     contentString = msg.content; // Fallback
-                                }
-                             } else {
-                                 contentString = msg.content; // Not an array
-                             }
-                         } catch {
-                             contentString = msg.content; // Not valid JSON
-                         }
-                     } else {
-                         contentString = msg.content; // Regular string content
-                     }
-                 }
-                messages.push({ role: 'user', content: contentString });
+                 // Other user messages OR last message without image: Send only text content
+                 // (The AI doesn't need historical images unless explicitly handled)
+                 messages.push({ role: 'user', content: textContent });
             }
         } else if (msg.role === 'assistant') {
-             // Check for the toolCalls property added by the client hook
-            const hasToolCalls = Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0;
-            messages.push({
-                role: 'assistant',
-                content: msg.content || '', // Text content accompanying calls
-                // Map the toolCalls property if it exists
-                ...(hasToolCalls && {
-                    toolCalls: msg.toolCalls!.map(tc => ({
-                        toolCallId: tc.toolCallId,
-                        toolName: tc.toolName,
-                        args: tc.args
-                    }))
-                }),
-            });
+            // Handle assistant messages. These might come from live interaction (with toolCalls)
+            // or from history (with the custom 'parts' containing tool-invocation).
+            // The transformation step below specifically handles the 'parts' case.
+            // Here, we handle text content and standard toolCalls.
+
+            // Initialize explicitly with allowed part types for assistant content array
+            let assistantContent: (TextPart | ToolCallPart)[] = [];
+            const textContent = typeof msg.content === 'string' ? msg.content.trim() : '';
+            const standardToolCalls = (Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0) ? msg.toolCalls : null;
+            // Extract customParts using 'as any' since it's not standard
+            const customParts = (msg as any).parts;
+
+            // Add text part if present
+            if (textContent) {
+                assistantContent.push({ type: 'text', text: textContent });
+            }
+
+            // Add standard tool call parts if present (from live interaction)
+            if (standardToolCalls) {
+                 const toolCallParts: ToolCallPart[] = standardToolCalls.map(tc => ({
+                     type: 'tool-call',
+                     toolCallId: tc.toolCallId,
+                     toolName: tc.toolName,
+                     args: tc.args
+                 }));
+                 assistantContent.push(...toolCallParts);
+            }
+
+            // If the source message had custom 'parts' AND assistantContent is still empty,
+            // try to populate assistantContent with compatible parts from customParts.
+            if (Array.isArray(customParts) && assistantContent.length === 0) {
+                 const compatibleParts = customParts.filter(
+                     (part): part is TextPart | ToolCallPart =>
+                         part.type === 'text' || part.type === 'tool-call'
+                 );
+                 if (compatibleParts.length > 0) {
+                     assistantContent = compatibleParts;
+                 }
+            }
+
+            // Final CoreMessage content: Use the array if populated, otherwise use empty string.
+            const finalContent: CoreMessage['content'] = assistantContent.length > 0 ? assistantContent : '';
+
+            const assistantMessage: CoreMessage = {
+                 role: 'assistant',
+                 content: finalContent,
+                 // Add the non-standard 'parts' property back if it existed, for the transformation step.
+                 ...(Array.isArray(customParts) && { parts: customParts })
+             };
+
+            messages.push(assistantMessage);
+
         } else if (msg.role === 'tool') {
-            // Parse the stringified content from the client Message to get the ToolContentPart[]
+            // Existing logic to parse stringified tool-result content seems correct for CoreMessage
             try {
-                const toolContent = JSON.parse(msg.content) as Array<{ type: 'tool-result', toolCallId: string, toolName: string, result: any }>;
-                if (Array.isArray(toolContent) && toolContent[0]?.type === 'tool-result') {
-                    messages.push({
-                        role: 'tool',
-                        content: toolContent.map(tc => ({ // Map to CoreMessage ToolContentPart
-                            type: 'tool-result',
-                            toolCallId: tc.toolCallId,
-                            toolName: tc.toolName,
-                            result: tc.result
-                        }))
-                    });
+                // Assuming msg.content from client is a JSON string representing ToolResultPart[]
+                const toolResultParts = JSON.parse(msg.content) as ToolResultPart[];
+                if (Array.isArray(toolResultParts) && toolResultParts.every(p => p.type === 'tool-result')) {
+                    messages.push({ role: 'tool', content: toolResultParts });
                 } else {
-                     // console.warn(`[API Chat] Received message with role 'tool' (ID: ${msg.id || 'N/A'}) but content was not a valid tool-result array. Skipping.`);
+                     console.warn(`[API Chat Pre-Transform] Received tool message content is not a valid ToolResultPart array. ID: ${msg.id}`);
                 }
             } catch (e) {
-                // console.warn(`[API Chat] Failed to parse content for tool message (ID: ${msg.id || 'N/A'}). Skipping. Error:`, e);
+                 console.warn(`[API Chat Pre-Transform] Failed to parse tool message content. ID: ${msg.id}. Error:`, e);
             }
         } else if (msg.role === 'system') {
             messages.push({ role: 'system', content: msg.content || '' });
         }
-        // else: ignore other roles potentially added by ai/react
     }
     // --- END REVISED Message Processing Loop (Take 2) ---
 
@@ -502,6 +582,106 @@ export async function POST(req: Request) {
          // console.log("[API Chat] Editor blocks context received but was empty, not an array, or undefined.");
     }
 
+    // --- BEGIN TRANSFORMATION STEP for AI SDK ---
+    // Convert messages with custom 'tool-invocation' parts (from history reconstruction)
+    // into the standard format expected by the AI SDK (separate assistant+tool messages).
+    console.log("[API Chat] Starting message transformation for AI SDK compatibility...");
+    const transformedMessages: CoreMessage[] = [];
+    for (const msg of messages) {
+
+        let isAssistantWithToolInvocation = false;
+        let sourceParts: any[] = [];
+
+        // Check if it's an assistant message and if its content contains the custom part
+        if (msg.role === 'assistant') {
+            if (Array.isArray(msg.content)) {
+                 // Standard CoreMessage structure uses 'content' array for parts
+                 if (msg.content.some((part: any) => part.type === 'tool-invocation')) {
+                    isAssistantWithToolInvocation = true;
+                    sourceParts = msg.content;
+                 }
+            } else if (Array.isArray((msg as any).parts)) {
+                // Check for non-standard 'parts' property added during history reconstruction
+                 if ((msg as any).parts.some((part: any) => part.type === 'tool-invocation')) {
+                    isAssistantWithToolInvocation = true;
+                    sourceParts = (msg as any).parts;
+                 }
+            }
+        }
+
+
+        if (isAssistantWithToolInvocation) {
+            console.log(`[API Chat Transform] Found assistant message with 'tool-invocation'.`);
+            // Found an assistant message reconstructed with tool-invocation parts
+
+            const textParts = sourceParts.filter((part): part is TextPart => part.type === 'text');
+            // Explicitly type the tool invocation parts for clarity
+            const toolInvocationParts = sourceParts.filter((part): part is { type: 'tool-invocation', toolInvocation: { toolCallId: string; toolName: string; args: any; result: any; state?: string } } => part.type === 'tool-invocation');
+
+            // 1. Add assistant message with only text content (if any)
+            // If there's text content alongside the tool invocation, preserve it.
+            // Ensure content is always an array as per CoreMessage[] expected format when parts exist
+            if (textParts.length > 0) {
+                transformedMessages.push({
+                    role: 'assistant',
+                    content: textParts // Keep as array of text parts
+                });
+                console.log(`[API Chat Transform] Added assistant text part.`);
+            }
+
+            // 2. Add assistant message with standard toolCalls part
+            // Correct structure for ToolCallPart[]: directly include properties
+            const toolCalls: ToolCallPart[] = toolInvocationParts.map(part => ({
+                type: 'tool-call',
+                toolCallId: part.toolInvocation.toolCallId,
+                toolName: part.toolInvocation.toolName,
+                args: part.toolInvocation.args
+            }));
+
+            if (toolCalls.length > 0) {
+                 // An assistant message containing ONLY tool calls should have content = toolCalls array
+                transformedMessages.push({
+                    role: 'assistant',
+                    content: toolCalls // Content IS the array of ToolCallPart for this message
+                });
+                console.log(`[API Chat Transform] Added assistant message with ${toolCalls.length} tool call(s).`);
+            }
+
+            // 3. Add separate 'tool' message with standard toolResults part
+            // --- TEMPORARILY DISABLED due to AI_MessageConversionError: Unsupported role: tool ---
+            // It seems @ai-sdk/google provider doesn't accept 'tool' role in input history.
+            /*
+            const toolResults: ToolResultPart[] = toolInvocationParts
+                .filter(part => part.toolInvocation.result !== undefined) // Only include if result exists
+                .map(part => ({
+                    type: 'tool-result',
+                    toolCallId: part.toolInvocation.toolCallId,
+                    toolName: part.toolInvocation.toolName, // Include toolName here as per ToolResultPart
+                    result: part.toolInvocation.result
+                }));
+
+            if (toolResults.length > 0) {
+                transformedMessages.push({
+                    role: 'tool',
+                    content: toolResults // Content IS the array of ToolResultPart for this message
+                });
+                 console.log(`[API Chat Transform] Added tool message with ${toolResults.length} tool result(s).`);
+            } else if (toolInvocationParts.length > 0) {
+                 // Log if we had invocations but no results to transform (should not happen if state='result')
+                 console.warn(`[API Chat Transform] Tool invocation part(s) found but no result property was present to create a tool-result message.`);
+            }
+            */
+            // --- END TEMPORARY DISABLE ---
+
+        } else {
+            // Pass through user messages, standard tool messages, system messages,
+            transformedMessages.push(msg);
+        }
+    }
+    console.log("[API Chat] Message transformation complete.");
+    // --- END TRANSFORMATION STEP ---
+
+
     // --- Existing streamText call setup ---
     const generationConfig: any = {};
     /* --- Temporarily Disable thinkingConfig --- 
@@ -513,11 +693,11 @@ export async function POST(req: Request) {
     }
     */
 
-    console.log(`[API Chat] Calling streamText with ${messages.length} prepared messages. Last message role: ${messages[messages.length - 1]?.role}`);
+    console.log(`[API Chat] Calling streamText with ${transformedMessages.length} prepared messages. Last message role: ${transformedMessages[transformedMessages.length - 1]?.role}`);
     // --- DEBUG: Log final payload to AI SDK ---
     // console.log("[API Chat] Final messages payload for AI SDK:", JSON.stringify(messages, null, 2));
     // ---> ADDED: Log content of the last message explicitly < ---
-    const lastMessageForLog = messages[messages.length - 1];
+    const lastMessageForLog = transformedMessages[transformedMessages.length - 1];
     if (lastMessageForLog) {
         console.log("[API Chat] Content of LAST message being sent to AI SDK (Role: " + lastMessageForLog.role + "):", 
             typeof lastMessageForLog.content === 'string' ? lastMessageForLog.content : JSON.stringify(lastMessageForLog.content)
@@ -527,131 +707,194 @@ export async function POST(req: Request) {
     }
     // --- END DEBUG ---
 
-    const result = streamText({
-        model: aiModel,
-        system: systemPrompt,
-        messages: messages, // Use the potentially modified messages array
-        tools: combinedToolsWithRateLimit, // Use the rate-limited tools
-        maxSteps: 10, // Increased maxSteps slightly to accommodate potential multi-step (search then edit)
-         ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
+    try {
+        console.log(`[API Chat] Calling streamText with ${transformedMessages.length} prepared messages.`);
+        // Use the *transformedMessages* array here
+        const result = streamText({
+            model: aiModel,
+            system: systemPrompt,
+            messages: transformedMessages, // Use the TRANSFORMED messages
+            tools: combinedToolsWithRateLimit,
+            maxSteps: 10,
+            ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
+            async onFinish({ usage, response }) {
+                console.log(`[onFinish] Stream finished. Usage: ${JSON.stringify(usage)}`);
 
-        // --- onFinish callback MODIFIED for saving user message + Whisper log first ---
-         async onFinish({ usage, response }) {
-            console.log(`[onFinish] Stream finished. Usage: ${JSON.stringify(usage)}`);
+                const assistantMetadata = {
+                    usage: usage,
+                    raw_content: response.messages // Keep raw response for metadata if needed
+                };
 
-            const assistantMetadata = {
-                usage: usage,
-                raw_content: response.messages
-            };
+                const allResponseMessages: CoreMessage[] = response.messages;
+                // Note: Supabase client (user scope) is already available from the outer scope
 
-            const allResponseMessages: CoreMessage[] = response.messages;
-            // Note: Supabase client (user scope) is already available from the outer scope
-
-            if (!userId) {
-                // This check might be redundant now but kept as a safeguard
-                console.error("[onFinish] Cannot save messages: User ID somehow became unavailable.");
-                return;
-            }
-            if (allResponseMessages.length === 0) {
-                return;
-            }
-
-            try {
-                // --- Save Assistant Message(s) and their Tool Calls ---
-                for (let i = 0; i < allResponseMessages.length; i++) {
-                    const message = allResponseMessages[i];
-
-                    // Skip non-assistant messages
-                    if (message.role !== 'assistant') { continue; }
-
-                    // Extract tool calls (if any) from assistant message content
-                    let assistantToolCalls: ToolCallPart[] = [];
-                    if (Array.isArray(message.content)) {
-                        assistantToolCalls = message.content.filter((part): part is ToolCallPart => part.type === 'tool-call');
-                    }
-                    const hasToolCalls = assistantToolCalls.length > 0;
-
-                    // Save Assistant Message Content
-                    // Initialize to empty string
-                    let plainTextContent: string = '';
-                    if (typeof message.content === 'string') {
-                        plainTextContent = message.content.trim() || ''; // Ensure empty string if trim results in falsy
-                    } else if (Array.isArray(message.content)) {
-                        const textPart = message.content.find((part): part is { type: 'text'; text: string } => part.type === 'text');
-                        plainTextContent = textPart?.text?.trim() ?? ''; // Use empty string if not found or empty after trim
-                    }
-
-                    const messageData: Omit<SupabaseMessage, 'id' | 'created_at'> = {
-                        document_id: documentId,
-                        user_id: userId,
-                        role: 'assistant',
-                        content: plainTextContent, // Now guaranteed to be string
-                        image_url: null,
-                        metadata: assistantMetadata,
-                    };
-                    const { data: savedMsgData, error: msgError } = await supabase.from('messages').insert(messageData).select('id').single();
-
-                    if (msgError || !savedMsgData?.id) {
-                        console.error(`[onFinish] Error saving assistant message content or getting ID:`, msgError);
-                        continue;
-                    }
-                    const savedAssistantMessageId = savedMsgData.id;
-                    console.log(`[onFinish] Saved assistant message ID: ${savedAssistantMessageId}.`);
-
-                    // Save Tool Calls with Output
-                    if (hasToolCalls) {
-                        const toolCallsToSave: Omit<SupabaseToolCall, 'id' | 'created_at'>[] = [];
-
-                        for (const toolCall of assistantToolCalls) {
-                            let toolOutput: any = null;
-                            // Find the corresponding tool result in subsequent messages
-                            for (let j = i + 1; j < allResponseMessages.length; j++) {
-                                const potentialToolMsg = allResponseMessages[j];
-                                if (potentialToolMsg.role === 'tool' && Array.isArray(potentialToolMsg.content)) {
-                                    const toolResultPart = potentialToolMsg.content.find((part): part is ToolResultPart =>
-                                        part.type === 'tool-result' && part.toolCallId === toolCall.toolCallId
-                                    );
-                                    if (toolResultPart) {
-                                        toolOutput = toolResultPart.result;
-                                        break;
-                                    }
-                                }
-                                // Stop searching if we hit the next user/assistant message
-                                if (potentialToolMsg.role === 'assistant' || potentialToolMsg.role === 'user') {
-                                    break;
-                                }
-                            }
-
-                            toolCallsToSave.push({
-                                message_id: savedAssistantMessageId,
-                                user_id: userId,
-                                tool_call_id: toolCall.toolCallId,
-                                tool_name: toolCall.toolName,
-                                tool_input: toolCall.args,
-                                tool_output: toolOutput // Will be null if not found
-                            });
-                        }
-
-                        if (toolCallsToSave.length > 0) {
-                            const { error: toolError } = await supabase
-                                .from('tool_calls')
-                                .insert(toolCallsToSave);
-
-                            if (toolError) {
-                                console.error(`[onFinish] SUPABASE TOOL INSERT ERROR for assistant message ${savedAssistantMessageId}:`, toolError);
-                            } else {
-                                console.log(`[onFinish] Successfully saved ${toolCallsToSave.length} tool calls for assistant message ${savedAssistantMessageId}.`);
-                            }
-                        }
-                    }
+                if (!userId) {
+                    console.error("[onFinish] Cannot save messages: User ID somehow became unavailable.");
+                    return;
                 }
-            } catch (dbError: any) {
-                 console.error('[onFinish] Database error during save:', dbError);
-            }
-        } // end onFinish
-    }); // end streamText call
+                if (allResponseMessages.length === 0) {
+                    console.log("[onFinish] No response messages from AI to process.");
+                    return;
+                }
 
-    // Return the streaming response
-    return result.toDataStreamResponse();
+                // --- REVISED Save Logic: Accumulate ALL parts first ---
+                let finalAssistantTurn = {
+                    accumulatedParts: [] as Array<TextPart | ToolCallPart>, // New field to hold parts
+                    metadata: assistantMetadata, // Use metadata from the callback
+                    toolResults: {} as { [toolCallId: string]: any },
+                    hasData: false // Flag to indicate if *any* assistant content was found
+                };
+
+                try {
+                    // Loop through ALL messages to gather parts for ONE final assistant turn
+                    for (const message of allResponseMessages) {
+                        // --- ADDED LOGGING: Inspect each message from AI response --- 
+                        console.log(`[onFinish Loop] Processing message part:`, JSON.stringify(message, null, 2));
+                        // --- END LOGGING --- 
+
+                        if (message.role === 'assistant') {
+                            finalAssistantTurn.hasData = true; // Mark that we found assistant content
+
+                            // --- REFACTOR: Ensure content is always parts array --- 
+                            let assistantParts: Array<TextPart | ToolCallPart> = [];
+                            if (typeof message.content === 'string') {
+                                if (message.content.trim()) {
+                                    assistantParts.push({ type: 'text', text: message.content.trim() });
+                                }
+                            } else if (Array.isArray(message.content)) {
+                                // Filter for valid TextPart and ToolCallPart
+                                assistantParts = message.content.filter(
+                                     (part): part is TextPart | ToolCallPart => 
+                                        part.type === 'text' || part.type === 'tool-call'
+                                );
+                            }
+                            finalAssistantTurn.accumulatedParts.push(...assistantParts); // Accumulate parts
+                            // --- END REFACTOR ---
+
+                        } else if (message.role === 'tool') {
+                            // Collect tool results
+                            if (Array.isArray(message.content)) {
+                                const results = message.content.filter((part): part is ToolResultPart => part.type === 'tool-result');
+                                results.forEach(result => {
+                                    if (result.toolCallId) {
+                                        finalAssistantTurn.toolResults[result.toolCallId] = result.result;
+                                    }
+                                });
+                            }
+                            // Still mark hasData = true if we only get tool results back for some reason
+                            if(message.content.length > 0) finalAssistantTurn.hasData = true; 
+                        } 
+                        // Ignore user/system messages within the AI response itself
+                    } // End of loop
+
+                    // --- Save the accumulated turn AFTER the loop --- 
+                    if (finalAssistantTurn.hasData) {
+                         console.log(`[onFinish SaveTurn] Saving accumulated assistant turn. Parts Count: ${finalAssistantTurn.accumulatedParts.length}, Tool Results: ${Object.keys(finalAssistantTurn.toolResults).length}`);
+                        
+                        // --- ADDED LOGGING: Inspect final accumulated parts before save --- 
+                        console.log(`[onFinish SaveTurn] Final accumulatedParts before insert:`, JSON.stringify(finalAssistantTurn.accumulatedParts, null, 2));
+                        // --- END LOGGING --- 
+
+                        // --- Step 2 & 3: Merge results into parts --- 
+                        const partsWithResults = finalAssistantTurn.accumulatedParts.map(part => {
+                            if (part.type === 'tool-call' && finalAssistantTurn.toolResults.hasOwnProperty(part.toolCallId)) {
+                                console.log(`[onFinish SaveTurn] Merging result for toolCallId: ${part.toolCallId}`);
+                                return {
+                                    ...part, 
+                                    result: finalAssistantTurn.toolResults[part.toolCallId] // Add result property
+                                };
+                            }
+                            return part; // Return original part if not a tool-call or no result found
+                        });
+                         // --- ADDED LOGGING: Inspect parts after merging results --- 
+                        console.log(`[onFinish SaveTurn] Parts after merging results:`, JSON.stringify(partsWithResults, null, 2));
+                        // --- END LOGGING --- 
+
+                        // Save the primary message (contains accumulated parts or is base for tool calls)
+                         // --- REFACTOR: Save parts array to content --- 
+                         // Use 'as any' to bypass strict type checking for the content field during insertion
+                        const messageData = { 
+                            document_id: documentId,
+                            user_id: userId!,
+                            role: 'assistant' as const, // Add 'as const' for role literal type
+                            // --- MODIFICATION: Save partsWithResults and stringify --- 
+                            content: JSON.stringify(partsWithResults), // Save the array with results included
+                            // --- END MODIFICATION ---
+                            metadata: finalAssistantTurn.metadata,
+                        } as any; // <-- Use type assertion here
+                        // --- END REFACTOR ---
+                        const { data: savedMsgData, error: msgError } = await supabase.from('messages').insert(messageData).select('id').single();
+
+                        if (msgError || !savedMsgData?.id) {
+                            console.error(`[onFinish SaveTurn] Error saving accumulated assistant message:`, msgError);
+                            // No need to reset here as it's the end of the callback
+                        } else {
+                            const savedMessageId = savedMsgData.id;
+                            console.log(`[onFinish SaveTurn] Saved accumulated assistant message ID: ${savedMessageId}`);
+
+                            // Save associated Tool Calls using the obtained ID
+                            if (finalAssistantTurn.toolResults.length > 0) {
+                                const toolCallsToSave: Omit<SupabaseToolCall, 'id' | 'created_at'>[] = Object.entries(finalAssistantTurn.toolResults).map(([toolCallId, result]) => ({
+                                    message_id: savedMessageId, // Use the ID of the single message saved above
+                                    user_id: userId!,
+                                    tool_call_id: toolCallId,
+                                    tool_name: toolCallId, // Use toolCallId as toolName
+                                    tool_input: result,
+                                    tool_output: result
+                                }));
+
+                                const { error: toolError } = await supabase.from('tool_calls').insert(toolCallsToSave);
+                                if (toolError) {
+                                    console.error(`[onFinish SaveTurn] SUPABASE TOOL INSERT ERROR for message ${savedMessageId}:`, toolError);
+                                } else {
+                                    console.log(`[onFinish SaveTurn] Successfully saved ${toolCallsToSave.length} tool calls for message ${savedMessageId}.`);
+                                }
+                            }
+                        }
+                    } else {
+                         console.log("[onFinish SaveTurn] No assistant data found in the response to save.");
+                    }
+                    // --- END REVISED Save Logic ---
+                } catch (dbError: any) {
+                     console.error('[onFinish] Database error during save:', dbError);
+                }
+            } // end onFinish
+        }); // end streamText call
+
+        // Return the streaming response
+        return result.toDataStreamResponse();
+    } catch (error: any) {
+        // Log the detailed error that occurred during streamText or setup
+        console.error("[API Chat Stream/Execute Error] An error occurred:", error);
+
+        // Determine appropriate status code
+        // Check for specific error types if possible (e.g., AuthenticationError from SDK)
+        // For now, use 500 as a general server error fallback
+        const statusCode = 500;
+        const errorCode = error.code || 'STREAMING_ERROR'; // Use error code if available
+        const errorMessage = error.message || 'An unexpected error occurred while processing the chat response.';
+
+        // Return a structured JSON error response
+        return new Response(JSON.stringify({
+            error: {
+                code: errorCode,
+                message: errorMessage,
+                // Optionally include stack in development
+                ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+            }
+        }), {
+            status: statusCode,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
 }
+
+// Define ToolInvocation type (if not already globally defined)
+// This helps TypeScript understand the structure within the 'tool-invocation' part
+type ToolInvocation = {
+    toolCallId: string;
+    toolName: string;
+    args: any;
+    result?: any; // Make result optional as it might not always be present initially
+};
 

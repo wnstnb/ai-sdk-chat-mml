@@ -8,10 +8,8 @@ import { getTextFromDataUrl } from '@/lib/editorUtils';
 // Define props required by the component
 interface ChatMessagesListProps {
     chatMessages: Message[];
-    displayedMessagesCount: number;
     isLoadingMessages: boolean; // For initial load
     isChatLoading: boolean; // For assistant response loading
-    setDisplayedMessagesCount: React.Dispatch<React.SetStateAction<number>>;
     handleSendToEditor: (content: string) => void;
     messagesEndRef: React.RefObject<HTMLDivElement>;
     messageLoadBatchSize?: number; // Optional prop for batch size
@@ -21,29 +19,16 @@ const DEFAULT_MESSAGE_LOAD_BATCH_SIZE = 20;
 
 export const ChatMessagesList: React.FC<ChatMessagesListProps> = ({
     chatMessages,
-    displayedMessagesCount,
     isLoadingMessages,
     isChatLoading,
-    setDisplayedMessagesCount,
     handleSendToEditor,
     messagesEndRef,
     messageLoadBatchSize = DEFAULT_MESSAGE_LOAD_BATCH_SIZE,
 }) => {
     const totalMessages = chatMessages.length;
-    const shouldShowLoadMore = totalMessages > displayedMessagesCount;
 
     return (
         <div className="flex-1 overflow-y-auto styled-scrollbar pr-2 pt-4">
-            {/* Load More Button */}
-            {shouldShowLoadMore && (
-                <button 
-                    onClick={() => setDisplayedMessagesCount(prev => Math.min(prev + messageLoadBatchSize, totalMessages))}
-                    className="text-sm text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 py-2 focus:outline-none mb-2 mx-auto block"
-                >
-                    Load More ({totalMessages - displayedMessagesCount} older)
-                </button>
-            )}
-
             {/* Initial Loading Indicator */}
             {isLoadingMessages && totalMessages === 0 && (
                 <div className="flex justify-center items-center h-full">
@@ -66,13 +51,17 @@ export const ChatMessagesList: React.FC<ChatMessagesListProps> = ({
             )}
 
             {/* Render Messages using ChatMessageItem */}
-            {totalMessages > 0 && chatMessages.slice(-displayedMessagesCount).map((message) => (
-                 <ChatMessageItem 
-                    key={message.id}
-                    message={message} 
-                    handleSendToEditor={handleSendToEditor}
-                 />
-            ))}
+            {totalMessages > 0 && chatMessages.map((message) => {
+                 // DIAGNOSTIC: Log the message object being passed down
+                 console.log("[ChatMessagesList] Rendering message:", JSON.stringify(message, null, 2));
+                 return (
+                     <ChatMessageItem 
+                        key={message.id}
+                        message={message} 
+                        handleSendToEditor={handleSendToEditor}
+                     />
+                 );
+            })}
 
             {/* Assistant Loading Indicator */}
             {isChatLoading && (

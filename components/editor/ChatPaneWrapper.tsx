@@ -17,10 +17,8 @@ interface ChatPaneWrapperProps {
     
     // Props for ChatMessagesList
     chatMessages: Message[];
-    displayedMessagesCount: number;
     isLoadingMessages: boolean;
     isChatLoading: boolean; // Passed to ChatMessagesList and ChatInputArea
-    setDisplayedMessagesCount: React.Dispatch<React.SetStateAction<number>>;
     handleSendToEditor: (content: string) => Promise<void>;
     messagesEndRef: RefObject<HTMLDivElement>;
     messageLoadBatchSize: number;
@@ -58,6 +56,10 @@ interface ChatPaneWrapperProps {
     stopRecording: (timedOut?: boolean) => void;
     audioTimeDomainData: AudioTimeDomainData;
     // --- END NEW AUDIO PROPS --- 
+
+    // --- ADD CLEAR PREVIEW PROP --- 
+    clearPreview: () => void;
+    // --- END CLEAR PREVIEW PROP ---
 }
 
 export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
@@ -67,10 +69,8 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     // dragHandleRef, // No longer needed for Resizable
     // handleMouseDownResize, // No longer needed for Resizable
     chatMessages,
-    displayedMessagesCount,
     isLoadingMessages,
     isChatLoading,
-    setDisplayedMessagesCount,
     handleSendToEditor,
     messagesEndRef,
     messageLoadBatchSize,
@@ -102,7 +102,9 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     startRecording,
     stopRecording,
     audioTimeDomainData,
-    // --- END NEW AUDIO PROPS --- 
+    // --- DESTRUCTURE CLEAR PREVIEW PROP ---
+    clearPreview,
+    // --- END DESTRUCTURE CLEAR PREVIEW PROP ---
 }) => {
     // State to force remount of ChatInputArea after animation - Keep if still needed
     // const [inputAreaKey, setInputAreaKey] = useState(0);
@@ -132,10 +134,8 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
             <div className="flex flex-col flex-1 overflow-hidden h-full px-3"> {/* Added px-3 */}
                 <ChatMessagesList
                     chatMessages={chatMessages}
-                    displayedMessagesCount={displayedMessagesCount}
                     isLoadingMessages={isLoadingMessages}
                     isChatLoading={isChatLoading}
-                    setDisplayedMessagesCount={setDisplayedMessagesCount}
                     handleSendToEditor={handleSendToEditor}
                     messagesEndRef={messagesEndRef}
                     {...(messageLoadBatchSize && { messageLoadBatchSize })}
@@ -168,6 +168,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                     startRecording={startRecording}
                     stopRecording={stopRecording}
                     audioTimeDomainData={audioTimeDomainData}
+                    clearPreview={clearPreview}
                 />
             </div>
         // </Resizable> // REMOVED
