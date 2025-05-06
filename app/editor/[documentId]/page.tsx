@@ -46,7 +46,7 @@ import {
 } from '@/components/icons';
 // Added Clock, CheckCircle2, AlertCircle, XCircle for autosave status
 // Added Sparkles for Infer Title
-import { ChevronLeft, ChevronRight, Wrench, SendToBack, Edit, Save, X, Clock, CheckCircle2, AlertCircle, XCircle, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Wrench, SendToBack, Edit, Save, X, Clock, CheckCircle2, AlertCircle, XCircle, Sparkles, MessageSquare } from 'lucide-react';
 import {
     DocumentPlusIcon,
     ArrowDownTrayIcon,
@@ -94,6 +94,8 @@ import { ChatInputArea } from '@/components/editor/ChatInputArea'; // Import the
 import { ChatMessagesList } from '@/components/editor/ChatMessagesList'; // Import the new component
 import { ChatPaneWrapper } from '@/components/editor/ChatPaneWrapper'; // Import the new wrapper
 import { EditorPaneWrapper } from '@/components/editor/EditorPaneWrapper'; // Import the new wrapper
+// NEW: Import useMediaQuery hook
+import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -111,6 +113,8 @@ const INITIAL_CHAT_PANE_WIDTH_PERCENT = 35;
 const MIN_CHAT_PANE_WIDTH_PX = 250;
 const MAX_CHAT_PANE_WIDTH_PERCENT = 70;
 const defaultModelFallback = 'gemini-2.0-flash'; // Define fallback
+// NEW: Define mobile breakpoint query
+const MOBILE_BREAKPOINT_QUERY = '(max-width: 768px)'; // Corresponds to Tailwind's 'md'
 
 // Define the BlockNote schema
 const schema = BlockNoteSchema.create();
@@ -150,6 +154,10 @@ export default function EditorPage() {
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
+    // NEW: Add useMediaQuery hook
+    const isMobile = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
+    // NEW: Add state for mobile pane visibility
+    const [mobileVisiblePane, setMobileVisiblePane] = useState<'editor' | 'chat'>('chat'); // Default to chat
     const { currentTitle, isEditingTitle, newTitleValue, isInferringTitle, handleEditTitleClick, handleCancelEditTitle, handleSaveTitle, handleTitleInputKeyDown, handleInferTitle, setNewTitleValue } = useTitleManagement({
         documentId,
         initialName: documentData?.name || '',
@@ -198,6 +206,8 @@ export default function EditorPage() {
 
     // ---> ADD LOG HERE <---
     console.log('[EditorPage] Received initialMessages from useInitialChatMessages:', JSON.stringify(initialMessages, null, 2));
+    // NEW: Log mobile state
+    console.log('[EditorPage] Mobile detection:', { isMobile });
 
     // --- Callback Hooks (Defined BEFORE Early Returns) ---
     const triggerSaveDocument = useCallback(async (content: string, docId: string) => {
@@ -706,7 +716,14 @@ export default function EditorPage() {
             handleEditorChange(editor);
         } catch (error: any) { console.error('Send to editor error:', error); toast.error(`Send to editor error: ${error.message}`); }
     };
-    const handleToggleChat = () => setIsChatCollapsed(!isChatCollapsed);
+    // UPDATED: Toggle handler to check for mobile
+    const handleToggleChat = () => {
+        if (isMobile) {
+            setMobileVisiblePane(pane => pane === 'chat' ? 'editor' : 'chat');
+        } else {
+            setIsChatCollapsed(!isChatCollapsed);
+        }
+    };
     // --- END Handler Definitions ---
 
     // --- Render Logic ---
@@ -716,6 +733,8 @@ export default function EditorPage() {
     console.log('[Render Check] State before render:', {
         totalMessages: chatMessages.length,
         shouldShowLoadMore: false,
+        isMobile, // Log mobile state
+        mobileVisiblePane, // Log visible pane on mobile
     });
 
     // Main Render
@@ -723,161 +742,282 @@ export default function EditorPage() {
         <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
-            {/* Editor Pane Container - Takes remaining space, add padding here */}
-            <div className="flex-1 flex flex-col relative overflow-hidden p-4">
-                 {/* EditorTitleBar is now the first item, will benefit from parent padding */}
-                <EditorTitleBar
-                    currentTitle={currentTitle}
-                    isEditingTitle={isEditingTitle}
-                    newTitleValue={newTitleValue}
-                    setNewTitleValue={setNewTitleValue}
-                    handleTitleInputKeyDown={handleTitleInputKeyDown}
-                    handleSaveTitle={handleSaveTitle}
-                    handleCancelEditTitle={handleCancelEditTitle}
-                    handleEditTitleClick={handleEditTitleClick}
-                    isInferringTitle={isInferringTitle}
-                    handleInferTitle={handleInferTitle}
-                    editorRef={editorRef}
-                    autosaveStatus={autosaveStatus}
-                    handleNewDocument={handleNewDocument}
-                    handleSaveContent={handleSaveContent}
-                    isSaving={isSaving}
-                />
-                {pageError && !pageError.startsWith("Chat Error:") && (
-                    <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
-                )}
-                {/* EditorPaneWrapper now directly inside, remove intermediate div */}
-                <div className="flex-1 flex flex-col overflow-hidden relative"> {/* REMOVED mt-4 */}
-                    <EditorPaneWrapper
-                        documentId={documentId}
-                        initialContent={initialEditorContent}
-                        editorRef={editorRef}
-                        onEditorContentChange={handleEditorChange}
-                        isChatCollapsed={isChatCollapsed}
-                        // --- Pass last message content and send handler ---
-                        lastMessageContent={lastAssistantMessage?.content}
-                        handleSendToEditor={handleSendToEditor}
-                        // --- End pass props ---
-                        input={input}
-                        handleInputChange={handleInputChange}
-                        handleSubmit={handleSubmit}
-                        isLoading={isChatLoading}
-                        model={model}
-                        setModel={setModel}
-                        stop={stop}
-                        files={files}
-                        handleFileChange={handleFileChange}
-                        handlePaste={handlePaste}
-                        handleUploadClick={handleUploadClick}
-                        isUploading={isUploading}
-                        uploadError={uploadError}
-                        uploadedImagePath={uploadedImagePath}
-                        followUpContext={followUpContext}
-                        setFollowUpContext={setFollowUpContext}
-                        formRef={formRef}
-                        inputRef={inputRef}
-                        fileInputRef={fileInputRef}
-                        handleKeyDown={handleKeyDown}
-                        isRecording={isRecording}
-                        isTranscribing={isTranscribing}
-                        micPermissionError={micPermissionError}
-                        startRecording={startRecording}
-                        stopRecording={stopRecording}
-                        audioTimeDomainData={audioTimeDomainData}
-                        clearPreview={clearPreview}
-                    />
-                </div>
-            </div>
+            {/* Conditional Rendering based on isMobile */}
+            {isMobile ? (
+                // --- Mobile Layout: Show only one pane ---
+                <>
+                    {mobileVisiblePane === 'editor' && (
+                        <div className="w-full flex-1 flex flex-col relative overflow-hidden p-4">
+                            {/* EditorTitleBar */}
+                            <EditorTitleBar
+                                currentTitle={currentTitle}
+                                isEditingTitle={isEditingTitle}
+                                newTitleValue={newTitleValue}
+                                setNewTitleValue={setNewTitleValue}
+                                handleTitleInputKeyDown={handleTitleInputKeyDown}
+                                handleSaveTitle={handleSaveTitle}
+                                handleCancelEditTitle={handleCancelEditTitle}
+                                handleEditTitleClick={handleEditTitleClick}
+                                isInferringTitle={isInferringTitle}
+                                handleInferTitle={handleInferTitle}
+                                editorRef={editorRef}
+                                autosaveStatus={autosaveStatus}
+                                handleNewDocument={handleNewDocument}
+                                handleSaveContent={handleSaveContent}
+                                isSaving={isSaving}
+                            />
+                            {pageError && !pageError.startsWith("Chat Error:") && (
+                                <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
+                            )}
+                            {/* EditorPaneWrapper */}
+                            <div className="flex-1 flex flex-col overflow-hidden relative">
+                                <EditorPaneWrapper
+                                    documentId={documentId}
+                                    initialContent={initialEditorContent}
+                                    editorRef={editorRef}
+                                    onEditorContentChange={handleEditorChange}
+                                    isChatCollapsed={true} // Pass true as chat is conceptually 'collapsed'
+                                    lastMessageContent={lastAssistantMessage?.content}
+                                    handleSendToEditor={handleSendToEditor}
+                                    input={input}
+                                    handleInputChange={handleInputChange}
+                                    handleSubmit={handleSubmit}
+                                    isLoading={isChatLoading}
+                                    model={model}
+                                    setModel={setModel}
+                                    stop={stop}
+                                    files={files}
+                                    handleFileChange={handleFileChange}
+                                    handlePaste={handlePaste}
+                                    handleUploadClick={handleUploadClick}
+                                    isUploading={isUploading}
+                                    uploadError={uploadError}
+                                    uploadedImagePath={uploadedImagePath}
+                                    followUpContext={followUpContext}
+                                    setFollowUpContext={setFollowUpContext}
+                                    formRef={formRef}
+                                    inputRef={inputRef}
+                                    fileInputRef={fileInputRef}
+                                    handleKeyDown={handleKeyDown}
+                                    isRecording={isRecording}
+                                    isTranscribing={isTranscribing}
+                                    micPermissionError={micPermissionError}
+                                    startRecording={startRecording}
+                                    stopRecording={stopRecording}
+                                    audioTimeDomainData={audioTimeDomainData}
+                                    clearPreview={clearPreview}
+                                />
+                            </div>
+                        </div>
+                    )}
+                    {mobileVisiblePane === 'chat' && (
+                         <div className="w-full h-full flex flex-col bg-[--bg-secondary] relative">
+                             {/* ChatPaneWrapper */}
+                             <ChatPaneWrapper
+                                 isChatCollapsed={false} // Pass false as chat is visible
+                                 chatMessages={chatMessages}
+                                 isLoadingMessages={isLoadingMessages}
+                                 isChatLoading={isChatLoading}
+                                 handleSendToEditor={handleSendToEditor}
+                                 messagesEndRef={messagesEndRef}
+                                 messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
+                                 input={input}
+                                 handleInputChange={handleInputChange}
+                                 handleSubmit={handleSubmit}
+                                 model={model}
+                                 setModel={setModel}
+                                 stop={stop}
+                                 files={files}
+                                 handleFileChange={handleFileChange}
+                                 handlePaste={handlePaste}
+                                 handleUploadClick={handleUploadClick}
+                                 isUploading={isUploading}
+                                 uploadError={uploadError}
+                                 uploadedImagePath={uploadedImagePath}
+                                 followUpContext={followUpContext}
+                                 setFollowUpContext={setFollowUpContext}
+                                 formRef={formRef}
+                                 inputRef={inputRef}
+                                 fileInputRef={fileInputRef}
+                                 handleKeyDown={handleKeyDown}
+                                 initialChatPaneWidthPercent={100} // Full width
+                                 minChatPaneWidthPx={0} // No min width
+                                 isRecording={isRecording}
+                                 isTranscribing={isTranscribing}
+                                 micPermissionError={micPermissionError}
+                                 startRecording={startRecording}
+                                 stopRecording={stopRecording}
+                                 audioTimeDomainData={audioTimeDomainData}
+                                 clearPreview={clearPreview}
+                             />
+                         </div>
+                    )}
+                </>
+            ) : (
+                // --- Desktop Layout: Show both panes with resize ---
+                <>
+                    {/* Editor Pane Container - Takes remaining space, add padding here */}
+                    <div className="flex-1 flex flex-col relative overflow-hidden p-4">
+                        {/* EditorTitleBar */}
+                         <EditorTitleBar
+                            currentTitle={currentTitle}
+                            isEditingTitle={isEditingTitle}
+                            newTitleValue={newTitleValue}
+                            setNewTitleValue={setNewTitleValue}
+                            handleTitleInputKeyDown={handleTitleInputKeyDown}
+                            handleSaveTitle={handleSaveTitle}
+                            handleCancelEditTitle={handleCancelEditTitle}
+                            handleEditTitleClick={handleEditTitleClick}
+                            isInferringTitle={isInferringTitle}
+                            handleInferTitle={handleInferTitle}
+                            editorRef={editorRef}
+                            autosaveStatus={autosaveStatus}
+                            handleNewDocument={handleNewDocument}
+                            handleSaveContent={handleSaveContent}
+                            isSaving={isSaving}
+                         />
+                        {pageError && !pageError.startsWith("Chat Error:") && (
+                            <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
+                        )}
+                        {/* EditorPaneWrapper */}
+                        <div className="flex-1 flex flex-col overflow-hidden relative"> {/* REMOVED mt-4 */}
+                            <EditorPaneWrapper
+                                documentId={documentId}
+                                initialContent={initialEditorContent}
+                                editorRef={editorRef}
+                                onEditorContentChange={handleEditorChange}
+                                isChatCollapsed={isChatCollapsed}
+                                lastMessageContent={lastAssistantMessage?.content}
+                                handleSendToEditor={handleSendToEditor}
+                                input={input}
+                                handleInputChange={handleInputChange}
+                                handleSubmit={handleSubmit}
+                                isLoading={isChatLoading}
+                                model={model}
+                                setModel={setModel}
+                                stop={stop}
+                                files={files}
+                                handleFileChange={handleFileChange}
+                                handlePaste={handlePaste}
+                                handleUploadClick={handleUploadClick}
+                                isUploading={isUploading}
+                                uploadError={uploadError}
+                                uploadedImagePath={uploadedImagePath}
+                                followUpContext={followUpContext}
+                                setFollowUpContext={setFollowUpContext}
+                                formRef={formRef}
+                                inputRef={inputRef}
+                                fileInputRef={fileInputRef}
+                                handleKeyDown={handleKeyDown}
+                                isRecording={isRecording}
+                                isTranscribing={isTranscribing}
+                                micPermissionError={micPermissionError}
+                                startRecording={startRecording}
+                                stopRecording={stopRecording}
+                                audioTimeDomainData={audioTimeDomainData}
+                                clearPreview={clearPreview}
+                            />
+                        </div>
+                    </div>
 
-            {/* Resize Handle - Rendered conditionally based on chat pane state */}
-            {!isChatCollapsed && (
-                 <div
-                     ref={dragHandleRef}
-                     onMouseDown={handleMouseDownResize}
-                     className="w-2 h-full cursor-col-resize bg-transparent hover:bg-[--accent-color]/20 transition-colors z-20 flex-shrink-0 border-l border-[--border-color]"
-                     style={{ flexBasis: '8px' }} // Ensure handle has base width
-                 />
-             )}
-
-            {/* Chat Pane with Animation */}
-            <AnimatePresence>
-                {!isChatCollapsed && (
-                    <motion.div
-                        key="chat-pane" // Added key for AnimatePresence
-                        initial={{ width: 0, opacity: 0 }}
-                        animate={{
-                            width: chatPaneWidth ? `${chatPaneWidth}px` : `${INITIAL_CHAT_PANE_WIDTH_PERCENT}%`,
-                            opacity: 1
-                        }}
-                        exit={{ width: 0, opacity: 0 }}
-                        transition={{ duration: 0.3, ease: 'easeInOut' }}
-                        style={{
-                            flexShrink: 0, // Prevent shrinking during layout changes
-                            // width is handled by animate
-                            overflow: 'hidden', // Hide content during animation
-                        }}
-                        // Added flex flex-col and bg color directly here
-                        className="h-full flex flex-col bg-[--bg-secondary] relative" // Added relative for potential internal absolute positioning
-                        // No border needed here if handle has it
-                    >
-                        {/* Render ChatPaneWrapper inside the motion.div */}
-                        <ChatPaneWrapper
-                            isChatCollapsed={isChatCollapsed}
-                            chatMessages={chatMessages}
-                            isLoadingMessages={isLoadingMessages}
-                            isChatLoading={isChatLoading}
-                            handleSendToEditor={handleSendToEditor}
-                            messagesEndRef={messagesEndRef}
-                            messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
-                            input={input}
-                            handleInputChange={handleInputChange}
-                            handleSubmit={handleSubmit}
-                            model={model}
-                            setModel={setModel}
-                            stop={stop}
-                            files={files}
-                            handleFileChange={handleFileChange}
-                            handlePaste={handlePaste}
-                            handleUploadClick={handleUploadClick}
-                            isUploading={isUploading}
-                            uploadError={uploadError}
-                            uploadedImagePath={uploadedImagePath}
-                            followUpContext={followUpContext}
-                            setFollowUpContext={setFollowUpContext}
-                            formRef={formRef}
-                            inputRef={inputRef}
-                            fileInputRef={fileInputRef}
-                            handleKeyDown={handleKeyDown}
-                            initialChatPaneWidthPercent={INITIAL_CHAT_PANE_WIDTH_PERCENT}
-                            minChatPaneWidthPx={MIN_CHAT_PANE_WIDTH_PX}
-                            isRecording={isRecording}
-                            isTranscribing={isTranscribing}
-                            micPermissionError={micPermissionError}
-                            startRecording={startRecording}
-                            stopRecording={stopRecording}
-                            audioTimeDomainData={audioTimeDomainData}
-                            clearPreview={clearPreview}
+                    {/* Resize Handle - Rendered conditionally based on chat pane state (Desktop only) */}
+                    {!isChatCollapsed && (
+                        <div
+                            ref={dragHandleRef}
+                            onMouseDown={handleMouseDownResize}
+                            className="w-2 h-full cursor-col-resize bg-transparent hover:bg-[--accent-color]/20 transition-colors z-20 flex-shrink-0 border-l border-[--border-color]"
+                            style={{ flexBasis: '8px' }} // Ensure handle has base width
                         />
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                    )}
 
-             {/* Toggle Button - Positioned absolutely relative to the main container */}
-             {/* Position depends on whether the handle exists */}
+                    {/* Chat Pane with Animation (Desktop only) */}
+                    <AnimatePresence>
+                        {!isChatCollapsed && (
+                            <motion.div
+                                key="chat-pane"
+                                initial={{ width: 0, opacity: 0 }}
+                                animate={{
+                                    width: chatPaneWidth ? `${chatPaneWidth}px` : `${INITIAL_CHAT_PANE_WIDTH_PERCENT}%`,
+                                    opacity: 1
+                                }}
+                                exit={{ width: 0, opacity: 0 }}
+                                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                                style={{
+                                    flexShrink: 0,
+                                    overflow: 'hidden',
+                                }}
+                                className="h-full flex flex-col bg-[--bg-secondary] relative"
+                            >
+                                <ChatPaneWrapper
+                                    isChatCollapsed={isChatCollapsed}
+                                    chatMessages={chatMessages}
+                                    isLoadingMessages={isLoadingMessages}
+                                    isChatLoading={isChatLoading}
+                                    handleSendToEditor={handleSendToEditor}
+                                    messagesEndRef={messagesEndRef}
+                                    messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
+                                    input={input}
+                                    handleInputChange={handleInputChange}
+                                    handleSubmit={handleSubmit}
+                                    model={model}
+                                    setModel={setModel}
+                                    stop={stop}
+                                    files={files}
+                                    handleFileChange={handleFileChange}
+                                    handlePaste={handlePaste}
+                                    handleUploadClick={handleUploadClick}
+                                    isUploading={isUploading}
+                                    uploadError={uploadError}
+                                    uploadedImagePath={uploadedImagePath}
+                                    followUpContext={followUpContext}
+                                    setFollowUpContext={setFollowUpContext}
+                                    formRef={formRef}
+                                    inputRef={inputRef}
+                                    fileInputRef={fileInputRef}
+                                    handleKeyDown={handleKeyDown}
+                                    initialChatPaneWidthPercent={INITIAL_CHAT_PANE_WIDTH_PERCENT}
+                                    minChatPaneWidthPx={MIN_CHAT_PANE_WIDTH_PX}
+                                    isRecording={isRecording}
+                                    isTranscribing={isTranscribing}
+                                    micPermissionError={micPermissionError}
+                                    startRecording={startRecording}
+                                    stopRecording={stopRecording}
+                                    audioTimeDomainData={audioTimeDomainData}
+                                    clearPreview={clearPreview}
+                                />
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </>
+            )}
+
+             {/* Toggle Button - Positioned absolutely, adapts based on mobile/desktop */}
              <button
-                 onClick={handleToggleChat} // Use dedicated handler
+                 onClick={handleToggleChat}
                  className={`absolute top-1/2 transform -translate-y-1/2 z-30 p-1.5 rounded-full bg-[--toggle-button-bg] border border-[--border-color] shadow-md text-[--text-color] hover:bg-[--hover-bg] transition-all duration-300 ease-in-out`}
                  style={{
-                     right: isChatCollapsed
-                         ? '-8px' // Position near the edge when collapsed
-                         : chatPaneWidth
-                           ? `${chatPaneWidth + 4}px` // Position just right of the handle/pane edge
-                           : `${(INITIAL_CHAT_PANE_WIDTH_PERCENT / 100) * window.innerWidth + 4}px`, // Fallback position calculation
-                     transform: 'translate(50%, -50%)' // Adjust horizontal position correctly
+                     // Mobile: Fixed near right edge
+                     // Desktop: Position relative to chat pane edge or collapsed position
+                     right: isMobile
+                         ? '10px' // Fixed position for mobile
+                         : isChatCollapsed
+                           ? '-8px' // Desktop collapsed position
+                           : chatPaneWidth
+                             ? `${chatPaneWidth + 4}px` // Desktop open position
+                             : `${(INITIAL_CHAT_PANE_WIDTH_PERCENT / 100) * (typeof window !== 'undefined' ? window.innerWidth : 1000) + 4}px`, // Desktop fallback
+                     transform: isMobile ? 'translateY(-50%)' : 'translate(50%, -50%)' // Adjust horizontal positioning only for desktop
                  }}
-                 aria-label={isChatCollapsed ? "Open chat pane" : "Close chat pane"}
+                 aria-label={
+                     isMobile
+                       ? (mobileVisiblePane === 'chat' ? "Show editor" : "Show chat")
+                       : (isChatCollapsed ? "Open chat pane" : "Close chat pane")
+                 }
              >
-                 {isChatCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                 {/* Conditional Icon Rendering */}
+                 {isMobile
+                    ? (mobileVisiblePane === 'chat' ? <Edit size={16} /> : <MessageSquare size={16} />)
+                    : (isChatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />)
+                 }
              </button>
         </div>
     );
