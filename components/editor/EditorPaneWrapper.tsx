@@ -161,9 +161,9 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     }, [lastMessageContent]); // Re-create only if last message content changes
 
     return (
-        <div className="flex-1 flex flex-col relative border rounded-lg bg-[--editor-bg] border-[--border-color] overflow-hidden">
+        <div className="flex-1 flex flex-col relative bg-[--editor-bg] overflow-hidden">
             {/* Editor Area */}
-            <div className="flex-1 overflow-y-auto p-4 styled-scrollbar">
+            <div className="flex-1 overflow-y-auto py-4 px-0 styled-scrollbar border-t border-[--border-color]">
                 {initialContent !== undefined ? (
                     <BlockNoteEditorComponent
                         key={documentId} 

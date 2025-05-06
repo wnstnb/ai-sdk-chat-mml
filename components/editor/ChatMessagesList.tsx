@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import type { Message } from 'ai/react';
 import { BotIcon, UserIcon } from 'lucide-react';
@@ -26,6 +26,11 @@ export const ChatMessagesList: React.FC<ChatMessagesListProps> = ({
     messageLoadBatchSize = DEFAULT_MESSAGE_LOAD_BATCH_SIZE,
 }) => {
     const totalMessages = chatMessages.length;
+
+    // Scroll to the bottom whenever messages change or the component mounts
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages, messagesEndRef]); // Add chatMessages and messagesEndRef as dependencies
 
     return (
         <div className="flex-1 overflow-y-auto styled-scrollbar pr-2 pt-4">
