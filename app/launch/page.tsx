@@ -668,7 +668,7 @@ export default function LaunchPage() {
   return (
     <div className="flex flex-col h-full bg-[--bg-secondary] text-[--text-color] p-4"> {/* Add padding back to main container */}
       {/* Title Centered at the Top */}
-      <h1 className="text-xlg font-semibold mb-4 text-center font-uncut-sans h-8 flex-shrink-0"> 
+      <h2 className="text-xlg font-semibold mb-4 text-center font-uncut-sans h-8 flex-shrink-0"> 
         {isSubmitting ? (
           <span className="loading-text">
             Loading
@@ -682,14 +682,14 @@ export default function LaunchPage() {
             <span className="cursor blinking"></span> 
           </>
         )}
-      </h1>
+      </h2>
 
       {/* Row for the two cards below the title */}
-      <div className="flex flex-row flex-grow space-x-4 overflow-hidden max-w-[1400px] mx-auto w-full"> {/* Changed max-width to 1400px */} 
+      <div className="flex flex-col md:flex-row flex-grow gap-4 overflow-hidden max-w-[1400px] mx-auto w-full"> {/* Changed max-width to 1400px */} 
         
         {/* Left Card: Chat Input */}
-        <div className="w-1/2 flex flex-col items-center space-y-2"> {/* Removed hover/focus effects */} 
-           <h1 className="text-xlg font-semibold text-[--text-color] pl-1">Start New</h1> {/* Added Title */} 
+        <div className="w-full md:w-1/2 flex flex-col items-center space-y-2"> {/* Removed hover/focus effects */} 
+           <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Start New</h2> {/* Added Title */} 
            <Card className="flex flex-col bg-[--bg-primary] border-[--border-color] w-full 
                          transition-all duration-200 ease-in-out 
                          hover:shadow-lg 
@@ -732,8 +732,8 @@ export default function LaunchPage() {
         </div>
 
         {/* Right Card: Tabs (Recent/Browser) */}
-        <div className="w-1/2 flex flex-col items-center space-y-2"> {/* Removed hover/focus effects */} 
-          <h1 className="text-xlg font-semibold text-[--text-color] pl-1">Continue Working</h1> {/* Added Title */} 
+        <div className="w-full md:w-1/2 flex flex-col items-center space-y-2"> {/* Removed hover/focus effects */} 
+          <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Continue Working</h2> {/* Added Title */} 
           <Tabs defaultValue="recent" className="flex flex-col w-full"> {/* Removed h-full, added w-full */} 
             <TabsList className="grid w-full grid-cols-2 flex-shrink-0 bg-transparent p-1 h-10 rounded-lg"> {/* Make background transparent, adjust padding/height/rounding if needed */} 
               <TabsTrigger 
