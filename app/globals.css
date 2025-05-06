@@ -1193,7 +1193,7 @@ html {
 
 /* --- Pinned Message Bubble Styles --- */
 .pinned-message-bubble {
-    @apply absolute bottom-full left-4 right-4 mb-1; /* Positioning, added left/right padding (4 = 1rem) */
+    @apply absolute bottom-full left-0 right-0 mb-2; /* Positioning, added left/right padding (4 = 1rem) */
     @apply z-10; /* Ensure it's above editor content but below modals/popovers */
     @apply p-2; /* Adjusted padding (p-2 -> 8px) */
     @apply rounded-md border; /* Use theme radius and border */
