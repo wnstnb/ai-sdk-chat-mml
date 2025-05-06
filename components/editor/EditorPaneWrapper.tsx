@@ -183,11 +183,13 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                 <div className="relative max-w-[800px] mx-auto w-full">
                     {/* Conditional Rendering for Bubbles */} 
                     {!followUpContext && lastMessageContent && !isMessageBubbleCollapsed && (
-                         <PinnedMessageBubble 
-                            messageContent={lastMessageContent} 
-                            onSendToEditor={handleSendToEditor} 
-                            onCollapse={() => setIsMessageBubbleCollapsed(true)}
-                         />
+                         <div className="w-full mb-2">
+                             <PinnedMessageBubble 
+                                messageContent={lastMessageContent} 
+                                onSendToEditor={handleSendToEditor} 
+                                onCollapse={() => setIsMessageBubbleCollapsed(true)}
+                             />
+                         </div>
                     )}
 
                     {/* Restore original Follow Up Context styling from ChatInputArea */}
@@ -207,7 +209,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                     )}
                     
                     {/* Pinned Input Area - Remove max-width/centering from here */}
-                    <div className="p-4 pt-2 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0 w-full">
+                    <div className="pt-4 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0 w-full">
                         <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center">
                             {/* Use ChatInputUI directly here */}
                             <ChatInputUI 
