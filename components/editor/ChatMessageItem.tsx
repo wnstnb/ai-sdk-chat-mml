@@ -78,7 +78,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
             // --- END LOGGING ---
             // Render only if there is actual text after removing potential prefix
             return shouldRender ? (
-                <div className="prose break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0">
+                <div className="prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0">
                     <NonMemoizedMarkdown>
                         {textToRender}
                     </NonMemoizedMarkdown>
@@ -99,7 +99,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                              const textToRender = extractUserDisplayContent(part.text, message.role);
                              // Render only if there is actual text after removing potential prefix
                              return textToRender.trim() ? (
-                                <div key={`${message.id}-part-${index}-text`} className="prose break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0">
+                                <div key={`${message.id}-part-${index}-text`} className="prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0">
                                     <NonMemoizedMarkdown>
                                         {textToRender}
                                     </NonMemoizedMarkdown>
@@ -191,7 +191,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
             <div className="flex flex-col gap-1 flex-grow break-words overflow-hidden p-2 rounded-md bg-[--message-bg] shadow-sm">
                 {/* 1. Render the main text content (if it exists) */}
                 {(typeof message.content === 'string' && message.content.trim()) && (
-                    <div className="prose break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 mb-2">
+                    <div className="prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 mb-2">
                         <NonMemoizedMarkdown>
                             {extractUserDisplayContent(message.content, message.role)}
                         </NonMemoizedMarkdown>
