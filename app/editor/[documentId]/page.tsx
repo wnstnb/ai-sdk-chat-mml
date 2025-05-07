@@ -151,6 +151,8 @@ export default function EditorPage() {
     const [autosaveTimerId, setAutosaveTimerId] = useState<NodeJS.Timeout | null>(null);
     const [revertStatusTimerId, setRevertStatusTimerId] = useState<NodeJS.Timeout | null>(null);
     const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved' | 'error'>('idle');
+    // --- ADDED STATE for pending mobile editor tool call ---
+    const [pendingMobileEditorToolCall, setPendingMobileEditorToolCall] = useState<{ toolName: string; args: any; toolCallId: string } | null>(null);
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
@@ -560,7 +562,8 @@ export default function EditorPage() {
         console.log("[EditorPage] followUpContext state updated:", followUpContext);
     }, [followUpContext]);
 
-    useEffect(() => { /* Effect for tool processing */
+    // --- MODIFIED useEffect for tool processing to handle mobile deferral ---
+    useEffect(() => {
         const lastMessage = chatMessages[chatMessages.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.parts && lastMessage.parts.length > 0) {
             const toolInvocationParts = lastMessage.parts.filter(
@@ -570,26 +573,78 @@ export default function EditorPage() {
 
             const callsToProcess = currentToolInvocations.filter(tc => !processedToolCallIds.has(tc.toolCallId));
             if (callsToProcess.length > 0) {
-                const newProcessedIds = new Set(processedToolCallIds);
+                const newProcessedIds = new Set(processedToolCallIds); // Initialize with current processed IDs
+
                 callsToProcess.forEach(toolCall => {
-                    newProcessedIds.add(toolCall.toolCallId);
+                    newProcessedIds.add(toolCall.toolCallId); // Mark as processed immediately
                     const { toolName, args } = toolCall;
-                    try {
-                        switch (toolName) {
-                            case 'addContent': executeAddContent(args); break;
-                            case 'modifyContent': executeModifyContent(args); break;
-                            case 'deleteContent': executeDeleteContent(args); break;
-                            case 'modifyTable': executeModifyTable(args); break;
-                            case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); break;
-                            case 'webSearch': break; // Handled server-side
-                            default: console.error(`Unknown tool: ${toolName}`); toast.error(`Unknown tool: ${toolName}`);
+                    const editorTargetingTools = ['addContent', 'modifyContent', 'deleteContent', 'modifyTable'];
+
+                    if (isMobile && mobileVisiblePane === 'chat' && editorTargetingTools.includes(toolName)) {
+                        console.log(`[ToolProcessing] Mobile view, chat visible. Queuing ${toolName} (ID: ${toolCall.toolCallId}) and switching to editor.`);
+                        setPendingMobileEditorToolCall({ toolName, args, toolCallId: toolCall.toolCallId });
+                        setMobileVisiblePane('editor');
+                        // Execution is deferred to another useEffect
+                    } else {
+                        // Execute immediately if not mobile, or if editor is already visible on mobile, or non-editor tool
+                        console.log(`[ToolProcessing] Executing ${toolName} (ID: ${toolCall.toolCallId}) immediately.`);
+                        try {
+                            switch (toolName) {
+                                case 'addContent': executeAddContent(args); break;
+                                case 'modifyContent': executeModifyContent(args); break;
+                                case 'deleteContent': executeDeleteContent(args); break;
+                                case 'modifyTable': executeModifyTable(args); break;
+                                case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); break;
+                                case 'webSearch': break; // Handled server-side
+                                default: console.error(`Unknown tool: ${toolName}`); toast.error(`Unknown tool: ${toolName}`);
+                            }
+                        } catch (toolError: any) {
+                            console.error(`Tool ${toolName} error:`, toolError);
+                            toast.error(`Tool error: ${toolError.message}`);
                         }
-                    } catch (toolError: any) { console.error(`Tool ${toolName} error:`, toolError); toast.error(`Tool error: ${toolError.message}`); }
+                    }
                 });
-                setProcessedToolCallIds(newProcessedIds);
+                setProcessedToolCallIds(newProcessedIds); // Update processed IDs after the loop
             }
         }
-    }, [chatMessages, processedToolCallIds, executeAddContent, executeModifyContent, executeDeleteContent, executeModifyTable]); 
+    }, [chatMessages, processedToolCallIds, executeAddContent, executeModifyContent, executeDeleteContent, executeModifyTable, isMobile, mobileVisiblePane]); 
+    // Note: setPendingMobileEditorToolCall and setMobileVisiblePane are not needed in deps array
+
+    // --- ADDED useEffect for handling pending tool call after mobile pane switch ---
+    useEffect(() => {
+        if (mobileVisiblePane === 'editor' && pendingMobileEditorToolCall && editorRef.current) {
+            console.log('[ToolProcessing] Editor is visible on mobile. Executing pending tool call:', pendingMobileEditorToolCall);
+            const { toolName, args, toolCallId } = pendingMobileEditorToolCall;
+            
+            // Ensure editor is truly ready, e.g. by a micro-task delay.
+            // This helps if the editor component itself has internal async setup after mounting.
+            Promise.resolve().then(() => {
+                if (!editorRef.current) {
+                    console.log(`[ToolProcessing] Pending tool ${toolName} (ID: ${toolCallId}) aborted: Editor disappeared before execution.`);
+                    toast.error(`Could not apply AI edit: Editor not ready.`);
+                    setPendingMobileEditorToolCall(null);
+                    return;
+                }
+                try {
+                    switch (toolName) {
+                        case 'addContent': executeAddContent(args); break;
+                        case 'modifyContent': executeModifyContent(args); break;
+                        case 'deleteContent': executeDeleteContent(args); break;
+                        case 'modifyTable': executeModifyTable(args); break;
+                        default: console.error(`Unknown pending tool: ${toolName}`); toast.error(`Unknown pending tool: ${toolName}`);
+                    }
+                } catch (toolError: any) {
+                    console.error(`Pending Tool ${toolName} (ID: ${toolCallId}) error:`, toolError);
+                    toast.error(`Pending tool error: ${toolError.message}`);
+                } finally {
+                    setPendingMobileEditorToolCall(null); // Clear the pending call
+                }
+            });
+        }
+    }, [mobileVisiblePane, pendingMobileEditorToolCall, executeAddContent, executeModifyContent, executeDeleteContent, executeModifyTable]);
+    // Note: editorRef.current is accessed but refs aren't typical useEffect dependencies.
+    // The check `editorRef.current` inside and dependency on `pendingMobileEditorToolCall` (which changes from null to object)
+    // is usually sufficient to trigger this when needed.
 
     useEffect(() => { /* Effect for beforeunload */
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
