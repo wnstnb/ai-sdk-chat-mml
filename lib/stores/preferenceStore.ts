@@ -4,6 +4,8 @@ import { create } from 'zustand';
 interface UserPreferences {
   theme: 'light' | 'dark';
   default_model: string;
+  editorFontSize: number;
+  chatFontSize: number;
   // Add other preferences here in the future
 }
 
@@ -11,12 +13,16 @@ interface UserPreferences {
 interface PreferenceState {
   theme: 'light' | 'dark' | null; // Allow null initially
   default_model: string | null;    // Allow null initially
+  editorFontSize: number | null;
+  chatFontSize: number | null;
   isPreferenceLoading: boolean;
   preferenceError: string | null;
   isInitialized: boolean;
   fetchPreferences: () => Promise<void>;
   setTheme: (theme: 'light' | 'dark') => Promise<void>;
   setDefaultModel: (model: string) => Promise<void>;
+  setEditorFontSize: (size: number) => Promise<void>;
+  setChatFontSize: (size: number) => Promise<void>;
 }
 
 // Internal type for the store implementation including private helpers
@@ -28,6 +34,8 @@ type PreferenceStoreImplementation = PreferenceState & {
 const defaultPreferencesData: UserPreferences = {
   theme: 'light',
   default_model: 'gemini-2.0-flash',
+  editorFontSize: 1,
+  chatFontSize: 1,
 };
 
 // Use the internal type for create
@@ -35,6 +43,8 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
   // Initial state
   theme: null, 
   default_model: null, 
+  editorFontSize: null,
+  chatFontSize: null,
   isPreferenceLoading: false,
   preferenceError: null,
   isInitialized: false,
@@ -56,6 +66,8 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
       set({ 
           theme: prefs.theme || defaultPreferencesData.theme, 
           default_model: prefs.default_model || defaultPreferencesData.default_model, 
+          editorFontSize: prefs.editorFontSize || defaultPreferencesData.editorFontSize,
+          chatFontSize: prefs.chatFontSize || defaultPreferencesData.chatFontSize,
           isInitialized: true, 
           isPreferenceLoading: false 
       });
@@ -67,6 +79,8 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
           // Set defaults on error after first attempt
           theme: defaultPreferencesData.theme,
           default_model: defaultPreferencesData.default_model,
+          editorFontSize: defaultPreferencesData.editorFontSize,
+          chatFontSize: defaultPreferencesData.chatFontSize,
           isInitialized: true, // Mark as initialized even on error to apply defaults
       });
     }
@@ -77,6 +91,8 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
       const currentState: UserPreferences = {
           theme: get().theme || defaultPreferencesData.theme, 
           default_model: get().default_model || defaultPreferencesData.default_model, 
+          editorFontSize: get().editorFontSize || defaultPreferencesData.editorFontSize,
+          chatFontSize: get().chatFontSize || defaultPreferencesData.chatFontSize,
       };
       const newPreferences = { ...currentState, ...updatedPrefs };
 
@@ -119,6 +135,28 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
       await get()._updateRemotePreference({ default_model: model });
     } catch (error) {
       set({ default_model: previousModel }); // Rollback on error
+    }
+  },
+
+  setEditorFontSize: async (size: number) => {
+    if (get().editorFontSize === size) return;
+    const previousSize = get().editorFontSize;
+    set({ editorFontSize: size });
+    try {
+      await get()._updateRemotePreference({ editorFontSize: size });
+    } catch (error) {
+      set({ editorFontSize: previousSize });
+    }
+  },
+
+  setChatFontSize: async (size: number) => {
+    if (get().chatFontSize === size) return;
+    const previousSize = get().chatFontSize;
+    set({ chatFontSize: size });
+    try {
+      await get()._updateRemotePreference({ chatFontSize: size });
+    } catch (error) {
+      set({ chatFontSize: previousSize });
     }
   },
 

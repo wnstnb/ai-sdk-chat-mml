@@ -7,6 +7,8 @@ export const dynamic = 'force-dynamic';
 const defaultPreferences = {
   theme: 'light',
   default_model: 'gemini-2.0-flash',
+  editorFontSize: 1,
+  chatFontSize: 1,
 };
 
 export async function GET(request: NextRequest) {

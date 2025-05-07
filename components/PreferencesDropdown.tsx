@@ -13,8 +13,12 @@ export const PreferencesDropdown: React.FC = () => {
   const { 
       theme, 
       default_model, 
+      editorFontSize,
+      chatFontSize,
       setTheme, 
       setDefaultModel, 
+      setEditorFontSize,
+      setChatFontSize,
       isInitialized, // Check if preferences have been loaded
       preferenceError 
   } = usePreferenceStore();
@@ -32,6 +36,8 @@ export const PreferencesDropdown: React.FC = () => {
   // Ensure default_model has a fallback for ModelSelector if still null after init (shouldn't happen with current store logic, but safe)
   const currentModel = default_model ?? 'gemini-2.0-flash'; // Use default from store logic
   const currentTheme = theme ?? 'light'; // Use default from store logic
+  const currentEditorFontSize = editorFontSize ?? 1;
+  const currentChatFontSize = chatFontSize ?? 1;
 
   return (
     <div className="p-4 bg-[--editor-bg] text-[--text-color] rounded-md shadow-lg w-64 flex flex-col gap-4 outline outline-1 outline-[--muted-text-color]">
@@ -91,6 +97,35 @@ export const PreferencesDropdown: React.FC = () => {
              Applied when starting new conversations.
          </p>
       </div>
+
+      {/* Editor Font Size Selector */}
+      <div className="flex flex-col gap-1">
+        <label htmlFor="editorFontSize" className="text-xs font-medium text-[--muted-text-color] mb-1">Editor Font Size (rem)</label>
+        <input
+          type="number"
+          id="editorFontSize"
+          value={currentEditorFontSize}
+          onChange={(e) => setEditorFontSize(parseFloat(e.target.value))}
+          step="0.005"
+          min="0.005"
+          className="px-2 py-1.5 text-xs bg-[--input-bg] border border-[--border-color] rounded focus:ring-1 focus:ring-[--primary-color] focus:border-[--primary-color] outline-none"
+        />
+      </div>
+
+      {/* Chat Font Size Selector */}
+      <div className="flex flex-col gap-1">
+        <label htmlFor="chatFontSize" className="text-xs font-medium text-[--muted-text-color] mb-1">Chat Font Size (rem)</label>
+        <input
+          type="number"
+          id="chatFontSize"
+          value={currentChatFontSize}
+          onChange={(e) => setChatFontSize(parseFloat(e.target.value))}
+          step="0.005"
+          min="0.005"
+          className="px-2 py-1.5 text-xs bg-[--input-bg] border border-[--border-color] rounded focus:ring-1 focus:ring-[--primary-color] focus:border-[--primary-color] outline-none"
+        />
+      </div>
+
     </div>
   );
 };

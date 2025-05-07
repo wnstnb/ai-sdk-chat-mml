@@ -351,12 +351,12 @@ body {
 
   /* --- Custom Chat Message Text Size --- */
   .chat-message-text {
-    font-size: var(--chat-message-font-size);
+    font-size: var(--chat-font-size); /* Use CSS variable */
   }
 
   /* --- Custom Chat Input Text Size --- */
   .chat-input-text {
-    font-size: var(--chat-input-font-size);
+    font-size: var(--chat-font-size); /* Use CSS variable */
   }
 }
 
@@ -378,7 +378,8 @@ body {
 
 .bn-editor {
   min-width: 100%;
-  /* overflow-x: auto !important; */
+  /* font-size: 16px !important; */ /* Commented out or remove if exists */
+  font-size: var(--editor-font-size) !important; /* Use CSS variable */
   height: 100%;
 }
 
@@ -400,16 +401,20 @@ body {
 [data-theme='dark'] .bn-container {
   background-color: var(--editor-bg) !important;
   color: var(--text-color) !important;
+  font-size: var(--editor-font-size); /* Added for consistency */
 }
 
 [data-theme='dark'] .bn-editor {
   background-color: var(--editor-bg) !important;
+  /* font-size: 16px !important; */ /* Commented out or remove if exists */
+  font-size: var(--editor-font-size) !important; /* Use CSS variable */
 }
 
 /* Ensure all BlockNote internal elements match dark theme */
 [data-theme='dark'] .bn-container [contenteditable=true] {
   background-color: var(--editor-bg) !important;
   color: var(--text-color) !important;
+  font-size: var(--editor-font-size); /* Added for consistency */
 }
 
 [data-theme='dark'] .bn-container [data-content-type="root"] {

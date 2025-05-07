@@ -17,6 +17,8 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   // Get theme state and actions from the preference store
   const {
     theme: prefTheme, 
+    editorFontSize: prefEditorFontSize,
+    chatFontSize: prefChatFontSize,
     setTheme: setThemePref,
     isInitialized,
     fetchPreferences // Fetch might need to be triggered if AppInitializer isn't used/working
@@ -38,23 +40,34 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     }
   }, [initialThemeApplied]); // Run once when initialThemeApplied changes
 
-  // Effect 2: Apply theme from the store once it's initialized
+  // Effect 2: Apply theme and font sizes from the store once it's initialized
   useEffect(() => {
     // Only run on client and once preferences are loaded
-    if (typeof window !== 'undefined' && isInitialized && prefTheme) {
-       console.log('[ThemeHandler] Applying theme from preference store:', prefTheme);
-       document.documentElement.setAttribute('data-theme', prefTheme);
-       // Update local storage to keep it in sync (optional but good practice)
-       localStorage.setItem('theme', prefTheme);
-    } else if (typeof window !== 'undefined' && isInitialized && !prefTheme) {
-        // Handle case where store is initialized but theme is null (e.g., fetch error)
-        // Apply the default theme from store logic (which falls back to 'light')
+    if (typeof window !== 'undefined' && isInitialized) {
+      if (prefTheme) {
+        console.log('[ThemeHandler] Applying theme from preference store:', prefTheme);
+        document.documentElement.setAttribute('data-theme', prefTheme);
+        localStorage.setItem('theme', prefTheme);
+      } else {
         const fallbackTheme = usePreferenceStore.getState().theme || defaultTheme;
         console.log('[ThemeHandler] Store initialized, applying fallback theme:', fallbackTheme);
         document.documentElement.setAttribute('data-theme', fallbackTheme);
         localStorage.setItem('theme', fallbackTheme);
+      }
+
+      // Apply editor font size
+      const editorFontSizeToApply = prefEditorFontSize || usePreferenceStore.getState().editorFontSize || 1; // Default to 1rem
+      console.log('[ThemeHandler] Applying editor font size:', editorFontSizeToApply + 'rem');
+      document.documentElement.style.setProperty('--editor-font-size', editorFontSizeToApply + 'rem');
+      localStorage.setItem('editorFontSize', editorFontSizeToApply.toString());
+
+      // Apply chat font size
+      const chatFontSizeToApply = prefChatFontSize || usePreferenceStore.getState().chatFontSize || 1; // Default to 1rem
+      console.log('[ThemeHandler] Applying chat font size:', chatFontSizeToApply + 'rem');
+      document.documentElement.style.setProperty('--chat-font-size', chatFontSizeToApply + 'rem');
+      localStorage.setItem('chatFontSize', chatFontSizeToApply.toString());
     }
-  }, [isInitialized, prefTheme]); // React to store initialization and theme changes
+  }, [isInitialized, prefTheme, prefEditorFontSize, prefChatFontSize]); // React to store initialization and changes
 
   // Theme toggling function now uses the store action
   const handleToggleTheme = () => {
