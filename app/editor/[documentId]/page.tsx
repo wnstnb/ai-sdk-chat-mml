@@ -567,16 +567,33 @@ export default function EditorPage() {
         const lastMessage = chatMessages[chatMessages.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.parts && lastMessage.parts.length > 0) {
             const toolInvocationParts = lastMessage.parts.filter(
-              (part): part is { type: 'tool-invocation'; toolInvocation: ToolInvocation } => part.type === 'tool-invocation'
+              (part): part is { type: 'tool-invocation'; toolInvocation: ToolInvocation & { state?: string } } => // Add state to type
+                part.type === 'tool-invocation' && part.toolInvocation != null
             );
-            const currentToolInvocations = toolInvocationParts.map(part => part.toolInvocation);
 
-            const callsToProcess = currentToolInvocations.filter(tc => !processedToolCallIds.has(tc.toolCallId));
-            if (callsToProcess.length > 0) {
-                const newProcessedIds = new Set(processedToolCallIds); // Initialize with current processed IDs
+            const callsToProcessThisRun: Array<ToolInvocation & { state?: string }> = [];
+            const idsToMarkAsProcessed = new Set(processedToolCallIds);
 
-                callsToProcess.forEach(toolCall => {
-                    newProcessedIds.add(toolCall.toolCallId); // Mark as processed immediately
+            for (const part of toolInvocationParts) {
+                const toolCall = part.toolInvocation;
+                // If it's from initial messages and marked as 'result', ensure it's in processedToolCallIds
+                // but don't add to callsToProcessThisRun.
+                if (toolCall.state === 'result') {
+                    idsToMarkAsProcessed.add(toolCall.toolCallId); // Ensure it's considered processed
+                    continue; // Don't re-process
+                }
+
+                // If it's not marked as 'result' and not yet processed (globally), add it for processing.
+                if (!processedToolCallIds.has(toolCall.toolCallId)) {
+                    callsToProcessThisRun.push(toolCall);
+                }
+            }
+
+            if (callsToProcessThisRun.length > 0) {
+                callsToProcessThisRun.forEach(toolCall => {
+                    // Add to idsToMarkAsProcessed immediately before attempting execution within this run.
+                    // This set (idsToMarkAsProcessed) will be used to update the main processedToolCallIds state later.
+                    idsToMarkAsProcessed.add(toolCall.toolCallId); 
                     const { toolName, args } = toolCall;
                     const editorTargetingTools = ['addContent', 'modifyContent', 'deleteContent', 'modifyTable'];
 
@@ -584,9 +601,7 @@ export default function EditorPage() {
                         console.log(`[ToolProcessing] Mobile view, chat visible. Queuing ${toolName} (ID: ${toolCall.toolCallId}) and switching to editor.`);
                         setPendingMobileEditorToolCall({ toolName, args, toolCallId: toolCall.toolCallId });
                         setMobileVisiblePane('editor');
-                        // Execution is deferred to another useEffect
                     } else {
-                        // Execute immediately if not mobile, or if editor is already visible on mobile, or non-editor tool
                         console.log(`[ToolProcessing] Executing ${toolName} (ID: ${toolCall.toolCallId}) immediately.`);
                         try {
                             switch (toolName) {
@@ -595,7 +610,7 @@ export default function EditorPage() {
                                 case 'deleteContent': executeDeleteContent(args); break;
                                 case 'modifyTable': executeModifyTable(args); break;
                                 case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); break;
-                                case 'webSearch': break; // Handled server-side
+                                case 'webSearch': break; 
                                 default: console.error(`Unknown tool: ${toolName}`); toast.error(`Unknown tool: ${toolName}`);
                             }
                         } catch (toolError: any) {
@@ -604,10 +619,38 @@ export default function EditorPage() {
                         }
                     }
                 });
-                setProcessedToolCallIds(newProcessedIds); // Update processed IDs after the loop
+            }
+            
+            // Update processedToolCallIds state if the set has changed.
+            // This check prevents an unnecessary state update if no new IDs were added.
+            let anIdWasAdded = false;
+            if (idsToMarkAsProcessed.size !== processedToolCallIds.size) {
+                anIdWasAdded = true;
+            } else {
+                for (const id of idsToMarkAsProcessed) {
+                    if (!processedToolCallIds.has(id)) {
+                        anIdWasAdded = true;
+                        break;
+                    }
+                }
+            }
+            if (anIdWasAdded) {
+                setProcessedToolCallIds(idsToMarkAsProcessed);
             }
         }
-    }, [chatMessages, processedToolCallIds, executeAddContent, executeModifyContent, executeDeleteContent, executeModifyTable, isMobile, mobileVisiblePane]); 
+    }, [
+        chatMessages, 
+        processedToolCallIds, 
+        executeAddContent, 
+        executeModifyContent, 
+        executeDeleteContent, 
+        executeModifyTable, 
+        isMobile, 
+        mobileVisiblePane,
+        setPendingMobileEditorToolCall,
+        setMobileVisiblePane,
+        setIncludeEditorContent 
+    ]); 
     // Note: setPendingMobileEditorToolCall and setMobileVisiblePane are not needed in deps array
 
     // --- ADDED useEffect for handling pending tool call after mobile pane switch ---
