@@ -60,6 +60,8 @@ interface ChatInputUIProps {
     stopRecording?: () => void; // << Made optional
     audioTimeDomainData?: AudioTimeDomainData; // << Made optional
     clearPreview: () => void; // Add clearPreview from useFileUpload hook
+    // --- NEW: Add recordingDuration prop ---
+    recordingDuration?: number;
     // --- END AUDIO PROPS ---
 }
 
@@ -91,6 +93,8 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     startRecording,
     stopRecording,
     audioTimeDomainData = null, // Default to null
+    // --- NEW: Destructure recordingDuration ---
+    recordingDuration = 0,
     // --- END AUDIO PROPS DESTRUCTURED ---
 }) => {
     // Tooltip state remains if needed elsewhere, otherwise remove
@@ -111,6 +115,14 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     // Determine if mic button should be enabled (check depends on optional props)
     const canRecord = !!startRecording && !!stopRecording && !isLoading && !isUploading && !(isRecording ?? false) && !(isTranscribing ?? false) && !(micPermissionError ?? false);
     const micAvailable = !!startRecording && !!stopRecording; // Check if mic functions are even provided
+
+    // --- NEW: Format recording duration ---
+    const formatDuration = (seconds: number): string => {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
+    };
+    // --- END: Format recording duration ---
 
     // Simplified Mic button handler (check if functions exist)
     const handleMicButtonClick = () => {
@@ -251,6 +263,11 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                      {/* Conditional Rendering (Check isRecording before rendering visualizer) */}
                      {isRecording ? (
                          <div className="absolute inset-0 flex items-center justify-center p-1 z-10">
+                             {/* --- NEW: Display Timer --- */}
+                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-[--muted-text-color] z-20">
+                                 {formatDuration(recordingDuration)}
+                             </span>
+                             {/* --- END: Display Timer --- */}
                              <CustomAudioVisualizer
                                  audioTimeDomainData={audioTimeDomainData} // Pass potentially null data
                              />

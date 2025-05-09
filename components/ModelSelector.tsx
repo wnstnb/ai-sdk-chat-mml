@@ -25,7 +25,7 @@ export function ModelSelector({
       >
         <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
         <option value="gemini-2.5-flash-preview-04-17">Gemini 2.5 Flash</option>
-        <option value="gemini-2.5-pro-preview-03-25">Gemini 2.5 Pro</option>
+        <option value="gemini-2.5-pro-preview-05-06">Gemini 2.5 Pro</option>
         <option value="gpt-4o">GPT‑4o</option>
       </select>
     </div>

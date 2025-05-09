@@ -3,7 +3,7 @@ import { google } from '@ai-sdk/google'; // Use the Vercel AI SDK Google provide
 import { generateText } from 'ai';
 
 // Define the specific model ID
-const MODEL_ID = 'gemini-2.0-flash'; // Stick with flash for speed
+const MODEL_ID = 'gemini-2.0-flash-lite'; // Stick with flash for speed
 
 // System Prompt for title generation
 const systemPrompt = `Generate a concise and relevant title (6 words max) for a document starting with the following text. Output only the title itself, with no extra formatting or labels, and no surrounding quotes.`;

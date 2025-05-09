@@ -38,6 +38,7 @@ const modifyTableSchema = z.object({
 const modelProviders: Record<string, () => LanguageModel> = {
   "gpt-4o": () => openai("gpt-4o"),
   "gemini-2.5-flash-preview-04-17": () => google("gemini-2.5-flash-preview-04-17"),
+  "gemini-2.5-pro-preview-05-06": () => google("gemini-2.5-pro-preview-05-06"),
   "gemini-2.0-flash": () => google("gemini-2.0-flash"),
 };
 

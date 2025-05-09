@@ -109,6 +109,9 @@ export default function LaunchPage() {
   const [recordingTimerId, setRecordingTimerId] = useState<NodeJS.Timeout | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [micPermissionError, setMicPermissionError] = useState(false);
+  // --- NEW: State for Recording Duration ---
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [displayTimerId, setDisplayTimerId] = useState<NodeJS.Timeout | null>(null);
   // --- END: State for Audio Recording ---
 
   // --- NEW: State & Refs for Audio Visualization ---
@@ -120,6 +123,10 @@ export default function LaunchPage() {
   const dataArrayRef = useRef<Uint8Array | null>(null); // To store the array for data retrieval
   const isRecordingRef = useRef(false); // Ref to track recording state for animation loop
   // --- END: Audio Visualization ---
+
+  // --- NEW: Ref to prevent rapid re-entry into start recording ---
+  const isStartingRecordingRef = useRef(false);
+  // --- END: NEW Ref ---
 
   // ADDED: Effect to update local model state if preference loads *after* initial render
   useEffect(() => {
@@ -358,6 +365,12 @@ export default function LaunchPage() {
         clearTimeout(recordingTimerId);
         setRecordingTimerId(null);
     }
+    // --- NEW: Clear display timer ---
+    if (displayTimerId) {
+        clearInterval(displayTimerId);
+        setDisplayTimerId(null);
+    }
+    // --- END: Clear display timer ---
     if (mediaRecorder && mediaRecorder.state === 'recording') {
         console.log("Stopping recording...");
         mediaRecorder.stop(); // This triggers onstop -> handleProcessRecordedAudio & cleanup
@@ -371,6 +384,13 @@ export default function LaunchPage() {
         console.warn("Stop recording called but recorder not active or found.");
         setIsRecording(false); // Ensure state is reset
         isRecordingRef.current = false;
+        // --- NEW: Clear display timer if stop called unexpectedly ---
+        if (displayTimerId) {
+            clearInterval(displayTimerId);
+            setDisplayTimerId(null);
+        }
+        setRecordingDuration(0); // Reset duration
+        // --- END: Clear display timer ---
         // Attempt cleanup even if recorder state is unexpected
         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
         audioSourceNodeRef.current?.disconnect();
@@ -385,152 +405,176 @@ export default function LaunchPage() {
         animationFrameRef.current = null;
         dataArrayRef.current = null;
     }
-  }, [mediaRecorder, recordingTimerId]); // Dependencies
+  }, [mediaRecorder, recordingTimerId, displayTimerId]); // Dependencies
 
   // Start recording handler
   const handleStartRecording = useCallback(async () => {
-    console.log("Attempting to start recording...");
-    setMicPermissionError(false);
-    setInput('');
-
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      console.error("getUserMedia not supported on this browser.");
-      toast.error("Audio recording is not supported on this browser.");
-      setMicPermissionError(true);
+    if (isStartingRecordingRef.current) {
+      console.log("[LaunchPage] Start recording already in progress, ignoring.");
       return;
     }
-
-    // --- Reset visualization state on new attempt ---
-    setAudioTimeDomainData(null);
-    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    animationFrameRef.current = null;
-    audioSourceNodeRef.current?.disconnect();
-    analyserRef.current?.disconnect();
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        await audioContextRef.current.close().catch(console.error); // Ensure previous context is closed
-    }
-    audioContextRef.current = null;
-    analyserRef.current = null;
-    audioSourceNodeRef.current = null;
-    dataArrayRef.current = null;
-
+    isStartingRecordingRef.current = true;
 
     try {
-      console.log("Requesting microphone permission...");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      console.log("Microphone permission granted.");
-
-      // Determine MIME type
-      const options = { mimeType: '' };
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-          options.mimeType = 'audio/webm;codecs=opus';
-      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-          options.mimeType = 'audio/webm';
-      } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
-          options.mimeType = 'audio/ogg;codecs=opus';
+      console.log("Attempting to start recording...");
+      setMicPermissionError(false);
+      setInput('');
+      // --- NEW: Reset recording duration ---
+      setRecordingDuration(0);
+      if (displayTimerId) { // Clear any existing display timer
+          clearInterval(displayTimerId);
+          setDisplayTimerId(null);
       }
-      console.log("Using MIME type:", options.mimeType || "Browser default");
+      // --- END: Reset recording duration ---
 
-      // --- Initialize Audio Context and Analyser ---
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      analyserRef.current.fftSize = 2048; // Standard FFT size
-      audioSourceNodeRef.current = audioContextRef.current.createMediaStreamSource(stream);
-      audioSourceNodeRef.current.connect(analyserRef.current);
-      // We don't connect analyser to destination as we only need data analysis
-      dataArrayRef.current = new Uint8Array(analyserRef.current.frequencyBinCount);
-      // --- End Initialization ---
-
-      const recorder = new MediaRecorder(stream, options.mimeType ? options : undefined);
-      setAudioChunks([]); // Clear previous chunks *before* setting handlers
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          setAudioChunks((prev) => [...prev, event.data]);
-        }
-      };
-
-      recorder.onstop = () => {
-        console.log("MediaRecorder stopped naturally.");
-        // --- Cleanup Visualization ---
-        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-        audioSourceNodeRef.current?.disconnect();
-        analyserRef.current?.disconnect();
-        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-            audioContextRef.current.close().catch(console.error);
-        }
-        setAudioTimeDomainData(null); // Reset visualization data
-        // Reset refs AFTER cleanup
-        audioContextRef.current = null;
-        analyserRef.current = null;
-        audioSourceNodeRef.current = null;
-        dataArrayRef.current = null;
-        // --- End Cleanup ---
-
-        // Call the processing function directly
-        handleProcessRecordedAudio();
-
-        // Clean up stream tracks and recorder state *after* processing is initiated
-        try {
-          stream.getTracks().forEach(track => track.stop());
-          console.log("Media stream tracks stopped.");
-        } catch (e) {
-          console.error("Error stopping media stream tracks:", e);
-        }
-        setMediaRecorder(null); // Clear the recorder state variable
-      };
-
-      recorder.onerror = (event) => {
-        console.error("MediaRecorder error:", event);
-        toast.error("An error occurred during recording.");
-        handleStopRecording(); // Attempt to clean up (includes viz cleanup)
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.error("getUserMedia not supported on this browser.");
+        toast.error("Audio recording is not supported on this browser.");
         setMicPermissionError(true);
-      };
+        // isStartingRecordingRef.current will be reset in finally
+        return;
+      }
 
-      // Now set the mediaRecorder state *after* handlers are defined
-      setMediaRecorder(recorder);
+      // --- Reset visualization state on new attempt ---
+      setAudioTimeDomainData(null);
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+      audioSourceNodeRef.current?.disconnect();
+      analyserRef.current?.disconnect();
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+          await audioContextRef.current.close().catch(console.error); // Ensure previous context is closed
+      }
+      audioContextRef.current = null;
+      analyserRef.current = null;
+      audioSourceNodeRef.current = null;
+      dataArrayRef.current = null;
 
-      recorder.start();
-      console.log("Recording started.");
-      setIsRecording(true);
-      isRecordingRef.current = true; // Set ref for animation loop
 
-      // --- Start Visualization ---
-      visualize(); // Start the animation loop
+      try { // Inner try for media operations, original try block
+        console.log("Requesting microphone permission...");
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log("Microphone permission granted.");
 
-      // Start 30-second timer
-      const timerId = setTimeout(() => {
-        console.log("Recording timer expired.");
-        handleStopRecording(true); // Pass true for timed out
-      }, 30000);
-      setRecordingTimerId(timerId);
-
-    } catch (err) {
-        console.error("Error getting user media or starting recorder:", err);
-        if ((err as Error).name === 'NotAllowedError' || (err as Error).name === 'PermissionDeniedError') {
-            toast.error("Microphone permission denied. Please allow access in your browser settings.");
-        } else if ((err as Error).name === 'NotFoundError' || (err as Error).name === 'DevicesNotFoundError') {
-             toast.error("No microphone found. Please ensure a microphone is connected and enabled.");
-        } else {
-            toast.error("Could not start recording. Please ensure microphone access is allowed.");
+        // Determine MIME type
+        const options = { mimeType: '' };
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            options.mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+            options.mimeType = 'audio/webm';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+            options.mimeType = 'audio/ogg;codecs=opus';
         }
-        setMicPermissionError(true);
-        // Ensure cleanup if error occurs during setup
-        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-        audioSourceNodeRef.current?.disconnect();
-        analyserRef.current?.disconnect();
-        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-             audioContextRef.current.close().catch(console.error);
-        }
-        setAudioTimeDomainData(null);
-        audioContextRef.current = null;
-        analyserRef.current = null;
-        audioSourceNodeRef.current = null;
-        animationFrameRef.current = null;
-        dataArrayRef.current = null;
+        console.log("Using MIME type:", options.mimeType || "Browser default");
+
+        // --- Initialize Audio Context and Analyser ---
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        analyserRef.current = audioContextRef.current.createAnalyser();
+        analyserRef.current.fftSize = 2048; // Standard FFT size
+        audioSourceNodeRef.current = audioContextRef.current.createMediaStreamSource(stream);
+        audioSourceNodeRef.current.connect(analyserRef.current);
+        // We don't connect analyser to destination as we only need data analysis
+        dataArrayRef.current = new Uint8Array(analyserRef.current.frequencyBinCount);
+        // --- End Initialization ---
+
+        const recorder = new MediaRecorder(stream, options.mimeType ? options : undefined);
+        setAudioChunks([]); // Clear previous chunks *before* setting handlers
+
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            setAudioChunks((prev) => [...prev, event.data]);
+          }
+        };
+
+        recorder.onstop = () => {
+          console.log("MediaRecorder stopped naturally.");
+          // --- Cleanup Visualization ---
+          if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+          animationFrameRef.current = null;
+          audioSourceNodeRef.current?.disconnect();
+          analyserRef.current?.disconnect();
+          if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+              audioContextRef.current.close().catch(console.error);
+          }
+          setAudioTimeDomainData(null); // Reset visualization data
+          // Reset refs AFTER cleanup
+          audioContextRef.current = null;
+          analyserRef.current = null;
+          audioSourceNodeRef.current = null;
+          dataArrayRef.current = null;
+          // --- End Cleanup ---
+
+          // Call the processing function directly
+          handleProcessRecordedAudio();
+
+          // Clean up stream tracks and recorder state *after* processing is initiated
+          try {
+            stream.getTracks().forEach(track => track.stop());
+            console.log("Media stream tracks stopped.");
+          } catch (e) {
+            console.error("Error stopping media stream tracks:", e);
+          }
+          setMediaRecorder(null); // Clear the recorder state variable
+        };
+
+        recorder.onerror = (event) => {
+          console.error("MediaRecorder error:", event);
+          toast.error("An error occurred during recording.");
+          handleStopRecording(); // Attempt to clean up (includes viz cleanup)
+          setMicPermissionError(true);
+        };
+
+        // Now set the mediaRecorder state *after* handlers are defined
+        setMediaRecorder(recorder);
+
+        recorder.start();
+        console.log("Recording started.");
+        setIsRecording(true);
+        isRecordingRef.current = true; // Set ref for animation loop
+
+        // --- Start Visualization ---
+        visualize(); // Start the animation loop
+
+        // --- NEW: Start display timer ---
+        setDisplayTimerId(setInterval(() => {
+            setRecordingDuration(prevDuration => prevDuration + 1);
+        }, 1000));
+        // --- END: Start display timer ---
+
+        // Start 30-second timer
+        const timerId = setTimeout(() => {
+          console.log("Recording timer expired.");
+          handleStopRecording(true); // Pass true for timed out
+        }, 30000);
+        setRecordingTimerId(timerId);
+
+      } catch (err) { // Catch for media operations
+          console.error("Error getting user media or starting recorder:", err);
+          if ((err as Error).name === 'NotAllowedError' || (err as Error).name === 'PermissionDeniedError') {
+              toast.error("Microphone permission denied. Please allow access in your browser settings.");
+          } else if ((err as Error).name === 'NotFoundError' || (err as Error).name === 'DevicesNotFoundError') {
+               toast.error("No microphone found. Please ensure a microphone is connected and enabled.");
+          } else {
+              toast.error("Could not start recording. Please ensure microphone access is allowed.");
+          }
+          setMicPermissionError(true);
+          // Ensure cleanup if error occurs during setup
+          if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+          audioSourceNodeRef.current?.disconnect();
+          analyserRef.current?.disconnect();
+          if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+               audioContextRef.current.close().catch(console.error);
+          }
+          setAudioTimeDomainData(null);
+          audioContextRef.current = null;
+          analyserRef.current = null;
+          audioSourceNodeRef.current = null;
+          animationFrameRef.current = null;
+          dataArrayRef.current = null;
+      }
+    } finally {
+      isStartingRecordingRef.current = false;
     }
-  }, [handleProcessRecordedAudio, handleStopRecording, visualize]);
+  }, [handleProcessRecordedAudio, handleStopRecording, visualize, displayTimerId]);
   // --- END: Audio Recording Handlers ---
 
   // --- Placeholder clearPreview function for Launch Page --- 
@@ -724,6 +768,7 @@ export default function LaunchPage() {
                    startRecording={handleStartRecording}
                    stopRecording={handleStopRecording}
                    audioTimeDomainData={audioTimeDomainData}
+                   recordingDuration={recordingDuration}
                    clearPreview={clearPreview}
                  />
                </form>
@@ -732,9 +777,9 @@ export default function LaunchPage() {
         </div>
 
         {/* Right Card: Tabs (Recent/Browser) */}
-        <div className="w-full md:w-1/2 flex flex-col items-center space-y-2 flex-grow min-h-0 max-h-[900px]"> {/* Added max-h-[900px] */} 
+        <div className="w-full md:w-1/2 flex flex-col items-center space-y-2"> {/* Removed hover/focus effects */} 
           <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Continue Working</h2> {/* Added Title */} 
-          <Tabs defaultValue="recent" className="flex flex-col w-full flex-grow min-h-0"> {/* Added flex-grow min-h-0 */} 
+          <Tabs defaultValue="recent" className="flex flex-col w-full"> {/* Removed h-full, added w-full */} 
             <TabsList className="grid w-full grid-cols-2 flex-shrink-0 bg-transparent p-1 h-10 rounded-lg"> {/* Make background transparent, adjust padding/height/rounding if needed */} 
               <TabsTrigger 
                 value="recent" 
@@ -763,16 +808,16 @@ export default function LaunchPage() {
             </TabsList>
 
             {/* Recent Files Tab Content */}
-            <TabsContent value="recent" className="overflow-y-auto mt-2 flex-grow min-h-0"> {/* Added flex-grow min-h-0 and overflow-y-auto */} 
-              <Card className="flex flex-col bg-[--bg-primary] border-[--border-color] flex-grow min-h-0
+            <TabsContent value="recent" className="overflow-hidden mt-2"> {/* Added mt-2 for spacing */} 
+              <Card className="flex flex-col bg-[--bg-primary] border-[--border-color] 
                            transition-all duration-200 ease-in-out 
                            hover:shadow-lg 
-                           hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* Change border on hover, Added flex-grow min-h-0 */} 
+                           hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* Change border on hover */} 
                 <CardHeader className="flex-shrink-0"> 
                   <CardTitle className="text-[--text-color]">Recent Documents</CardTitle>
                   {/* <CardDescription className="text-[--text-muted]">Quickly jump back into your work.</CardDescription> */}
                 </CardHeader>
-                <CardContent className="overflow-y-auto flex-grow"> {/* Added flex-grow */} 
+                <CardContent className="overflow-y-auto"> {/* Removed flex-grow, kept scroll */} 
                   {isLoading ? (
                       <p className="text-center text-[--text-muted]">Loading recent documents...</p>
                   ) : error ? ( 
@@ -805,19 +850,19 @@ export default function LaunchPage() {
             </TabsContent>
 
             {/* File Browser Tab Content */}
-            <TabsContent value="browser" className="flex flex-col mt-2 flex-grow min-h-0 overflow-y-auto"> {/* Added flex-grow, min-h-0, overflow-y-auto */} 
-               <Card className="flex flex-col bg-[--bg-primary] border-[--border-color] flex-grow min-h-0
+            <TabsContent value="browser" className="mt-2 flex flex-col flex-grow overflow-hidden"> {/* MODIFIED: Added flex-grow, kept overflow-hidden to see if NewFileManager handles its own */} 
+               <Card className="flex flex-col flex-grow bg-[--bg-primary] border-[--border-color] 
                             transition-all duration-200 ease-in-out 
                             hover:shadow-lg 
-                            hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* Change border on hover, Added flex-grow min-h-0 */} 
-                 <CardContent className="flex flex-col p-4 flex-grow min-h-0 overflow-y-auto"> {/* Added flex-grow, min-h-0, overflow-y-auto */} 
+                            hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* MODIFIED: Added flex-grow */} 
+                 <CardContent className="flex flex-col flex-grow p-4"> {/* MODIFIED: Added flex-grow */} 
                    {/* Omnibar */}
                    <div className="mb-4 flex-shrink-0"> 
                       <Omnibar />
                    </div>
                    {/* Render the actual NewFileManager component */}
-                   <div className="overflow-hidden border border-[--border-color] rounded-md shadow-sm flex-grow min-h-0">
-                       {/* Removed flex-grow from parent, NewFileManager likely controls its own scroll/size, Added flex-grow min-h-0 */} 
+                   <div className="flex-grow border border-[--border-color] rounded-md shadow-sm overflow-hidden"> {/* MODIFIED: Added flex-grow, kept overflow-hidden as NewFileManager has its own scroll */}
+                       {/* Removed flex-grow from parent, NewFileManager likely controls its own scroll/size */} 
                       <NewFileManager />
                    </div>
                  </CardContent>

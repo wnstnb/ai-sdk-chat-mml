@@ -16,7 +16,7 @@ const CustomAudioVisualizer: React.FC<CustomAudioVisualizerProps> = ({
   barColor = '#FFFFFF', // Default white bars
   barWidth = 2, // Default bar width
   barGap = 1, // Default gap between bars
-  sensitivity = 1.5,
+  sensitivity = 2.5, // Increased sensitivity
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -48,35 +48,40 @@ const CustomAudioVisualizer: React.FC<CustomAudioVisualizerProps> = ({
     if (audioTimeDomainData) {
       // console.log('[CustomAudioVisualizer] Rendering data:', audioTimeDomainData); // Keep for debugging if needed
 
-      context.fillStyle = barColor;
+      context.fillStyle = barColor; // Use fillStyle for bars
       const bufferLength = audioTimeDomainData.length;
       const totalBarWidth = barWidth + barGap;
       const numberOfBars = Math.floor(width / totalBarWidth);
+      
+      // Prevent division by zero if numberOfBars is 0 (e.g., canvas too small)
+      if (numberOfBars <= 0) return; 
       const step = Math.floor(bufferLength / numberOfBars);
 
       let x = 0;
 
       for (let i = 0; i < numberOfBars; i++) {
-        // Get average amplitude for the segment to reduce noise/flicker
         let sum = 0;
         for (let j = 0; j < step; j++) {
-            sum += audioTimeDomainData[i * step + j];
+            const dataIndex = i * step + j;
+            if (dataIndex < bufferLength) { // Ensure we don't read past the buffer
+                sum += audioTimeDomainData[dataIndex];
+            }
         }
-        const averageAmplitude = sum / step;
+        
+        const averageAmplitude = step > 0 ? sum / step : 0;
 
-        // Calculate bar height (0-255 range, 128 is silent center)
-        // Normalize amplitude: map 0-255 to -1 to 1 (approx)
+        // Normalize amplitude: map 0-255 to -1 to 1 (approx, 128 is center/zero)
         const normalizedAmplitude = (averageAmplitude / 255.0) * 2 - 1;
         
-        // Scale bar height to canvas height (adjust multiplier for sensitivity)
-        // Make height proportional to the absolute deviation from the center (128)
-        const barHeight = Math.abs(normalizedAmplitude) * height * sensitivity;
+        // Calculate actual bar height based on sensitivity and canvas height
+        // This height is the total visual height of the bar (deviation from center)
+        const barActualHeight = Math.abs(normalizedAmplitude) * height * sensitivity;
         
-        // Calculate y position (center line)
-        const y = height / 2 - barHeight / 2; // Draw centered bar
+        // Calculate y position for the top of the bar, making it centered around height/2
+        const y = height / 2 - barActualHeight / 2;
 
         // Draw the bar
-        context.fillRect(x, y, barWidth, Math.max(1, barHeight)); // Ensure minimum 1px height
+        context.fillRect(x, y, barWidth, Math.max(1, barActualHeight)); // Ensure minimum 1px height
 
         // Move to the next bar position
         x += totalBarWidth;
