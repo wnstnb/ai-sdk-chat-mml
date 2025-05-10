@@ -12,6 +12,12 @@ interface EditorContextData {
     editorBlocksContext?: { id: string; contentSnippet: string }[];
 }
 
+// Define the type for tagged documents
+interface TaggedDocument {
+    id: string;
+    name: string;
+}
+
 interface UseChatInteractionsProps {
     documentId: string;
     initialModel: string; // Preferred model from preferences
@@ -32,7 +38,7 @@ interface ReloadOptions {
     // attachments are likely not needed for reload, omitting for now
 }
 
-// Define the return type for the hook - ADDED audio props
+// Define the return type for the hook - ADDED audio props and taggedDocuments props
 interface UseChatInteractionsReturn {
     messages: Message[];
     setMessages: (messages: Message[]) => void;
@@ -53,6 +59,10 @@ interface UseChatInteractionsReturn {
     stopRecording: (timedOut?: boolean) => void; // Make timedOut optional
     audioTimeDomainData: AudioTimeDomainData; // <<< NEW: Exposed audio data for visualization
     // --- END NEW AUDIO PROPS ---
+    // --- NEW TAGGED DOCUMENTS PROPS ---
+    taggedDocuments: TaggedDocument[];
+    setTaggedDocuments: React.Dispatch<React.SetStateAction<TaggedDocument[]>>;
+    // --- END NEW TAGGED DOCUMENTS PROPS ---
 }
 
 // --- NEW: Type for audio visualization data ---
@@ -98,6 +108,10 @@ export function useChatInteractions({
     const audioSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
     const animationFrameRef = useRef<number | null>(null); // To store requestAnimationFrame ID
     const dataArrayRef = useRef<Uint8Array | null>(null); // To store the array for data retrieval
+    // --- END NEW ---
+
+    // --- NEW: Tracked Tagged Documents State ---
+    const [taggedDocuments, setTaggedDocuments] = useState<TaggedDocument[]>([]);
     // --- END NEW ---
 
     // --- External Hooks ---
@@ -193,7 +207,7 @@ export function useChatInteractions({
         return contextData;
     }, [editorRef]);
 
-    // --- Wrapped Submit Handler (Updated Signature) ---
+    // --- Wrapped Submit Handler (Updated for TaggedDocuments) ---
     const handleSubmit = useCallback(async (event?: React.FormEvent<HTMLFormElement>, options?: { data?: any }) => {
         if (event) event.preventDefault();
         if (!documentId) { toast.error("Cannot send message: Document context missing."); return; }
@@ -246,7 +260,7 @@ export function useChatInteractions({
             }
         ] : undefined;
 
-        // --- Prepare data payload for the API call (includes image URL if present) ---
+        // --- Prepare data payload for the API call (includes image URL and tagged document IDs) ---
         const submitDataPayload = {
             model: currentModel,
             documentId,
@@ -258,6 +272,11 @@ export function useChatInteractions({
                 inputMethod: 'audio',
                 whisperDetails: audioWhisperDetails,
             }),
+            // --- NEW: Add taggedDocumentIds if there are any tagged documents ---
+            ...(taggedDocuments.length > 0 && {
+                taggedDocumentIds: taggedDocuments.map(doc => doc.id)
+            }),
+            // --- END NEW ---
         };
 
         // --- Create the user message object for the hook (content as string) ---
@@ -342,7 +361,8 @@ export function useChatInteractions({
         isLoading, isUploading, getEditorContext, clearFileUploadPreview,
         setFollowUpContext, setInput, messages,
         append,
-        pendingInitialSubmission, pendingSubmissionMethod, pendingWhisperDetails
+        pendingInitialSubmission, pendingSubmissionMethod, pendingWhisperDetails,
+        taggedDocuments // <-- NEW: Add taggedDocuments to dependency array
     ]);
 
     // --- Audio Processing Logic (IMPLEMENTED) ---
@@ -829,5 +849,9 @@ export function useChatInteractions({
         stopRecording: handleStopRecording,
         audioTimeDomainData, // <<< NEW: Export the state
         // --- END NEW AUDIO PROPS ---
+        // --- NEW TAGGED DOCUMENTS PROPS ---
+        taggedDocuments,
+        setTaggedDocuments,
+        // --- END NEW TAGGED DOCUMENTS PROPS ---
     };
 } 

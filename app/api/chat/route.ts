@@ -249,7 +249,8 @@ export async function POST(req: Request) {
         taskHint,
         inputMethod, // <-- Expect inputMethod ('audio')
         whisperDetails, // <-- Expect whisperDetails object
-        uploadedImagePathFromRequest // <-- ADD: Extract uploadedImagePath from requestData
+        uploadedImagePathFromRequest, // <-- ADD: Extract uploadedImagePath from requestData
+        taggedDocumentIds, // <-- NEW: Extract taggedDocumentIds from requestData
     } = requestData || {};
 
     // --- Existing Validation (Document ID, User Session) ---
@@ -269,6 +270,43 @@ export async function POST(req: Request) {
     }
     const userId = user.id;
     // --- End Validation ---
+
+    // --- NEW: Fetch searchable_content for tagged documents ---
+    let taggedDocumentsContent: string = '';
+    if (Array.isArray(taggedDocumentIds) && taggedDocumentIds.length > 0) {
+        console.log(`[API Chat] Processing ${taggedDocumentIds.length} tagged document IDs:`, taggedDocumentIds);
+        
+        try {
+            // Fetch documents with searchable_content and name, filtering by the IDs and ensuring user has access
+            const { data: taggedDocuments, error: fetchError } = await supabase
+                .from('documents')
+                .select('id, name, searchable_content')
+                .in('id', taggedDocumentIds)
+                .throwOnError();
+                
+            if (fetchError) {
+                console.error('[API Chat] Error fetching tagged documents:', fetchError);
+                // Continue without the tagged documents instead of failing the request
+            } else if (taggedDocuments && taggedDocuments.length > 0) {
+                console.log(`[API Chat] Successfully fetched ${taggedDocuments.length} tagged documents`);
+                
+                // Format the content as specified in the PRD
+                taggedDocumentsContent = taggedDocuments.map(doc => {
+                    // Default to empty string if searchable_content is null, ensuring safe string operations
+                    const content = doc.searchable_content || '';
+                    return `[Content from document: ${doc.name}]\n${content}`;
+                }).join('\n---\n');
+                
+                console.log('[API Chat] Prepared tagged documents content');
+            } else {
+                console.warn('[API Chat] No tagged documents found or user lacks access to the specified documents');
+            }
+        } catch (error) {
+            console.error('[API Chat] Unexpected error while fetching tagged documents:', error);
+            // Continue without the tagged documents instead of failing the request
+        }
+    }
+    // --- END NEW ---
 
     // --- BEGIN: Save User Message --- 
     let savedUserMessageId: string | null = null; // Track saved ID if needed elsewhere
@@ -498,6 +536,33 @@ export async function POST(req: Request) {
         // Note: experimental_attachments might exist but CoreMessage uses a different format
     }>;
 
+    // Add system message
+    messages.push({
+        role: 'system',
+        content: taskHint === 'summarize_and_cite_outline'
+            ? systemPrompt + summarizationStrategyPrompt
+            : systemPrompt
+    });
+
+    // --- NEW: Add tagged documents context if available ---
+    if (taggedDocumentsContent) {
+        // Insert the tagged documents content as a user message before the last actual user message
+        // This happens before the normal message processing loop, ensuring it's inserted at the right position
+        const taggedDocumentsMessage: CoreMessage = {
+            role: 'user',
+            content: `[Tagged Document Context]\n${taggedDocumentsContent}`
+        };
+        
+        // If the client has sent messages, insert the taggedDocumentContent before the latest one
+        if (clientMessages.length > 0) {
+            // Since we'll be processing the original messages below, we add this to the output array now
+            messages.push(taggedDocumentsMessage);
+            console.log('[API Chat] Added tagged documents context message');
+        }
+    }
+    // --- END NEW ---
+
+    // Process remaining messages (keeping most of the original processing logic)
     for (let i = 0; i < clientMessages.length; i++) {
         const msg = clientMessages[i];
         const isLastMessage = i === clientMessages.length - 1;

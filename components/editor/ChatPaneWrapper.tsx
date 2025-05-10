@@ -7,6 +7,12 @@ import { ChatInputArea } from './ChatInputArea';
 import { type ToolInvocation } from '@ai-sdk/ui-utils';
 import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions';
 
+// Define TaggedDocument interface if not globally available (copy from ChatInputArea for now)
+interface TaggedDocument {
+    id: string;
+    name: string;
+}
+
 // Define props required by ChatPaneWrapper and its children
 interface ChatPaneWrapperProps {
     // From useChatPane (Some might be unused now, but keep for potential future needs or cleanup)
@@ -25,6 +31,7 @@ interface ChatPaneWrapperProps {
     
     // Props for ChatInputArea
     input: string;
+    setInput: (value: string) => void;
     handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement> | React.ChangeEvent<HTMLInputElement>) => void;
     handleSubmit: (event?: React.FormEvent<HTMLFormElement>, options?: { data?: any }) => Promise<void>;
     model: string;
@@ -60,6 +67,10 @@ interface ChatPaneWrapperProps {
     // --- ADD CLEAR PREVIEW PROP --- 
     clearPreview: () => void;
     // --- END CLEAR PREVIEW PROP ---
+
+    // ADDED: For document tagging, passed from useChatInteractions hook result
+    taggedDocuments: TaggedDocument[];
+    setTaggedDocuments: React.Dispatch<React.SetStateAction<TaggedDocument[]>>;
 }
 
 export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
@@ -75,6 +86,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     messagesEndRef,
     messageLoadBatchSize,
     input,
+    setInput,
     handleInputChange,
     handleSubmit,
     model,
@@ -95,16 +107,15 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     handleKeyDown,
     initialChatPaneWidthPercent,
     minChatPaneWidthPx,
-    // --- NEW AUDIO PROPS DESTRUCTURED --- 
     isRecording,
     isTranscribing,
     micPermissionError,
     startRecording,
     stopRecording,
     audioTimeDomainData,
-    // --- DESTRUCTURE CLEAR PREVIEW PROP ---
     clearPreview,
-    // --- END DESTRUCTURE CLEAR PREVIEW PROP ---
+    taggedDocuments,
+    setTaggedDocuments,
 }) => {
     // State to force remount of ChatInputArea after animation - Keep if still needed
     // const [inputAreaKey, setInputAreaKey] = useState(0);
@@ -146,6 +157,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                     inputRef={inputRef}
                     fileInputRef={fileInputRef}
                     input={input}
+                    setInput={setInput}
                     handleInputChange={handleInputChange}
                     handleSubmit={handleSubmit}
                     handleKeyDown={handleKeyDown}
@@ -169,6 +181,8 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                     stopRecording={stopRecording}
                     audioTimeDomainData={audioTimeDomainData}
                     clearPreview={clearPreview}
+                    taggedDocuments={taggedDocuments}
+                    setTaggedDocuments={setTaggedDocuments}
                 />
             </div>
         // </Resizable> // REMOVED

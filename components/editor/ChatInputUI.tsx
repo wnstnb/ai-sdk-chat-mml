@@ -9,6 +9,8 @@ import { TextFilePreview } from './TextFilePreview'; // Import from sibling file
 import Image from 'next/image'; // Import Next.js Image
 import CustomAudioVisualizer from './CustomAudioVisualizer'; // <<< NEW: Import custom visualizer
 import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions'; // <<< NEW: Import type
+import { DocumentSearchInput } from '../chat/DocumentSearchInput'; // <<< NEW: Import DocumentSearchInput
+import { TaggedDocument } from '@/lib/types'; // Import TaggedDocument from shared types
 
 // --- Helper Icon Component ---
 const StopIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -63,6 +65,11 @@ interface ChatInputUIProps {
     // --- NEW: Add recordingDuration prop ---
     recordingDuration?: number;
     // --- END AUDIO PROPS ---
+
+    // --- NEW Document Tagging Props ---
+    taggedDocuments?: TaggedDocument[]; // Optional, for UI cues or limits
+    onAddTaggedDocument?: (doc: TaggedDocument) => void;
+    // --- END Document Tagging Props ---
 }
 
 export const ChatInputUI: React.FC<ChatInputUIProps> = ({
@@ -88,7 +95,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     clearPreview, // Destructure the new prop
     // --- AUDIO PROPS DESTRUCTURED (with defaults/checks) ---
     isRecording = false, // Default to false if not provided
-    isTranscribing = false, // Default to false
+    isTranscribing = false,
     micPermissionError = false, // Default to false
     startRecording,
     stopRecording,
@@ -96,6 +103,11 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     // --- NEW: Destructure recordingDuration ---
     recordingDuration = 0,
     // --- END AUDIO PROPS DESTRUCTURED ---
+
+    // --- NEW Document Tagging Props DESTRUCTURED ---
+    taggedDocuments,
+    onAddTaggedDocument,
+    // --- END Document Tagging Props DESTRUCTURED ---
 }) => {
     // Tooltip state remains if needed elsewhere, otherwise remove
     const [showTooltip, setShowTooltip] = useState(false);
@@ -290,12 +302,23 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                  </div>
                  {/* Bottom controls (Adjust ModelSelector/Button disabled states) */} 
                  <div className="flex items-center justify-between w-full mt-2">
-                     <div className="pl-1 pr-2">
-                         <ModelSelector 
-                             model={model} 
-                             setModel={setModel} 
-                             disabled={(isRecording ?? false) || (isTranscribing ?? false) || isLoading || isUploading} 
-                         />
+                     <div className="flex items-center space-x-2 flex-grow">
+                         <div className="pl-1 pr-2">
+                             <ModelSelector 
+                                 model={model} 
+                                 setModel={setModel} 
+                                 disabled={(isRecording ?? false) || (isTranscribing ?? false) || isLoading || isUploading} 
+                             />
+                         </div>
+                         {/* Document Search Input */} 
+                         {onAddTaggedDocument && (
+                            <div className="flex-grow min-w-0"> {/* Allow DocumentSearchInput to take space and shrink */} 
+                                 <DocumentSearchInput 
+                                     onDocumentSelected={onAddTaggedDocument}
+                                     disabled={(isRecording ?? false) || (isTranscribing ?? false) || isLoading || isUploading}
+                                 />
+                             </div>
+                         )}
                      </div>
                      <div className="flex items-center space-x-2 ml-auto">
                          <button

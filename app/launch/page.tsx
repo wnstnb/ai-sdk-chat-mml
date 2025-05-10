@@ -20,6 +20,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 // --- NEW: Import Omnibar ---
 import { Omnibar } from '@/components/search/Omnibar';
 
+// --- NEW: Import TaggedDocument type ---
+import type { TaggedDocument } from '@/lib/types';
 import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions'; // <<< ADDED: Import type
 
 // Define the structure expected by Cubone File Manager (matching docs)
@@ -92,6 +94,10 @@ export default function LaunchPage() {
   const [uploadError, setUploadError] = useState<string | null>(null); // Needed for ChatInputUI props
   const [uploadedImagePath, setUploadedImagePath] = useState<string | null>(null); // Needed for ChatInputUI props
   const formRef = useRef<HTMLFormElement>(null); // Ref for the form
+
+  // --- NEW: State for tagged documents ---
+  const [taggedDocuments, setTaggedDocuments] = useState<TaggedDocument[]>([]);
+  // --- END NEW ---
 
   // --- State for File Manager & Page ---
   const [cuboneFiles, setCuboneFiles] = useState<CuboneFileType[]>([]); 
@@ -770,6 +776,17 @@ export default function LaunchPage() {
                    audioTimeDomainData={audioTimeDomainData}
                    recordingDuration={recordingDuration}
                    clearPreview={clearPreview}
+                   // --- NEW: Pass tagged documents props to ChatInputUI ---
+                   taggedDocuments={taggedDocuments}
+                   onAddTaggedDocument={(docToAdd) => {
+                       setTaggedDocuments((prevDocs) => {
+                           if (prevDocs.find(doc => doc.id === docToAdd.id)) {
+                               return prevDocs;
+                           }
+                           return [...prevDocs, docToAdd];
+                       });
+                   }}
+                   // --- END NEW ---
                  />
                </form>
              </CardContent>

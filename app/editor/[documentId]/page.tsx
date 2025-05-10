@@ -179,7 +179,7 @@ export default function EditorPage() {
         messages: chatMessages, 
         setMessages: setChatMessages, 
         input,
-        setInput, 
+        setInput,
         handleInputChange,
         handleSubmit, 
         isLoading: isChatLoading, 
@@ -193,6 +193,8 @@ export default function EditorPage() {
         startRecording,
         stopRecording,
         audioTimeDomainData,
+        taggedDocuments,
+        setTaggedDocuments,
     } = useChatInteractions({
         documentId,
         initialModel,
@@ -904,6 +906,8 @@ export default function EditorPage() {
                                     stopRecording={stopRecording}
                                     audioTimeDomainData={audioTimeDomainData}
                                     clearPreview={clearPreview}
+                                    taggedDocuments={taggedDocuments}
+                                    setTaggedDocuments={setTaggedDocuments}
                                 />
                             </div>
                         </div>
@@ -920,6 +924,9 @@ export default function EditorPage() {
                                  messagesEndRef={messagesEndRef}
                                  messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
                                  input={input}
+                                 setInput={setInput}
+                                 taggedDocuments={taggedDocuments}
+                                 setTaggedDocuments={setTaggedDocuments}
                                  handleInputChange={handleInputChange}
                                  handleSubmit={handleSubmit}
                                  model={model}
@@ -1014,6 +1021,8 @@ export default function EditorPage() {
                                 stopRecording={stopRecording}
                                 audioTimeDomainData={audioTimeDomainData}
                                 clearPreview={clearPreview}
+                                taggedDocuments={taggedDocuments}
+                                setTaggedDocuments={setTaggedDocuments}
                             />
                         </div>
                     </div>
@@ -1055,6 +1064,9 @@ export default function EditorPage() {
                                     messagesEndRef={messagesEndRef}
                                     messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
                                     input={input}
+                                    setInput={setInput}
+                                    taggedDocuments={taggedDocuments}
+                                    setTaggedDocuments={setTaggedDocuments}
                                     handleInputChange={handleInputChange}
                                     handleSubmit={handleSubmit}
                                     model={model}
