@@ -64,27 +64,76 @@ Currently, users can chat with the AI in the context of the current document or 
 
 2.  **Fetch `searchable_content`:**
     *   For each `documentId` in the `taggedDocumentIds` array:
-        *   Perform a Supabase query to fetch the `searchable_content` from the `documents` table.
+        *   Perform a Supabase query to fetch the `searchable_content` (and `name` for context message) from the `documents` table.
         *   Ensure RLS is respected, i.e., the current user has permission to access these documents. This might require using the user's Supabase client or performing an explicit permission check if using an admin client.
 
-3.  **Prepend Content to AI Context:**
-    *   Concatenate the fetched `searchable_content` from all tagged documents.
-    *   Format this content clearly (e.g., prefix with `[Content from Document: <Document Name>]`) and prepend it to the messages array or system prompt being sent to the AI model.
-    *   Consider adding a header for each document's content, e.g.:
-        ```
-        [Context from document: Document A Name]
-        <searchable_content of Document A>
-        ---
-        [Context from document: Document B Name]
-        <searchable_content of Document B>
-        ---
-        User's actual message...
-        ```
-    *   This ensures the AI has the necessary information before processing the user's query.
+3.  **Inject Tagged Document Content into AI Messages:**
+    *   If tagged documents' content is fetched successfully:
+        *   Concatenate the `searchable_content` from all tagged documents into a single string. Each document's content should be clearly demarcated, including its name. For example:
+            ```text
+            [Content from document: <Document Name A>]
+            <searchable_content of Document A>
+            ---
+            [Content from document: <Document Name B>]
+            <searchable_content of Document B>
+            ```
+        *   Create a new message object for this consolidated content, similar to how `editorBlocksContext` is handled:
+            ```typescript
+            {
+              role: 'user', // Consistent with CoreUserMessage and editorBlocksContext injection
+              content: `[Tagged Document Context]\n${consolidatedTaggedContent}` // Content is a string, valid for CoreUserMessage
+            }
+            ```
+        *   Find the index of the last actual user message in the `messages` array (this array is of type `CoreMessage[]` being prepared for the AI model).
+        *   Insert this new context message into the `messages` array immediately before the last user message.
+        *   **Note:** This insertion must be carefully sequenced within the existing message processing and transformation pipeline in `app/api/chat/route.ts` to ensure compatibility with other features like image handling, editor context injection, and tool call processing.
+    *   This ensures the AI receives the tagged document context just before processing the user's most recent query, mirroring the `editorBlocksContext` injection pattern.
 
 ### 2.4. Data Model / Database
 
 *   No changes to the database schema are anticipated initially, as we are leveraging the existing `documents.searchable_content` field and `documents.id`.
+
+### 2.5. Frontend: Persisted Tag Display & Interactivity
+
+**Objective:** When a message containing a document tag is persisted and displayed in the chat history, the tag should function as an interactive link, offering a preview on hover and navigation on click.
+
+**Affected Components:**
+*   `components/editor/ChatMessageItem.tsx` (specifically the Markdown rendering part)
+*   `components/markdown.tsx` (or wherever `NonMemoizedMarkdown` / `react-markdown` is configured)
+*   Possibly a new simple component for hover previews: `components/chat/DocumentTagPreview.tsx`
+
+**Changes:**
+
+1.  **Tag Persistence Format:**
+    *   When a user selects a document via the `@` mention, the chat input should transform the tag into a Markdown-like link format before it's included in the message content. Example: `@[Document Display Name](document:DOCUMENT_ID)`.
+    *   This string will be part of the `message.content` (if it's a plain string) or a `TextPart`'s `text` property (if `message.content` is an array of parts) and saved to the database as such.
+
+2.  **Custom Markdown Rendering for Tags:**
+    *   Modify the Markdown rendering setup used by `ChatMessageItem.tsx` (likely within `NonMemoizedMarkdown` or its `react-markdown` configuration).
+    *   Implement a custom renderer for links (`<a>` tags).
+    *   The custom renderer will inspect the `href` of the link.
+        *   If the `href` matches the pattern `document:DOCUMENT_ID`, it will render the link as a special interactive tag.
+        *   Otherwise, it will use the default link rendering.
+
+3.  **Interactive Tag Rendering:**
+    *   **Styling:** The rendered tag (e.g., "@Document Display Name") should be visually distinct (e.g., different background color, similar to a pill).
+    *   **Click Navigation:** On clicking the tag, the application should navigate the user to the respective document (e.g., `router.push('/editor/DOCUMENT_ID')`).
+    *   **Hover Preview:**
+        *   On hovering over the tag, a small popover/tooltip (`DocumentTagPreview.tsx`) should appear.
+        *   This preview will display the document's name and the first few lines/sentences of its `searchable_content`.
+        *   This content will be fetched on demand via a new lightweight API endpoint, e.g., `GET /api/documents/[documentId]/preview`.
+            *   This endpoint should return `{ name: string, previewText: string }`.
+            *   RLS must be enforced on this endpoint.
+
+4.  **API Endpoint for Preview:**
+    *   Create a new route handler `app/api/documents/[documentId]/preview/route.ts`.
+    *   It will accept a `documentId`, fetch the document's `name` and the beginning of `searchable_content` (e.g., first 200 characters), and return them.
+    *   This endpoint must be protected and respect user permissions (RLS).
+
+5.  **Graceful Fallbacks:**
+    *   If a `document:DOCUMENT_ID` link points to a non-existent document or one the user doesn't have access to, the tag should still render but could appear disabled or, on hover/click, indicate that the document is unavailable.
+
+This enhancement focuses on the display of tags in *persisted* messages. The mechanism for initially creating the tag in the input field (step 2.1) remains the same.
 
 ## 3. Plan of Attack / Implementation Steps
 

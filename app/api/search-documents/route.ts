@@ -84,7 +84,7 @@ export async function GET(request: Request) {
         console.log(`[API Search] Query embedding generated.`);
 
         // 3. Perform semantic search using Supabase RPC ('match_documents' needs VECTOR(768))
-        const matchThreshold = 0.5; // Example threshold - tune as needed
+        const matchThreshold = 0.45; // Example threshold - tune as needed
         const matchCount = 10;
         console.log(`[API Search] Calling RPC match_documents (threshold: ${matchThreshold}, count: ${matchCount})...`);
 
@@ -101,7 +101,7 @@ export async function GET(request: Request) {
         }
 
         console.log(`[API Search] Found ${documents?.length ?? 0} documents.`);
-        return NextResponse.json(documents || []);
+        return NextResponse.json(documents || [] );
 
     } catch (error) {
         console.error('[API Search] Overall Error:', error);

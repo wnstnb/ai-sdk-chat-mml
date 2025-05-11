@@ -7,6 +7,7 @@ import { PinnedMessageBubble } from './PinnedMessageBubble'; // Import the new c
 import { Button } from "@/components/ui/button"; // For the toggle icon button
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { MessageSquare } from 'lucide-react'; // Icon for collapsed state toggle
+import type { TaggedDocument } from '@/lib/types';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 // Define loading state consistent with page.tsx
@@ -73,6 +74,10 @@ interface EditorPaneWrapperProps {
     // --- ADD CLEAR PREVIEW PROP --- 
     clearPreview: () => void;
     // --- END CLEAR PREVIEW PROP ---
+    // --- NEW: Props for shared tagged documents ---
+    taggedDocuments: TaggedDocument[];
+    setTaggedDocuments: React.Dispatch<React.SetStateAction<TaggedDocument[]>>;
+    // --- END NEW ---
 }
 
 export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
@@ -118,9 +123,31 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     // --- DESTRUCTURE CLEAR PREVIEW PROP ---
     clearPreview,
     // --- END DESTRUCTURE CLEAR PREVIEW PROP ---
+    // --- NEW: Destructure shared tagged documents props ---
+    taggedDocuments,
+    setTaggedDocuments,
+    // --- END NEW ---
 }) => {
     // State for the pinned message bubble collapse state
     const [isMessageBubbleCollapsed, setIsMessageBubbleCollapsed] = React.useState(false);
+
+    // Handler to add a tagged document (uses prop setter)
+    const handleAddTaggedDocument = (docToAdd: TaggedDocument) => {
+        setTaggedDocuments((prevDocs) => {
+            // Prevent duplicates
+            if (prevDocs.find(doc => doc.id === docToAdd.id)) {
+                return prevDocs;
+            }
+            return [...prevDocs, docToAdd];
+        });
+    };
+
+    // Handler to remove a tagged document (uses prop setter)
+    const handleRemoveTaggedDocument = (docIdToRemove: string) => {
+        setTaggedDocuments((prevDocs) => 
+            prevDocs.filter(doc => doc.id !== docIdToRemove)
+        );
+    };
 
     // Effect to auto-collapse message bubble when follow-up context appears
     React.useEffect(() => {
@@ -208,6 +235,29 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                         </div>
                     )}
                     
+                    {/* --- NEW: Render Tagged Document Pills --- */}
+                    {taggedDocuments && taggedDocuments.length > 0 && (
+                        <div className="w-full mb-2 flex flex-wrap gap-2 px-3 py-2 border border-[--border-color] rounded-md bg-[--subtle-bg]">
+                            {taggedDocuments.map((doc) => (
+                                <div 
+                                    key={doc.id} 
+                                    className="flex items-center gap-1.5 bg-[--pill-bg] text-[--pill-text-color] px-2 py-0.5 rounded-full text-xs border border-[--pill-border-color] shadow-sm"
+                                >
+                                    <span>{doc.name}</span>
+                                    <button 
+                                        type="button"
+                                        onClick={() => handleRemoveTaggedDocument(doc.id)}
+                                        className="text-[--pill-remove-icon-color] hover:text-[--pill-remove-icon-hover-color] rounded-full focus:outline-none focus:ring-1 focus:ring-[--accent-color]"
+                                        aria-label={`Remove ${doc.name}`}
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {/* --- END NEW: Render Tagged Document Pills --- */}
+
                     {/* Pinned Input Area - Remove max-width/centering from here */}
                     <div className="pt-4 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0 w-full">
                         <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center">
@@ -243,6 +293,8 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 stopRecording={stopRecording}
                                 audioTimeDomainData={audioTimeDomainData}
                                 clearPreview={clearPreview}
+                                taggedDocuments={taggedDocuments}
+                                onAddTaggedDocument={handleAddTaggedDocument}
                             />
                         </form>
                     </div>

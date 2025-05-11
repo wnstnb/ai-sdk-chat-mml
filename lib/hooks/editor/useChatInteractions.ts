@@ -3,13 +3,28 @@ import { useChat, type Message } from 'ai/react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useFollowUpStore } from '@/lib/stores/followUpStore';
-import type { BlockNoteEditor } from '@blocknote/core';
+import type { BlockNoteEditor, Block } from '@blocknote/core';
 import { getInlineContentText } from '@/lib/editorUtils';
+
+// Define the shape of the processed block with structural information
+interface ProcessedBlock {
+  id: string;
+  type: string;
+  contentSnippet: string;
+  level: number;
+  parentId: string | null;
+}
 
 // Define the shape of the editor context data expected by the submit handler
 interface EditorContextData {
     editorMarkdownContent?: string;
-    editorBlocksContext?: { id: string; contentSnippet: string }[];
+    editorBlocksContext?: ProcessedBlock[]; // Updated to use ProcessedBlock
+}
+
+// Define the type for tagged documents
+interface TaggedDocument {
+    id: string;
+    name: string;
 }
 
 interface UseChatInteractionsProps {
@@ -22,6 +37,7 @@ interface UseChatInteractionsProps {
     isUploading: boolean; // From useFileUpload
     clearFileUploadPreview: () => void; // From useFileUpload
     apiEndpoint?: string; // Optional override for API endpoint
+    initialTaggedDocIdsString?: string | null; // <-- NEW: For pre-tagging from URL
 }
 
 // Define inline options type based on docs for append/handleSubmit
@@ -32,7 +48,7 @@ interface ReloadOptions {
     // attachments are likely not needed for reload, omitting for now
 }
 
-// Define the return type for the hook - ADDED audio props
+// Define the return type for the hook - ADDED audio props and taggedDocuments props
 interface UseChatInteractionsReturn {
     messages: Message[];
     setMessages: (messages: Message[]) => void;
@@ -53,7 +69,64 @@ interface UseChatInteractionsReturn {
     stopRecording: (timedOut?: boolean) => void; // Make timedOut optional
     audioTimeDomainData: AudioTimeDomainData; // <<< NEW: Exposed audio data for visualization
     // --- END NEW AUDIO PROPS ---
+    // --- NEW TAGGED DOCUMENTS PROPS ---
+    taggedDocuments: TaggedDocument[];
+    setTaggedDocuments: React.Dispatch<React.SetStateAction<TaggedDocument[]>>;
+    // --- END NEW TAGGED DOCUMENTS PROPS ---
 }
+
+// Recursive helper function to process blocks and their children
+const processBlocksRecursive = async (
+    blocks: Block[],
+    currentLevel: number,
+    currentParentId: string | null,
+    editor: BlockNoteEditor<any> // Pass editor for blocksToMarkdownLossy
+): Promise<ProcessedBlock[]> => {
+    let processedBlocks: ProcessedBlock[] = [];
+
+    for (const b of blocks) {
+        let snippet = '';
+        if (b.type === 'table') {
+            try {
+                snippet = await editor.blocksToMarkdownLossy([b]);
+                if (snippet.length > 2000) {
+                    snippet = snippet.substring(0, 2000) + '\n... [Table Markdown Truncated] ...';
+                }
+                snippet = `[Table Markdown]\n${snippet}`;
+            } catch (mdError) {
+                console.error(`Failed to convert table block ${b.id} to Markdown:`, mdError);
+                snippet = `[table - Error generating Markdown snippet]`;
+            }
+        } else {
+            // For other block types, get inline content text.
+            // Ensure this does NOT include children's text.
+            // BlockNote's getInlineContentText (or direct b.content access for Paragraphs)
+            // usually handles this correctly for standard blocks.
+            // For list items, b.content is the content of the item itself, b.children are sub-items.
+            snippet = (Array.isArray(b.content) ? getInlineContentText(b.content).slice(0, 100) : '') || `[${b.type}]`;
+        }
+
+        processedBlocks.push({
+            id: b.id,
+            type: b.type,
+            contentSnippet: snippet,
+            level: currentLevel,
+            parentId: currentParentId,
+        });
+
+        // If the block has children, process them recursively
+        if (b.children && b.children.length > 0) {
+            const childBlocks = await processBlocksRecursive(
+                b.children,
+                currentLevel + 1,
+                b.id,
+                editor
+            );
+            processedBlocks = processedBlocks.concat(childBlocks);
+        }
+    }
+    return processedBlocks;
+};
 
 // --- NEW: Type for audio visualization data ---
 export type AudioTimeDomainData = Uint8Array | null; // Export the type
@@ -68,6 +141,7 @@ export function useChatInteractions({
     isUploading,
     clearFileUploadPreview,
     apiEndpoint = '/api/chat',
+    initialTaggedDocIdsString, // <-- NEW: Destructure prop
 }: UseChatInteractionsProps): UseChatInteractionsReturn {
     
     console.log('[useChatInteractions] Received initialMessages prop:', JSON.stringify(initialMessages, null, 2));
@@ -99,6 +173,44 @@ export function useChatInteractions({
     const animationFrameRef = useRef<number | null>(null); // To store requestAnimationFrame ID
     const dataArrayRef = useRef<Uint8Array | null>(null); // To store the array for data retrieval
     // --- END NEW ---
+
+    // --- NEW: Tracked Tagged Documents State ---
+    const [taggedDocuments, setTaggedDocuments] = useState<TaggedDocument[]>([]);
+    // --- END NEW ---
+
+    // --- Effect to load initial tagged documents from URL string ---
+    useEffect(() => {
+        if (initialTaggedDocIdsString) {
+            const ids = initialTaggedDocIdsString.split(',').filter(id => id.trim() !== '');
+            if (ids.length > 0) {
+                console.log('[useChatInteractions] Initial tagged document IDs found:', ids);
+                // Placeholder: Fetch document names for these IDs
+                // Replace with your actual API call
+                const fetchTaggedDocuments = async () => {
+                    try {
+                        // Example: /api/documents-by-ids?ids=id1,id2,id3
+                        // Or modify /api/chat-tag-search to handle a list of IDs if q is not present
+                        const response = await fetch(`/api/chat-tag-search?docIds=${ids.join(',')}`); 
+                        if (!response.ok) {
+                            throw new Error(`Failed to fetch initial tagged documents: ${response.statusText}`);
+                        }
+                        const data = await response.json();
+                        if (data.documents && Array.isArray(data.documents)) {
+                            setTaggedDocuments(data.documents.map((doc: any) => ({ id: doc.id, name: doc.name })));
+                            console.log('[useChatInteractions] Successfully loaded initial tagged documents:', data.documents);
+                        } else {
+                            console.warn('[useChatInteractions] No documents found for initial IDs or invalid format.');
+                        }
+                    } catch (error) {
+                        console.error('[useChatInteractions] Error fetching initial tagged documents:', error);
+                        toast.error("Could not load initially tagged documents.");
+                    }
+                };
+                fetchTaggedDocuments();
+            }
+        }
+    }, [initialTaggedDocIdsString]);
+    // --- END NEW EFFECT ---
 
     // --- External Hooks ---
     const router = useRouter();
@@ -153,47 +265,20 @@ export function useChatInteractions({
         try {
             const currentBlocks = editor.document;
             if (currentBlocks?.length > 0) {
-                // Use Promise.all to handle the async markdown conversion
-                const editorBlocksContextPromises = currentBlocks.map(async (b) => {
-                    let snippet = '';
-                    if (b.type === 'table') {
-                        // Convert the entire table block to Markdown using editor method
-                        try {
-                            // Use blocksToMarkdownLossy for robustness, passing the single block in an array
-                            snippet = await editor.blocksToMarkdownLossy([b]); 
-                            // Add a hard limit to prevent excessive context length
-                            if (snippet.length > 2000) {
-                                snippet = snippet.substring(0, 2000) + '\n... [Table Markdown Truncated] ...';
-                            }
-                            // Ensure it starts clearly indicating it's table markdown
-                            snippet = `[Table Markdown]\n${snippet}`;
-                        } catch (mdError) {
-                            console.error(`Failed to convert table block ${b.id} to Markdown:`, mdError);
-                            snippet = `[table - Error generating Markdown snippet]`;
-                        }
-                    } else {
-                        // Default behavior for non-table blocks
-                        snippet = (Array.isArray(b.content) ? getInlineContentText(b.content).slice(0, 100) : '') || `[${b.type}]`;
-                    }
-
-                    return {
-                        id: b.id,
-                        type: b.type,
-                        contentSnippet: snippet
-                    };
-                });
+                // Initiate the recursive processing
+                const allProcessedBlocks = await processBlocksRecursive(currentBlocks, 1, null, editor);
                 contextData = {
-                    editorBlocksContext: await Promise.all(editorBlocksContextPromises)
+                    editorBlocksContext: allProcessedBlocks
                 };
             }
         } catch (e) {
-            console.error('Failed to get editor snippets:', e);
-            toast.error('⚠️ Error getting editor context.');
+            console.error('Failed to get editor snippets with structure:', e); // Updated error message
+            toast.error('⚠️ Error getting structured editor context.'); // Updated error message
         }
         return contextData;
     }, [editorRef]);
 
-    // --- Wrapped Submit Handler (Updated Signature) ---
+    // --- Wrapped Submit Handler (Updated for TaggedDocuments) ---
     const handleSubmit = useCallback(async (event?: React.FormEvent<HTMLFormElement>, options?: { data?: any }) => {
         if (event) event.preventDefault();
         if (!documentId) { toast.error("Cannot send message: Document context missing."); return; }
@@ -246,7 +331,7 @@ export function useChatInteractions({
             }
         ] : undefined;
 
-        // --- Prepare data payload for the API call (includes image URL if present) ---
+        // --- Prepare data payload for the API call (includes image URL and tagged document IDs) ---
         const submitDataPayload = {
             model: currentModel,
             documentId,
@@ -258,6 +343,11 @@ export function useChatInteractions({
                 inputMethod: 'audio',
                 whisperDetails: audioWhisperDetails,
             }),
+            // --- NEW: Add taggedDocumentIds if there are any tagged documents ---
+            ...(taggedDocuments.length > 0 && {
+                taggedDocumentIds: taggedDocuments.map(doc => doc.id)
+            }),
+            // --- END NEW ---
         };
 
         // --- Create the user message object for the hook (content as string) ---
@@ -342,7 +432,8 @@ export function useChatInteractions({
         isLoading, isUploading, getEditorContext, clearFileUploadPreview,
         setFollowUpContext, setInput, messages,
         append,
-        pendingInitialSubmission, pendingSubmissionMethod, pendingWhisperDetails
+        pendingInitialSubmission, pendingSubmissionMethod, pendingWhisperDetails,
+        taggedDocuments // <-- NEW: Add taggedDocuments to dependency array
     ]);
 
     // --- Audio Processing Logic (IMPLEMENTED) ---
@@ -829,5 +920,9 @@ export function useChatInteractions({
         stopRecording: handleStopRecording,
         audioTimeDomainData, // <<< NEW: Export the state
         // --- END NEW AUDIO PROPS ---
+        // --- NEW TAGGED DOCUMENTS PROPS ---
+        taggedDocuments,
+        setTaggedDocuments,
+        // --- END NEW TAGGED DOCUMENTS PROPS ---
     };
 } 
