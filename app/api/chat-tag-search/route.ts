@@ -12,9 +12,10 @@ import { NextResponse } from 'next/server';
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const searchTerm = searchParams.get('q');
+    const docIdsString = searchParams.get('docIds');
 
-    if (!searchTerm) {
-        return NextResponse.json({ error: "Search term ('q' parameter) is required" }, { status: 400 });
+    if (!searchTerm && !docIdsString) {
+        return NextResponse.json({ error: "Either search term ('q') or document IDs ('docIds') parameter is required" }, { status: 400 });
     }
     // Remove unused API key check
     // if (!GEMINI_API_KEY) {
@@ -80,20 +81,32 @@ export async function GET(request: Request) {
         // const queryEmbedding = embedApiData.embedding.values;
         // console.log(`[API Chat Tag Search] Query embedding generated.`);
 
-        // Replace with text search by name
-        const { data: documents, error: searchError } = await supabase
-            .from('documents')
-            .select('id, name')
-            .ilike('name', `%${searchTerm}%`)
-            .eq('user_id', userId) // Ensure RLS
-            .limit(10); // Limit results as per PRD consideration
+        let query = supabase.from('documents').select('id, name');
 
-        if (searchError) {
-            console.error('[API Chat Tag Search] Database Search Error:', searchError);
-            throw new Error(`Database search failed: ${searchError.message}`);
+        if (docIdsString) {
+            const ids = docIdsString.split(',').filter(id => id.trim() !== '');
+            if (ids.length === 0) {
+                return NextResponse.json({ documents: [] }); // No valid IDs provided
+            }
+            console.log(`[API Chat Tag Search] User ${userId} fetching by IDs:`, ids);
+            query = query.in('id', ids);
+        } else if (searchTerm) {
+            console.log(`[API Chat Tag Search] User ${userId} searching for name: "${searchTerm}"`);
+            query = query.ilike('name', `%${searchTerm}%`).limit(10); // Limit results for name search
+        } else {
+            // Should not happen due to the check at the beginning, but as a fallback:
+            return NextResponse.json({ documents: [] }); 
+        }
+        
+        const { data: documents, error: dbError } = await query
+            .eq('user_id', userId); // Ensure RLS is applied for both cases
+
+        if (dbError) {
+            console.error('[API Chat Tag Search] Database Query Error:', dbError);
+            throw new Error(`Database query failed: ${dbError.message}`);
         }
 
-        console.log(`[API Chat Tag Search] Found ${documents?.length ?? 0} documents matching name "${searchTerm}".`);
+        console.log(`[API Chat Tag Search] Found ${documents?.length ?? 0} documents.`);
         return NextResponse.json({ documents: documents || [] });
 
     } catch (error) {

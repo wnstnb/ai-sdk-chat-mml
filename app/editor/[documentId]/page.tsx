@@ -175,6 +175,9 @@ export default function EditorPage() {
         documentId,
         setPageError
     });
+    // --- NEW: Get initialTaggedDocIdsString from searchParams ---
+    const initialTaggedDocIdsString = searchParams.get('taggedDocIds');
+    // --- END NEW ---
     const {
         messages: chatMessages, 
         setMessages: setChatMessages, 
@@ -204,6 +207,7 @@ export default function EditorPage() {
         uploadedImageSignedUrl,
         isUploading,
         clearFileUploadPreview: clearPreview,
+        initialTaggedDocIdsString, // <-- Pass to the hook
     });
     const followUpContext = useFollowUpStore((state) => state.followUpContext);
     const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
@@ -425,41 +429,104 @@ export default function EditorPage() {
     const executeModifyContent = async (args: any) => {
         const editor = editorRef.current;
         if (!editor) { toast.error('Editor not available to modify content.'); return; }
-        try {
-            const { targetBlockId, targetText, newMarkdownContent } = args;
-            if (!targetBlockId) { toast.error('Modification failed: Missing target block ID.'); return; }
-            const targetBlock = editor.getBlock(targetBlockId);
-            if (!targetBlock) { toast.error(`Modification failed: Block ID ${targetBlockId} not found.`); return; }
-            if (targetText && typeof newMarkdownContent === 'string') {
-                if (!targetBlock.content || !Array.isArray(targetBlock.content)) { toast.error(`Modification failed: Block ${targetBlock.id} has no modifiable content.`); return; }
-                const updatedContent = replaceTextInInlineContent(targetBlock.content, targetText, newMarkdownContent);
-                if (updatedContent) {
-                    if (editor.getBlock(targetBlock.id)) { editor.updateBlock(targetBlock.id, { content: updatedContent }); toast.success(`Text "${targetText}" modified in block.`); handleEditorChange(editor); }
-                    else { toast.error(`Modification failed: Target block ${targetBlock.id} disappeared before update.`); }
-                } else { toast.warning(`Could not find text "${targetText}" to modify in block ${targetBlock.id}.`); }
-            } else if (typeof newMarkdownContent === 'string') {
-                let blocksToReplaceWith: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(newMarkdownContent);
-                if (blocksToReplaceWith.length === 0 && newMarkdownContent.trim() !== '') {
-                    blocksToReplaceWith.push({ type: 'paragraph', content: [{ type: 'text', text: newMarkdownContent, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
-                 }
-                const listBlockTypes = ['bulletListItem', 'numberedListItem', 'checkListItem'];
-                let blockIdsToReplace = [targetBlock.id];
-                if (listBlockTypes.includes(targetBlock.type)) {
-                    const allBlocks = editor.document; const targetIndex = allBlocks.findIndex(b => b.id === targetBlock.id); const targetLevel = (targetBlock.props as any).level ?? 0;
-                    if (targetIndex !== -1) {
-                        blockIdsToReplace = []; let startIndex = targetIndex;
-                        while (startIndex > 0 && allBlocks[startIndex - 1].type === targetBlock.type && ((allBlocks[startIndex - 1].props as any).level ?? 0) === targetLevel) startIndex--;
-                        let currentIndex = startIndex;
-                        while (currentIndex < allBlocks.length && allBlocks[currentIndex].type === targetBlock.type && ((allBlocks[currentIndex].props as any).level ?? 0) === targetLevel) { blockIdsToReplace.push(allBlocks[currentIndex].id); currentIndex++; }
-                    } else { blockIdsToReplace = [targetBlock.id]; }
+        console.log('[Client Tool] executeModifyContent called with args:', args);
+
+        const { targetBlockId, newMarkdownContent, targetText } = args; // Assuming targetText might be used, though often null for multi-block
+
+        if (!targetBlockId || newMarkdownContent === undefined) {
+          toast.error('Invalid arguments for modifyContent: targetBlockId and newMarkdownContent are required.');
+          console.error('Invalid args for modifyContent:', args);
+          return;
+        }
+
+        const blockIds = Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId];
+        const contents = Array.isArray(newMarkdownContent) ? newMarkdownContent : [newMarkdownContent];
+
+        if (blockIds.length !== contents.length && Array.isArray(targetBlockId) && Array.isArray(newMarkdownContent)) {
+            toast.error('Mismatch between targetBlockId array length and newMarkdownContent array length.');
+            console.error('executeModifyContent length mismatch:', args);
+            return;
+        }
+        
+        // Define listTypes using string literals as per standard BlockNote usage if schema access is problematic
+        const listTypes = ["bulletListItem", "numberedListItem", "checkListItem"];
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (let i = 0; i < blockIds.length; i++) {
+          const id = blockIds[i];
+          const originalBlock = editor.getBlock(id);
+
+          if (!originalBlock) {
+            toast.error(`Modification failed: Block ID ${id} not found.`);
+            console.warn(`Block ID ${id} not found during modifyContent.`);
+            errorCount++;
+            continue;
+          }
+
+          const currentMarkdown = contents[i];
+          const checklistRegex = /^\*\s+\[\s*([xX]?)\s*\]\s*(.*)$/;
+          const checklistMatch = currentMarkdown.match(checklistRegex);
+
+          let blockDefinitionToUpdate: PartialBlock | undefined = undefined;
+
+          if (checklistMatch) {
+            const isChecked = checklistMatch[1].toLowerCase() === 'x';
+            const textContent = checklistMatch[2] || "";
+            
+            blockDefinitionToUpdate = {
+              type: "checkListItem", // Use string literal for type
+              props: { ...originalBlock.props, checked: isChecked }, // Ensure 'isChecked' is boolean if schema expects boolean
+              content: textContent ? [{ type: "text", text: textContent, styles: {} }] : [], // Use string literal for type "text"
+              children: [] 
+            };
+          } else {
+            const parsedBlocks = await editor.tryParseMarkdownToBlocks(currentMarkdown);
+            if (parsedBlocks && parsedBlocks.length > 0) {
+              const { id: parsedId, ...restOfParsedBlock } = parsedBlocks[0];
+              blockDefinitionToUpdate = { ...restOfParsedBlock };
+
+              if (listTypes.includes(blockDefinitionToUpdate.type as string)) {
+                if (!blockDefinitionToUpdate.props) {
+                  blockDefinitionToUpdate.props = {};
                 }
-                const existingBlockIds = blockIdsToReplace.filter(id => editor.getBlock(id));
-                if (existingBlockIds.length === 0) { toast.error("Modification failed: Target blocks disappeared before replacement."); return; }
-                if (existingBlockIds.length !== blockIdsToReplace.length) { toast.warning("Some target blocks were missing, replacing the ones found."); }
-                if (blocksToReplaceWith.length > 0) { editor.replaceBlocks(existingBlockIds, blocksToReplaceWith); toast.success('Block content modified by AI.'); handleEditorChange(editor); }
-                else { editor.removeBlocks(existingBlockIds); toast.success('Original block(s) removed as replacement was empty.'); handleEditorChange(editor); }
-            } else { toast.error("Invalid arguments for modifyContent: newMarkdownContent must be a string."); }
-        } catch (error: any) { console.error('Failed to execute modifyContent:', error); toast.error(`Error modifying content: ${error.message}`); }
+                const listItemProps = blockDefinitionToUpdate.props as { level?: string; [key: string]: any };
+                
+                if (listItemProps.level === undefined) {
+                  const originalBlockIsList = listTypes.includes(originalBlock.type as string);
+                  if (originalBlockIsList && originalBlock.props && (originalBlock.props as any).level !== undefined) {
+                    listItemProps.level = (originalBlock.props as any).level;
+                  } else {
+                    listItemProps.level = "0"; 
+                  }
+                }
+              }
+            } else {
+              toast.error(`Failed to parse Markdown for block ID ${id}: "${currentMarkdown}"`);
+              console.warn(`Markdown parsing failed for block ${id}:`, currentMarkdown);
+              errorCount++;
+              continue;
+            }
+          }
+
+          if (blockDefinitionToUpdate) {
+            const { id: payloadId, ...finalPayload } = blockDefinitionToUpdate as PartialBlock & {id?: string};
+            editor.updateBlock(id, finalPayload as PartialBlock);
+            successCount++;
+          }
+        }
+
+        if (successCount > 0) {
+          toast.success(`${successCount} block(s) modified.`);
+          handleEditorChange(editor); 
+        }
+        if (errorCount > 0) {
+          toast.error(`${errorCount} block(s) could not be modified.`);
+        }
+        if (successCount === 0 && errorCount === 0 && blockIds.length > 0) {
+            toast.info("No changes applied to blocks.");
+        }
     };
     const executeDeleteContent = async (args: any) => {
         const editor = editorRef.current;
@@ -492,7 +559,86 @@ export default function EditorPage() {
         } catch (error: any) { console.error('Failed to execute deleteContent:', error); toast.error(`Error deleting content: ${error.message}`); }
     };
 
-    // --- NEW: executeModifyTable function ---
+    // --- NEW: executeCreateChecklist function ---
+    const executeCreateChecklist = async (args: any) => {
+        const editor = editorRef.current;
+        if (!editor) { toast.error('Editor not available to create checklist.'); return; }
+        console.log('[Client Tool] executeCreateChecklist called with args:', args);
+
+        try {
+            const { items, targetBlockId } = args;
+
+            if (!Array.isArray(items) || !items.every(item => typeof item === 'string')) {
+                toast.error('Invalid arguments for createChecklist: items must be an array of strings.');
+                console.error('Invalid args for createChecklist:', args);
+                return;
+            }
+
+            if (items.length === 0) {
+                toast.info('No items provided to create a checklist.');
+                return;
+            }
+
+            const blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = items.map(itemText => ({
+                type: 'checkListItem',
+                props: { checked: false }, // BlockNote uses boolean false for unchecked
+                content: itemText ? [{ type: 'text', text: itemText, styles: {} }] : [],
+            }));
+
+            let referenceBlock: Block | PartialBlock | undefined | null = targetBlockId ? editor.getBlock(targetBlockId) : editor.getTextCursorPosition().block;
+            let placement: 'before' | 'after' = 'after';
+
+            if (!referenceBlock) {
+                const lastBlock = editor.document[editor.document.length - 1];
+                if (lastBlock) {
+                    referenceBlock = lastBlock;
+                    placement = 'after';
+                } else {
+                    // Document is empty, replace all blocks (which is none)
+                    editor.replaceBlocks(editor.document, blocksToInsert);
+                    toast.success(`${blocksToInsert.length} checklist item(s) added.`);
+                    handleEditorChange(editor);
+                    return;
+                }
+            }
+            
+            // Ensure the reference block still exists if it was fetched by ID
+            if (targetBlockId && !editor.getBlock(targetBlockId)){
+                toast.error("Failed to create checklist: reference block not found or disappeared.");
+                // Fallback: try inserting at the end or current cursor
+                const currentPosBlock = editor.getTextCursorPosition().block;
+                if (currentPosBlock && currentPosBlock.id) {
+                    referenceBlock = currentPosBlock;
+                } else {
+                    const lastDocBlock = editor.document[editor.document.length - 1];
+                    if (lastDocBlock && lastDocBlock.id) referenceBlock = lastDocBlock;
+                    else {
+                         editor.replaceBlocks(editor.document, blocksToInsert); // if all else fails
+                         toast.success(`${blocksToInsert.length} checklist item(s) added.`);
+                         handleEditorChange(editor);
+                         return;
+                    }
+                }
+            }
+
+            if (referenceBlock && referenceBlock.id) {
+                editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
+                toast.success(`${blocksToInsert.length} checklist item(s) added.`);
+                handleEditorChange(editor);
+            } else {
+                // Fallback if referenceBlock.id is somehow still null (e.g. text cursor in non-block context)
+                editor.replaceBlocks(editor.document, blocksToInsert); 
+                toast.success(`${blocksToInsert.length} checklist item(s) added to the end.`);
+                handleEditorChange(editor);
+            }
+
+        } catch (error: any) {
+            console.error('Error processing createChecklist tool call:', error);
+            toast.error(`Failed to create checklist: ${error.message}`);
+        }
+    };
+    // --- END NEW: executeCreateChecklist function ---
+
     const executeModifyTable = async (args: any) => {
         const editor = editorRef.current;
         if (!editor) { toast.error('Editor not available to modify table.'); return; }
@@ -597,7 +743,7 @@ export default function EditorPage() {
                     // This set (idsToMarkAsProcessed) will be used to update the main processedToolCallIds state later.
                     idsToMarkAsProcessed.add(toolCall.toolCallId); 
                     const { toolName, args } = toolCall;
-                    const editorTargetingTools = ['addContent', 'modifyContent', 'deleteContent', 'modifyTable'];
+                    const editorTargetingTools = ['addContent', 'modifyContent', 'deleteContent', 'modifyTable', 'createChecklist']; // Added createChecklist
 
                     if (isMobile && mobileVisiblePane === 'chat' && editorTargetingTools.includes(toolName)) {
                         console.log(`[ToolProcessing] Mobile view, chat visible. Queuing ${toolName} (ID: ${toolCall.toolCallId}) and switching to editor.`);
@@ -611,6 +757,7 @@ export default function EditorPage() {
                                 case 'modifyContent': executeModifyContent(args); break;
                                 case 'deleteContent': executeDeleteContent(args); break;
                                 case 'modifyTable': executeModifyTable(args); break;
+                                case 'createChecklist': executeCreateChecklist(args); break; // <-- ADDED CASE
                                 case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); break;
                                 case 'webSearch': break; 
                                 default: console.error(`Unknown tool: ${toolName}`); toast.error(`Unknown tool: ${toolName}`);
@@ -647,6 +794,7 @@ export default function EditorPage() {
         executeModifyContent, 
         executeDeleteContent, 
         executeModifyTable, 
+        executeCreateChecklist, // <-- ADDED to dependency array
         isMobile, 
         mobileVisiblePane,
         setPendingMobileEditorToolCall,
@@ -655,7 +803,7 @@ export default function EditorPage() {
     ]); 
     // Note: setPendingMobileEditorToolCall and setMobileVisiblePane are not needed in deps array
 
-    // --- ADDED useEffect for handling pending tool call after mobile pane switch ---
+    // --- ADDED useEffect for handling pending tool call after mobile pane switch --- (ensure executeCreateChecklist is added to switch)
     useEffect(() => {
         if (mobileVisiblePane === 'editor' && pendingMobileEditorToolCall && editorRef.current) {
             console.log('[ToolProcessing] Editor is visible on mobile. Executing pending tool call:', pendingMobileEditorToolCall);
@@ -676,6 +824,7 @@ export default function EditorPage() {
                         case 'modifyContent': executeModifyContent(args); break;
                         case 'deleteContent': executeDeleteContent(args); break;
                         case 'modifyTable': executeModifyTable(args); break;
+                        case 'createChecklist': executeCreateChecklist(args); break; // <-- ADDED CASE
                         default: console.error(`Unknown pending tool: ${toolName}`); toast.error(`Unknown pending tool: ${toolName}`);
                     }
                 } catch (toolError: any) {
@@ -686,7 +835,7 @@ export default function EditorPage() {
                 }
             });
         }
-    }, [mobileVisiblePane, pendingMobileEditorToolCall, executeAddContent, executeModifyContent, executeDeleteContent, executeModifyTable]);
+    }, [mobileVisiblePane, pendingMobileEditorToolCall, executeAddContent, executeModifyContent, executeDeleteContent, executeModifyTable, executeCreateChecklist]); // <-- ADDED to dependency array
     // Note: editorRef.current is accessed but refs aren't typical useEffect dependencies.
     // The check `editorRef.current` inside and dependency on `pendingMobileEditorToolCall` (which changes from null to object)
     // is usually sufficient to trigger this when needed.

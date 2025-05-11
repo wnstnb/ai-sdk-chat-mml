@@ -19,6 +19,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // --- NEW: Import Omnibar ---
 import { Omnibar } from '@/components/search/Omnibar';
+// --- NEW: Import X icon for pills ---
+import { X } from 'lucide-react'; 
 
 // --- NEW: Import TaggedDocument type ---
 import type { TaggedDocument } from '@/lib/types';
@@ -618,18 +620,30 @@ export default function LaunchPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // Send the determined content
-        body: JSON.stringify({ initialContent: contentToSubmit }), 
+        body: JSON.stringify({ 
+            initialContent: contentToSubmit,
+            // --- NEW: Add taggedDocumentIds to the payload --- 
+            taggedDocumentIds: taggedDocuments.map(doc => doc.id),
+            // --- END NEW ---
+        }), 
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: { message: `Failed to launch (${response.status})`} }));
         throw new Error(errorData.error?.message || `Failed to launch document (${response.status})`);
       }
-      const { data }: { data: { documentId: string } } = await response.json();
+      const { data }: { data: { documentId: string, taggedDocumentIds?: string[] } } = await response.json();
       console.log("[LaunchPage] Document created, redirecting to:", `/editor/${data.documentId}`);
       
       // Pass initial message via query parameter (using the submitted content)
-      const initialMsgQuery = encodeURIComponent(contentToSubmit); 
-      router.push(`/editor/${data.documentId}?initialMsg=${initialMsgQuery}`);
+      let redirectUrl = `/editor/${data.documentId}?initialMsg=${encodeURIComponent(contentToSubmit)}`; 
+
+      // --- NEW: Add taggedDocumentIds to redirect URL --- 
+      if (data.taggedDocumentIds && data.taggedDocumentIds.length > 0) {
+        redirectUrl += `&taggedDocIds=${data.taggedDocumentIds.join(',')}`;
+      }
+      // --- END NEW ---
+      
+      router.push(redirectUrl);
       
       // Clear input only if submission wasn't forced (i.e., came from form event/enter key)
       // If forcedContent exists (from audio), the page will navigate away anyway.
@@ -752,6 +766,32 @@ export default function LaunchPage() {
              */}
              <CardContent className="p-4"> {/* Removed flex-grow, justify-center */} 
                <form ref={formRef} onSubmit={handleLaunchSubmit} className="w-full"> {/* Make form take full width */}
+                 {/* --- NEW: Render Tagged Document Pills --- */}
+                 {taggedDocuments && taggedDocuments.length > 0 && (
+                     <div className="w-full mb-2 flex flex-wrap gap-2 px-3 py-2 border border-[--border-color] rounded-md bg-[--subtle-bg]">
+                         {taggedDocuments.map((doc) => (
+                             <div 
+                                 key={doc.id} 
+                                 className="flex items-center gap-1.5 bg-[--pill-bg] text-[--pill-text-color] px-2 py-0.5 rounded-full text-xs border border-[--pill-border-color] shadow-sm"
+                             >
+                                 <span>{doc.name}</span>
+                                 <button 
+                                     type="button"
+                                     onClick={() => {
+                                         setTaggedDocuments((prevDocs) => 
+                                             prevDocs.filter(d => d.id !== doc.id)
+                                         );
+                                     }}
+                                     className="text-[--pill-remove-icon-color] hover:text-[--pill-remove-icon-hover-color] rounded-full focus:outline-none focus:ring-1 focus:ring-[--accent-color]"
+                                     aria-label={`Remove ${doc.name}`}
+                                 >
+                                     <X size={12} />
+                                 </button>
+                             </div>
+                         ))}
+                     </div>
+                 )}
+                 {/* --- END NEW: Render Tagged Document Pills --- */}
                  <ChatInputUI
                    files={files} 
                    fileInputRef={fileInputRef} 

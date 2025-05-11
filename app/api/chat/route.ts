@@ -17,9 +17,9 @@ const addContentSchema = z.object({
 });
 
 const modifyContentSchema = z.object({
-  targetBlockId: z.string().describe("The ID of the block containing the text to modify."),
-  targetText: z.string().nullable().describe("The specific text within the block to modify. If null, the modification applies to the entire block's content."),
-  newMarkdownContent: z.string().describe("The new Markdown content for replacement. If targetText is specified, this might be treated as plain text."),
+  targetBlockId: z.union([z.string(), z.array(z.string())]).describe("The ID of the block (or an array of block IDs) to modify."),
+  targetText: z.string().nullable().describe("The specific text within the block to modify. If null, the modification applies to the entire block's content. This is typically null when targetBlockId is an array."),
+  newMarkdownContent: z.union([z.string(), z.array(z.string())]).describe("The new Markdown content. If targetBlockId is an array, this should be an array of Markdown strings of the same length, where each string corresponds to the block ID at the same index. If targetBlockId is a single string, this should be a single Markdown string."),
 });
 
 const deleteContentSchema = z.object({
@@ -33,6 +33,13 @@ const modifyTableSchema = z.object({
     newTableMarkdown: z.string().describe("The COMPLETE, final Markdown content for the entire table after the requested modifications have been applied by the AI."),
 });
 // --- END UPDATED ---
+
+// --- NEW: Schema for creating checklists ---
+const createChecklistSchema = z.object({
+  items: z.array(z.string()).describe("An array of plain text strings, where each string is the content for a new checklist item. The tool will handle Markdown formatting (e.g., prepending '* [ ]'). Do NOT include Markdown like '*[ ]' in these strings."),
+  targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert the new checklist after. If null, the checklist is appended to the document or inserted at the current selection."),
+});
+// --- END NEW ---
 
 // Define the model configuration map
 const modelProviders: Record<string, () => LanguageModel> = {
@@ -66,7 +73,7 @@ Your role is to make these tasks feel effortless for the user.
 
 ## APPROACH: Natural Integration & Skillful Tool Use
 
-Engage naturally in conversation. While you have powerful capabilities, including specific **tools for editor modifications (\`addContent\`, \`modifyContent\`, \`deleteContent\`, \`modifyTable\`) and web search (\`webSearch\`)**, think of these as extensions of your own skills. Use them **skillfully and discreetly** as needed to fulfill the user's requests accurately and efficiently.
+Engage naturally in conversation. While you have powerful capabilities, including specific **tools for editor modifications (\`addContent\`, \`modifyContent\`, \`deleteContent\`, \`modifyTable\`, \`createChecklist\`) and web search (\`webSearch\`)**, think of these as extensions of your own skills. Use them **skillfully and discreetly** as needed to fulfill the user's requests accurately and efficiently.
 
 **Focus on:**
 * **Understanding Intent:** Look beyond the literal words to grasp what the user truly wants to achieve.
@@ -76,10 +83,17 @@ Engage naturally in conversation. While you have powerful capabilities, includin
 
 ## CORE CONTEXT PROVIDED
 1.  **Conversation History:** Provides ongoing context for user requests.
-2.  **Editor Content (\`editorBlocksContext\` - Optional):** A structured array representing the current state of the editor. Each element is an object: \`{ id: string, type: string, contentSnippet: string }\`.
-    * **Non-Table Blocks:** \`contentSnippet\` is a short text preview (or \`[type]\` placeholder).
-    * **Table Blocks (\`type: 'table'\`):** \`contentSnippet\` contains the **FULL MARKDOWN** representation of the table. *Note: This Markdown might be truncated if the table is extremely large.*
+2.  **Editor Content (\`editorBlocksContext\` - Optional):** You will receive editor content in an array called \`editorBlocksContext\`. Each object in this array represents a block from the editor and may contain the following fields to describe its structure:
+    *   \`id\`: A unique identifier for the block.
+    *   \`type\`: The type of block (e.g., 'paragraph', 'bulletListItem', 'table').
+    *   \`contentSnippet\`: A brief text preview of the block's own content.
+        *   For **non-table blocks**, this is a short text preview (or \`[type]\` placeholder).
+        *   For **table blocks** (\`type: 'table'\`), \`contentSnippet\` contains the **FULL MARKDOWN** representation of the table. *Note: This Markdown might be truncated if the table is extremely large.*
+    *   \`level\`: An integer indicating the nesting depth (1 is top-level). A higher number means deeper nesting.
+    *   \`parentId\`: The \`id\` of the block under which this block is nested. Top-level blocks have a null \`parentId\`.
+    Use \`level\` and \`parentId\` to understand the document's hierarchy, especially for nested lists or outlines. When a user refers to 'sub-items', 'nested content', or items 'under' another, use this structural information to accurately identify and target the correct blocks.
 3.  **Follow-up Context (Optional):** Additional text provided by the user specifically for the current query.
+4.  **Tagged Documents (Optional):** Items labeled with [Tagged Document Context], which the user wants to use as reference for their request.
 
 **!IMPORTANT: Block ID Handling:** Do not mention raw block IDs (e.g., 'id-xyz') *to the user* in your conversational responses. However, you MUST use the correct block IDs internally and when specifying targets for tool calls.
 
@@ -99,13 +113,39 @@ Engage naturally in conversation. While you have powerful capabilities, includin
     * **Step 3: Plan Tool Call & Parameters:** Select the appropriate tool and determine its parameters based on the block type:
 
         * **For NON-TABLE Blocks:**
-            * \`addContent\`: Adds new Markdown content. Specify \`markdownContent\` and optional \`targetBlockId\` (for insertion point).
-            * \`modifyContent\`: Modifies existing non-table block(s).
-                * If \`targetText\` is provided: Performs a find-and-replace within the \`targetBlockId\` using \`newMarkdownContent\`.
-                * If \`targetText\` is \`null\`: Replaces the *entire* content of \`targetBlockId\` with \`newMarkdownContent\`.
-            * \`deleteContent\`: Deletes non-table content.
-                * If \`targetText\` is provided: Deletes specific text within \`targetBlockId\`.
-                * If \`targetText\` is \`null\`: Deletes the entire block(s) specified by \`targetBlockId\` (can be a single ID or an array of IDs).
+            * **List and Checklist Handling Overview:**
+                * **Creating NEW Checklists:** Use the \`createChecklist\` tool. Provide an array of plain text strings for its \`items\` parameter. The tool handles formatting each item (e.g., as \`* [ ] Your item text\`). This is the preferred method for creating new, potentially flat, checklists.
+                * **Creating NEW Simple Lists (Bullet/Numbered):** Use the \`addContent\` tool with a multi-line \`markdownContent\` string (e.g., \`* Item 1\\n* Item 2\` or \`1. Item 1\\n2. Item 2\`).
+                * **Modifying Existing Lists/Checklists (e.g., converting type, adding/removing items from an existing list structure, reformatting):** Use the \`modifyContent\` tool. This often involves the "CRITICAL WORKFLOW (Multi-Block Modify)" described below.
+                * **Adding Single Items (paragraph, single list item, single checklist item):** \`addContent\` can be used for simplicity if adding just one item. For a single checklist item, \`markdownContent\` should be like \`* [ ] My single task\`.
+
+            * **Detailed List Handling with \`modifyContent\` (for existing lists/blocks):**
+                * Recognize lists across multiple lines, with or without bullet points (e.g., '-', '*', '+', or plain lines intended as a list), and including nested structures. Understand that visually distinct list items usually correspond to individual blocks.
+                * **To convert existing text blocks to a checklist OR to change the text of existing checklist items:** When preparing \`newMarkdownContent\` for the \`modifyContent\` tool, prepend \`"* [ ] "\` (hyphen, space, brackets, space) or \`"* [ ] "\` (asterisk, space, brackets, space) to the beginning of each item's text. For example, to change an existing block with text "Existing item" into a checklist item, its corresponding entry in the \`newMarkdownContent\` array would be \`"* [ ] Existing item"\`. This format is crucial for the editor to correctly parse each line as a distinct checklist item block when using \`modifyContent\`.
+                * **CRITICAL WORKFLOW (Multi-Block Modify with \`modifyContent\`):** Use a single \`modifyContent\` call to update all list items simultaneously.
+                    1.  **Identify Blocks:** Use \`editorBlocksContext\` to identify the sequence of ALL individual block IDs that constitute the target list (e.g., \`[B_id1, B_id2, ..., B_idN]\`).
+                    2.  **Prepare New Content for Each Block:** For EACH block ID identified in Step 1:
+                        a.  Determine the original text content of that specific block.
+                        b.  Construct the new Markdown for that SINGLE list item (e.g., if converting text "Apple" to a checklist item, the new Markdown for this item would be \`"* [ ] Apple"\`. If changing text of an existing checklist item, it would be \`"* [ ] New text for apple"\`).
+                    3.  **Construct Content Array:** Create an array of these new Markdown strings, ensuring the order matches the order of block IDs from Step 1 (e.g., \`[new_md_for_B_id1, new_md_for_B_id2, ..., new_md_for_B_idN]\`).
+                    4.  **Execute Single \`modifyContent\` Call:**
+                        *   Set \`targetBlockId\` to the array of block IDs identified in Step 1.
+                        *   Set \`targetText\` to \`null\` (as you are replacing entire blocks).
+                        *   Set \`newMarkdownContent\` to the array of new Markdown strings constructed in Step 3.
+                    *   **Result:** This will apply the corresponding new Markdown to each target block ID.
+                * For nested lists, maintain the existing indentation and structure during modifications unless explicitly asked to change it. When adding new nested items, infer the correct indentation level.
+
+            * **Tool Choices Summary for Non-Table Blocks:**
+                * \`createChecklist({ items: string[], targetBlockId: string | null })\`: **Primary tool for creating new checklists with multiple items.** Provide an array of plain text strings for \`items\`; the tool handles Markdown.
+                * \`addContent({ markdownContent: string, targetBlockId: string | null })\`: Adds new general Markdown content (paragraphs, headings). Also used for creating new simple bullet or numbered lists (e.g., \`markdownContent: "* Item 1\\n* Item 2"\`) or adding a single list/checklist item (e.g., \`markdownContent: "* [ ] A single task"\`). **Avoid using for creating multi-item checklists; use \`createChecklist\` for that.**
+                * \`modifyContent({ targetBlockId: string | string[], targetText: string | null, newMarkdownContent: string | string[] })\`: Modifies content **ONLY within NON-TABLE blocks**. This is the main tool for altering existing lists, converting items to checklists, and changing text in multiple list items at once.
+                    * If \`targetBlockId\` is a single string:
+                        * If \`targetText\` is provided: Performs a find-and-replace within that \`targetBlockId\` using \`newMarkdownContent\` (which must be a single string).
+                        * If \`targetText\` is \`null\`: Replaces the *entire* content of that single \`targetBlockId\` with \`newMarkdownContent\` (which must be a single string).
+                    * If \`targetBlockId\` is an array of strings:
+                        * \`targetText\` MUST be \`null\`.
+                        * \`newMarkdownContent\` MUST be an array of strings of the SAME LENGTH as \`targetBlockId\`. Each block in \`targetBlockId\` will have its entire content replaced by the Markdown string at the corresponding index in \`newMarkdownContent\`. This is the primary way to modify multiple list items at once.
+                * \`deleteContent({ targetBlockId: string | string[], targetText: string | null })\`: Deletes content **ONLY from NON-TABLE blocks**. Handles whole-block deletion (\`targetText: null\`) or specific text deletion (\`targetText: 'text to delete'\`).
 
         * **For TABLE Blocks (\`type: 'table'\`):**
             * **Goal:** Modify the table structure or content (add/delete rows/columns, change cells, sort, reformat, etc.).
@@ -117,7 +157,7 @@ Engage naturally in conversation. While you have powerful capabilities, includin
             * **Parameters:**
                 * \`tableBlockId\`: The ID of the table block being modified.
                 * \`newTableMarkdown\`: The **COMPLETE and FINAL Markdown string** representing the *entire table* AFTER you have applied the user's requested changes.
-            * **!CRITICAL: DO NOT use \`addContent\`, \`modifyContent\`, or \`deleteContent\` for any part of an existing table.**
+            * **!CRITICAL: DO NOT use \`addContent\`, \`modifyContent\`, \`createChecklist\`, or \`deleteContent\` for any part of an existing table.**
             * **!CRITICAL: DO NOT provide instructions on how to change the table; provide the final, modified Markdown content.**
             * *Handling Truncated Markdown:* If the original table Markdown in \`contentSnippet\` appears truncated, and the user's request requires modifying the potentially missing part, you MUST state that you cannot perform the action accurately due to incomplete data and ask for clarification or confirmation.
 
@@ -129,7 +169,7 @@ Engage naturally in conversation. While you have powerful capabilities, includin
 **4. Formulate Response / Execute Action:**
 
     * **For Intents A & B:** Provide a clear, informative text response. Cite sources if \`webSearch\` was used.
-    * **For Intent C (Validated):** Execute the planned and validated tool call (\`addContent\`, \`modifyContent\`, \`deleteContent\`, or \`modifyTable\`). You MAY add a brief confirmation message to the user (e.g., "Okay, I've updated the table.").
+    * **For Intent C (Validated):** Execute the planned and validated tool call (\`addContent\`, \`modifyContent\`, \`deleteContent\`, \`modifyTable\`, \`createChecklist\`). You MAY add a brief confirmation message to the user (e.g., "Okay, I've updated the table." or "Okay, I've added the checklist.").
     * **For Intent C (Needs Clarification):** Respond only with the clarifying questions identified in Step 4.
 
 ## AVAILABLE TOOLS
@@ -138,8 +178,9 @@ Engage naturally in conversation. While you have powerful capabilities, includin
 
 **--- Editor Manipulation Tools ---**
 
-* \`addContent({ markdownContent: string, targetBlockId: string | null })\`: Adds new Markdown content (for non-table blocks). If \`targetBlockId\` is null, adds to the end; otherwise, inserts near the target.
-* \`modifyContent({ targetBlockId: string, targetText: string | null, newMarkdownContent: string })\`: Modifies content **ONLY within NON-TABLE blocks**. Handles whole-block replacement (\`targetText: null\`) or specific text replacement (\`targetText: 'text to find'\`).
+* \`addContent({ markdownContent: string, targetBlockId: string | null })\`: Adds new general Markdown content to the editor (e.g., paragraphs, headings). Can also be used for creating new simple bullet or numbered lists by providing a multi-line \`markdownContent\` string (e.g., \`* Item 1\\n* Item 2\`), or for adding a single list/checklist item (e.g., \`markdownContent: "* [ ] A single task"\`). If \`targetBlockId\` is provided, the new content is typically inserted *after* this block. If \`targetBlockId\` is \`null\`, the content may be appended to the document or inserted at the current selection/cursor position. **For creating new checklists with multiple items, use the \`createChecklist\` tool instead.**
+* \`createChecklist({ items: string[], targetBlockId: string | null })\`: **Creates a new checklist with multiple items.** Provide an array of plain text strings in the \`items\` parameter (e.g., \`["Buy milk", "Read book"]\`). Do NOT include Markdown like \`* [ ]\` in these strings; the tool (client-side) will handle the necessary formatting. This is the preferred tool for creating new, potentially flat, checklists.
+* \`modifyContent({ targetBlockId: string | string[], targetText: string | null, newMarkdownContent: string | string[] })\`: Modifies content within specific NON-TABLE editor blocks. Can target a single block (with optional specific text replacement) or multiple blocks (replacing entire content of each with corresponding new Markdown from an array). This is the primary tool for altering existing lists, converting items to checklists, and changing text in multiple list items at once.
 * \`deleteContent({ targetBlockId: string | string[], targetText: string | null })\`: Deletes content **ONLY from NON-TABLE blocks**. Handles whole-block deletion (\`targetText: null\`) or specific text deletion (\`targetText: 'text to delete'\`).
 * **\`modifyTable({ tableBlockId: string, newTableMarkdown: string })\`**: **The ONLY tool for ALL modifications to existing table blocks.** Requires the target table's ID and the **complete, final Markdown** of the modified table.
 
@@ -157,7 +198,7 @@ Engage naturally in conversation. While you have powerful capabilities, includin
     * Plan: Cannot determine specific modification. Validate: Ambiguity detected. Respond: 'How exactly do you want to update the table? Please specify the changes.' (Do not call tool).
 
 ## FINAL INSTRUCTIONS
-Prioritize accuracy and adherence to the 4-step process for modifications. Use the correct tools for table (\`modifyTable\` with full final Markdown) vs. non-table blocks. Use \`webSearch\` judiciously and always cite sources. **Never guess; ALWAYS ask for clarification if the user's request is ambiguous or incomplete.** Maintain a helpful and collaborative tone.
+Prioritize accuracy and adherence to the 4-step process for modifications. Use the correct tools for table (\`modifyTable\` with full final Markdown) vs. non-table blocks (\`addContent\`, \`createChecklist\`, \`modifyContent\`, \`deleteContent\`). Use \`webSearch\` judiciously and always cite sources. **Never guess; ALWAYS ask for clarification if the user's request is ambiguous or incomplete.** Maintain a helpful and collaborative tone.
 `;
 
 // --- NEW: Detailed Strategy for Summarization Task --- 
@@ -179,12 +220,12 @@ The user wants you to summarize multiple points, likely from an outline, and pro
 // Define the tools for the AI model
 const editorTools = {
   addContent: tool({
-    description: "Adds new content (provided as Markdown) to the editor, optionally relative to a target block.",
+    description: "Adds new general Markdown content (e.g., paragraphs, headings, simple bullet/numbered lists, or single list/checklist items). For multi-item checklists, use createChecklist.",
     parameters: addContentSchema,
     execute: async (args) => ({ status: 'forwarded to client', tool: 'addContent' })
   }),
   modifyContent: tool({
-    description: "Modifies content within a specific NON-TABLE editor block. Can target the entire block or specific text within it.",
+    description: "Modifies content within specific NON-TABLE editor blocks. Can target a single block (with optional specific text replacement) or multiple blocks (replacing entire content of each with corresponding new Markdown from an array). Main tool for altering existing lists/checklists.",
     parameters: modifyContentSchema,
     execute: async (args) => ({ status: 'forwarded to client', tool: 'modifyContent' })
   }),
@@ -200,11 +241,18 @@ const editorTools = {
     execute: async (args) => ({ status: 'forwarded to client', tool: 'modifyTable' })
   }),
   // --- END UPDATED ---
+  // --- NEW: Tool for creating checklists ---
+  createChecklist: tool({
+    description: "Creates a new checklist with multiple items. Provide an array of plain text strings for the items (e.g., ['Buy milk', 'Read book']). Tool handles Markdown formatting.",
+    parameters: createChecklistSchema,
+    execute: async (args) => ({ status: 'forwarded to client', tool: 'createChecklist' })
+  }),
+  // --- END NEW ---
 };
 
 // Define the tools for the AI model, combining editor and web search
 const combinedTools = {
-  ...editorTools, // Includes updated modifyTable
+  ...editorTools, // Includes updated modifyTable and new createChecklist
   webSearch,
 };
 
@@ -503,7 +551,7 @@ export async function POST(req: Request) {
 
     // Rebuild combinedTools with the rate-limited version
     const combinedToolsWithRateLimit = {
-        ...editorTools, // Now includes modifyTable
+        ...editorTools, // Now includes modifyTable and createChecklist
         webSearch: rateLimitedWebSearch,
     };
     // --- End Rate Limiting Wrapper ---

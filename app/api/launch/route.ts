@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     } catch (e) {
       return NextResponse.json({ error: { code: 'INVALID_INPUT', message: 'Invalid JSON body.' } }, { status: 400 });
     }
-    const { initialContent } = body;
+    const { initialContent, taggedDocumentIds } = body;
 
     if (!initialContent || typeof initialContent !== 'string' || initialContent.trim().length === 0) {
       return NextResponse.json({ error: { code: 'VALIDATION_ERROR', message: 'initialContent is required and must be a non-empty string.' } }, { status: 400 });
@@ -83,8 +83,14 @@ export async function POST(request: Request) {
       }
       console.log(`Initial message created with ID: ${newMessage?.id}`);
 
-    // 5. Return New Document ID
-    return NextResponse.json({ data: { documentId: newDocumentId } }, { status: 201 });
+    // 5. Return New Document ID (and tagged IDs if present)
+    const responsePayload: { documentId: string; taggedDocumentIds?: string[] } = {
+        documentId: newDocumentId,
+    };
+    if (Array.isArray(taggedDocumentIds) && taggedDocumentIds.length > 0) {
+        responsePayload.taggedDocumentIds = taggedDocumentIds.filter(id => typeof id === 'string');
+    }
+    return NextResponse.json({ data: responsePayload }, { status: 201 });
 
   } catch (error: any) {
     console.error('Launch POST Error:', error.message);
