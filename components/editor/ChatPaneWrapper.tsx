@@ -129,6 +129,15 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     //     }
     // };
 
+    // NEW: Handler for adding a tagged document
+    const handleAddTaggedDocument = (docToAdd: TaggedDocument) => {
+        // Check if the document is already tagged to prevent duplicates
+        if (!taggedDocuments.find(doc => doc.id === docToAdd.id)) {
+            setTaggedDocuments(prevTaggedDocuments => [...prevTaggedDocuments, docToAdd]);
+        }
+        // console.log(`Document tagged: ${docToAdd.name}`); // Optional feedback
+    };
+
     // Note: The parent component (page.tsx) now handles the collapsed state rendering logic.
     // This component will only be rendered when !isChatCollapsed is true in the parent.
     // if (isChatCollapsed) {
@@ -150,6 +159,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                     handleSendToEditor={handleSendToEditor}
                     messagesEndRef={messagesEndRef}
                     {...(messageLoadBatchSize && { messageLoadBatchSize })}
+                    onAddTaggedDocument={handleAddTaggedDocument}
                 />
                 <ChatInputArea
                     // key={inputAreaKey} // Keep or remove based on testing if remount is still needed

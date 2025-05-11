@@ -760,6 +760,11 @@ export default function EditorPage() {
                                 case 'createChecklist': executeCreateChecklist(args); break; // <-- ADDED CASE
                                 case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); break;
                                 case 'webSearch': break; 
+                                case 'searchAndTagDocuments': // Add this case
+                                    // This tool is handled by the backend; its results are rendered by ChatMessageItem.
+                                    // No further client-side execution needed in this loop.
+                                    console.log(`[ToolProcessing] Recognized backend-handled tool: ${toolName} (ID: ${toolCall.toolCallId})`);
+                                    break;
                                 default: console.error(`Unknown tool: ${toolName}`); toast.error(`Unknown tool: ${toolName}`);
                             }
                         } catch (toolError: any) {

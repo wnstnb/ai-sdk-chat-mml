@@ -6,6 +6,11 @@ import { ChatMessageItem } from './ChatMessageItem';
 import { getTextFromDataUrl } from '@/lib/editorUtils';
 
 // Define props required by the component
+interface TaggedDocument { // Added for the new prop type
+    id: string;
+    name: string;
+}
+
 interface ChatMessagesListProps {
     chatMessages: Message[];
     isLoadingMessages: boolean; // For initial load
@@ -13,6 +18,7 @@ interface ChatMessagesListProps {
     handleSendToEditor: (content: string) => void;
     messagesEndRef: React.RefObject<HTMLDivElement>;
     messageLoadBatchSize?: number; // Optional prop for batch size
+    onAddTaggedDocument: (doc: TaggedDocument) => void; // New prop
 }
 
 const DEFAULT_MESSAGE_LOAD_BATCH_SIZE = 20;
@@ -24,6 +30,7 @@ export const ChatMessagesList: React.FC<ChatMessagesListProps> = ({
     handleSendToEditor,
     messagesEndRef,
     messageLoadBatchSize = DEFAULT_MESSAGE_LOAD_BATCH_SIZE,
+    onAddTaggedDocument, // Destructure the new prop
 }) => {
     const totalMessages = chatMessages.length;
 
@@ -64,6 +71,7 @@ export const ChatMessagesList: React.FC<ChatMessagesListProps> = ({
                         key={message.id}
                         message={message} 
                         handleSendToEditor={handleSendToEditor}
+                        onAddTaggedDocument={onAddTaggedDocument} // Pass down the new prop
                      />
                  );
             })}
