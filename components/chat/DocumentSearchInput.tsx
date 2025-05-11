@@ -97,19 +97,19 @@ export const DocumentSearchInput: React.FC<DocumentSearchInputProps> = ({ onDocu
 
     // Add basic styling
     return (
-        <div className="relative w-full document-search-input" ref={dropdownRef}> {/* Added relative and full width */}
+        <div className="relative max-w-32 document-search-input" ref={dropdownRef}> {/* Added relative and full width */}
             <input
                 ref={inputRef}
                 type="text"
-                placeholder="Search documents..."
+                placeholder="Tag documents"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 disabled={disabled}
-                className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white dark:focus:ring-blue-600 dark:focus:border-blue-600" // Added styling classes
+                className="text-xs w-full px-3 py-1.5 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white dark:focus:ring-blue-600 dark:focus:border-blue-600" // Added styling classes
                 onFocus={() => query.length > 0 && results.length > 0 && setShowDropdown(true)} // Show dropdown on focus if there are results
             />
             {showDropdown && (
-                <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto"> {/* Added styling classes */}
+                <div className="text-xs absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto"> {/* Added styling classes */}
                     {loading ? (
                         <div className="px-3 py-2 text-gray-600 dark:text-gray-400">Loading...</div>
                     ) : results.length > 0 ? (

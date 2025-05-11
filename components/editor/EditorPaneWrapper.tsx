@@ -235,8 +235,8 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                         </div>
                     )}
                     
-                    {/* --- NEW: Render Tagged Document Pills --- */}
-                    {taggedDocuments && taggedDocuments.length > 0 && (
+                    {/* --- NEW: Render Tagged Document Pills - REMOVE/COMMENT OUT THIS BLOCK --- */}
+                    {/* {taggedDocuments && taggedDocuments.length > 0 && (
                         <div className="w-full mb-2 flex flex-wrap gap-2 px-3 py-2 border border-[--border-color] rounded-md bg-[--subtle-bg]">
                             {taggedDocuments.map((doc) => (
                                 <div 
@@ -255,7 +255,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 </div>
                             ))}
                         </div>
-                    )}
+                    )} */}
                     {/* --- END NEW: Render Tagged Document Pills --- */}
 
                     {/* Pinned Input Area - Remove max-width/centering from here */}
@@ -295,6 +295,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 clearPreview={clearPreview}
                                 taggedDocuments={taggedDocuments}
                                 onAddTaggedDocument={handleAddTaggedDocument}
+                                onRemoveTaggedDocument={handleRemoveTaggedDocument}
                             />
                         </form>
                     </div>

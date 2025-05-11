@@ -69,6 +69,7 @@ interface ChatInputUIProps {
     // --- NEW Document Tagging Props ---
     taggedDocuments?: TaggedDocument[]; // Optional, for UI cues or limits
     onAddTaggedDocument?: (doc: TaggedDocument) => void;
+    onRemoveTaggedDocument?: (docId: string) => void; // <<< ADD THIS PROP TYPE
     // --- END Document Tagging Props ---
 }
 
@@ -107,6 +108,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     // --- NEW Document Tagging Props DESTRUCTURED ---
     taggedDocuments,
     onAddTaggedDocument,
+    onRemoveTaggedDocument, // <<< DESTRUCTURE THIS PROP
     // --- END Document Tagging Props DESTRUCTURED ---
 }) => {
     // Tooltip state remains if needed elsewhere, otherwise remove
@@ -161,7 +163,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     let buttonOnClick: (() => void) | undefined = undefined;
     let buttonClassName = `w-full h-full flex items-center justify-center rounded-full text-[--muted-text-color] focus:outline-none`;
     let showLoadingSpinner = isLoading;
-    let showPulsingIndicator = isRecording; 
+    // let showPulsingIndicator = isRecording; // Removed as it's not used directly in the JSX below, pulsing is handled by CustomAudioVisualizer
 
     if (isLoading) {
         buttonIcon = <StopIcon aria-hidden="true" />;
@@ -229,6 +231,10 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                                                 onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)} // Clean up object URL
                                             />
                                         )}
+                                        {/* Text File Preview */}
+                                        {file.type.startsWith('text/') && (
+                                            <TextFilePreview file={file} />
+                                        )}
                                         {/* Uploading Indicator */}
                                         {isUploading && (
                                             <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-md">
@@ -252,10 +258,10 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                                         )}
                                     </div>
                                 ))}
-                             </div>
+                            </div>
                         )}
                     </motion.div>
-                 ) : null}
+                ) : null}
             </AnimatePresence>
 
             {/* Hidden File Input */}
@@ -268,92 +274,127 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                 disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)} // Also disable file input
             />
 
-            {/* Main styled container */}
+            {/* --- Main Input and Controls Area --- */}
             <div className="flex flex-col w-full bg-[--input-bg] rounded-lg p-2 border border-[--border-color] shadow-sm">
-                 {/* Container for textarea or visualizer */}
-                 <div className="relative w-full flex items-center min-h-[40px]">
-                     {/* Conditional Rendering (Check isRecording before rendering visualizer) */}
-                     {isRecording ? (
-                         <div className="absolute inset-0 flex items-center justify-center p-1 z-10">
-                             {/* --- NEW: Display Timer --- */}
-                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-[--muted-text-color] z-20">
-                                 {formatDuration(recordingDuration)}
-                             </span>
-                             {/* --- END: Display Timer --- */}
-                             <CustomAudioVisualizer
-                                 audioTimeDomainData={audioTimeDomainData} // Pass potentially null data
-                             />
-                         </div>
-                     ) : (
-                         <textarea
-                             ref={inputRef}
-                             rows={1}
-                             className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40 align-bottom"
-                             // Adjust placeholder based on optional props
-                             placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (isRecording ? "Recording audio..." : (isTranscribing ? "Transcribing audio..." : (micAvailable ? "Ask a question, give instructions, or click mic..." : "Ask a question or give instructions...") ) ))}
-                             value={input}
-                             onChange={handleInputChange}
-                             onKeyDown={handleKeyDown}
-                             onPaste={handlePaste}
-                             // Disable based on optional props
-                             disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)} 
-                         />
-                     )}
-                 </div>
-                 {/* Bottom controls (Adjust ModelSelector/Button disabled states) */} 
-                 <div className="flex items-center justify-between w-full mt-2">
-                     <div className="flex items-center space-x-2 flex-grow">
-                         <div className="pl-1 pr-2">
-                             <ModelSelector 
-                                 model={model} 
-                                 setModel={setModel} 
-                                 disabled={(isRecording ?? false) || (isTranscribing ?? false) || isLoading || isUploading} 
-                             />
-                         </div>
-                         {/* Document Search Input */} 
-                         {onAddTaggedDocument && (
-                            <div className="flex-grow min-w-0"> {/* Allow DocumentSearchInput to take space and shrink */} 
-                                 <DocumentSearchInput 
-                                     onDocumentSelected={onAddTaggedDocument}
-                                     disabled={(isRecording ?? false) || (isTranscribing ?? false) || isLoading || isUploading}
-                                 />
-                             </div>
-                         )}
-                     </div>
-                     <div className="flex items-center space-x-2 ml-auto">
-                         <button
-                             type="button"
-                             onClick={handleUploadClick}
-                             disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)} 
-                             className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                             title="Attach Image"
-                         >
-                             <span className="w-5 h-5 block"><AttachmentIcon aria-hidden="true" /></span>
-                         </button>
-                         <div className="relative w-8 h-8 flex items-center justify-center">
-                             {showLoadingSpinner && (
-                                 <div className="absolute inset-0 border-2 border-[--primary-color] border-t-transparent rounded-full animate-spin pointer-events-none"></div>
-                             )}
-                             {showPulsingIndicator && (
-                                 <div className="absolute inset-0 rounded-full bg-red-500 opacity-50 animate-ping pointer-events-none"></div> // Pulsing effect
-                             )}
-                             <button
-                                 type={buttonType}
-                                 onClick={buttonOnClick} // Already checks if functions exist
-                                 disabled={buttonDisabled}
-                                 className={buttonClassName}
-                                 title={buttonTitle}
-                             >
-                                 <span className="w-5 h-5 block">
-                                     {buttonIcon}
-                                 </span>
-                             </button>
-                         </div>
-                        {/* Render the passed-in toggle icon button if it exists */}
-                        {renderCollapsedMessageToggle}
-                     </div>
-                 </div>
+                {/* Row 1: Document Search Input and Tagged Pills */}
+                {onAddTaggedDocument && (
+                    <div className="flex items-start gap-x-2 mb-2"> {/* Main flex container for this row */}
+                        
+                        {/* Container for Document Search Input */}
+                        <div className="flex-shrink-0"> 
+                            <DocumentSearchInput
+                                onDocumentSelected={onAddTaggedDocument}
+                                disabled={(isRecording ?? false) || (isTranscribing ?? false) || isLoading || isUploading}
+                            />
+                        </div>
+
+                        {/* Container for Tagged Document Pills */}
+                        <div className="flex flex-wrap gap-1 flex-grow min-w-0"> 
+                            {taggedDocuments && taggedDocuments.length > 0 ? (
+                                taggedDocuments.map(doc => (
+                                    <div 
+                                        key={doc.id} 
+                                        className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded-md text-xs flex items-center"
+                                        title={doc.name} // Show full name on hover
+                                    >
+                                        <span className="truncate max-w-[150px]">{doc.name}</span> {/* Truncate long names */}
+                                        {/* Placeholder for remove button - would need onRemoveTaggedDocument prop */}
+                                        {onRemoveTaggedDocument && (
+                                            <button
+                                                type="button" // Prevent form submission
+                                                onClick={() => onRemoveTaggedDocument(doc.id)}
+                                                className="ml-1.5 text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400 focus:outline-none"
+                                                title={`Remove ${doc.name}`}
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        )}
+                                    </div>
+                                ))
+                            ) : (
+                                <span className="text-xs text-[--muted-text-color] italic"></span>
+                            )}
+                        </div>
+                    </div>
+                )}
+                {/* Row 2 (Original Row 1): Container for textarea or visualizer */}
+                <div className="relative w-full flex items-center min-h-[40px]">
+                    {/* Conditional Rendering (Check isRecording before rendering visualizer) */}
+                    {isRecording ? (
+                        <div className="absolute inset-0 flex items-center justify-center p-1 z-10">
+                            {/* --- NEW: Display Timer --- */}
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-[--muted-text-color] z-20">
+                                {formatDuration(recordingDuration)}
+                            </span>
+                            {/* --- END: Display Timer --- */}
+                            <CustomAudioVisualizer
+                                audioTimeDomainData={audioTimeDomainData} // Pass potentially null data
+                            />
+                        </div>
+                    ) : (
+                        <textarea
+                            ref={inputRef}
+                            rows={1}
+                            className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40 align-bottom"
+                            // Adjust placeholder based on optional props
+                            placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (isRecording ? "Recording audio..." : (isTranscribing ? "Transcribing audio..." : (micAvailable ? "Ask a question, give instructions, or click mic..." : "Ask a question or give instructions...") ) ))}
+                            value={input}
+                            onChange={handleInputChange}
+                            onKeyDown={handleKeyDown}
+                            onPaste={handlePaste}
+                            // Disable based on optional props
+                            disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)} 
+                        />
+                    )}
+                </div>
+                {/* Bottom controls (Adjust ModelSelector/Button disabled states) */} 
+                <div className="flex items-center justify-between w-full mt-2">
+                    <div className="flex items-center space-x-2 flex-grow">
+                        <div className="pl-1 pr-2">
+                            <ModelSelector 
+                                model={model} 
+                                setModel={setModel} 
+                                disabled={(isRecording ?? false) || (isTranscribing ?? false) || isLoading || isUploading} 
+                                elementClassName="border-none bg-[--input-bg]"
+                            />
+                        </div>
+                    </div>
+                    <div className="flex items-center space-x-2 ml-auto">
+                        <button
+                            type="button"
+                            onClick={handleUploadClick}
+                            disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)} 
+                            className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Attach Image"
+                        >
+                            <span className="w-5 h-5 block"><AttachmentIcon aria-hidden="true" /></span>
+                        </button>
+                        <div className="relative w-8 h-8 flex items-center justify-center">
+                            {showLoadingSpinner && (
+                                <div className="absolute inset-0 border-2 border-[--primary-color] border-t-transparent rounded-full animate-spin pointer-events-none"></div>
+                            )}
+                            {isRecording && (
+                                <div className="absolute inset-0 rounded-full bg-red-500 opacity-50 animate-ping pointer-events-none"></div> // Pulsing effect
+                            )}
+                            <button
+                                type={buttonType}
+                                onClick={buttonOnClick} // Already checks if functions exist
+                                disabled={buttonDisabled}
+                                className={buttonClassName}
+                                title={buttonTitle}
+                            >
+                                <span className="w-5 h-5 block">
+                                    {buttonIcon}
+                                </span>
+                            </button>
+                        </div>
+                       {/* Render the passed-in toggle icon button if it exists */}
+                       {renderCollapsedMessageToggle}
+                    </div>
+                </div>
             </div>
         </>
     );
 };
+
+export default ChatInputUI;

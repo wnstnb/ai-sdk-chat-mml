@@ -2,25 +2,34 @@
 
 import { Dispatch, SetStateAction } from 'react';
 
+interface ModelSelectorProps {
+  model: string;
+  setModel: Dispatch<SetStateAction<string>>;
+  disabled?: boolean;
+  elementClassName?: string;
+}
+
 export function ModelSelector({
   model,
   setModel,
   disabled,
-}: {
-  model: string;
-  setModel: Dispatch<SetStateAction<string>>;
-  disabled?: boolean;
-}) {
+  elementClassName,
+}: ModelSelectorProps) {
+  const baseClasses = "font-mono text-xs rounded-md px-2 py-1 text-zinc-800 dark:text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed";
+  
+  const defaultAppearanceClasses = "border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800";
+
+  const finalSelectClasses = elementClassName 
+    ? `${baseClasses} ${elementClassName}` 
+    : `${baseClasses} ${defaultAppearanceClasses}`;
+
   return (
     <div className="flex items-center space-x-2">
-      <label htmlFor="model-select" className="text-sm text-zinc-500 dark:text-zinc-400">
-        Model:
-      </label>
       <select
         id="model-select"
         value={model}
         onChange={(e) => setModel(e.target.value)}
-        className="text-sm rounded-md border border-zinc-200 dark:border-zinc-600 px-2 py-1 bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
+        className={finalSelectClasses}
         disabled={disabled}
       >
         <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>

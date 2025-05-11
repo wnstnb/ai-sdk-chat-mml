@@ -146,8 +146,8 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 
     return (
         <div className="w-full px-0 pb-4 pt-4 flex-shrink-0 bg-[--bg-secondary] relative">
-            {/* Display area for selected document tags (pills) */}
-            {taggedDocuments.length > 0 && (
+            {/* Display area for selected document tags (pills) - REMOVED */}
+            {/* {taggedDocuments.length > 0 && (
                 <div className="w-full px-4 md:px-0 mb-2 flex flex-wrap gap-2">
                     {taggedDocuments.map((doc) => (
                         <div 
@@ -166,7 +166,7 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                         </div>
                     ))}
                 </div>
-            )}
+            )} */}
             
             <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center">
                 {/* Follow Up Context Display */}
@@ -216,6 +216,7 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     // Pass new props for document tagging to ChatInputUI
                     taggedDocuments={taggedDocuments}
                     onAddTaggedDocument={handleAddTaggedDocument}
+                    onRemoveTaggedDocument={handleRemoveTaggedDocument}
                 />
             </form>
             {/* {showTagDropdown && dropdownPosition && ( // Removed old dropdown rendering
