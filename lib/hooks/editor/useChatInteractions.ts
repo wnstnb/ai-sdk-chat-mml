@@ -89,9 +89,6 @@ const processBlocksRecursive = async (
         if (b.type === 'table') {
             try {
                 snippet = await editor.blocksToMarkdownLossy([b]);
-                if (snippet.length > 2000) {
-                    snippet = snippet.substring(0, 2000) + '\n... [Table Markdown Truncated] ...';
-                }
                 snippet = `[Table Markdown]\n${snippet}`;
             } catch (mdError) {
                 console.error(`Failed to convert table block ${b.id} to Markdown:`, mdError);
