@@ -62,7 +62,9 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme }) => {
           <Link href="/launch" className="text-[--text-color] hover:text-[--primary-color] transition-colors" title="Go to Launch Pad">
             <FolderIcon className="h-6 w-6" />
           </Link>
-          <div className="header-logo">tuon.io</div>
+          <div className="header-logo">
+            <img src="/tuon-logo-svg-type.svg" alt="Tuon Logo" className="h-8 w-8" style={{ filter: 'var(--logo-filter)' }} />
+          </div>
         </div>
 
         {/* Search Bar - Conditionally render */}

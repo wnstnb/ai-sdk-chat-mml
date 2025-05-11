@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
 import { TaggedDocument } from "../../lib/types";
 // Assuming DocumentTagDropdown exists and is adaptable, or we'll inline a simple dropdown.
 // For now, let's assume a simple list rendering if DocumentTagDropdown is not perfectly suitable.
@@ -29,6 +29,7 @@ export const DocumentSearchInput: React.FC<DocumentSearchInputProps> = ({ onDocu
     const [showDropdown, setShowDropdown] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const dropdownListRef = useRef<HTMLDivElement>(null);
 
     // Implement debounced search API call
     const searchDocuments = useCallback(debounce(async (searchQuery: string) => {
@@ -87,13 +88,52 @@ export const DocumentSearchInput: React.FC<DocumentSearchInputProps> = ({ onDocu
     useEffect(() => {
         document.addEventListener('mousedown', handleClickOutside);
         // Add keydown listener to the input or document for escape key
-        inputRef.current?.addEventListener('keydown', handleKeyDown);
+        const currentInputRef = inputRef.current;
+        currentInputRef?.addEventListener('keydown', handleKeyDown);
 
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
-            inputRef.current?.removeEventListener('keydown', handleKeyDown);
+            currentInputRef?.removeEventListener('keydown', handleKeyDown);
         };
     }, [handleClickOutside, handleKeyDown]);
+
+    useLayoutEffect(() => {
+        if (showDropdown && inputRef.current && dropdownListRef.current) {
+            const inputRect = inputRef.current.getBoundingClientRect();
+            const dropdownElement = dropdownListRef.current;
+
+            // Reset styles for measurement
+            dropdownElement.style.top = 'auto';
+            dropdownElement.style.bottom = 'auto';
+            dropdownElement.style.maxHeight = ''; // Reset to allow measuring full potential height up to max-h-60
+
+            const dropdownHeight = dropdownElement.offsetHeight;
+            const spaceBelow = window.innerHeight - inputRect.bottom;
+            const spaceAbove = inputRect.top;
+            const margin = 8; // 0.5rem or 8px
+
+            let openUpwards = false;
+
+            // Prefer opening downwards. If not enough space below, and more (and enough) space above, open upwards.
+            if (spaceBelow < dropdownHeight + margin && spaceAbove > spaceBelow && spaceAbove > dropdownHeight + margin) {
+                openUpwards = true;
+            }
+
+            if (openUpwards) {
+                dropdownElement.style.bottom = '100%';
+                dropdownElement.style.top = 'auto';
+                dropdownElement.style.marginBottom = '4px'; // Corresponds to tailwind mt-1 or mb-1
+                dropdownElement.style.marginTop = '0';
+                dropdownElement.style.maxHeight = `${Math.max(50, spaceAbove - margin)}px`; // Min height of 50px
+            } else {
+                dropdownElement.style.top = '100%';
+                dropdownElement.style.bottom = 'auto';
+                dropdownElement.style.marginTop = '4px'; // Corresponds to tailwind mt-1 or mb-1
+                dropdownElement.style.marginBottom = '0';
+                dropdownElement.style.maxHeight = `${Math.max(50, spaceBelow - margin)}px`; // Min height of 50px
+            }
+        }
+    }, [showDropdown, results, loading]);
 
     // Add basic styling
     return (
@@ -109,7 +149,10 @@ export const DocumentSearchInput: React.FC<DocumentSearchInputProps> = ({ onDocu
                 onFocus={() => query.length > 0 && results.length > 0 && setShowDropdown(true)} // Show dropdown on focus if there are results
             />
             {showDropdown && (
-                <div className="text-xs absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto"> {/* Added styling classes */}
+                <div 
+                    ref={dropdownListRef}
+                    className="text-xs absolute z-10 w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg overflow-y-auto"
+                >
                     {loading ? (
                         <div className="px-3 py-2 text-gray-600 dark:text-gray-400">Loading...</div>
                     ) : results.length > 0 ? (

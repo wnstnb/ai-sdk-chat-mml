@@ -66,6 +66,11 @@
   --chat-message-font-size: 0.875rem; /* Re-added using rem */
   /* NEW Chat Input Font Size */
   --chat-input-font-size: 0.875rem;
+
+  /* Logo Filters */
+  --logo-filter-light: invert(7%) sepia(15%) saturate(300%) hue-rotate(170deg) brightness(90%) contrast(100%); /* For #0F1317 from black */
+  --logo-filter-dark: invert(53%) sepia(65%) saturate(328%) hue-rotate(354deg) brightness(101%) contrast(93%);    /* For #C79553 from black */
+  --logo-filter: var(--logo-filter-light); /* Default to light mode filter */
 }
 
 [data-theme='dark'] {
@@ -123,6 +128,9 @@
   --code-bg: var(--input-bg); /* Use input background for code blocks in dark mode */
   --link-color: #B38A58;
   --link-hover-color: #C77A0A;
+
+  /* Override logo filter for dark theme */
+  --logo-filter: var(--logo-filter-dark);
 }
 /* --- End CSS Variables --- */
 
@@ -325,6 +333,7 @@ body {
   .header-logo {
     @apply text-[1.5rem] font-bold text-[--title-color]; /* Changed from --text-color */
     font-family: 'Newsreader', serif; /* Apply Newsreader font */
+    @apply flex items-center justify-center; /* Add flex centering */
   }
 
   .header-actions {

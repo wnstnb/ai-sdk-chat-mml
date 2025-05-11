@@ -158,7 +158,7 @@ export default function LandingPageContent() {
         <header className="container mx-auto px-6 py-6 flex items-center justify-between relative z-20">
           <div className="flex items-center">
             {/* Use theme variable for logo color */}
-            <span className="text-2xl font-bold text-[color:var(--accent-color)] tracking-tight font-newsreader">tuon.io</span>
+            <img src="/tuon-logo-svg-type.svg" alt="Tuon Logo" className="h-8 w-8" style={{ filter: 'var(--logo-filter)' }} />
           </div>
           <nav className="hidden md:flex items-center space-x-8">
             {/* Use theme variables for nav links */}
