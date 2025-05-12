@@ -141,7 +141,7 @@ export function useChatInteractions({
     initialTaggedDocIdsString, // <-- NEW: Destructure prop
 }: UseChatInteractionsProps): UseChatInteractionsReturn {
     
-    console.log('[useChatInteractions] Received initialMessages prop:', JSON.stringify(initialMessages, null, 2));
+    // console.log('[useChatInteractions] Received initialMessages prop:', JSON.stringify(initialMessages, null, 2));
     
     // --- Internal State ---
     const [model, setModel] = useState<string>(initialModel);
@@ -249,7 +249,7 @@ export function useChatInteractions({
         },
     });
 
-    console.log('[useChatInteractions] Messages state FROM useChat hook IMMEDIATELY AFTER init:', JSON.stringify(messages, null, 2));
+    // console.log('[useChatInteractions] Messages state FROM useChat hook IMMEDIATELY AFTER init:', JSON.stringify(messages, null, 2));
 
     // --- Editor Context Retrieval ---
     const getEditorContext = useCallback(async (): Promise<EditorContextData> => {

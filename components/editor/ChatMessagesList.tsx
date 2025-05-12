@@ -65,7 +65,7 @@ export const ChatMessagesList: React.FC<ChatMessagesListProps> = ({
             {/* Render Messages using ChatMessageItem */}
             {totalMessages > 0 && chatMessages.map((message) => {
                  // DIAGNOSTIC: Log the message object being passed down
-                 console.log("[ChatMessagesList] Rendering message:", JSON.stringify(message, null, 2));
+                 // console.log("[ChatMessagesList] Rendering message:", JSON.stringify(message, null, 2));
                  return (
                      <ChatMessageItem 
                         key={message.id}

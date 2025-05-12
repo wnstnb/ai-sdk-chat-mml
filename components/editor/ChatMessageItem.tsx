@@ -67,7 +67,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     handleSendToEditor,
     onAddTaggedDocument
 }) => {
-    console.log('[ChatMessageItem] Rendering message:', JSON.stringify(message, null, 2));
+    // console.log('[ChatMessageItem] Rendering message:', JSON.stringify(message, null, 2));
     
     // --- State for Collapsible Tool Details ---
     const [expandedToolCalls, setExpandedToolCalls] = useState<Record<string, boolean>>({});
@@ -278,7 +278,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                                                             onClick={() => onAddTaggedDocument({ id: doc.id, name: doc.name })}
                                                             className="ml-3 shrink-0 px-2.5 py-1 text-xs bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-500 transition-colors"
                                                         >
-                                                            Tag Document
+                                                            Tag
                                                         </button>
                                                     </div>
                                                 </li>

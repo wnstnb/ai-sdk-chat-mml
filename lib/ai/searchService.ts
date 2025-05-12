@@ -173,12 +173,12 @@ export function combineAndRankResults(
   const results = Array.from(combinedScores.values()).map(item => ({
     id: item.id,
     name: item.name,
-    finalScore: (0.55 * item.semanticScore) + (0.45 * item.titleScore)
+    finalScore: Math.max(item.semanticScore, item.titleScore) // Use the maximum of semanticScore and titleScore
   }));
 
   // Filter by threshold, sort by score, and limit results
   return results
-    .filter(item => item.finalScore >= 0.6)
+    .filter(item => item.finalScore >= 0.4)
     .sort((a, b) => b.finalScore - a.finalScore)
     .slice(0, 10); // Limit to top 10 results
 } 
