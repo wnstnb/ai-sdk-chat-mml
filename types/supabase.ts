@@ -2,6 +2,8 @@
 
 // Based on your prds/supabase_implementation.md schema
 
+import { CoreMessage, TextPart, ImagePart, ToolCallPart, ToolResultPart } from 'ai';
+
 export interface Folder {
   id: string; // uuid
   user_id: string; // uuid, references auth.users.id
@@ -26,7 +28,7 @@ export interface Message {
   document_id: string; // uuid, references public.documents.id
   user_id: string; // uuid, references auth.users.id
   role: 'user' | 'assistant'; // text
-  content: string | null; // text
+  content: CoreMessage['content'] | string | null; // Changed from string | null. CoreMessage['content'] is Array<TextPart | ImagePart | ToolCallPart | ToolResultPart> | string.
   image_url: string | null; // text (stores path in bucket)
   metadata: any | null; // jsonb
   created_at: string; // timestamp with time zone

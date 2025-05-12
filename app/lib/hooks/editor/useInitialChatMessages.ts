@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 // Import core types 
-import type { CoreMessage } from 'ai'; 
+import type { CoreMessage, Message, TextPart, ToolCallPart, ToolResultPart } from 'ai'; 
 // Keep Message from ai/react for type checking elsewhere if needed
 import type { Message as UIMessage } from 'ai/react'; 
 import type { Message as SupabaseMessage, ToolCall as SupabaseToolCall } from '@/types/supabase';
@@ -19,6 +19,9 @@ export interface UseInitialChatMessagesReturn {
     isLoadingMessages: boolean;
     initialMessages: UIMessage[] | null; 
 }
+
+// Define a union type for the parts we expect in msg.content array for assistant messages
+type AssistantMessageContentPart = TextPart | ToolCallPart | ToolResultPart;
 
 export function useInitialChatMessages({
     documentId,
@@ -65,10 +68,29 @@ export function useInitialChatMessages({
 
                 // 1. Handle System messages
                 if (role === 'system') {
+                    console.log(`[useInitialChatMessages] Processing SYSTEM message:`, msg);
+
+                    let systemMessageContentString: string;
+                    if (typeof msg.content === 'string') {
+                        systemMessageContentString = msg.content;
+                    } else if (msg.content === null || msg.content === undefined) {
+                        systemMessageContentString = '';
+                    } else if (Array.isArray(msg.content)) {
+                        // For system messages, convert parts array to a string by joining text parts.
+                        systemMessageContentString = msg.content
+                            .filter((part): part is TextPart => part.type === 'text')
+                            .map(part => part.text)
+                            .join('\n'); // Join with newline, or '' if no text parts
+                    } else {
+                        // Fallback for any other unexpected type, though msg.content should conform to CoreMessage['content'] | string | null
+                        console.warn('[useInitialChatMessages] System message content had unexpected type:', typeof msg.content);
+                        systemMessageContentString = '';
+                    }
+
                     formattedMessages.push({
                         id: msg.id,
                         role: 'system',
-                        content: msg.content || '',
+                        content: systemMessageContentString,
                         createdAt: new Date(msg.created_at),
                     });
                     continue;
@@ -142,41 +164,44 @@ export function useInitialChatMessages({
                     const uiParts: UIMessage['parts'] = [];
                     let combinedTextContent = '';
 
-                    // --- ADDED LOGGING: Inspect raw msg.content for assistants --- 
                     console.log(`[useInitialChatMessages] Inspecting raw msg.content for assistant msg ${msg.id}:`, JSON.stringify(msg.content, null, 2));
-                    // --- END LOGGING --- 
 
                     if (Array.isArray(msg.content)) {
-                        // Iterate through parts in the content array
+                        const resultsMap = new Map<string, any>();
+                        msg.content.forEach(p => {
+                            const corePart = p as AssistantMessageContentPart;
+                            if (corePart.type === 'tool-result') {
+                                resultsMap.set(corePart.toolCallId, corePart.result);
+                            }
+                        });
+
                         msg.content.forEach(part => {
-                            if (part.type === 'text' && typeof part.text === 'string') {
-                                const trimmedText = part.text.trim();
+                            const corePart = part as AssistantMessageContentPart;
+                            if (corePart.type === 'text' && typeof corePart.text === 'string') {
+                                const trimmedText = corePart.text.trim();
                                 if (trimmedText) {
-                                    combinedTextContent += (combinedTextContent ? '\n' : '') + part.text; // Concatenate multiple text parts
-                                    // Add text part to UI parts array
-                                    uiParts.push({ type: 'text', text: part.text });
+                                    combinedTextContent += (combinedTextContent ? '\n' : '') + corePart.text;
+                                    uiParts.push({ type: 'text', text: corePart.text });
                                 }
-                            } else if (part.type === 'tool-call') {
-                                // --- ADDED LOGGING for tool-call parts --- 
-                                console.log(`[useInitialChatMessages] Inspecting tool-call part for msg ${msg.id}:`, JSON.stringify(part, null, 2));
-                                // --- END LOGGING --- 
+                            } else if (corePart.type === 'tool-call') {
+                                console.log(`[useInitialChatMessages] Inspecting tool-call part for msg ${msg.id}:`, JSON.stringify(corePart, null, 2));
                                 
-                                // Check required fields before creating UI part
-                                if (part.toolCallId && part.toolName && part.args) {
-                                    // Add tool-invocation part based on tool-call part in content
+                                if (corePart.toolCallId && corePart.toolName && corePart.args !== undefined) {
+                                    const toolResult = resultsMap.get(corePart.toolCallId);
+                                    const state: 'result' | 'call' = toolResult !== undefined ? 'result' : 'call'; // Use 'call' if no result found
+
                                     uiParts.push({
                                         type: 'tool-invocation',
                                         toolInvocation: {
-                                            toolCallId: part.toolCallId,
-                                            toolName: part.toolName,
-                                            args: part.args, 
-                                            result: part.result !== undefined ? part.result : null,
-                                            state: 'result' // Assuming completed for loaded messages?
+                                            toolCallId: corePart.toolCallId,
+                                            toolName: corePart.toolName,
+                                            args: corePart.args, 
+                                            result: toolResult !== undefined ? toolResult : undefined, // Pass undefined if no result
+                                            state: state
                                         },
                                     });
                                 }
-                            } 
-                            // Add handling for other part types found in content if necessary
+                            }
                         });
                     } else if (typeof msg.content === 'string' && msg.content.trim() !== '') {
                         // Handle legacy/fallback string content

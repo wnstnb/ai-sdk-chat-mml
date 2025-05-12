@@ -8,9 +8,31 @@ import { getTextFromDataUrl } from '@/lib/editorUtils';
 import Image from 'next/image';
 import remarkGfm from 'remark-gfm';
 
+// --- Define types related to the search tool ---
+interface TaggedDocument {
+    id: string;
+    name: string;
+}
+
+interface SearchToolDocument {
+    id: string;
+    name: string;
+    confidence?: number;
+    summary?: string;
+}
+
+interface SearchAndTagDocumentsToolResult {
+    documents: SearchToolDocument[];
+    searchPerformed?: boolean;
+    queryUsed?: string;
+    presentationStyle: 'listWithTagButtons';
+}
+// --- End search tool types ---
+
 interface ChatMessageItemProps {
     message: Message;
     handleSendToEditor: (content: string) => void;
+    onAddTaggedDocument: (doc: TaggedDocument) => void;
 }
 
 // --- Helper Function to Extract User Display Content ---
@@ -42,9 +64,10 @@ type ContentPart = TextPart | ImagePart | ToolCallPart | ToolInvocationPart; // 
 
 export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({ 
     message, 
-    handleSendToEditor 
+    handleSendToEditor,
+    onAddTaggedDocument
 }) => {
-    console.log('[ChatMessageItem] Rendering message:', JSON.stringify(message, null, 2));
+    // console.log('[ChatMessageItem] Rendering message:', JSON.stringify(message, null, 2));
     
     // --- State for Collapsible Tool Details ---
     const [expandedToolCalls, setExpandedToolCalls] = useState<Record<string, boolean>>({});
@@ -203,36 +226,97 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                      // Explicitly cast part to ContentPart to help linter
                      const contentPart = part as ContentPart;
 
+                    let effectiveToolInvocation: ToolInvocation | undefined = undefined;
+                    let toolCallIdForExpansion: string | undefined = undefined;
+
                     if (contentPart.type === 'tool-invocation') {
-                        const toolInvocation = (contentPart as ToolInvocationPart).toolInvocation;
-                        const toolCallId = toolInvocation.toolCallId;
+                        effectiveToolInvocation = (contentPart as ToolInvocationPart).toolInvocation;
+                        if (effectiveToolInvocation) {
+                            toolCallIdForExpansion = effectiveToolInvocation.toolCallId;
+                        }
+                    } else if (contentPart.type === 'tool-call' && (contentPart as any).result !== undefined) {
+                        const toolCallPart = contentPart as ToolCallPart & { result: any; toolCallId: string };
+                        toolCallIdForExpansion = toolCallPart.toolCallId;
+                        effectiveToolInvocation = {
+                            toolCallId: toolCallPart.toolCallId,
+                            toolName: toolCallPart.toolName,
+                            args: toolCallPart.args,
+                            result: toolCallPart.result,
+                            state: 'result', // Inferred state
+                        } as ToolInvocation; // Cast to ToolInvocation, acknowledging 'type' field isn't set here but structure matches
+                    }
+
+                    if (effectiveToolInvocation && toolCallIdForExpansion) {
+                        const toolCallId = toolCallIdForExpansion; // Use the extracted ID
                         const isExpanded = !!expandedToolCalls[toolCallId];
                         
-                        return (
-                            <div key={`${message.id}-part-${index}-tool`} className="mt-1 p-2 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700">
-                                <div 
-                                    className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer" 
-                                    onClick={() => toggleToolCallExpansion(toolCallId)}
-                                >
-                                    <Wrench size={12} className="flex-shrink-0" />
-                                    <span>Tool Used: <strong>{toolInvocation.toolName}</strong></span>
-                                    <span className="ml-auto text-zinc-400 dark:text-zinc-500">{isExpanded ? '[-]' : '[+]'}</span>
-                                </div>
-                                
-                                {isExpanded && (
-                                    <div className="mt-1 pt-1 border-t border-gray-200 dark:border-gray-700">
-                                        <pre className="mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
-                                            Args: {JSON.stringify(toolInvocation.args, null, 2)}
-                                        </pre>
-                                        {toolInvocation.state === 'result' && (toolInvocation as any).result && (
-                                            <pre className="mt-1 text-xs text-green-600 dark:text-green-400 whitespace-pre-wrap break-all">
-                                                Result: {JSON.stringify((toolInvocation as any).result, null, 2)}
-                                            </pre>
-                                        )}
+                        // --- NEW: Specific rendering for searchAndTagDocumentsTool ---
+                        if (
+                            effectiveToolInvocation.toolName === 'searchAndTagDocumentsTool' &&
+                            effectiveToolInvocation.state === 'result' &&
+                            effectiveToolInvocation.result &&
+                            typeof effectiveToolInvocation.result === 'object' &&
+                            (effectiveToolInvocation.result as SearchAndTagDocumentsToolResult).presentationStyle === 'listWithTagButtons'
+                        ) {
+                            const searchResult = effectiveToolInvocation.result as SearchAndTagDocumentsToolResult;
+                            return (
+                                <div key={`${message.id}-part-${index}-search-results`} className="mt-1 p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800/30">
+                                    <div className="flex items-center gap-1.5 text-xs text-blue-700 dark:text-blue-300 mb-2 font-medium">
+                                        <Wrench size={12} className="flex-shrink-0" />
+                                        <span>{searchResult.documents.length > 0 ? 'Found documents related to:' : 'No documents found for:'} <strong>{searchResult.queryUsed || 'your query'}</strong></span>
                                     </div>
-                                )}
-                            </div>
-                        );
+                                    {searchResult.documents.length > 0 ? (
+                                        <ul className="space-y-2">
+                                            {searchResult.documents.map((doc) => (
+                                                <li key={doc.id} className="p-2.5 bg-white dark:bg-gray-800/50 rounded shadow-sm border border-gray-200 dark:border-gray-700/60">
+                                                    <div className="flex justify-between items-center">
+                                                        <div className="flex-1 min-w-0">
+                                                            <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-100 truncate" title={doc.name}>{doc.name}</h4>
+                                                            {doc.summary && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate" title={doc.summary}>{doc.summary}</p>}
+                                                        </div>
+                                                        <button
+                                                            onClick={() => onAddTaggedDocument({ id: doc.id, name: doc.name })}
+                                                            className="ml-3 shrink-0 px-2.5 py-1 text-xs bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-500 transition-colors"
+                                                        >
+                                                            Tag
+                                                        </button>
+                                                    </div>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">You can try a different search query.</p>
+                                    )}
+                                </div>
+                            );
+                        } else {
+                            // --- EXISTING: Fallback generic tool invocation rendering (collapsible) ---
+                            return (
+                                <div key={`${message.id}-part-${index}-tool`} className="mt-1 p-2 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700">
+                                    <div 
+                                        className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer" 
+                                        onClick={() => toggleToolCallExpansion(toolCallId)}
+                                    >
+                                        <Wrench size={12} className="flex-shrink-0" />
+                                        <span>Tool Used: <strong>{effectiveToolInvocation.toolName}</strong></span>
+                                        <span className="ml-auto text-zinc-400 dark:text-zinc-500">{isExpanded ? '[-]' : '[+]'}</span>
+                                    </div>
+                                    
+                                    {isExpanded && (
+                                        <div className="mt-1 pt-1 border-t border-gray-200 dark:border-gray-700">
+                                            <pre className="mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
+                                                Args: {JSON.stringify(effectiveToolInvocation.args, null, 2)}
+                                            </pre>
+                                            {effectiveToolInvocation.state === 'result' && (effectiveToolInvocation as any).result && (
+                                                <pre className="mt-1 text-xs text-green-600 dark:text-green-400 whitespace-pre-wrap break-all">
+                                                    Result: {JSON.stringify((effectiveToolInvocation as any).result, null, 2)}
+                                                </pre>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        }
                     } else if (contentPart.type === 'image') { // Check contentPart.type
                         // --- Image rendering logic (no change needed here) --- 
                         const imagePart = contentPart as ImagePart; // Assert type
@@ -262,7 +346,9 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                             return <p key={`${message.id}-part-${index}-image-fallback`} className="text-gray-500 text-sm">[Image not available]</p>;
                         }
                     } 
-                    return null; // Ignore other part types (like text) within this specific loop
+                    // TextParts should be handled by the main message.content string rendering if present.
+                    // Rendering them here from message.parts can lead to duplication.
+                    return null; 
                 })}
 
                 {/* Send to Editor Button - Uses specifically extracted text */}

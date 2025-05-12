@@ -9,6 +9,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'; // Supabase 
 import { Message as SupabaseMessage, ToolCall as SupabaseToolCall } from '@/types/supabase'; // DB types
 import { createClient } from '@supabase/supabase-js'; // <-- ADDED for explicit client for signed URLs if needed
 import crypto from 'crypto'; // Import crypto for UUID generation
+import { searchByTitle, searchByEmbeddings, combineAndRankResults } from '@/lib/ai/searchService';
 
 // Define Zod schemas for the editor tools based on PRD
 const addContentSchema = z.object({
@@ -38,6 +39,37 @@ const modifyTableSchema = z.object({
 const createChecklistSchema = z.object({
   items: z.array(z.string()).describe("An array of plain text strings, where each string is the content for a new checklist item. The tool will handle Markdown formatting (e.g., prepending '* [ ]'). Do NOT include Markdown like '*[ ]' in these strings."),
   targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert the new checklist after. If null, the checklist is appended to the document or inserted at the current selection."),
+});
+// --- END NEW ---
+
+// --- NEW: Search and Tag Documents Tool ---
+const searchAndTagDocumentsSchema = z.object({
+  searchQuery: z.string().describe("The user's query to search for in the documents.")
+});
+
+const searchAndTagDocumentsTool = tool({
+  description: 'Searches documents by title and semantic content. Returns a list of relevant documents that the user can choose to tag for context.',
+  parameters: searchAndTagDocumentsSchema,
+  execute: async ({ searchQuery }) => {
+    // 1. Perform title-based search
+    const titleMatches = await searchByTitle(searchQuery);
+    // 2. Perform semantic search
+    const semanticMatches = await searchByEmbeddings(searchQuery);
+    // 3. Combine and rank results
+    const combinedResults = combineAndRankResults(titleMatches, semanticMatches);
+    // 4. Format results for the AI to present
+    return {
+      documents: combinedResults.map(doc => ({
+        id: doc.id,
+        name: doc.name,
+        confidence: doc.finalScore,
+        summary: doc.summary || undefined // Only include if present
+      })),
+      searchPerformed: true,
+      queryUsed: searchQuery,
+      presentationStyle: 'listWithTagButtons'
+    };
+  }
 });
 // --- END NEW ---
 
@@ -115,7 +147,7 @@ Engage naturally in conversation. While you have powerful capabilities, includin
         * **For NON-TABLE Blocks:**
             * **List and Checklist Handling Overview:**
                 * **Creating NEW Checklists:** Use the \`createChecklist\` tool. Provide an array of plain text strings for its \`items\` parameter. The tool handles formatting each item (e.g., as \`* [ ] Your item text\`). This is the preferred method for creating new, potentially flat, checklists.
-                * **Creating NEW Simple Lists (Bullet/Numbered):** Use the \`addContent\` tool with a multi-line \`markdownContent\` string (e.g., \`* Item 1\\n* Item 2\` or \`1. Item 1\\n2. Item 2\`).
+                * **Creating NEW Simple Lists (Bullet/Numbered):** Use the \`addContent\` tool with a multi-line \`markdownContent\` string (e.g., \`* Item 1\n* Item 2\` or \`1. Item 1\n2. Item 2\`).
                 * **Modifying Existing Lists/Checklists (e.g., converting type, adding/removing items from an existing list structure, reformatting):** Use the \`modifyContent\` tool. This often involves the "CRITICAL WORKFLOW (Multi-Block Modify)" described below.
                 * **Adding Single Items (paragraph, single list item, single checklist item):** \`addContent\` can be used for simplicity if adding just one item. For a single checklist item, \`markdownContent\` should be like \`* [ ] My single task\`.
 
@@ -137,7 +169,7 @@ Engage naturally in conversation. While you have powerful capabilities, includin
 
             * **Tool Choices Summary for Non-Table Blocks:**
                 * \`createChecklist({ items: string[], targetBlockId: string | null })\`: **Primary tool for creating new checklists with multiple items.** Provide an array of plain text strings for \`items\`; the tool handles Markdown.
-                * \`addContent({ markdownContent: string, targetBlockId: string | null })\`: Adds new general Markdown content (paragraphs, headings). Also used for creating new simple bullet or numbered lists (e.g., \`markdownContent: "* Item 1\\n* Item 2"\`) or adding a single list/checklist item (e.g., \`markdownContent: "* [ ] A single task"\`). **Avoid using for creating multi-item checklists; use \`createChecklist\` for that.**
+                * \`addContent({ markdownContent: string, targetBlockId: string | null })\`: Adds new general Markdown content (paragraphs, headings). Also used for creating new simple bullet or numbered lists (e.g., \`markdownContent: "* Item 1\n* Item 2"\`) or adding a single list/checklist item (e.g., \`markdownContent: "* [ ] A single task"\`). **Avoid using for creating multi-item checklists; use \`createChecklist\` for that.**
                 * \`modifyContent({ targetBlockId: string | string[], targetText: string | null, newMarkdownContent: string | string[] })\`: Modifies content **ONLY within NON-TABLE blocks**. This is the main tool for altering existing lists, converting items to checklists, and changing text in multiple list items at once.
                     * If \`targetBlockId\` is a single string:
                         * If \`targetText\` is provided: Performs a find-and-replace within that \`targetBlockId\` using \`newMarkdownContent\` (which must be a single string).
@@ -178,11 +210,24 @@ Engage naturally in conversation. While you have powerful capabilities, includin
 
 **--- Editor Manipulation Tools ---**
 
-* \`addContent({ markdownContent: string, targetBlockId: string | null })\`: Adds new general Markdown content to the editor (e.g., paragraphs, headings). Can also be used for creating new simple bullet or numbered lists by providing a multi-line \`markdownContent\` string (e.g., \`* Item 1\\n* Item 2\`), or for adding a single list/checklist item (e.g., \`markdownContent: "* [ ] A single task"\`). If \`targetBlockId\` is provided, the new content is typically inserted *after* this block. If \`targetBlockId\` is \`null\`, the content may be appended to the document or inserted at the current selection/cursor position. **For creating new checklists with multiple items, use the \`createChecklist\` tool instead.**
+* \`addContent({ markdownContent: string, targetBlockId: string | null })\`: Adds new general Markdown content to the editor (e.g., paragraphs, headings). Can also be used for creating new simple bullet or numbered lists by providing a multi-line \`markdownContent\` string (e.g., \`* Item 1\n* Item 2\`), or for adding a single list/checklist item (e.g., \`markdownContent: "* [ ] A single task"\`). If \`targetBlockId\` is provided, the new content is typically inserted *after* this block. If \`targetBlockId\` is \`null\`, the content may be appended to the document or inserted at the current selection/cursor position. **For creating new checklists with multiple items, use the \`createChecklist\` tool instead.**
 * \`createChecklist({ items: string[], targetBlockId: string | null })\`: **Creates a new checklist with multiple items.** Provide an array of plain text strings in the \`items\` parameter (e.g., \`["Buy milk", "Read book"]\`). Do NOT include Markdown like \`* [ ]\` in these strings; the tool (client-side) will handle the necessary formatting. This is the preferred tool for creating new, potentially flat, checklists.
 * \`modifyContent({ targetBlockId: string | string[], targetText: string | null, newMarkdownContent: string | string[] })\`: Modifies content within specific NON-TABLE editor blocks. Can target a single block (with optional specific text replacement) or multiple blocks (replacing entire content of each with corresponding new Markdown from an array). This is the primary tool for altering existing lists, converting items to checklists, and changing text in multiple list items at once.
 * \`deleteContent({ targetBlockId: string | string[], targetText: string | null })\`: Deletes content **ONLY from NON-TABLE blocks**. Handles whole-block deletion (\`targetText: null\`) or specific text deletion (\`targetText: 'text to delete'\`).
 * **\`modifyTable({ tableBlockId: string, newTableMarkdown: string })\`**: **The ONLY tool for ALL modifications to existing table blocks.** Requires the target table's ID and the **complete, final Markdown** of the modified table.
+
+**--- Document Search & Tagging Tool ---**
+
+* \`searchAndTagDocuments({ searchQuery: string })\`: Searches documents by title and semantic content. Use this tool whenever the user asks to search for documents, find references, or requests information that may be found in other documents.
+    *   When this tool returns results with \`presentationStyle: 'listWithTagButtons'\`:
+        *   You **MUST** provide a brief acknowledgment in your text response. If documents were found (i.e., the \`documents\` array in the tool result is not empty), say something like 'Here's what I found:' or 'I found some relevant documents for you.'. 
+        *   If no documents were found (i.e., the \`documents\` array is empty), say something like 'I couldn't find any documents matching your query. Would you like to try a different search?' or 'Nothing came up for that search. You can try rephrasing or broadening your search terms.'.
+        *   You **MUST NOT** list the document names or summaries in your text response; the user interface will display the actual document list with tagging options separately.
+        *   You **MUST** still inform the user that for each document displayed by the UI, a "Tag Document" button will be available next to its name.
+        *   You **MUST NOT** ask the user to type a command or confirm to tag a document; tagging is handled by UI interaction with the button.
+        *   After providing your brief acknowledgment, await the user's next action.
+    *   Example acknowledgment if documents are found: "Okay, I found some documents related to your query. You can see them listed below and tag them as context."
+    *   Example acknowledgment if no documents are found: "I couldn't find any documents for that. Would you like to try a different search term?"
 
 **--- EXAMPLES OF TABLE MODIFICATION (STEP 3/4) ---**
 
@@ -254,6 +299,7 @@ const editorTools = {
 const combinedTools = {
   ...editorTools, // Includes updated modifyTable and new createChecklist
   webSearch,
+  searchAndTagDocumentsTool: searchAndTagDocumentsTool,
 };
 
 // Helper function to get Supabase URL and Key (replace with your actual env variables)
@@ -553,6 +599,7 @@ export async function POST(req: Request) {
     const combinedToolsWithRateLimit = {
         ...editorTools, // Now includes modifyTable and createChecklist
         webSearch: rateLimitedWebSearch,
+        searchAndTagDocumentsTool: searchAndTagDocumentsTool,
     };
     // --- End Rate Limiting Wrapper ---
 

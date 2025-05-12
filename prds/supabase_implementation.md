@@ -59,7 +59,7 @@ The following environment variables are assumed to be configured:
         *   `document_id` (uuid, foreign key to `documents.id`, cascade delete)
         *   `user_id` (uuid, foreign key to `auth.users.id`) // Tracks who sent the message (user or potentially AI later)
         *   `role` (text, e.g., 'user', 'assistant')
-        *   `content` (text)
+        *   `content` (jsonb, nullable)
         *   `image_url` (text, nullable) // URL to image stored in Supabase Storage
         *   `created_at` (timestamp with time zone, default: `now()`)
         *   `metadata` (jsonb, nullable) // Store additional data like token count, cost, model used, etc.
@@ -223,7 +223,7 @@ The following environment variables are assumed to be configured:
           document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE NOT NULL, -- Cascade delete messages if document deleted
           user_id UUID REFERENCES auth.users(id) NOT NULL,
           role TEXT NOT NULL CHECK (role IN ('user', 'assistant')), -- Example roles
-          content TEXT,
+          content JSONB, -- Changed from TEXT to JSONB
           image_url TEXT, -- Stores the path within the bucket, not the full URL
           metadata JSONB,
           created_at TIMESTAMPTZ DEFAULT now() NOT NULL
