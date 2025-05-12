@@ -533,6 +533,74 @@ export async function POST(req: Request) {
             savedUserMessageId = savedUserData.id;
             console.log(`[API Chat Save User Msg] Saved user message ID: ${savedUserMessageId}`);
 
+            // --- NEW: Check if summary generation is needed (every 10th message) ---
+            try {
+              const { count, error: countError } = await supabase
+                  .from('messages')
+                  .select('id', { count: 'exact' })
+                  .eq('document_id', documentId);
+
+              if (countError) {
+                  console.error('[API Chat Summary] Error fetching message count:', countError);
+              } else if (count !== null && count > 0 && count % 10 === 0) {
+                  console.log(`[API Chat Summary] Message count (${count}) is a multiple of 10. Generating summary...`);
+
+                  // Fetch all messages for the document, formatting for the summary agent
+                  const { data: allMessages, error: fetchAllMessagesError } = await supabase
+                      .from('messages')
+                      .select('role, content') // Select raw content to process text parts
+                      .eq('document_id', documentId)
+                      .order('created_at', { ascending: true });
+
+                  if (fetchAllMessagesError) {
+                      console.error('[API Chat Summary] Error fetching all messages for summary:', fetchAllMessagesError);
+                  } else if (allMessages && allMessages.length > 0) {
+                      // Format messages for the summary agent API
+                      const formattedMessages = allMessages.map(msg => {
+                          let content_text = '';
+                          if (Array.isArray(msg.content)) {
+                              const textPart = msg.content.find((part: any) => part.type === 'text');
+                              content_text = textPart?.text || '';
+                          } else if (typeof msg.content === 'string') {
+                              content_text = msg.content;
+                          }
+                          return { role: msg.role, content_text: content_text };
+                      });
+
+                      console.log('[API Chat Summary] Calling /api/generate-summary...');
+                      // Call the summary agent API route internally
+                      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'; // Fallback for local dev
+                      const summaryResponse = await fetch(`${appUrl}/api/generate-summary`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ messages: formattedMessages }),
+                      });
+
+                      if (summaryResponse.ok) {
+                          const { abstract_summary, extractive_summary } = await summaryResponse.json();
+                          console.log('[API Chat Summary] Received summary. Updating document...');
+
+                          // Update the document with the new summaries
+                          const { error: updateDocError } = await supabase
+                              .from('documents')
+                              .update({ abstract_summary, extractive_summary })
+                              .eq('id', documentId);
+
+                          if (updateDocError) {
+                              console.error('[API Chat Summary] Error updating document with summary:', updateDocError);
+                          } else {
+                              console.log('[API Chat Summary] Document updated with summary successfully.');
+                          }
+                      } else {
+                          console.error(`[API Chat Summary] Failed to call /api/generate-summary: ${summaryResponse.status} ${summaryResponse.statusText}`);
+                      }
+                  }
+              }
+            } catch (error) {
+              console.error('[API Chat Summary] Unexpected error during summary generation process:', error);
+            }
+            // --- END NEW ---
+
             // --- Log Whisper details ONLY if it was an audio input AND saved successfully ---
             if (messageInputMethod === 'audio' && whisperDetails && typeof savedUserMessageId === 'string') {
                 const whisperToolCallId = `whisper-${crypto.randomUUID()}`;
@@ -657,10 +725,73 @@ export async function POST(req: Request) {
     }
     // --- END NEW ---
 
+    // --- NEW: Add summary context if available ---
+    let abstractSummary = '';
+    let extractiveSummary = '';
+    try {
+        const { data: documentData, error: fetchDocError } = await supabase
+            .from('documents')
+            .select('abstract_summary, extractive_summary')
+            .eq('id', documentId)
+            .single();
+
+        if (fetchDocError) {
+            console.error('[API Chat Summary Context] Error fetching document summaries:', fetchDocError);
+        } else if (documentData) {
+            abstractSummary = documentData.abstract_summary || '';
+            extractiveSummary = documentData.extractive_summary || '';
+
+            if (abstractSummary || extractiveSummary) {
+                let summaryContent = '[Conversation Summary]\n';
+                if (abstractSummary) {
+                    summaryContent += `Abstract: ${abstractSummary}\n`;
+                }
+                if (extractiveSummary) {
+                    summaryContent += `Extractive:\n${extractiveSummary}\n`;
+                }
+                
+                const summaryMessage: CoreMessage = {
+                    role: 'system', // Use system role for context
+                    content: summaryContent
+                };
+
+                // Insert the summary message before processing client messages, but after system and tagged docs
+                // Find the index after the system message and tagged docs message (if added)
+                let insertionIndex = messages.length; // Default to end if no client messages yet
+                // If there are client messages, insert before the first one
+                 if (clientMessages.length > 0) {
+                    // Find the index of the first non-system/non-tagged-doc message
+                    insertionIndex = messages.findIndex(msg => !['system', 'user'].includes(msg.role));
+                    if (insertionIndex === -1) { // If only system/tagged docs messages exist, insert at the end
+                       insertionIndex = messages.length;
+                    }
+                     // If tagged documents were added as a user message, insert after it.
+                    const taggedDocIndex = messages.findIndex(msg => typeof msg.content === 'string' && msg.content.startsWith('[Tagged Document Context]'));
+                    if(taggedDocIndex !== -1) {
+                         insertionIndex = taggedDocIndex + 1;
+                    }
+                 }
+
+                 messages.splice(insertionIndex, 0, summaryMessage);
+                 console.log('[API Chat Summary Context] Added conversation summary context message.');
+            }
+        }
+    } catch (error) {
+        console.error('[API Chat Summary Context] Unexpected error during summary context injection:', error);
+    }
+    // --- END NEW ---
+
     // Process remaining messages (keeping most of the original processing logic)
-    for (let i = 0; i < clientMessages.length; i++) {
-        const msg = clientMessages[i];
-        const isLastMessage = i === clientMessages.length - 1;
+    // --- MODIFICATION: Slice clientMessages to get the last 10 (or fewer if not that many) ---
+    const messagesToProcess = clientMessages.length > 10
+        ? clientMessages.slice(-10)
+        : clientMessages;
+    console.log(`[API Chat] Processing ${messagesToProcess.length} client messages (sliced from ${clientMessages.length}).`);
+    // --- END MODIFICATION ---
+
+    for (let i = 0; i < messagesToProcess.length; i++) { // <-- MODIFIED: Iterate over messagesToProcess
+        const msg = messagesToProcess[i]; // <-- MODIFIED: Use messagesToProcess
+        const isLastMessage = i === messagesToProcess.length - 1; // <-- MODIFIED: Use messagesToProcess
 
         if (msg.role === 'user') {
             // --- Extract text content FIRST, regardless of position/image --- 
