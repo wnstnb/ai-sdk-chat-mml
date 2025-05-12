@@ -15,7 +15,7 @@ interface UseFileUploadReturn {
     handleFileSelectEvent: (event: React.ChangeEvent<HTMLInputElement>) => void;
     handleFilePasteEvent: (event: React.ClipboardEvent<Element>) => void; // Allow generic element for broader use
     handleFileDropEvent: (event: React.DragEvent<Element>) => void; // Allow generic element
-    clearPreview: () => void;
+    clearPreview: (options?: { deleteFromStorage?: boolean }) => Promise<void>;
 }
 
 export function useFileUpload({
@@ -223,12 +223,13 @@ export function useFileUpload({
     }, [selectAndUploadFile]);
 
     // Function to manually clear the preview state AND delete from storage
-    const clearPreview = useCallback(async () => {
-        console.log("[useFileUpload] clearPreview called.");
+    const clearPreview = useCallback(async (options?: { deleteFromStorage?: boolean }) => {
+        console.log("[useFileUpload] clearPreview called with options:", options);
+        const shouldDeleteFromStorage = options?.deleteFromStorage !== undefined ? options.deleteFromStorage : true;
 
-        // --- ADDED: Delete from Storage --- 
+        // --- ADDED: Delete from Storage ---
         const pathToDelete = uploadedImagePath; // Capture path before clearing state
-        
+
         // Clear client-side state IMMEDIATELY for responsiveness
         setFiles(null);
         setUploadedImagePath(null);
@@ -236,8 +237,8 @@ export function useFileUpload({
         setUploadError(null);
         console.log("[useFileUpload] Client-side preview state cleared.");
 
-        // If there was a path stored, attempt deletion
-        if (pathToDelete) {
+        // If there was a path stored, attempt deletion based on shouldDeleteFromStorage
+        if (pathToDelete && shouldDeleteFromStorage) {
             console.log(`[useFileUpload] Attempting to delete file from storage: ${pathToDelete}`);
             try {
                 const response = await fetch('/api/storage/delete', {
@@ -261,10 +262,12 @@ export function useFileUpload({
                 console.error(`[useFileUpload] Error calling delete API for '${pathToDelete}':`, error);
                 toast.error(`Error removing file: ${error.message}`);
             }
-        } else {
+        } else if (pathToDelete && !shouldDeleteFromStorage) {
+            console.log(`[useFileUpload] Skipping storage deletion for path: ${pathToDelete} as per options.`);
+        } else if (!pathToDelete) {
             console.log("[useFileUpload] No uploadedImagePath found, skipping storage deletion.");
         }
-        // --- END ADDED --- 
+        // --- END ADDED ---
 
         // Note: Does not affect ongoing uploads
     }, [uploadedImagePath, setFiles, setUploadedImagePath, setUploadedImageSignedUrl, setUploadError]); // Include uploadedImagePath in deps

@@ -15,6 +15,14 @@ import type { CoreMessage, TextPart, ImagePart } from 'ai';
 
 import type { Message as SupabaseMessage, ToolCall as SupabaseToolCall } from '@/types/supabase';
 
+// Import Message from ai/react and rename it to avoid conflict if necessary
+import { type Message as AiReactMessage } from 'ai/react'; 
+
+// Define our custom UI message type that includes signedDownloadUrl
+export interface CustomUIMessage extends AiReactMessage {
+    signedDownloadUrl?: string | null;
+}
+
 interface MessageWithDetails extends SupabaseMessage {
     signedDownloadUrl: string | null;
     tool_calls: SupabaseToolCall[] | null; 
@@ -27,11 +35,7 @@ interface UseInitialChatMessagesProps {
 
 export interface UseInitialChatMessagesReturn {
     isLoadingMessages: boolean;
-    // Return ai/react Message array
-    // initialMessages: CoreMessage[] | null;
-    // --- MODIFICATION: Revert to Message[] | null --- 
-    initialMessages: Message[] | null; 
-    // --- END MODIFICATION --- 
+    initialMessages: CustomUIMessage[] | null; // Use our custom message type
 }
 
 export function useInitialChatMessages({
@@ -39,11 +43,7 @@ export function useInitialChatMessages({
     setPageError,
 }: UseInitialChatMessagesProps): UseInitialChatMessagesReturn {
     const [isLoadingMessages, setIsLoadingMessages] = useState(true);
-    // Use ai/react Message type for state
-    // const [initialMessages, setInitialMessages] = useState<CoreMessage[] | null>(null);
-    // --- MODIFICATION: Revert to Message[] | null for state --- 
-    const [initialMessages, setInitialMessages] = useState<Message[] | null>(null); 
-    // --- END MODIFICATION --- 
+    const [initialMessages, setInitialMessages] = useState<CustomUIMessage[] | null>(null); // Use our custom message type
 
     const fetchInitialMessages = useCallback(async () => {
         setIsLoadingMessages(true);
@@ -55,7 +55,6 @@ export function useInitialChatMessages({
         }
 
         try {
-            // --- Inner try-catch for early errors ---
             try {
                 const response = await fetch(`/api/documents/${documentId}/messages`);
                 
@@ -74,10 +73,7 @@ export function useInitialChatMessages({
                 console.log(`[useInitialChatMessages] Type of data: ${typeof data}, Is Array: ${Array.isArray(data)}`);
                 console.log(`[useInitialChatMessages] Data length: ${data?.length ?? 'undefined'}`);
 
-                // const formattedMessages: CoreMessage[] = [];
-                // --- MODIFICATION: Revert to Message[] for formatting --- 
-                const formattedMessages: Message[] = []; 
-                // --- END MODIFICATION --- 
+                const formattedMessages: CustomUIMessage[] = []; // Use our custom message type
                 const allowedInitialRoles = ['user', 'assistant', 'system'];
 
                 console.log(`[useInitialChatMessages] About to start formatting loop...`);
@@ -87,7 +83,7 @@ export function useInitialChatMessages({
                     if (!allowedInitialRoles.includes(msg.role as string)) { 
                         continue;
                     }
-                    const role = msg.role as Message['role'];
+                    const role = msg.role as AiReactMessage['role']; // Role from ai/react Message
                     const createdAt = new Date(msg.created_at);
 
                     if (role === 'system') {
@@ -95,76 +91,64 @@ export function useInitialChatMessages({
                         continue; 
                     }
                     if (role === 'user') {
-                        const textContent = msg.content || '';
+                        // Process msg.content to a string (userTextContent)
+                        let userTextContent = '';
+                        if (typeof msg.content === 'string') {
+                            userTextContent = msg.content;
+                        } else if (Array.isArray(msg.content)) {
+                            userTextContent = msg.content
+                                .filter((part): part is TextPart => part.type === 'text' && typeof part.text === 'string')
+                                .map(part => part.text)
+                                .join('\n');
+                        }
+                        // userTextContent is now a string (possibly empty)
+
                         console.log(`[useInitialChatMessages] Processing USER message ID: ${msg.id}`);
                         console.log(`[useInitialChatMessages]   Raw msg object:`, JSON.stringify(msg, null, 2));
+                        console.log(`[useInitialChatMessages]   User Text Content Processed:`, userTextContent);
                         console.log(`[useInitialChatMessages]   Value of msg.signedDownloadUrl:`, msg.signedDownloadUrl);
 
-                        // --- Use parts array (Keep this logic) --- 
-                        // Define Part types inline for clarity if not importing Core types
-                        type TextPart = { type: 'text'; text: string };
-                        type ImagePart = { type: 'image'; image: URL };
-                        const parts: Array<TextPart | ImagePart> = [];
-                        if (textContent) {
-                            parts.push({ type: 'text', text: textContent });
+                        const uiTextParts: Array<{type: 'text', text: string}> = [];
+                        if (userTextContent.trim()) {
+                            uiTextParts.push({ type: 'text', text: userTextContent });
                         }
-                        if (msg.signedDownloadUrl) {
-                            try {
-                                const imageUrl = new URL(msg.signedDownloadUrl);
-                                parts.push({ type: 'image', image: imageUrl });
-                            } catch (e) {
-                                console.error(`[useInitialChatMessages] Invalid URL for image in message ${msg.id}: ${msg.signedDownloadUrl}`);
-                            }
-                        }
-                        // --- END parts array logic --- 
+                        // Image from msg.signedDownloadUrl will be handled by custom UI rendering, not added to standard parts.
 
-                        // --- MODIFICATION: Create Message type with parts array in content (using assertion) --- 
-                        // const messageToPush: CoreMessage = {
-                        const messageToPush: Message = {
+                        const messageToPush: CustomUIMessage = { // Message from 'ai/react'
                             id: msg.id, 
                             role: 'user',
-                            // content: parts, 
-                            // --- Use type assertion for content --- 
-                            content: parts as any, 
-                            // --- End assertion --- 
+                            content: userTextContent, // Top-level content is the processed string
+                            parts: uiTextParts.length > 0 ? uiTextParts : undefined, // Only text parts for now
                             createdAt: createdAt, 
+                            signedDownloadUrl: msg.signedDownloadUrl // Pass the URL here
                         }; 
-                        // --- END MODIFICATION --- 
 
                         console.log(`[useInitialChatMessages]   Message OBJECT being pushed:`, JSON.stringify(messageToPush, null, 2));
                         formattedMessages.push(messageToPush);
                         continue; 
                     }
                     if (role === 'assistant') {
-                        const textContent = msg.content || '';
-                        // Assistant messages remain simple for now
+                        // Process msg.content to a string (assistantTextContent)
+                        let assistantTextContent = '';
+                        if (typeof msg.content === 'string') {
+                            assistantTextContent = msg.content;
+                        } else if (Array.isArray(msg.content)) {
+                            // Assuming assistant content might also be an array of parts
+                            assistantTextContent = msg.content
+                                .filter((part): part is TextPart => part.type === 'text' && typeof part.text === 'string')
+                                .map(part => part.text)
+                                .join('\n');
+                        }
+                        // assistantTextContent is now a string
+
                         formattedMessages.push({
                             id: msg.id, 
                             role: 'assistant',
-                            content: textContent,
+                            content: assistantTextContent, // Use processed string content
                             createdAt: createdAt,
-                        // } as CoreMessage); 
-                        // --- MODIFICATION: Revert type assertion --- 
+                            signedDownloadUrl: msg.signedDownloadUrl // Also pass for assistant messages if relevant
                         });
-                        // --- END MODIFICATION --- 
-
-                        // Commenting out explicit tool result message pushing for now
-                        /*
-                        if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
-                            msg.tool_calls.forEach(tc => {
-                                const toolResultMessage: Message = {
-                                    id: `${msg.id}-toolresult-${tc.tool_call_id}`,
-                                    role: 'tool', // UseChat might expect this
-                                    tool_call_id: tc.tool_call_id,
-                                    content: typeof tc.tool_output === 'string' 
-                                               ? tc.tool_output 
-                                               : JSON.stringify(tc.tool_output ?? null),
-                                    createdAt: createdAt,
-                                } as any; // Use 'as any' carefully if Message type doesn't fit Tool role
-                                formattedMessages.push(toolResultMessage);
-                            });
-                        }
-                        */
+                        continue; // Added continue
                     }
                 }
 
@@ -198,6 +182,6 @@ export function useInitialChatMessages({
 
     return {
         isLoadingMessages,
-        initialMessages, // Return type is now Message[] | null
+        initialMessages, // Return type is now CustomUIMessage[] | null
     };
 } 

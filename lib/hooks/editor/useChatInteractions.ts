@@ -35,7 +35,7 @@ interface UseChatInteractionsProps {
     uploadedImagePath: string | null; // ADDED BACK: Storage path for DB
     uploadedImageSignedUrl: string | null; // Signed download URL for AI/UI
     isUploading: boolean; // From useFileUpload
-    clearFileUploadPreview: () => void; // From useFileUpload
+    clearFileUploadPreview: (options?: { deleteFromStorage?: boolean }) => Promise<void>; // From useFileUpload
     apiEndpoint?: string; // Optional override for API endpoint
     initialTaggedDocIdsString?: string | null; // <-- NEW: For pre-tagging from URL
 }
@@ -386,7 +386,6 @@ export function useChatInteractions({
         // --- Set hook input state for API call & Clear context state --- 
         // Keep setting finalInput for potential internal use by the hook before API call? Let's test removing this too if append works.
         // setInput(finalInput); // Set hook's input to the combined value - Let's comment this out, append takes the message object.
-        clearFileUploadPreview(); // Clear file preview
         setFollowUpContext(null); // Clear follow-up context store
 
         // --- Remove temporary input clearing ---
@@ -415,8 +414,9 @@ export function useChatInteractions({
             console.log('[handleSubmit] append called successfully.');
             console.log('[handleSubmit] Messages state immediately after append call:', JSON.stringify(messages, null, 2));
 
-            // ---> Clear visual input field AFTER append call? Append might do this itself. Let's clear it explicitly. <---
-            setInput(''); 
+            // ---> Clear visual input field AFTER append call? Append might do this itself. Let's clear it explicitly. <---+
+            setInput('');
+            clearFileUploadPreview({ deleteFromStorage: false }); // Clear file preview AFTER submission and input clear, DO NOT delete from storage
 
         } catch (appendError: any) {
              console.error("[handleSubmit] Error occurred *during* call to append:", appendError);
