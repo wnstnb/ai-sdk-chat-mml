@@ -947,9 +947,26 @@ export default function EditorPage() {
 
     // --- Handler Definitions (Place standard handlers here) ---
     const handlePaste = (event: React.ClipboardEvent) => handleFilePasteEvent(event);
-    const handleDragOver = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(true); };
-    const handleDragLeave = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(false); };
-    const handleDrop = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(false); handleFileDropEvent(event); };
+    const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        // Only show the drop zone overlay if actual files are being dragged in
+        if (event.dataTransfer.types.includes('Files')) {
+            setIsDragging(true);
+        }
+    };
+    const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        // Reset regardless of type on leave
+        setIsDragging(false);
+    };
+    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        setIsDragging(false);
+        // Only handle file drop if Files type is present
+        if (event.dataTransfer.types.includes('Files')) {
+            handleFileDropEvent(event);
+        }
+    };
     const handleUploadClick = () => { if (isUploading || isRecording || isTranscribing) { toast.info("Busy, please wait..."); return; } fileInputRef.current?.click(); };
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => handleFileSelectEvent(event);
     const handleSendToEditor = async (content: string) => {
