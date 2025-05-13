@@ -834,9 +834,9 @@ export default function LaunchPage() {
         </div>
 
         {/* Right Card: Tabs (Recent/Browser) */}
-        <div className="w-full md:w-1/2 flex flex-col items-center space-y-2"> {/* Removed hover/focus effects */} 
-          <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Continue Working</h2> {/* Added Title */} 
-          <Tabs defaultValue="recent" className="flex flex-col w-full"> {/* Removed h-full, added w-full */} 
+        <div className="w-full md:w-1/2 flex flex-col items-center space-y-2 min-h-0"> {/* Added min-h-0 */}
+          <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Continue Working</h2>
+          <Tabs defaultValue="recent" className="flex flex-col w-full h-[calc(100vh-12rem)] max-h-[800px] min-h-0"> {/* Changed h-full to h-[calc(100vh-12rem)] */}
             <TabsList className="grid w-full grid-cols-2 flex-shrink-0 bg-transparent p-1 h-10 rounded-lg"> {/* Make background transparent, adjust padding/height/rounding if needed */} 
               <TabsTrigger 
                 value="recent" 
@@ -865,8 +865,8 @@ export default function LaunchPage() {
             </TabsList>
 
             {/* Recent Files Tab Content */}
-            <TabsContent value="recent" className="overflow-hidden mt-2"> {/* Added mt-2 for spacing */} 
-              <Card className="flex flex-col bg-[--bg-primary] border-[--border-color] 
+            <TabsContent value="recent" className="flex-1 min-h-0"> {/* Added flex-1 and min-h-0 */} 
+              <Card className="flex flex-col h-full bg-[--bg-primary] border-[--border-color] 
                            transition-all duration-200 ease-in-out 
                            hover:shadow-lg 
                            hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* Change border on hover */} 
@@ -874,7 +874,7 @@ export default function LaunchPage() {
                   <CardTitle className="text-[--text-color]">Recent Documents</CardTitle>
                   {/* <CardDescription className="text-[--text-muted]">Quickly jump back into your work.</CardDescription> */}
                 </CardHeader>
-                <CardContent className="overflow-y-auto"> {/* Removed flex-grow, kept scroll */} 
+                <CardContent className="flex-1 overflow-y-auto min-h-0"> {/* Added flex-1 and min-h-0 */} 
                   {isLoading ? (
                       <p className="text-center text-[--text-muted]">Loading recent documents...</p>
                   ) : error ? ( 
@@ -907,20 +907,19 @@ export default function LaunchPage() {
             </TabsContent>
 
             {/* File Browser Tab Content */}
-            <TabsContent value="browser" className="mt-2 flex flex-col flex-grow overflow-hidden"> {/* MODIFIED: Added flex-grow, kept overflow-hidden to see if NewFileManager handles its own */} 
-               <Card className="flex flex-col flex-grow bg-[--bg-primary] border-[--border-color] 
+            <TabsContent value="browser" className="flex-1 min-h-0"> {/* Added flex-1 and min-h-0 */}
+               <Card className="flex flex-col h-full bg-[--bg-primary] border-[--border-color] 
                             transition-all duration-200 ease-in-out 
                             hover:shadow-lg 
                             hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* MODIFIED: Added flex-grow */} 
-                 <CardContent className="flex flex-col flex-grow p-4"> {/* MODIFIED: Added flex-grow */} 
+                 <CardContent className="flex flex-col flex-1 p-4 min-h-0"> {/* Added min-h-0 */} 
                    {/* Omnibar */}
                    <div className="mb-4 flex-shrink-0"> 
                       <Omnibar />
                    </div>
                    {/* Render the actual NewFileManager component */}
-                   <div className="flex-grow border border-[--border-color] rounded-md shadow-sm overflow-hidden"> {/* MODIFIED: Added flex-grow, kept overflow-hidden as NewFileManager has its own scroll */}
-                       {/* Removed flex-grow from parent, NewFileManager likely controls its own scroll/size */} 
-                      <NewFileManager />
+                   <div className="flex-1 border border-[--border-color] rounded-md shadow-sm overflow-hidden min-h-0"> {/* Added min-h-0 */}
+                       <NewFileManager />
                    </div>
                  </CardContent>
                </Card>
