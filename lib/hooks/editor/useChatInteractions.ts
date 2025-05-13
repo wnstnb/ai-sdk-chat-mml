@@ -396,7 +396,9 @@ export function useChatInteractions({
         const submitOptions: { data: any; } = {
             data: submitDataPayload as any,
         };
-
+        // --- ADD THIS LOG ---
+        console.log('[handleSubmit] Data payload being sent to /api/chat:', JSON.stringify(submitDataPayload, null, 2));
+        // --- END ADDED LOG ---
         // --- Call append with the string-content message and options data ---
         try {
             console.log('[handleSubmit] Preparing to call append. Current isLoading state:', isLoading);

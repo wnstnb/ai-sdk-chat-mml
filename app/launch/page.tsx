@@ -835,7 +835,7 @@ export default function LaunchPage() {
 
         {/* Right Card: Tabs (Recent/Browser) */}
         <div className="w-full md:w-1/2 flex flex-col items-center space-y-2 min-h-0"> {/* Added min-h-0 */}
-          <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Continue Working</h2>
+          <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Continue Working</h2> {/* Added Title */}
           <Tabs defaultValue="recent" className="flex flex-col w-full h-[calc(100vh-12rem)] max-h-[800px] min-h-0"> {/* Changed h-full to h-[calc(100vh-12rem)] */}
             <TabsList className="grid w-full grid-cols-2 flex-shrink-0 bg-transparent p-1 h-10 rounded-lg"> {/* Make background transparent, adjust padding/height/rounding if needed */} 
               <TabsTrigger 

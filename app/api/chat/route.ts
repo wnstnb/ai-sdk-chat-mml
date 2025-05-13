@@ -391,6 +391,7 @@ export async function POST(req: Request) {
                     return `[Content from document: ${doc.name}]\n${content}`;
                 }).join('\n---\n');
                 
+                // --- NEW: Prepare tagged documents content ---
                 console.log('[API Chat] Prepared tagged documents content');
             } else {
                 console.warn('[API Chat] No tagged documents found or user lacks access to the specified documents');
@@ -542,8 +543,8 @@ export async function POST(req: Request) {
 
               if (countError) {
                   console.error('[API Chat Summary] Error fetching message count:', countError);
-              } else if (count !== null && count > 0 && count % 10 === 0) {
-                  console.log(`[API Chat Summary] Message count (${count}) is a multiple of 10. Generating summary...`);
+              } else if (count !== null && count > 0 && count % 6 === 0) {
+                  console.log(`[API Chat Summary] Message count (${count}) is a multiple of 11. Generating summary...`);
 
                   // Fetch all messages for the document, formatting for the summary agent
                   const { data: allMessages, error: fetchAllMessagesError } = await supabase
@@ -670,7 +671,7 @@ export async function POST(req: Request) {
         searchAndTagDocumentsTool: searchAndTagDocumentsTool,
     };
     // --- End Rate Limiting Wrapper ---
-
+    
     // --- Prepare messages for the AI ---
     let finalImageSignedUrl: URL | undefined = undefined; // Use the directly passed URL
 
@@ -709,18 +710,18 @@ export async function POST(req: Request) {
 
     // --- NEW: Add tagged documents context if available ---
     if (taggedDocumentsContent) {
-        // Insert the tagged documents content as a user message before the last actual user message
+        // Insert the tagged documents content as a system message before the last actual user message
         // This happens before the normal message processing loop, ensuring it's inserted at the right position
         const taggedDocumentsMessage: CoreMessage = {
-            role: 'user',
+            role: 'system', // Changed role to system for context injection
             content: `[Tagged Document Context]\n${taggedDocumentsContent}`
         };
-        
+
         // If the client has sent messages, insert the taggedDocumentContent before the latest one
         if (clientMessages.length > 0) {
             // Since we'll be processing the original messages below, we add this to the output array now
             messages.push(taggedDocumentsMessage);
-            console.log('[API Chat] Added tagged documents context message');
+            // console.log('[API Chat] Added tagged documents context message, new messages count:', messages.length);
         }
     }
     // --- END NEW ---
@@ -1047,7 +1048,7 @@ export async function POST(req: Request) {
 
     console.log(`[API Chat] Calling streamText with ${transformedMessages.length} prepared messages. Last message role: ${transformedMessages[transformedMessages.length - 1]?.role}`);
     // --- DEBUG: Log final payload to AI SDK ---
-    // console.log("[API Chat] Final messages payload for AI SDK:", JSON.stringify(messages, null, 2));
+    console.log("[API Chat] Final messages payload for AI SDK:", JSON.stringify(transformedMessages, null, 2));
     // ---> ADDED: Log content of the last message explicitly < ---
     const lastMessageForLog = transformedMessages[transformedMessages.length - 1];
     if (lastMessageForLog) {
