@@ -18,6 +18,12 @@ export default function LandingPageContent() {
   const [email, setEmail] = useState("");
   const [activeTabIndex, setActiveTabIndex] = useState(0); // New state for active tab
   const featuresSectionRef = useRef<HTMLDivElement>(null); // New ref for the features section
+  const [currentCanvasImageIndex, setCurrentCanvasImageIndex] = useState(0); // Index for Desktop (0) or Mobile (1) view for the first tab
+
+  const canvasImageSources = [
+    "/one_flow_one_canvas.png",
+    "/one_flow_one_canvas_2.png"
+  ];
 
   const features: Feature[] = [
     {
@@ -159,6 +165,11 @@ export default function LandingPageContent() {
     featuresSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  // Renamed and modified to handle sub-tab clicks for the canvas view
+  const handleCanvasViewChange = (index: number) => {
+    setCurrentCanvasImageIndex(index);
+  };
+
   return (
     // Removed min-h-screen from main, letting inner div control height
     // <main ref={mainRef} className="parallax-bg text-[color:var(--text-color)] "> // REMOVED mainRef
@@ -256,76 +267,168 @@ export default function LandingPageContent() {
               <div className="bg-[color:var(--card-bg)]/70 backdrop-blur-lg p-8 md:p-10 rounded-xl border border-[color:var(--border-color)]/25 shadow-2xl min-h-[350px] flex items-center justify-center w-full"> {/* MODIFIED: Added w-full */} 
                 <AnimatePresence mode="wait">
                   {activeTabIndex === 0 ? (
-                    // Special layout for "One Flow, One Canvas"
+                    // MODIFIED layout for "One Flow, One Canvas" to be vertical
                     <motion.div
                       key={activeTabIndex}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -20, transition: { duration: 0.2 } }}
                       transition={{ duration: 0.3, ease: "easeInOut" }}
-                      className="flex flex-col md:flex-row items-center md:items-start gap-6 md:gap-10 w-full" // Added md:gap-10
+                      className="flex flex-col items-center text-center w-full gap-6 md:gap-8" // MODIFIED: Vertical layout, centered
                     >
-                      {/* Text Content on the Left */}
-                      <div className="md:w-1/2 flex flex-col items-center md:items-start text-center md:text-left">
+                      {/* Text Content (Icon, Title, Description) */}
+                      <div className="flex flex-col items-center text-center">
                         <div className="mb-5">
                           {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
                         </div>
                         <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
                           {features[activeTabIndex].title}
                         </h3>
-                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed">
+                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
                           {features[activeTabIndex].description}
                         </p>
                       </div>
 
-                      {/* Image on the Right */}
-                      <div className="md:w-1/2 flex justify-center items-center mt-6 md:mt-0">
-                        <img
-                          src="/one_flow_one_canvas.png"
-                          alt={features[activeTabIndex].title}
-                          className="rounded-lg shadow-xl w-full h-auto object-contain max-h-[300px] md:max-h-[380px]" // Increased max-h slightly
-                        />
+                      {/* Sub-tabs for Desktop/Mobile view - Styled like main tabs */}
+                      <div className="flex border-b border-[color:var(--border-color)]/30 mb-6 md:mb-8 justify-center">
+                        {["Desktop View", "Mobile View"].map((viewName, index) => (
+                          <button
+                            key={viewName}
+                            onClick={() => handleCanvasViewChange(index)}
+                            className={`py-3 px-4 sm:px-5 font-medium text-xs sm:text-sm focus:outline-none transition-all duration-300 ease-in-out relative group
+                              ${currentCanvasImageIndex === index
+                                ? 'text-[color:var(--accent-color)]'
+                                : 'text-[color:var(--muted-text-color)] hover:text-[color:var(--primary-color)]'
+                              }`}
+                          >
+                            {viewName}
+                            <span className={`absolute bottom-[-1px] left-0 w-full h-0.5 bg-[color:var(--accent-color)] transform transition-transform duration-300 ease-out
+                              ${currentCanvasImageIndex === index ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'}`}></span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Image display area with Fade Animation */}
+                      <div className="w-full flex justify-center items-center relative min-h-[250px] sm:min-h-[300px] md:min-h-[400px]">
+                        <AnimatePresence mode="wait">
+                          <motion.img
+                            key={canvasImageSources[currentCanvasImageIndex]}
+                            src={canvasImageSources[currentCanvasImageIndex]}
+                            alt={`${features[activeTabIndex].title} - ${currentCanvasImageIndex === 0 ? "Desktop" : "Mobile"} View`}
+                            className={`rounded-lg shadow-xl h-auto object-contain 
+                              ${currentCanvasImageIndex === 0 ? 'w-full' : 'w-4/5 mx-auto' // Desktop full width, Mobile 80% width and centered
+                            }`}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0, position: 'absolute', top:0, left:0 }}
+                            transition={{ duration: 0.3, ease: "easeInOut" }}
+                          />
+                        </AnimatePresence>
                       </div>
                     </motion.div>
                   ) : activeTabIndex === 1 ? (
-                    // Special layout for "Tag Documents"
+                    // MODIFIED layout for "Tag Documents" to be vertical
                     <motion.div
-                      key={activeTabIndex} // Use activeTabIndex for key to ensure re-render on tab change
+                      key={activeTabIndex} 
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -20, transition: { duration: 0.2 } }}
                       transition={{ duration: 0.3, ease: "easeInOut" }}
-                      className="flex flex-col md:flex-row items-center md:items-start gap-6 md:gap-10 w-full"
+                      className="flex flex-col items-center text-center w-full gap-6 md:gap-8" // MODIFIED: Vertical layout, centered
                     >
-                      {/* Text Content on the Left */}
-                      <div className="md:w-1/2 flex flex-col items-center md:items-start text-center md:text-left">
+                      {/* Text Content (Icon, Title, Description) */}
+                      <div className="flex flex-col items-center text-center">
                         <div className="mb-5">
                           {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
                         </div>
                         <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
                           {features[activeTabIndex].title}
                         </h3>
-                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed">
+                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
                           {features[activeTabIndex].description}
                         </p>
                       </div>
 
-                      {/* Images on the Right, stacked vertically */}
-                      <div className="md:w-1/2 flex flex-col items-center justify-center gap-4 md:gap-6 mt-6 md:mt-0">
+                      {/* Images Below Text, stacked vertically */}
+                      <div className="w-full flex flex-col items-center justify-center gap-4 md:gap-6 mt-4 md:mt-6 max-w-lg mx-auto"> {/* Added max-w-lg and mx-auto for image container */}
                         <img
-                          src="/tag_docs_2.png" // Assuming image is in public folder
+                          src="/tag_docs_2.png" 
                           alt="Tag documents example 1"
                           className="rounded-lg shadow-xl w-full h-auto object-contain"
                         />
                         <img
-                          src="/tag_docs_3.png" // Assuming image is in public folder
+                          src="/tag_docs_3.png" 
                           alt="Tag documents example 2"
                           className="rounded-lg shadow-xl w-full h-auto object-contain"
                         />
                       </div>
                     </motion.div>
+                  ) : activeTabIndex === 3 ? (
+                    // Layout for "Stay Organized" tab (index 3)
+                    <motion.div
+                      key={activeTabIndex}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20, transition: { duration: 0.2 } }}
+                      transition={{ duration: 0.3, ease: "easeInOut" }}
+                      className="flex flex-col items-center text-center w-full gap-6 md:gap-8"
+                    >
+                      {/* Text Content (Icon, Title, Description) */}
+                      <div className="flex flex-col items-center text-center">
+                        <div className="mb-5">
+                          {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
+                        </div>
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
+                          {features[activeTabIndex].title}
+                        </h3>
+                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
+                          {features[activeTabIndex].description}
+                        </p>
+                      </div>
+
+                      {/* Image Below Text */}
+                      <div className="w-full flex justify-center items-center mt-4 md:mt-6">
+                        <img
+                          src="/file_browser_1.png" // Assuming image is in public folder
+                          alt={features[activeTabIndex].title}
+                          className="rounded-lg shadow-xl h-auto object-contain max-w-lg w-full"
+                        />
+                      </div>
+                    </motion.div>
+                  ) : activeTabIndex === 4 ? (
+                    // Layout for "Use different models" tab (index 4)
+                    <motion.div
+                      key={activeTabIndex}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20, transition: { duration: 0.2 } }}
+                      transition={{ duration: 0.3, ease: "easeInOut" }}
+                      className="flex flex-col items-center text-center w-full gap-6 md:gap-8"
+                    >
+                      {/* Text Content (Icon, Title, Description) */}
+                      <div className="flex flex-col items-center text-center">
+                        <div className="mb-5">
+                          {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
+                        </div>
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
+                          {features[activeTabIndex].title}
+                        </h3>
+                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
+                          {features[activeTabIndex].description}
+                        </p>
+                      </div>
+
+                      {/* Image Below Text */}
+                      <div className="w-full flex justify-center items-center mt-4 md:mt-6">
+                        <img
+                          src="/user_diff_models_1.png" // Assuming image is in public folder
+                          alt={features[activeTabIndex].title}
+                          className="rounded-lg shadow-xl h-auto object-contain max-w-lg w-full"
+                        />
+                      </div>
+                    </motion.div>
                   ) : (
-                    // Default centered layout for other tabs
+                    // Default centered layout for the remaining tab (Interact Your Way - index 2)
                     <motion.div
                       key={activeTabIndex}
                       initial={{ opacity: 0, y: 20 }}
