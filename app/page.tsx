@@ -190,14 +190,14 @@ export default function LandingPageContent() {
                   variants={headingVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Focus on creation, <br />not distraction
+                  Seamless ideas, <br />seemless work.
                 </motion.h1>
                 <motion.p 
                   className="text-lg md:text-xl text-[color:var(--primary-color)]/90 mb-12 max-w-2xl leading-relaxed mx-auto"
                   variants={contentVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Tired of complex tools that get in your way? Us too. We built something different—minimal, intelligent, and designed to let you focus on what matters.
+                  Tuon removes friction between AI and your organic creative flow. Focus on crafting your best notes, documents & research in one place.
                 </motion.p>
                 <motion.div 
                   className="flex flex-col sm:flex-row gap-4 justify-center"
