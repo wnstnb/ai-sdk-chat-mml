@@ -19,11 +19,19 @@ export default function LandingPageContent() {
   const [activeTabIndex, setActiveTabIndex] = useState(0); // New state for active tab
   const featuresSectionRef = useRef<HTMLDivElement>(null); // New ref for the features section
   const [currentCanvasImageIndex, setCurrentCanvasImageIndex] = useState(0); // Index for Desktop (0) or Mobile (1) view for the first tab
+  const [currentTagDocsImageIndex, setCurrentTagDocsImageIndex] = useState(0); // Index for Tag Directly (0) or Ask AI (1)
 
   const canvasImageSources = [
     "/one_flow_one_canvas.png",
     "/one_flow_one_canvas_2.png"
   ];
+
+  const tagDocsImageSources = [
+    "/tag_docs_2.png", // Image for "Tag Directly"
+    "/tag_docs_3.png"  // Image for "Ask AI"
+  ];
+
+  const tagDocsViewNames = ["Tag Directly", "Ask AI"];
 
   const features: Feature[] = [
     {
@@ -170,6 +178,10 @@ export default function LandingPageContent() {
     setCurrentCanvasImageIndex(index);
   };
 
+  const handleTagDocsViewChange = (index: number) => {
+    setCurrentTagDocsImageIndex(index);
+  };
+
   return (
     // Removed min-h-screen from main, letting inner div control height
     // <main ref={mainRef} className="parallax-bg text-[color:var(--text-color)] "> // REMOVED mainRef
@@ -198,7 +210,7 @@ export default function LandingPageContent() {
           <div className="card-snap-wrapper flex items-center justify-center px-4">
             <section 
               ref={heroRef} // Add the ref here
-              className="hero-section container mx-auto py-32 md:py-40 flex items-center justify-center text-center min-h-[calc(100vh-500px)] w-full">
+              className="hero-section container mx-auto py-16 md:py-20 flex items-center justify-center text-center min-h-[40vh] w-full">
               {/* Add semi-transparent overlay for readability */}
               <div className="absolute inset-0 bg-black/50 z-0"></div>
               <motion.div 
@@ -349,18 +361,39 @@ export default function LandingPageContent() {
                         </p>
                       </div>
 
-                      {/* Images Below Text, stacked vertically */}
-                      <div className="w-full flex flex-col items-center justify-center gap-4 md:gap-6 mt-4 md:mt-6 max-w-lg mx-auto"> {/* Added max-w-lg and mx-auto for image container */}
-                        <img
-                          src="/tag_docs_2.png" 
-                          alt="Tag documents example 1"
-                          className="rounded-lg shadow-xl w-full h-auto object-contain"
-                        />
-                        <img
-                          src="/tag_docs_3.png" 
-                          alt="Tag documents example 2"
-                          className="rounded-lg shadow-xl w-full h-auto object-contain"
-                        />
+                      {/* Sub-tabs for "Tag Documents" - Styled like main tabs */}
+                      <div className="flex border-b border-[color:var(--border-color)]/30 mb-6 md:mb-8 justify-center">
+                        {tagDocsViewNames.map((viewName, index) => (
+                          <button
+                            key={viewName}
+                            onClick={() => handleTagDocsViewChange(index)}
+                            className={`py-3 px-4 sm:px-5 font-medium text-xs sm:text-sm focus:outline-none transition-all duration-300 ease-in-out relative group
+                              ${currentTagDocsImageIndex === index
+                                ? 'text-[color:var(--accent-color)]'
+                                : 'text-[color:var(--muted-text-color)] hover:text-[color:var(--primary-color)]'
+                              }`}
+                          >
+                            {viewName}
+                            <span className={`absolute bottom-[-1px] left-0 w-full h-0.5 bg-[color:var(--accent-color)] transform transition-transform duration-300 ease-out
+                              ${currentTagDocsImageIndex === index ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'}`}></span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Image display area with Fade Animation */}
+                      <div className="w-full flex justify-center items-start relative min-h-[250px] sm:min-h-[300px] md:min-h-[400px]">
+                        <AnimatePresence mode="wait">
+                          <motion.img
+                            key={tagDocsImageSources[currentTagDocsImageIndex]}
+                            src={tagDocsImageSources[currentTagDocsImageIndex]}
+                            alt={`${features[activeTabIndex].title} - ${tagDocsViewNames[currentTagDocsImageIndex]}`}
+                            className="rounded-lg shadow-xl h-auto object-contain w-full max-w-lg" // Added max-w-lg for consistency
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0, position: 'absolute', top:0, left:0 }}
+                            transition={{ duration: 0.3, ease: "easeInOut" }}
+                          />
+                        </AnimatePresence>
                       </div>
                     </motion.div>
                   ) : activeTabIndex === 3 ? (
