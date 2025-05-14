@@ -1,6 +1,13 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
+import { 
+    searchByTitle, 
+    searchByEmbeddings, 
+    searchByContentBM25,
+    combineAndRankResults 
+} from '@/lib/ai/searchService';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 // NOTE: This route runs as a standard Serverless Function (Node.js runtime).
 
@@ -84,7 +91,7 @@ export async function GET(request: Request) {
         console.log(`[API Search] Query embedding generated.`);
 
         // 3. Perform semantic search using Supabase RPC ('match_documents' needs VECTOR(768))
-        const matchThreshold = 0.45; // Example threshold - tune as needed
+        const matchThreshold = 0.6; // Example threshold - tune as needed
         const matchCount = 10;
         console.log(`[API Search] Calling RPC match_documents (threshold: ${matchThreshold}, count: ${matchCount})...`);
 
@@ -108,5 +115,57 @@ export async function GET(request: Request) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to perform search';
         // Avoid leaking sensitive details in production responses
         return NextResponse.json({ error: 'Failed to perform search', details: errorMessage }, { status: 500 });
+    }
+}
+
+export const runtime = 'edge';
+
+export async function POST(request: NextRequest) {
+    const supabase = createSupabaseServerClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    let query: string;
+    try {
+        const body = await request.json();
+        query = body.query;
+        if (typeof query !== 'string' || !query.trim()) {
+            return NextResponse.json({ error: 'Search query must be a non-empty string' }, { status: 400 });
+        }
+    } catch (e) {
+        return NextResponse.json({ error: 'Invalid request body or missing query' }, { status: 400 });
+    }
+
+    try {
+        const [titleMatches, semanticMatches, contentMatches] = await Promise.all([
+            searchByTitle(query),
+            searchByEmbeddings(query),
+            searchByContentBM25(query)
+        ]);
+
+        const combinedResults = combineAndRankResults(
+            titleMatches, 
+            semanticMatches, 
+            contentMatches
+        );
+
+        // The Omnibar expects results with id, name, and optionally similarity (renamed to finalScore)
+        // It also handles folder_id, but our search service doesn't provide that directly.
+        // We can adapt this if folder_id is crucial and can be fetched.
+        const formattedResults = combinedResults.map(doc => ({
+            id: doc.id,
+            name: doc.name,
+            similarity: doc.finalScore, // Use finalScore as similarity for Omnibar
+            folder_id: null, // Placeholder for folder_id
+            summary: doc.summary // Pass summary if available
+        }));
+
+        return NextResponse.json(formattedResults);
+    } catch (error: any) {
+        console.error('Document search error:', error);
+        return NextResponse.json({ error: 'Failed to search documents', details: error.message }, { status: 500 });
     }
 } 

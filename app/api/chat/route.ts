@@ -9,7 +9,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'; // Supabase 
 import { Message as SupabaseMessage, ToolCall as SupabaseToolCall } from '@/types/supabase'; // DB types
 import { createClient } from '@supabase/supabase-js'; // <-- ADDED for explicit client for signed URLs if needed
 import crypto from 'crypto'; // Import crypto for UUID generation
-import { searchByTitle, searchByEmbeddings, combineAndRankResults } from '@/lib/ai/searchService';
+import { searchByTitle, searchByEmbeddings, searchByContentBM25, combineAndRankResults } from '@/lib/ai/searchService'; // UPDATED: Import searchByContentBM25
 
 // Define Zod schemas for the editor tools based on PRD
 const addContentSchema = z.object({
@@ -51,13 +51,21 @@ const searchAndTagDocumentsTool = tool({
   description: 'Searches documents by title and semantic content. Returns a list of relevant documents that the user can choose to tag for context.',
   parameters: searchAndTagDocumentsSchema,
   execute: async ({ searchQuery }) => {
-    // 1. Perform title-based search
-    const titleMatches = await searchByTitle(searchQuery);
-    // 2. Perform semantic search
-    const semanticMatches = await searchByEmbeddings(searchQuery);
-    // 3. Combine and rank results
-    const combinedResults = combineAndRankResults(titleMatches, semanticMatches);
-    // 4. Format results for the AI to present
+    // 1. Perform title-based, semantic, and content searches in parallel
+    const [titleMatches, semanticMatches, contentMatches] = await Promise.all([
+      searchByTitle(searchQuery),
+      searchByEmbeddings(searchQuery),
+      searchByContentBM25(searchQuery) // NEW: Add content search
+    ]);
+    
+    // 2. Combine and rank results
+    const combinedResults = combineAndRankResults(
+        titleMatches, 
+        semanticMatches, 
+        contentMatches // NEW: Pass content matches
+    );
+    
+    // 3. Format results for the AI to present
     return {
       documents: combinedResults.map(doc => ({
         id: doc.id,
@@ -76,6 +84,7 @@ const searchAndTagDocumentsTool = tool({
 // Define the model configuration map
 const modelProviders: Record<string, () => LanguageModel> = {
   "gpt-4o": () => openai("gpt-4o"),
+  "gpt-4.1": () => openai("gpt-4.1"),
   "gemini-2.5-flash-preview-04-17": () => google("gemini-2.5-flash-preview-04-17"),
   "gemini-2.5-pro-preview-05-06": () => google("gemini-2.5-pro-preview-05-06"),
   "gemini-2.0-flash": () => google("gemini-2.0-flash"),

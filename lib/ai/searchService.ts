@@ -18,6 +18,13 @@ export interface SemanticSearchResult {
   semanticScore: number;
 }
 
+// NEW: Interface for BM25 content search results
+export interface ContentBM25SearchResult {
+  id: string;
+  name: string;
+  contentScore: number; // Score from BM25-like text search
+}
+
 export interface CombinedSearchResult {
   id: string;
   name: string;
@@ -54,6 +61,45 @@ export async function searchByTitle(query: string): Promise<TitleSearchResult[]>
     id: doc.id,
     name: doc.name,
     titleMatchScore: doc.name.toLowerCase() === query.toLowerCase() ? 1.0 : 0.8
+  }));
+}
+
+// NEW: Search by content using BM25-like full-text search
+export async function searchByContentBM25(query: string): Promise<ContentBM25SearchResult[]> {
+  const supabase = createSupabaseServerClient();
+
+  // --- Get user ID ---
+  // Similar to semantic search, BM25 search should be user-specific.
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    console.error('User not authenticated for BM25 search:', userError?.message);
+    // Depending on requirements, you might return empty results or throw an error.
+    // Throwing an error might be safer if user context is strictly required.
+    // return []; 
+    throw new Error('User not authenticated. BM25 search requires a user context.');
+  }
+  const userId = user.id;
+  // --- END Get user ID ---
+
+  // Call the RPC function search_documents_bm25
+  const { data: documents, error: rpcError } = await supabase
+    .rpc('search_documents_bm25', {
+      p_query_text: query,
+      p_user_id_input: userId,
+      p_match_count: 10 // Or make this configurable if needed
+    });
+
+  if (rpcError) {
+    console.error('Content BM25 search RPC error:', rpcError.message);
+    throw new Error(`Failed to search by content using RPC: ${rpcError.message}`);
+  }
+
+  // Map the results from the RPC function to the ContentBM25SearchResult interface
+  return (documents || []).map((doc: { id: string, name: string, score: number }) => ({
+    id: doc.id,
+    name: doc.name,
+    contentScore: doc.score // Use the score returned by the RPC function
   }));
 }
 
@@ -108,7 +154,7 @@ export async function searchByEmbeddings(query: string): Promise<SemanticSearchR
     const { data: matches, error: searchError } = await supabase
       .rpc('match_documents', {
         query_embedding: queryEmbedding,
-        match_threshold: 0.3, // Lower threshold to cast a wider net
+        match_threshold: 0.55, // Lower threshold to cast a wider net
         match_count: 10, // Limit to top 10 matches
         user_id_input: userId
       });
@@ -134,51 +180,78 @@ export async function searchByEmbeddings(query: string): Promise<SemanticSearchR
 // Combine and rank results function
 export function combineAndRankResults(
   titleMatches: TitleSearchResult[],
-  semanticMatches: SemanticSearchResult[]
+  semanticMatches: SemanticSearchResult[],
+  contentMatches: ContentBM25SearchResult[], // NEW: Add contentMatches
+  rrfK: number = 60 // Constant for RRF, k in the formula 1/(k + rank)
 ): CombinedSearchResult[] {
-  // Create a map to store combined scores
-  const combinedScores = new Map<string, {
-    id: string,
-    name: string,
-    titleScore: number,
-    semanticScore: number
-  }>();
-
-  // Process title matches
-  titleMatches.forEach(match => {
-    combinedScores.set(match.id, {
-      id: match.id,
-      name: match.name,
-      titleScore: match.titleMatchScore,
-      semanticScore: 0 // Default if no semantic match
+  // Helper function to get ranks from a list of search results
+  const getRanks = (
+    results: Array<{ id: string; name: string; score: number }>,
+  ): Map<string, { rank: number; name: string }> => {
+    // Sort by score descending to assign ranks
+    const sortedResults = [...results].sort((a, b) => b.score - a.score);
+    const ranks = new Map<string, { rank: number; name: string }>();
+    sortedResults.forEach((result, index) => {
+      ranks.set(result.id, { rank: index + 1, name: result.name });
     });
-  });
+    return ranks;
+  };
 
-  // Process semantic matches
-  semanticMatches.forEach(match => {
-    const existing = combinedScores.get(match.id);
-    if (existing) {
-      existing.semanticScore = match.semanticScore;
-    } else {
-      combinedScores.set(match.id, {
-        id: match.id,
-        name: match.name,
-        titleScore: 0, // Default if no title match
-        semanticScore: match.semanticScore
+  // Generate ranks for each type of search result
+  // Ensure the 'score' property is consistent for the getRanks helper
+  const titleRanks = getRanks(
+    titleMatches.map(m => ({ id: m.id, name: m.name, score: m.titleMatchScore }))
+  );
+  const semanticRanks = getRanks(
+    semanticMatches.map(m => ({ id: m.id, name: m.name, score: m.semanticScore }))
+  );
+  const contentRanks = getRanks(
+    contentMatches.map(m => ({ id: m.id, name: m.name, score: m.contentScore }))
+  );
+
+  // Collect all unique document IDs
+  const allDocIds = new Set<string>();
+  titleMatches.forEach(m => allDocIds.add(m.id));
+  semanticMatches.forEach(m => allDocIds.add(m.id));
+  contentMatches.forEach(m => allDocIds.add(m.id));
+
+  const rrfResults: Array<{ id: string; name: string; finalScore: number }> = [];
+
+  // Calculate RRF score for each document
+  allDocIds.forEach(id => {
+    let rrfScore = 0;
+    let docName = ""; // To store the document name
+
+    const titleInfo = titleRanks.get(id);
+    if (titleInfo) {
+      rrfScore += 1 / (rrfK + titleInfo.rank);
+      docName = titleInfo.name;
+    }
+
+    const semanticInfo = semanticRanks.get(id);
+    if (semanticInfo) {
+      rrfScore += 1 / (rrfK + semanticInfo.rank);
+      if (!docName) docName = semanticInfo.name; // Use name if not already set
+    }
+
+    const contentInfo = contentRanks.get(id);
+    if (contentInfo) {
+      rrfScore += 1 / (rrfK + contentInfo.rank);
+      if (!docName) docName = contentInfo.name; // Use name if not already set
+    }
+
+    if (rrfScore > 0) {
+      rrfResults.push({
+        id,
+        name: docName || "Unnamed Document", // Fallback name if somehow missed
+        finalScore: rrfScore
       });
     }
   });
 
-  // Calculate final scores and convert to array
-  const results = Array.from(combinedScores.values()).map(item => ({
-    id: item.id,
-    name: item.name,
-    finalScore: Math.max(item.semanticScore, item.titleScore) // Use the maximum of semanticScore and titleScore
-  }));
+  // Sort results by RRF score in descending order
+  rrfResults.sort((a, b) => b.finalScore - a.finalScore);
 
-  // Filter by threshold, sort by score, and limit results
-  return results
-    .filter(item => item.finalScore >= 0.4)
-    .sort((a, b) => b.finalScore - a.finalScore)
-    .slice(0, 10); // Limit to top 10 results
+  // Limit to top 10 results
+  return rrfResults.slice(0, 10);
 } 
