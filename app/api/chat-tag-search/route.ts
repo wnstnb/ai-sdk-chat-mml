@@ -1,6 +1,6 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { cookies } from 'next/headers';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { searchByTitle, searchByEmbeddings, searchByContentBM25, combineAndRankResults } from '@/lib/ai/searchService';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 // NOTE: This route is specifically for chat document tagging.
 
@@ -9,12 +9,14 @@ import { NextResponse } from 'next/server';
 // const GEMINI_EMBEDDING_MODEL = 'models/text-embedding-004';
 // const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/${GEMINI_EMBEDDING_MODEL}:embedContent?key=${GEMINI_API_KEY}`;
 
-export async function GET(request: Request) {
+export const runtime = 'edge'; // Optional: Use edge runtime if preferred
+
+export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
-    const searchTerm = searchParams.get('q');
+    const query = searchParams.get('q');
     const docIdsString = searchParams.get('docIds');
 
-    if (!searchTerm && !docIdsString) {
+    if (!query && !docIdsString) {
         return NextResponse.json({ error: "Either search term ('q') or document IDs ('docIds') parameter is required" }, { status: 400 });
     }
     // Remove unused API key check
@@ -23,95 +25,46 @@ export async function GET(request: Request) {
     //     return NextResponse.json({ error: 'Server configuration error: Missing API Key' }, { status: 500 });
     // }
 
-    const cookieStore = cookies();
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-            cookies: {
-                get(name: string) {
-                    return cookieStore.get(name)?.value;
-                },
-                set(name: string, value: string, options: CookieOptions) {
-                    cookieStore.set({ name, value, ...options });
-                },
-                remove(name: string, options: CookieOptions) {
-                    cookieStore.delete({ name, ...options });
-                },
-            },
-        }
-    );
+    // Ensure user is authenticated (optional but recommended)
+    const supabase = createSupabaseServerClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+        console.error('Chat Tag Search Auth Error:', authError?.message);
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     try {
-        const { data: { user }, error: sessionError } = await supabase.auth.getUser();
-
-        if (sessionError) {
-            console.error('Chat Tag Search Auth Error (getUser):', sessionError);
-            return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
-        }
-        if (!user) {
-            console.error('Chat Tag Search Auth Error: No user session found.');
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-        const userId = user.id;
-        console.log(`[API Chat Tag Search] User ${userId} searching for: "${searchTerm}"`);
-
-        // Remove semantic search logic
-        // console.log(`[API Chat Tag Search] Generating query embedding for: "${searchTerm}"...`);
-        // const embedApiResponse = await fetch(GEMINI_API_URL, {
-        //     method: 'POST',
-        //     headers: { 'Content-Type': 'application/json' },
-        //     body: JSON.stringify({
-        //         content: { parts: [{ text: searchTerm }] },
-        //     }),
-        // });
-
-        // if (!embedApiResponse.ok) {
-        //     const errorBody = await embedApiResponse.text();
-        //     console.error("[API Chat Tag Search] Gemini API Error Response (Query Embedding):", errorBody);
-        //     throw new Error(`Gemini query embedding request failed with status ${embedApiResponse.status}`);
-        // }
-
-        // const embedApiData = await embedApiResponse.json();
-
-        // if (!embedApiData.embedding?.values) {
-        //     console.error("[API Chat Tag Search] Invalid response structure from Gemini API (Query Embedding):", embedApiData);
-        //     throw new Error("Invalid response structure from Gemini API (Query Embedding): embedding.values missing.");
-        // }
-        // const queryEmbedding = embedApiData.embedding.values;
-        // console.log(`[API Chat Tag Search] Query embedding generated.`);
-
-        let query = supabase.from('documents').select('id, name');
-
-        if (docIdsString) {
-            const ids = docIdsString.split(',').filter(id => id.trim() !== '');
-            if (ids.length === 0) {
-                return NextResponse.json({ documents: [] }); // No valid IDs provided
-            }
-            console.log(`[API Chat Tag Search] User ${userId} fetching by IDs:`, ids);
-            query = query.in('id', ids);
-        } else if (searchTerm) {
-            console.log(`[API Chat Tag Search] User ${userId} searching for name: "${searchTerm}"`);
-            query = query.ilike('name', `%${searchTerm}%`).limit(10); // Limit results for name search
-        } else {
-            // Should not happen due to the check at the beginning, but as a fallback:
-            return NextResponse.json({ documents: [] }); 
-        }
-        
-        const { data: documents, error: dbError } = await query
-            .eq('user_id', userId); // Ensure RLS is applied for both cases
-
-        if (dbError) {
-            console.error('[API Chat Tag Search] Database Query Error:', dbError);
-            throw new Error(`Database query failed: ${dbError.message}`);
+        // Explicitly check for null or empty query *before* using it
+        if (!query) {
+            return NextResponse.json({ error: 'Query parameter "q" is required' }, { status: 400 });
         }
 
-        console.log(`[API Chat Tag Search] Found ${documents?.length ?? 0} documents.`);
-        return NextResponse.json({ documents: documents || [] });
+        // Now TypeScript knows query is a string here
+        // Perform all three searches in parallel
+        const [titleMatches, semanticMatches, contentMatches] = await Promise.all([
+            searchByTitle(query),
+            searchByEmbeddings(query),
+            searchByContentBM25(query) // NEW: Add content search
+        ]);
 
-    } catch (error) {
-        console.error('[API Chat Tag Search] Overall Error:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Failed to perform search';
-        return NextResponse.json({ error: 'Failed to perform chat tag search', details: errorMessage }, { status: 500 });
+        // Combine and rank the results
+        const combinedResults = combineAndRankResults(
+            titleMatches,
+            semanticMatches,
+            contentMatches // NEW: Pass content matches
+        );
+
+        // Format results for the frontend
+        const formattedDocuments = combinedResults.map(doc => ({
+            id: doc.id,
+            name: doc.name,
+            // Add any other fields needed by DocumentSearchInput.tsx
+        }));
+
+        return NextResponse.json({ documents: formattedDocuments });
+
+    } catch (error: any) {
+        console.error('Error during document search:', error);
+        return NextResponse.json({ error: 'Failed to search documents', details: error.message }, { status: 500 });
     }
 } 

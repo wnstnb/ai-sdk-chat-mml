@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowRight, BrainCircuit, Clock, Layers, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button"; // Correct import path
-import { motion } from "framer-motion"; // Import motion
+import { motion, AnimatePresence } from "framer-motion"; // Import AnimatePresence
 
 // Define the type for features explicitly
 interface Feature {
@@ -16,27 +16,34 @@ interface Feature {
 export default function LandingPageContent() {
   console.log("LandingPageContent rendering..."); // Add log here
   const [email, setEmail] = useState("");
+  const [activeTabIndex, setActiveTabIndex] = useState(0); // New state for active tab
+  const featuresSectionRef = useRef<HTMLDivElement>(null); // New ref for the features section
 
   const features: Feature[] = [
     {
       icon: <Layers className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
-      title: "Centralized Content Hub",
-      description: "Brings all your AI interactions, ideas, and research together in one easily accessible place."
+      title: "One Flow, One Canvas",
+      description: "Jumpstart ideas with AI and work on the same canvas. Stay in flow."
     },
     {
       icon: <Clock className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
-      title: "Time-Saving Workflow",
-      description: "Saves you time by eliminating the need to switch between multiple apps and platforms."
+      title: "Tag Documents",
+      description: "Tag documents as context for AI and never start from zero."
     },
     {
       icon: <Zap className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
-      title: "Smart Organization",
-      description: "Keeps your content organized and searchable so you can always find what you need."
+      title: "Interact Your Way",
+      description: "Engage with your AI editor using voice, text, or even images for ultimate flexibility."
     },
     {
       icon: <BrainCircuit className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
-      title: "Contextual AI",
-      description: "Allows you to use AI exactly when and how you need it, without unnecessary distractions."
+      title: "Stay Organized",
+      description: "Easily manage your files and notes with an intuitive browser and folder system."
+    },
+    {
+      icon: <BrainCircuit className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable for the new tab
+      title: "Use different models",
+      description: "One model not getting it done? Switch it up and default the one that works for you."
     }
   ];
 
@@ -75,7 +82,7 @@ export default function LandingPageContent() {
   // State to track hero section visibility
   const [isHeroVisible, setIsHeroVisible] = useState(false);
 
-  // Intersection Observer Logic - RESTORED
+  // Intersection Observer Logic - Modified to only observe hero section
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -83,35 +90,33 @@ export default function LandingPageContent() {
           // Check if the entry's target is the hero section
           if (entry.target === heroRef.current) {
             setIsHeroVisible(entry.isIntersecting);
-          }
-          // Existing logic for adding/removing class (can keep or remove if only using state)
-          if (entry.isIntersecting) {
-            entry.target.classList.add('is-visible');
-          } else {
-            entry.target.classList.remove('is-visible');
+            // Apply/remove 'is-visible' class for hero animations if needed by CSS
+            if (entry.isIntersecting) {
+              entry.target.classList.add('is-visible');
+            } else {
+              entry.target.classList.remove('is-visible');
+            }
           }
         });
       },
       {
         root: null,
         rootMargin: '0px',
-        threshold: 0.3,
+        threshold: 0.3, // Threshold for hero section visibility
       }
     );
 
-    // Select all feature cards
-    const cards = document.querySelectorAll('.feature-card');
-    // Get the hero section element from the ref
     const heroSectionElement = heroRef.current;
 
-    // Observe both feature cards and hero section
-    cards.forEach((card) => observer.observe(card));
-    if (heroSectionElement) observer.observe(heroSectionElement);
+    if (heroSectionElement) {
+      observer.observe(heroSectionElement);
+    }
 
     // Cleanup function
     return () => {
-      cards.forEach((card) => observer.unobserve(card));
-      if (heroSectionElement) observer.unobserve(heroSectionElement);
+      if (heroSectionElement) {
+        observer.unobserve(heroSectionElement);
+      }
     };
   }, []); // Empty dependency array ensures this runs only once on mount
 
@@ -148,6 +153,12 @@ export default function LandingPageContent() {
   }, []); 
   */
 
+  const handleTabClick = (index: number) => {
+    setActiveTabIndex(index);
+    // Scroll to the start of the features section, making tabs visible
+    featuresSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     // Removed min-h-screen from main, letting inner div control height
     // <main ref={mainRef} className="parallax-bg text-[color:var(--text-color)] "> // REMOVED mainRef
@@ -173,10 +184,10 @@ export default function LandingPageContent() {
         {/* Main Content Area - Added ref and overflow */}
         <div ref={scrollContainerRef} className="flex-grow overflow-y-auto"> 
           {/* Hero Section */}
-          <div className="card-snap-wrapper min-h-screen flex items-center justify-center px-4">
+          <div className="card-snap-wrapper flex items-center justify-center px-4">
             <section 
               ref={heroRef} // Add the ref here
-              className="hero-section container mx-auto py-32 md:py-40 flex items-center justify-center text-center min-h-[calc(100vh-100px)] w-full">
+              className="hero-section container mx-auto py-32 md:py-40 flex items-center justify-center text-center min-h-[calc(100vh-500px)] w-full">
               {/* Add semi-transparent overlay for readability */}
               <div className="absolute inset-0 bg-black/50 z-0"></div>
               <motion.div 
@@ -190,14 +201,14 @@ export default function LandingPageContent() {
                   variants={headingVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Focus on creation, <br />not distraction
+                  Seamless ideas, <br />seamless work.
                 </motion.h1>
                 <motion.p 
                   className="text-lg md:text-xl text-[color:var(--primary-color)]/90 mb-12 max-w-2xl leading-relaxed mx-auto"
                   variants={contentVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Tired of complex tools that get in your way? Us too. We built something different—minimal, intelligent, and designed to let you focus on what matters.
+                  Tuon removes friction between AI and your organic creative flow. Focus on crafting your best notes, documents & research in one place.
                 </motion.p>
                 <motion.div 
                   className="flex flex-col sm:flex-row gap-4 justify-center"
@@ -216,33 +227,127 @@ export default function LandingPageContent() {
             </section>
           </div>
 
-          {/* Features Section */}
-          {/* Added background color to section for content visibility against parallax */}
-          <section id="features" className="py-20">
-            <div className="container mx-auto px-4">
-              <div className="text-center max-w-3xl mx-auto mb-16">
-                {/* Use theme variables */}
-                {/* <h2 className="text-3xl md:text-4xl font-bold mb-6 text-[color:var(--accent-color)]">Everything you need to create with focus</h2>
-                <p className="text-[color:var(--primary-color)]/90">Our platform brings together all the tools you need to create, organize, and enhance your content with AI assistance.</p> */}
-              </div>
-              {/* Remove centering/max-width from here, apply in wrapper */}
-              <div className="flex flex-col">
+          {/* New Tabbed Features Section */}
+          <section ref={featuresSectionRef} id="features-tabs" className="py-20 min-h-screen flex flex-col items-center">
+            {/* Tabs Container - Stays max-w-3xl */}
+            <div className="w-full max-w-3xl mx-auto px-4">
+              {/* Tabs */}
+              <div className="flex border-b border-[color:var(--border-color)]/30 mb-8 justify-center">
                 {features.map((feature, index) => (
-                  // Add a wrapper div for scroll snapping
-                  <div key={index} className="card-snap-wrapper min-h-screen flex items-center justify-center px-4">
-                    {/* Card content - apply max-width here */}
-                    <div
-                      // Add feature-card class for IntersectionObserver & max-width for content
-                      className="feature-card w-full max-w-3xl bg-[color:var(--card-bg)]/40 backdrop-blur-sm p-8 rounded-lg border border-[color:var(--border-color)]/20"
-                    >
-                      <div className="mb-5 text-[color:var(--primary-color)]">{feature.icon}</div>
-                      <h3 className="text-xl font-semibold mb-3 text-[color:var(--accent-color)] font-newsreader">{feature.title}</h3>
-                      <p className="text-[color:var(--primary-color)]/90">{feature.description}</p>
-                    </div>
-                  </div>
+                  <button
+                    key={index}
+                    onClick={() => handleTabClick(index)}
+                    className={`py-3 px-4 sm:px-5 font-medium text-xs sm:text-sm md:text-base focus:outline-none transition-all duration-300 ease-in-out relative group
+                      ${activeTabIndex === index
+                        ? 'text-[color:var(--accent-color)]'
+                        : 'text-[color:var(--muted-text-color)] hover:text-[color:var(--primary-color)]'
+                      }`}
+                  >
+                    {feature.title}
+                    <span className={`absolute bottom-[-1px] left-0 w-full h-0.5 bg-[color:var(--accent-color)] transform transition-transform duration-300 ease-out
+                      ${activeTabIndex === index ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'}`}></span>
+                  </button>
                 ))}
               </div>
-            </div>
+            </div> {/* End of Tabs Container */}
+
+            {/* Tab Content Card Container - Wider: max-w-5xl */}
+            <div className="w-full max-w-5xl mx-auto px-4"> 
+              <div className="bg-[color:var(--card-bg)]/70 backdrop-blur-lg p-8 md:p-10 rounded-xl border border-[color:var(--border-color)]/25 shadow-2xl min-h-[350px] flex items-center justify-center w-full"> {/* MODIFIED: Added w-full */} 
+                <AnimatePresence mode="wait">
+                  {activeTabIndex === 0 ? (
+                    // Special layout for "One Flow, One Canvas"
+                    <motion.div
+                      key={activeTabIndex}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20, transition: { duration: 0.2 } }}
+                      transition={{ duration: 0.3, ease: "easeInOut" }}
+                      className="flex flex-col md:flex-row items-center md:items-start gap-6 md:gap-10 w-full" // Added md:gap-10
+                    >
+                      {/* Text Content on the Left */}
+                      <div className="md:w-1/2 flex flex-col items-center md:items-start text-center md:text-left">
+                        <div className="mb-5">
+                          {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
+                        </div>
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
+                          {features[activeTabIndex].title}
+                        </h3>
+                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed">
+                          {features[activeTabIndex].description}
+                        </p>
+                      </div>
+
+                      {/* Image on the Right */}
+                      <div className="md:w-1/2 flex justify-center items-center mt-6 md:mt-0">
+                        <img
+                          src="/one_flow_one_canvas.png"
+                          alt={features[activeTabIndex].title}
+                          className="rounded-lg shadow-xl w-full h-auto object-contain max-h-[300px] md:max-h-[380px]" // Increased max-h slightly
+                        />
+                      </div>
+                    </motion.div>
+                  ) : activeTabIndex === 1 ? (
+                    // Special layout for "Tag Documents"
+                    <motion.div
+                      key={activeTabIndex} // Use activeTabIndex for key to ensure re-render on tab change
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20, transition: { duration: 0.2 } }}
+                      transition={{ duration: 0.3, ease: "easeInOut" }}
+                      className="flex flex-col md:flex-row items-center md:items-start gap-6 md:gap-10 w-full"
+                    >
+                      {/* Text Content on the Left */}
+                      <div className="md:w-1/2 flex flex-col items-center md:items-start text-center md:text-left">
+                        <div className="mb-5">
+                          {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
+                        </div>
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
+                          {features[activeTabIndex].title}
+                        </h3>
+                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed">
+                          {features[activeTabIndex].description}
+                        </p>
+                      </div>
+
+                      {/* Images on the Right, stacked vertically */}
+                      <div className="md:w-1/2 flex flex-col items-center justify-center gap-4 md:gap-6 mt-6 md:mt-0">
+                        <img
+                          src="/tag_docs_2.png" // Assuming image is in public folder
+                          alt="Tag documents example 1"
+                          className="rounded-lg shadow-xl w-full h-auto object-contain"
+                        />
+                        <img
+                          src="/tag_docs_3.png" // Assuming image is in public folder
+                          alt="Tag documents example 2"
+                          className="rounded-lg shadow-xl w-full h-auto object-contain"
+                        />
+                      </div>
+                    </motion.div>
+                  ) : (
+                    // Default centered layout for other tabs
+                    <motion.div
+                      key={activeTabIndex}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20, transition: { duration: 0.2 } }}
+                      transition={{ duration: 0.3, ease: "easeInOut" }}
+                      className="flex flex-col items-center text-center w-full"
+                    >
+                      <div className="mb-5">
+                        {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
+                      </div>
+                      <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
+                        {features[activeTabIndex].title}
+                      </h3>
+                      <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-md">
+                        {features[activeTabIndex].description}
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div> {/* End of Tab Content Card Container */}
           </section>
 
           {/* Waitlist Section */}

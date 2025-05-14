@@ -392,6 +392,28 @@ body {
   height: 100%;
 }
 
+/* Custom BlockNote Theme Variables for Light Mode */
+.bn-container[data-color-scheme="light"] {
+  --bn-colors-editor-text: var(--text-color);
+  --bn-colors-editor-background: var(--editor-bg);
+  --bn-colors-menu-text: var(--text-color);
+  --bn-colors-menu-background: var(--card-bg);
+  --bn-colors-tooltip-text: var(--text-color);
+  --bn-colors-tooltip-background: var(--hover-bg); /* Using hover-bg for a slightly off-white tooltip */
+  --bn-colors-hovered-text: var(--text-color); /* Text on light hover background */
+  --bn-colors-hovered-background: var(--hover-bg);
+  --bn-colors-selected-text: var(--card-bg); /* Typically white or light text on a colored background */
+  --bn-colors-selected-background: var(--primary-color);
+  --bn-colors-disabled-text: var(--muted-text-color);
+  --bn-colors-disabled-background: var(--disabled-bg);
+  --bn-colors-shadow: var(--shadow-sm); /* Or your preferred shadow variable */
+  --bn-colors-border: var(--border-color);
+  --bn-colors-side-menu: var(--muted-text-color);
+  /* Highlight colors can be mapped if needed, or left to BlockNote defaults */
+  /* --bn-font-family: your font variable if different from body; */
+  /* --bn-border-radius: your border radius variable; */
+}
+
 /* Handle text content in editor */
 .bn-container p {
   white-space: pre-wrap !important;
@@ -408,6 +430,26 @@ body {
 
 /* Dark mode specific styles for BlockNote editor */
 [data-theme='dark'] .bn-container {
+  /* BlockNote Theme Variables for Dark Mode */
+  --bn-colors-editor-text: var(--text-color);
+  --bn-colors-editor-background: var(--editor-bg);
+  --bn-colors-menu-text: var(--muted-text-color); /* Light gray text for non-selected menu items */
+  --bn-colors-menu-background: var(--card-bg);    /* Dark background for menus */
+  --bn-colors-tooltip-text: var(--text-color);      /* Light text for tooltips */
+  --bn-colors-tooltip-background: var(--active-bg); /* Darker background for tooltips */
+  --bn-colors-hovered-text: var(--text-color);      /* White text for hovered items */
+  --bn-colors-hovered-background: var(--active-bg); /* Distinct dark hover background */
+  --bn-colors-selected-text: var(--editor-bg);    /* Dark text for selected menu items (matching screenshot) */
+  --bn-colors-selected-background: var(--text-color); /* Light (white) background for selected items (matching screenshot) */
+  --bn-colors-disabled-text: var(--muted-text-color);
+  --bn-colors-disabled-background: var(--disabled-bg);
+  --bn-colors-shadow: var(--shadow-sm);
+  --bn-colors-border: var(--border-color);
+  --bn-colors-side-menu: var(--text-color);
+  /* Highlight colors can be mapped if needed, or left to BlockNote defaults */
+  /* --bn-font-family: your font variable if different from body; */
+  /* --bn-border-radius: your border radius variable; */
+
   background-color: var(--editor-bg) !important;
   color: var(--text-color) !important;
   font-size: var(--editor-font-size); /* Added for consistency */
@@ -598,6 +640,61 @@ body {
 
 /* Remove layout styles from dark mode scope as they are now global */
 /* [data-theme='dark'] .toolbar { ... } */
+
+/* Ensure all BlockNote internal elements match dark theme */
+[data-theme='dark'] .bn-container [contenteditable=true] {
+  background-color: var(--editor-bg) !important;
+  color: var(--text-color) !important;
+}
+
+[data-theme='dark'] .bn-container [data-content-type="root"] {
+  background-color: var(--editor-bg) !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+[data-theme='dark'] .bn-container [role="toolbar"],
+[data-theme='dark'] .bn-container [data-toolbar="true"] {
+  background-color: var(--header-bg) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Style all buttons and controls in the editor for dark mode */
+[data-theme='dark'] .bn-container button,
+[data-theme='dark'] .bn-container .bn-toolbar-item {
+  color: var(--text-color) !important;
+  background-color: transparent !important;
+}
+
+[data-theme='dark'] .bn-container button:hover,
+[data-theme='dark'] .bn-container .bn-toolbar-item:hover {
+  background-color: var(--hover-bg) !important;
+}
+
+[data-theme='dark'] .bn-container button.active,
+[data-theme='dark'] .bn-container .bn-toolbar-item.active {
+  background-color: var(--active-bg) !important;
+}
+
+/* Style dropdowns and menus in dark mode */
+[data-theme='dark'] .bn-container [role="menu"],
+[data-theme='dark'] .bn-container [role="listbox"],
+[data-theme='dark'] .bn-container [data-dropdown="true"] {
+  background-color: var(--card-bg) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-color) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+[data-theme='dark'] .bn-container [role="menuitem"],
+[data-theme='dark'] .bn-container [role="option"] {
+  color: var(--text-color) !important;
+}
+
+[data-theme='dark'] .bn-container [role="menuitem"]:hover,
+[data-theme='dark'] .bn-container [role="option"]:hover {
+  background-color: var(--hover-bg) !important;
+}
 
 [data-theme='dark'] .fm-toolbar { /* Target the inner toolbar div */
   background-color: var(--header-bg) !important;

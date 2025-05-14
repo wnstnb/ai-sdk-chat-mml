@@ -105,6 +105,17 @@ export async function GET(
         return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch tool calls: ${toolFetchError.message}` } }, { status: 500 });
     }
 
+    // --- Create a map of tool_call_id to tool_output for efficient lookup ---
+    const toolResultsMap = new Map<string, any>();
+    if (toolCalls) {
+        for (const tc of toolCalls) {
+            if (tc.tool_call_id && tc.tool_output) { // Ensure tool_call_id and tool_output exist
+                toolResultsMap.set(tc.tool_call_id, tc.tool_output);
+            }
+        }
+    }
+    // --- END Create a map ---
+
     // --- START REFACTOR: Process messages to handle JSON content and generate signed URLs --- 
     const processedMessages: FrontendMessage[] = [];
     for (const dbMsg of messagesData as Message[]) {
@@ -161,6 +172,24 @@ export async function GET(
                  hasToolCallPart = true;
                  textOnly = false;
                  processedParts.push(part); // Pass tool call part through
+
+                 // --- MORE DETAILED LOGGING --- 
+                 console.log(`[Messages GET] Msg ${dbMsg.id} attempting to find result for tool-call. Part details:`, JSON.stringify(part));
+                 console.log(`[Messages GET] Msg ${dbMsg.id} current toolResultsMap keys:`, Array.from(toolResultsMap.keys()));
+                 // --- END MORE DETAILED LOGGING ---
+
+                 // --- ADD LOGIC TO INCLUDE TOOL RESULT IF AVAILABLE ---
+                 if (part.toolCallId && toolResultsMap.has(part.toolCallId)) {
+                    const result = toolResultsMap.get(part.toolCallId);
+                    processedParts.push({
+                        type: 'tool-result',
+                        toolCallId: part.toolCallId,
+                        toolName: part.toolName, // Ensure toolName is included as per ToolResultPart
+                        result: result,
+                    });
+                    console.log(`[Messages GET] Msg ${dbMsg.id} Added tool-result for toolCallId: ${part.toolCallId}`);
+                 }
+                 // --- END LOGIC TO INCLUDE TOOL RESULT ---
             } else if (part.type === 'text') {
                  processedParts.push(part); // Pass text part through
                  if (!part.text?.trim()) { // Check if text part is effectively empty

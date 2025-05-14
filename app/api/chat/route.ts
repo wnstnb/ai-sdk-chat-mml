@@ -9,7 +9,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'; // Supabase 
 import { Message as SupabaseMessage, ToolCall as SupabaseToolCall } from '@/types/supabase'; // DB types
 import { createClient } from '@supabase/supabase-js'; // <-- ADDED for explicit client for signed URLs if needed
 import crypto from 'crypto'; // Import crypto for UUID generation
-import { searchByTitle, searchByEmbeddings, combineAndRankResults } from '@/lib/ai/searchService';
+import { searchByTitle, searchByEmbeddings, searchByContentBM25, combineAndRankResults } from '@/lib/ai/searchService'; // UPDATED: Import searchByContentBM25
 
 // Define Zod schemas for the editor tools based on PRD
 const addContentSchema = z.object({
@@ -51,13 +51,21 @@ const searchAndTagDocumentsTool = tool({
   description: 'Searches documents by title and semantic content. Returns a list of relevant documents that the user can choose to tag for context.',
   parameters: searchAndTagDocumentsSchema,
   execute: async ({ searchQuery }) => {
-    // 1. Perform title-based search
-    const titleMatches = await searchByTitle(searchQuery);
-    // 2. Perform semantic search
-    const semanticMatches = await searchByEmbeddings(searchQuery);
-    // 3. Combine and rank results
-    const combinedResults = combineAndRankResults(titleMatches, semanticMatches);
-    // 4. Format results for the AI to present
+    // 1. Perform title-based, semantic, and content searches in parallel
+    const [titleMatches, semanticMatches, contentMatches] = await Promise.all([
+      searchByTitle(searchQuery),
+      searchByEmbeddings(searchQuery),
+      searchByContentBM25(searchQuery) // NEW: Add content search
+    ]);
+    
+    // 2. Combine and rank results
+    const combinedResults = combineAndRankResults(
+        titleMatches, 
+        semanticMatches, 
+        contentMatches // NEW: Pass content matches
+    );
+    
+    // 3. Format results for the AI to present
     return {
       documents: combinedResults.map(doc => ({
         id: doc.id,
@@ -76,6 +84,7 @@ const searchAndTagDocumentsTool = tool({
 // Define the model configuration map
 const modelProviders: Record<string, () => LanguageModel> = {
   "gpt-4o": () => openai("gpt-4o"),
+  "gpt-4.1": () => openai("gpt-4.1"),
   "gemini-2.5-flash-preview-04-17": () => google("gemini-2.5-flash-preview-04-17"),
   "gemini-2.5-pro-preview-05-06": () => google("gemini-2.5-pro-preview-05-06"),
   "gemini-2.0-flash": () => google("gemini-2.0-flash"),
@@ -940,94 +949,103 @@ export async function POST(req: Request) {
     // into the standard format expected by the AI SDK (separate assistant+tool messages).
     console.log("[API Chat] Starting message transformation for AI SDK compatibility...");
     const transformedMessages: CoreMessage[] = [];
-    for (const msg of messages) {
-
+    for (const msg of messages) { 
         let isAssistantWithToolInvocation = false;
         let sourceParts: any[] = [];
+        let preferContentArray = false;
 
-        // Check if it's an assistant message and if its content contains the custom part
-        if (msg.role === 'assistant') {
-            if (Array.isArray(msg.content)) {
-                 // Standard CoreMessage structure uses 'content' array for parts
-                 if (msg.content.some((part: any) => part.type === 'tool-invocation')) {
-                    isAssistantWithToolInvocation = true;
-                    sourceParts = msg.content;
-                 }
-            } else if (Array.isArray((msg as any).parts)) {
-                // Check for non-standard 'parts' property added during history reconstruction
-                 if ((msg as any).parts.some((part: any) => part.type === 'tool-invocation')) {
-                    isAssistantWithToolInvocation = true;
-                    sourceParts = (msg as any).parts;
-                 }
+        // Check if it's an assistant message and if its content array contains tool-invocation
+        if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+            if (msg.content.some((part: any) => part.type === 'tool-invocation')) {
+                isAssistantWithToolInvocation = true;
+                sourceParts = msg.content; // Prioritize msg.content if it has tool-invocations
+                preferContentArray = true;
+                console.log(`[API Chat Transform] Using msg.content for sourceParts for assistant message.`); // Removed msg.id
+            }
+        }
+        
+        // Fallback or if content wasn't an array with tool-invocations, check the non-standard msg.parts
+        if (msg.role === 'assistant' && !preferContentArray && Array.isArray((msg as any).parts)) {
+            if ((msg as any).parts.some((part: any) => part.type === 'tool-invocation')) {
+                isAssistantWithToolInvocation = true;
+                sourceParts = (msg as any).parts;
+                console.log(`[API Chat Transform] Using (msg as any).parts for sourceParts for assistant message.`); // Removed msg.id
             }
         }
 
-
         if (isAssistantWithToolInvocation) {
-            console.log(`[API Chat Transform] Found assistant message with 'tool-invocation'.`);
-            // Found an assistant message reconstructed with tool-invocation parts
-
+            console.log(`[API Chat Transform] Found assistant message with 'tool-invocation'. Source: ${preferContentArray ? 'msg.content' : '(msg as any).parts'}`);
+            
             const textParts = sourceParts.filter((part): part is TextPart => part.type === 'text');
-            // Explicitly type the tool invocation parts for clarity
-            const toolInvocationParts = sourceParts.filter((part): part is { type: 'tool-invocation', toolInvocation: { toolCallId: string; toolName: string; args: any; result: any; state?: string } } => part.type === 'tool-invocation');
+            const toolInvocationParts = sourceParts.filter((part): part is { type: 'tool-invocation', toolInvocation: { toolCallId: string; toolName: string; args: any; result?: any; state?: string } } => part.type === 'tool-invocation' && part.toolInvocation != null);
 
-            // 1. Add assistant message with only text content (if any)
-            // If there's text content alongside the tool invocation, preserve it.
-            // Ensure content is always an array as per CoreMessage[] expected format when parts exist
             if (textParts.length > 0) {
                 transformedMessages.push({
                     role: 'assistant',
-                    content: textParts // Keep as array of text parts
+                    content: textParts 
                 });
-                console.log(`[API Chat Transform] Added assistant text part.`);
+                console.log(`[API Chat Transform] Added assistant text part from sourceParts.`);
             }
 
-            // 2. Add assistant message with standard toolCalls part
-            // Correct structure for ToolCallPart[]: directly include properties
-            const toolCalls: ToolCallPart[] = toolInvocationParts.map(part => ({
-                type: 'tool-call',
-                toolCallId: part.toolInvocation.toolCallId,
-                toolName: part.toolInvocation.toolName,
-                args: part.toolInvocation.args
-            }));
+            const toolCallsForSdk: ToolCallPart[] = [];
+            const toolResultsForSdk: ToolResultPart[] = [];
 
-            if (toolCalls.length > 0) {
-                 // An assistant message containing ONLY tool calls should have content = toolCalls array
+            for (const tip of toolInvocationParts) {
+                // Ensure the toolInvocation object exists
+                if (!tip.toolInvocation) {
+                    console.warn("[API Chat Transform] tool-invocation part found without a toolInvocation object:", tip);
+                    continue;
+                }
+                const { toolCallId, toolName, args, result, state } = tip.toolInvocation;
+
+                // Check for the problematic state if it's not being correctly set to 'result' earlier
+                if (state !== 'result' && result === undefined) {
+                    console.error(`[API Chat Transform Error] ToolInvocation part (ID: ${toolCallId}, Name: ${toolName}) has state '${state}' but no result. This will likely cause an SDK error. Skipping this tool part for safety.`);
+                    // Potentially, we could try to find a matching result from msg.tool_calls (Supabase join) if available and not already used.
+                    // For now, skipping is safer to prevent SDK error.
+                    continue; 
+                }
+
+                toolCallsForSdk.push({
+                    type: 'tool-call',
+                    toolCallId: toolCallId,
+                    toolName: toolName,
+                    args: args
+                });
+
+                // Only add tool result if a result is actually present
+                if (result !== undefined && result !== null) {
+                    toolResultsForSdk.push({
+                        type: 'tool-result',
+                        toolCallId: toolCallId,
+                        toolName: toolName, 
+                        result: result
+                    });
+                }
+            }
+
+            if (toolCallsForSdk.length > 0) {
                 transformedMessages.push({
                     role: 'assistant',
-                    content: toolCalls // Content IS the array of ToolCallPart for this message
+                    content: toolCallsForSdk 
                 });
-                console.log(`[API Chat Transform] Added assistant message with ${toolCalls.length} tool call(s).`);
+                console.log(`[API Chat Transform] Added assistant message with ${toolCallsForSdk.length} tool call(s) for SDK.`);
             }
 
-            // 3. Add separate 'tool' message with standard toolResults part
-            // --- TEMPORARILY DISABLED due to AI_MessageConversionError: Unsupported role: tool ---
-            // It seems @ai-sdk/google provider doesn't accept 'tool' role in input history.
-            /*
-            const toolResults: ToolResultPart[] = toolInvocationParts
-                .filter(part => part.toolInvocation.result !== undefined) // Only include if result exists
-                .map(part => ({
-                    type: 'tool-result',
-                    toolCallId: part.toolInvocation.toolCallId,
-                    toolName: part.toolInvocation.toolName, // Include toolName here as per ToolResultPart
-                    result: part.toolInvocation.result
-                }));
-
-            if (toolResults.length > 0) {
+            // Re-enable sending tool results, but be mindful of model provider compatibility
+            // The error "Unsupported role: tool" was for @ai-sdk/google.
+            // For now, let's create them. If issues persist with specific models, this needs model-specific handling.
+            if (toolResultsForSdk.length > 0) {
                 transformedMessages.push({
                     role: 'tool',
-                    content: toolResults // Content IS the array of ToolResultPart for this message
+                    content: toolResultsForSdk 
                 });
-                 console.log(`[API Chat Transform] Added tool message with ${toolResults.length} tool result(s).`);
-            } else if (toolInvocationParts.length > 0) {
-                 // Log if we had invocations but no results to transform (should not happen if state='result')
-                 console.warn(`[API Chat Transform] Tool invocation part(s) found but no result property was present to create a tool-result message.`);
+                 console.log(`[API Chat Transform] Added tool message with ${toolResultsForSdk.length} tool result(s) for SDK.`);
+            } else if (toolCallsForSdk.length > 0 && toolInvocationParts.some(tip => tip.toolInvocation?.result === undefined || tip.toolInvocation?.result === null)) {
+                 console.warn(`[API Chat Transform] Tool call(s) were present, but some results were missing. Not all tool results messages could be created.`);
             }
-            */
-            // --- END TEMPORARY DISABLE ---
 
         } else {
-            // Pass through user messages, standard tool messages, system messages,
             transformedMessages.push(msg);
         }
     }
@@ -1170,8 +1188,8 @@ export async function POST(req: Request) {
                             document_id: documentId,
                             user_id: userId!,
                             role: 'assistant' as const, // Add 'as const' for role literal type
-                            // --- MODIFICATION: Save partsWithResults and stringify --- 
-                            content: JSON.stringify(partsWithResults), // Save the array with results included
+                            // --- MODIFICATION: Save partsWithResults directly --- 
+                            content: partsWithResults, // Pass the array directly for JSONB storage
                             // --- END MODIFICATION ---
                             metadata: finalAssistantTurn.metadata,
                         } as any; // <-- Use type assertion here
