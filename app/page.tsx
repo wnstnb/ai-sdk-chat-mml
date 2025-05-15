@@ -134,38 +134,6 @@ export default function LandingPageContent() {
     };
   }, []); // Empty dependency array ensures this runs only once on mount
 
-  // Effect for Parallax Background Scroll - REMOVED
-  /*
-  useEffect(() => {
-    const scrollElement = scrollContainerRef.current; // Target the flex-grow div
-    const mainElement = mainRef.current; // Still need main for setting the style
-
-    if (!scrollElement || !mainElement) {
-      console.log("Parallax effect: scrollContainerRef or mainRef is null on mount, exiting.");
-      return; // Exit if refs are not available yet
-    }
-    console.log("Attaching parallax scroll listener to scroll container:", scrollElement);
-
-    const handleScroll = () => {
-      console.log("Scroll event detected on scroll container!");
-      const scrollY = scrollElement.scrollTop; // Use scrollTop of the scroll container
-      const offsetY = scrollY * 0.4;
-      console.log(`scrollContainer.scrollTop: ${scrollY}, calculated offsetY: ${offsetY}`);
-      // Apply the style to the main parallax background element
-      mainElement.style.setProperty('--background-offset-y', `${offsetY}px`); 
-    };
-
-    scrollElement.addEventListener('scroll', handleScroll); // Attach listener to scroll container
-    handleScroll(); // Initial call
-
-    // Cleanup listener on unmount
-    return () => {
-      console.log("Removing parallax scroll listener from scroll container");
-      scrollElement.removeEventListener('scroll', handleScroll); // Remove listener from scroll container
-    };
-    // Dependency array still empty
-  }, []); 
-  */
 
   const handleTabClick = (index: number) => {
     setActiveTabIndex(index);
@@ -220,7 +188,7 @@ export default function LandingPageContent() {
                 transition={{ staggerChildren: 0.2 }}
               >
                 <motion.h1
-                  className="text-5xl md:text-6xl lg:text-7xl font-bold leading-tight text-[color:var(--accent-color)] mb-8 font-newsreader"
+                  className="text-5xl md:text-6xl lg:text-7xl leading-tight text-[color:var(--accent-color)] mb-8 font-newsreader font-extralight"
                   variants={headingVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
@@ -293,7 +261,7 @@ export default function LandingPageContent() {
                         <div className="mb-5">
                           {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
                         </div>
-                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader font-extralight">
                           {features[activeTabIndex].title}
                         </h3>
                         <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
@@ -353,7 +321,7 @@ export default function LandingPageContent() {
                         <div className="mb-5">
                           {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
                         </div>
-                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader font-extralight">
                           {features[activeTabIndex].title}
                         </h3>
                         <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
@@ -396,6 +364,37 @@ export default function LandingPageContent() {
                         </AnimatePresence>
                       </div>
                     </motion.div>
+                  ) : activeTabIndex === 2 ? ( // Layout for "Interact Your Way" tab (index 2)
+                    <motion.div
+                      key={activeTabIndex}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20, transition: { duration: 0.2 } }}
+                      transition={{ duration: 0.3, ease: "easeInOut" }}
+                      className="flex flex-col items-center text-center w-full gap-6 md:gap-8"
+                    >
+                      {/* Text Content (Icon, Title, Description) */}
+                      <div className="flex flex-col items-center text-center">
+                        <div className="mb-5">
+                          {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
+                        </div>
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader font-extralight">
+                          {features[activeTabIndex].title}
+                        </h3>
+                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
+                          {features[activeTabIndex].description}
+                        </p>
+                      </div>
+
+                      {/* Image Below Text */}
+                      <div className="w-full flex justify-center items-center mt-4 md:mt-6">
+                        <img
+                          src="/audio_usage_1.png" // Assuming image is in public folder
+                          alt={features[activeTabIndex].title}
+                          className="rounded-lg shadow-xl h-auto object-contain max-w-lg w-full"
+                        />
+                      </div>
+                    </motion.div>
                   ) : activeTabIndex === 3 ? (
                     // Layout for "Stay Organized" tab (index 3)
                     <motion.div
@@ -411,7 +410,7 @@ export default function LandingPageContent() {
                         <div className="mb-5">
                           {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
                         </div>
-                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader font-extralight">
                           {features[activeTabIndex].title}
                         </h3>
                         <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
@@ -443,7 +442,7 @@ export default function LandingPageContent() {
                         <div className="mb-5">
                           {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
                         </div>
-                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader font-extralight">
                           {features[activeTabIndex].title}
                         </h3>
                         <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
@@ -473,7 +472,7 @@ export default function LandingPageContent() {
                       <div className="mb-5">
                         {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
                       </div>
-                      <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
+                      <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader font-extralight">
                         {features[activeTabIndex].title}
                       </h3>
                       <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-md">
@@ -491,7 +490,9 @@ export default function LandingPageContent() {
           <section className="py-20 bg-[color:var(--bg-color)] relative z-10">
             <div className="container mx-auto px-4 text-center">
                {/* Use theme variables */}
-              <h2 className="text-3xl md:text-4xl font-bold mb-6 text-[color:var(--accent-color)] font-newsreader">Ready to focus on what matters?</h2>
+              <h2 className="text-3xl md:text-4xl mb-6 text-[color:var(--accent-color)] font-newsreader font-extralight">
+                Ready to focus on what matters?
+              </h2>
               <p className="text-[color:var(--primary-color)]/90 max-w-2xl mx-auto mb-8 text-lg">Join the waitlist to be notified when we launch and get early access to Tuon.io</p>
               <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-4 max-w-md mx-auto">
                 <input
