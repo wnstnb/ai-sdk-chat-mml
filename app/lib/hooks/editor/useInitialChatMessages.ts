@@ -185,18 +185,34 @@ export function useInitialChatMessages({
                                 }
                             } else if (corePart.type === 'tool-call') {
                                 console.log(`[useInitialChatMessages] Inspecting tool-call part for msg ${msg.id}:`, JSON.stringify(corePart, null, 2));
-                                
-                                if (corePart.toolCallId && corePart.toolName && corePart.args !== undefined) {
-                                    const toolResult = resultsMap.get(corePart.toolCallId);
-                                    const state: 'result' | 'call' = toolResult !== undefined ? 'result' : 'call'; // Use 'call' if no result found
-
+                        
+                                // Cast corePart to include the possibility of an embedded result
+                                const toolCallPartWithPotentialResult = corePart as ToolCallPart & { result?: any };
+                        
+                                if (toolCallPartWithPotentialResult.toolCallId && 
+                                    toolCallPartWithPotentialResult.toolName && 
+                                    toolCallPartWithPotentialResult.args !== undefined) {
+                        
+                                    // Check if the result is directly embedded in this "tool-call" part
+                                    const embeddedResult = toolCallPartWithPotentialResult.result;
+                                    
+                                    // Still try to get from resultsMap in case the structure is mixed or changes in the future,
+                                    // but prioritize embeddedResult if present.
+                                    const resultFromMap = resultsMap.get(toolCallPartWithPotentialResult.toolCallId);
+                                    
+                                    const finalResult = embeddedResult !== undefined ? embeddedResult : resultFromMap;
+                                    const state: 'result' | 'call' = finalResult !== undefined ? 'result' : 'call';
+                        
+                                    // Log the determined state and result for this tool call
+                                    console.log(`[useInitialChatMessages] Tool Call ID: ${toolCallPartWithPotentialResult.toolCallId}, Name: ${toolCallPartWithPotentialResult.toolName}, Embedded Result Found: ${embeddedResult !== undefined}, Result from Map: ${resultFromMap !== undefined}, Final State: ${state}`);
+                        
                                     uiParts.push({
                                         type: 'tool-invocation',
                                         toolInvocation: {
-                                            toolCallId: corePart.toolCallId,
-                                            toolName: corePart.toolName,
-                                            args: corePart.args, 
-                                            result: toolResult !== undefined ? toolResult : undefined, // Pass undefined if no result
+                                            toolCallId: toolCallPartWithPotentialResult.toolCallId,
+                                            toolName: toolCallPartWithPotentialResult.toolName,
+                                            args: toolCallPartWithPotentialResult.args, 
+                                            result: finalResult, // Use the finalResult (embedded or from map)
                                             state: state
                                         },
                                     });
