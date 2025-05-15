@@ -17,6 +17,7 @@ The initial approach for tagging documents involved an "@mention" style input. T
 *   Parent Page Components (e.g., in `/app/routes/editor/[documentId]/`, `/app/routes/launch/`) (Responsible for initializing and persisting the `taggedDocuments` state)
 
 **Changes:**
+[x] Checklist item
 
 1.  **`components/chat/DocumentSearchInput.tsx` (New Component):**
     *   **Functionality:**
