@@ -98,6 +98,8 @@ import { EditorPaneWrapper } from '@/components/editor/EditorPaneWrapper'; // Im
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 // --- NEW: Import VersionHistoryModal ---
 import { VersionHistoryModal } from '@/components/editor/VersionHistoryModal';
+// REMOVED: SearchModal import for now, will be re-added at a higher level
+// import { SearchModal } from '@/components/search/SearchModal'; 
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(

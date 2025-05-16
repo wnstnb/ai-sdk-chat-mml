@@ -12,6 +12,7 @@ import { triggerSearch } from '@/hooks/useSearch'; // This hook needs to be crea
 interface OmnibarProps {
     displayResultsInline?: boolean;
     searchType?: 'default' | 'tagging'; // NEW: Prop to control search behavior
+    autoFocus?: boolean; // ADDED: autoFocus prop
 }
 
 // Reuse SearchResult interface from store or define locally if needed
@@ -22,7 +23,7 @@ interface SearchResult {
     similarity?: number;
 }
 
-export function Omnibar({ displayResultsInline = false, searchType = 'default' }: OmnibarProps) {
+export function Omnibar({ displayResultsInline = false, searchType = 'default', autoFocus = false }: OmnibarProps) {
     const router = useRouter();
     const {
         searchQuery,
@@ -47,6 +48,13 @@ export function Omnibar({ displayResultsInline = false, searchType = 'default' }
     useEffect(() => {
         setInputValue(searchQuery);
     }, [searchQuery]);
+
+    // ADDED: Effect to autoFocus input if prop is true
+    useEffect(() => {
+        if (autoFocus && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [autoFocus]);
 
     // Effect to trigger search when debounced query changes
     useEffect(() => {
@@ -137,6 +145,7 @@ export function Omnibar({ displayResultsInline = false, searchType = 'default' }
                 onChange={handleInputChange} // Use dedicated handler
                 className="pl-10 pr-10" // Standard Shadcn input takes care of most styling
                 aria-label="Search documents"
+                autoFocus={autoFocus} // ADDED: Pass autoFocus to Input component
             />
             {/* Loading Indicator */}
             {isLoadingSearch && (

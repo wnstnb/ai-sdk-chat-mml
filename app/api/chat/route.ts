@@ -988,7 +988,7 @@ export async function POST(req: Request) {
             }
 
             const toolCallsForSdk: ToolCallPart[] = [];
-            const toolResultsForSdk: ToolResultPart[] = [];
+            const toolResultsForSdk: ToolResultPart[] = []; // This line is intentionally kept as per PRD step 4 (optional cleanup)
 
             for (const tip of toolInvocationParts) {
                 // Ensure the toolInvocation object exists
@@ -1001,8 +1001,6 @@ export async function POST(req: Request) {
                 // Check for the problematic state if it's not being correctly set to 'result' earlier
                 if (state !== 'result' && result === undefined) {
                     console.error(`[API Chat Transform Error] ToolInvocation part (ID: ${toolCallId}, Name: ${toolName}) has state '${state}' but no result. This will likely cause an SDK error. Skipping this tool part for safety.`);
-                    // Potentially, we could try to find a matching result from msg.tool_calls (Supabase join) if available and not already used.
-                    // For now, skipping is safer to prevent SDK error.
                     continue; 
                 }
 
@@ -1013,7 +1011,24 @@ export async function POST(req: Request) {
                     args: args
                 });
 
-                // Only add tool result if a result is actually present
+                // MODIFIED BLOCK START: Create and push individual tool messages
+                // Only process tool result if a result is actually present
+                if (result !== undefined && result !== null) {
+                    transformedMessages.push({
+                        role: 'tool',
+                        content: [{
+                            type: 'tool-result',
+                            toolCallId: toolCallId,
+                            toolName: toolName, // toolName is required for ToolResultPart
+                            result: typeof result === 'string' ? result : JSON.stringify(result) // Stringify if not already a string
+                        }]
+                    });
+                    console.log(`[API Chat Transform] Added individual tool message for tool_call_id ${toolCallId}.`);
+                }
+                // MODIFIED BLOCK END
+
+                // The following block that pushed to toolResultsForSdk is kept as per PRD step 4 (optional cleanup)
+                // but its later usage will be removed.
                 if (result !== undefined && result !== null) {
                     toolResultsForSdk.push({
                         type: 'tool-result',
@@ -1030,19 +1045,6 @@ export async function POST(req: Request) {
                     content: toolCallsForSdk 
                 });
                 console.log(`[API Chat Transform] Added assistant message with ${toolCallsForSdk.length} tool call(s) for SDK.`);
-            }
-
-            // Re-enable sending tool results, but be mindful of model provider compatibility
-            // The error "Unsupported role: tool" was for @ai-sdk/google.
-            // For now, let's create them. If issues persist with specific models, this needs model-specific handling.
-            if (toolResultsForSdk.length > 0) {
-                transformedMessages.push({
-                    role: 'tool',
-                    content: toolResultsForSdk 
-                });
-                 console.log(`[API Chat Transform] Added tool message with ${toolResultsForSdk.length} tool result(s) for SDK.`);
-            } else if (toolCallsForSdk.length > 0 && toolInvocationParts.some(tip => tip.toolInvocation?.result === undefined || tip.toolInvocation?.result === null)) {
-                 console.warn(`[API Chat Transform] Tool call(s) were present, but some results were missing. Not all tool results messages could be created.`);
             }
 
         } else {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card'; // Assuming shadcn Card
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'; // Corrected path
@@ -15,14 +15,51 @@ export const PinnedMessageBubble: React.FC<PinnedMessageBubbleProps> = ({
     onSendToEditor,
     onCollapse,
 }) => {
+    const [isHovering, setIsHovering] = useState(false);
+    const [isVisible, setIsVisible] = useState(true);
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
+
     // Extract only the textual content if messageContent might contain complex objects/parts
     // This might need refinement depending on the exact structure of the message passed down
     const textContent = typeof messageContent === 'string'
         ? messageContent
         : (messageContent as any)?.text || '[Unable to display message content]';
 
+    useEffect(() => {
+        if (!isHovering && isVisible) {
+            timerRef.current = setTimeout(() => {
+                setIsVisible(false);
+                // Call onCollapse after the fade-out animation completes
+                // Assuming a 300ms fade-out duration (same as the transition)
+                setTimeout(onCollapse, 300);
+            }, 2500);
+        }
+
+        return () => {
+            if (timerRef.current) {
+                clearTimeout(timerRef.current);
+            }
+        };
+    }, [isHovering, isVisible, onCollapse]);
+
+    const handleMouseEnter = () => {
+        setIsHovering(true);
+        if (timerRef.current) {
+            clearTimeout(timerRef.current);
+        }
+    };
+
+    const handleMouseLeave = () => {
+        setIsHovering(false);
+    };
+
     return (
-        <div className="pinned-message-bubble">
+        <div
+            className={`pinned-message-bubble transition-opacity duration-300 ease-in-out ${isVisible ? 'opacity-100' : 'opacity-0'}`}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            style={{ display: 'flex', alignItems: 'center', padding: '8px', borderRadius: '8px', background: 'hsl(var(--background))', boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)' }} // Added some basic styling for visibility
+        >
             <TooltipProvider delayDuration={100}>
                 <Tooltip>
                     <TooltipTrigger asChild>

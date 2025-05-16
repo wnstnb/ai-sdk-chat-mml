@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/header';
 import { usePathname } from 'next/navigation';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // Import the store
+import { SearchModal } from '@/components/search/SearchModal'; // ADDED: Import SearchModal
 
 interface ThemeHandlerProps {
   children: React.ReactNode;
@@ -27,6 +28,21 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   // Local state to manage the theme *before* the store is initialized
   // Helps prevent FOUC by using localStorage immediately
   const [initialThemeApplied, setInitialThemeApplied] = useState(false);
+
+  // --- NEW: State and handlers for Search Modal ---
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+
+  const handleOpenSearchModal = useCallback(() => {
+    setIsSearchModalOpen(true);
+  }, []);
+
+  const handleCloseSearchModal = useCallback(() => {
+    setIsSearchModalOpen(false);
+    // Optional: You might want to clear search query from useSearchStore here
+    // const { clearSearch } = useSearchStore.getState();
+    // clearSearch();
+  }, []);
+  // --- END NEW --- 
 
   // Effect 1: Set initial theme based on localStorage FIRST, then fetch store
   useEffect(() => {
@@ -87,11 +103,22 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   return (
     <div className="flex flex-col h-screen">
       {showHeader && (
-        <Header currentTheme={headerTheme} onToggleTheme={handleToggleTheme} />
+        <Header 
+          currentTheme={headerTheme} 
+          onToggleTheme={handleToggleTheme} 
+          onOpenSearch={handleOpenSearchModal} // ADDED: Pass handler to Header
+        />
       )}
       <main className={`flex-grow overflow-y-auto ${!showHeader ? 'h-screen' : ''}`}>
         {children}
       </main>
+      {/* ADDED: Render SearchModal */}
+      {isSearchModalOpen && (
+        <SearchModal 
+          isOpen={isSearchModalOpen} 
+          onClose={handleCloseSearchModal} 
+        />
+      )}
     </div>
   );
 };

@@ -1311,7 +1311,7 @@ html {
     @apply flex items-center justify-between gap-2; /* Layout */
     @apply text-sm; /* Slightly larger than follow-up */
     /* Use CSS vars for theme awareness */
-    @apply bg-[--info-bg] border-[--info-border] text-[--info-text];
+    @apply bg-[--info-bg] text-[--info-text] border-[--info-border] dark:border-[--border-color];
 }
 
 /* Utility for line clamping (if not globally available) */
