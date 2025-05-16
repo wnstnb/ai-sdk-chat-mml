@@ -11,6 +11,7 @@ import { triggerSearch } from '@/hooks/useSearch'; // This hook needs to be crea
 
 interface OmnibarProps {
     displayResultsInline?: boolean;
+    searchType?: 'default' | 'tagging'; // NEW: Prop to control search behavior
 }
 
 // Reuse SearchResult interface from store or define locally if needed
@@ -21,7 +22,7 @@ interface SearchResult {
     similarity?: number;
 }
 
-export function Omnibar({ displayResultsInline = false }: OmnibarProps) {
+export function Omnibar({ displayResultsInline = false, searchType = 'default' }: OmnibarProps) {
     const router = useRouter();
     const {
         searchQuery,
@@ -56,17 +57,8 @@ export function Omnibar({ displayResultsInline = false }: OmnibarProps) {
                 setIsSearching(true); // Mark search as active
                 setSearchError(null);
                 try {
-                     // Call the actual search function
-                     const results = await triggerSearch(debouncedQuery);
-                     // For now, setting mock results for UI testing
-                     // console.log('Simulating API call...');
-                     // await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
-                     // const mockResults: SearchResult[] = [
-                     //    // { id: 'doc-1', name: `Result for ${debouncedQuery} 1`, folder_id: null },
-                     //    // { id: 'doc-2', name: `Result for ${debouncedQuery} 2`, folder_id: 'folder-a' },
-                     // ];
-                     // console.log('Setting mock results:', mockResults);
-                     // setSearchResults(mockResults);
+                     // Call the actual search function, passing the searchType
+                     const results = await triggerSearch(debouncedQuery, searchType);
                      setSearchResults(results); // Use actual results
                 } catch (error: any) {
                     console.error('Search failed:', error);
@@ -90,7 +82,7 @@ export function Omnibar({ displayResultsInline = false }: OmnibarProps) {
             }
         };
         performSearch();
-     }, [debouncedQuery, setIsLoadingSearch, setSearchError, setIsSearching, clearSearch, setSearchResults]); // Removed inputValue dependency
+     }, [debouncedQuery, setIsLoadingSearch, setSearchError, setIsSearching, clearSearch, setSearchResults, searchType]); // Removed inputValue dependency
 
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

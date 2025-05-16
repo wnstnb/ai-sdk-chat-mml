@@ -70,7 +70,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme }) => {
         {/* Search Bar - Conditionally render */}
         {pathname !== '/launch' && (
           <div className="flex-grow max-w-lg mx-auto px-4">
-            <Omnibar displayResultsInline={true} />
+            <Omnibar displayResultsInline={true} searchType='tagging' />
           </div>
         )}
 
