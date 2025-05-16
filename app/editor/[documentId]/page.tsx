@@ -96,6 +96,8 @@ import { ChatPaneWrapper } from '@/components/editor/ChatPaneWrapper'; // Import
 import { EditorPaneWrapper } from '@/components/editor/EditorPaneWrapper'; // Import the new wrapper
 // NEW: Import useMediaQuery hook
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
+// --- NEW: Import VersionHistoryModal ---
+import { VersionHistoryModal } from '@/components/editor/VersionHistoryModal';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -153,6 +155,8 @@ export default function EditorPage() {
     const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved' | 'error'>('idle');
     // --- ADDED STATE for pending mobile editor tool call ---
     const [pendingMobileEditorToolCall, setPendingMobileEditorToolCall] = useState<{ toolName: string; args: any; toolCallId: string } | null>(null);
+    // --- NEW: State for Version History Modal ---
+    const [isVersionHistoryModalOpen, setIsVersionHistoryModalOpen] = useState(false);
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
@@ -209,8 +213,7 @@ export default function EditorPage() {
         clearFileUploadPreview: clearPreview,
         initialTaggedDocIdsString, // <-- Pass to the hook
     });
-    const followUpContext = useFollowUpStore((state) => state.followUpContext);
-    const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
+    const { followUpContext, setFollowUpContext } = useFollowUpStore();
 
     // ---> ADD LOG HERE <---
     console.log('[EditorPage] Received initialMessages from useInitialChatMessages:', JSON.stringify(initialMessages, null, 2));
@@ -237,6 +240,15 @@ export default function EditorPage() {
             throw err;
         }
     }, []); 
+
+    // --- NEW: Handlers for Version History Modal (Moved here) ---
+    const handleOpenHistoryModal = useCallback(() => {
+        setIsVersionHistoryModalOpen(true);
+    }, []);
+
+    const handleCloseHistoryModal = useCallback(() => {
+        setIsVersionHistoryModalOpen(false);
+    }, []);
 
     const handleEditorChange = useCallback((editor: BlockNoteEditorType) => {
         const editorContent = editor.document;
@@ -315,9 +327,23 @@ export default function EditorPage() {
         setAutosaveTimerId(newTimerId);
     }, [documentId, autosaveTimerId, revertStatusTimerId]);
 
+    const handleRestoreEditorContent = useCallback((restoredBlocks: PartialBlock[]) => {
+        const editor = editorRef.current;
+        if (editor && restoredBlocks) {
+            editor.replaceBlocks(editor.document, restoredBlocks);
+            handleEditorChange(editor); 
+            toast.success("Content restored in editor.");
+        } else {
+            toast.error("Failed to restore content in editor: Editor or content not available.");
+            console.error("[EditorPage] handleRestoreEditorContent: Editor or restoredBlocks missing.", { editor, restoredBlocks });
+        }
+        setIsVersionHistoryModalOpen(false); 
+    }, [editorRef, handleEditorChange]);
+
     const handleSaveContent = useCallback(async () => {
         const editor = editorRef.current;
         if (!documentId || !editor?.document || isSaving) return;
+
         console.log("[Manual Save] Triggered.");
         if (autosaveTimerId) {
             clearTimeout(autosaveTimerId);
@@ -327,32 +353,71 @@ export default function EditorPage() {
             clearTimeout(revertStatusTimerId);
             setRevertStatusTimerId(null);
         }
-        setAutosaveStatus('saving');
-        setIsSaving(true);
+        
+        setAutosaveStatus('saving'); // Indicates a save operation is in progress
+        setIsSaving(true); // Specific to manual save button UI
         setPageError(null);
+
         try {
-            const currentEditorContent = editor.document;
-            const stringifiedContent = JSON.stringify(currentEditorContent);
-            latestEditorBlocksRef.current = currentEditorContent;
-            latestEditorContentRef.current = stringifiedContent;
-            // TODO: Add markdown generation here too?
-            await triggerSaveDocument(stringifiedContent, documentId);
-            toast.success('Document saved!');
-            setAutosaveStatus('saved');
-             const newRevertTimerId = setTimeout(() => {
-                 setAutosaveStatus('idle');
-                 setRevertStatusTimerId(null);
-             }, 2000);
-             setRevertStatusTimerId(newRevertTimerId);
+            const currentEditorContentJSON: Block[] = editor.document;
+            let searchableMarkdownContent: string | null = null;
+
+            if (currentEditorContentJSON.length > 0) {
+                try {
+                    searchableMarkdownContent = await editor.blocksToMarkdownLossy(currentEditorContentJSON);
+                    searchableMarkdownContent = searchableMarkdownContent.trim() || null;
+                } catch (markdownError) {
+                    console.error("[Manual Save] Error generating markdown:", markdownError);
+                    toast.error("Failed to generate markdown for manual save.");
+                    // Decide if we should proceed without markdown or halt. For now, let's proceed with null.
+                }
+            }
+
+            const response = await fetch(`/api/documents/${documentId}/manual-save`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    content: currentEditorContentJSON, 
+                    searchable_content: searchableMarkdownContent 
+                }),
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error?.message || `Manual save failed (${response.status})`);
+            }
+
+            const responseData = await response.json(); // Expect { data: { manual_save_id, manual_save_timestamp, updated_at } }
+
+            // Update refs for unsaved changes detection / beforeunload
+            latestEditorBlocksRef.current = currentEditorContentJSON;
+            latestEditorContentRef.current = JSON.stringify(currentEditorContentJSON);
+            
+            toast.success('Document saved manually!');
+            setAutosaveStatus('saved'); // Reflects that the document is now in a saved state
+            
+            // Update document's last updated time in UI if available from response (e.g. for optimistic update)
+            // This part depends on what `useDocument` hook or title management might need.
+            // For now, the main purpose is saving to the new table.
+            // If responseData.data.updated_at is available, you could potentially update related state.
+            console.log('[Manual Save] Success:', responseData);
+
+
+            const newRevertTimerId = setTimeout(() => {
+                setAutosaveStatus('idle'); // Revert to idle after a short period
+                setRevertStatusTimerId(null);
+            }, 2000);
+            setRevertStatusTimerId(newRevertTimerId);
+
         } catch (err: any) {
             console.error("[Manual Save] Save error:", err);
-            setPageError(`Save failed: ${err.message}`);
-            toast.error(`Save failed: ${err.message}`);
+            setPageError(`Manual save failed: ${err.message}`);
+            toast.error(`Manual save failed: ${err.message}`);
             setAutosaveStatus('error');
         } finally {
             setIsSaving(false);
         }
-    }, [documentId, isSaving, autosaveTimerId, revertStatusTimerId, triggerSaveDocument]);
+    }, [documentId, editorRef, isSaving, autosaveTimerId, revertStatusTimerId, setAutosaveStatus, setIsSaving, setPageError]);
 
     const handleNewDocument = useCallback(() => {
         router.push('/launch');
@@ -995,7 +1060,6 @@ export default function EditorPage() {
             setIsChatCollapsed(!isChatCollapsed);
         }
     };
-    // --- END Handler Definitions ---
 
     // --- Render Logic ---
     // Find the last assistant message to pass down
@@ -1036,6 +1100,7 @@ export default function EditorPage() {
                                 handleNewDocument={handleNewDocument}
                                 handleSaveContent={handleSaveContent}
                                 isSaving={isSaving}
+                                onOpenHistory={handleOpenHistoryModal}
                             />
                             {pageError && !pageError.startsWith("Chat Error:") && (
                                 <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -1151,6 +1216,7 @@ export default function EditorPage() {
                             handleNewDocument={handleNewDocument}
                             handleSaveContent={handleSaveContent}
                             isSaving={isSaving}
+                            onOpenHistory={handleOpenHistoryModal}
                          />
                         {pageError && !pageError.startsWith("Chat Error:") && (
                             <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -1300,6 +1366,17 @@ export default function EditorPage() {
                     : (isChatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />)
                  }
              </button>
+
+            {/* --- NEW: Version History Modal --- */}
+            {isVersionHistoryModalOpen && documentId && (
+                <VersionHistoryModal
+                    documentId={documentId}
+                    isOpen={isVersionHistoryModalOpen}
+                    onClose={handleCloseHistoryModal}
+                    onRestoreContent={handleRestoreEditorContent}
+                />
+            )}
+            {/* --- END NEW --- */}
         </div>
     );
 } 

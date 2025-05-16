@@ -47,6 +47,22 @@ export async function PUT(
          return NextResponse.json({ error: { code: 'VALIDATION_ERROR', message: '`searchable_content` must be a string or null.' } }, { status: 400 });
     }
 
+    // 1. Insert into document_autosaves
+    const { error: autosaveError } = await supabase
+      .from('document_autosaves')
+      .insert({
+        document_id: documentId,
+        content: content, // Assuming content is JSONB as per PRD
+        user_id: userId,
+        // autosave_timestamp will default to now() in the database
+      });
+
+    if (autosaveError) {
+      console.error('Autosave Insert Error:', autosaveError.message);
+      return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to create autosave: ${autosaveError.message}` } }, { status: 500 });
+    }
+
+    // 2. Proceed to update the main documents table
     const updateData: { content: any; searchable_content?: string | null; updated_at: string } = {
         content: content,
         updated_at: new Date().toISOString() // Always update timestamp
