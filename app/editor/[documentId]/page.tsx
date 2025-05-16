@@ -96,6 +96,8 @@ import { ChatPaneWrapper } from '@/components/editor/ChatPaneWrapper'; // Import
 import { EditorPaneWrapper } from '@/components/editor/EditorPaneWrapper'; // Import the new wrapper
 // NEW: Import useMediaQuery hook
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
+// --- NEW: Import VersionHistoryModal ---
+import { VersionHistoryModal } from '@/components/editor/VersionHistoryModal';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -153,6 +155,8 @@ export default function EditorPage() {
     const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved' | 'error'>('idle');
     // --- ADDED STATE for pending mobile editor tool call ---
     const [pendingMobileEditorToolCall, setPendingMobileEditorToolCall] = useState<{ toolName: string; args: any; toolCallId: string } | null>(null);
+    // --- NEW: State for Version History Modal ---
+    const [isVersionHistoryModalOpen, setIsVersionHistoryModalOpen] = useState(false);
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
@@ -209,8 +213,7 @@ export default function EditorPage() {
         clearFileUploadPreview: clearPreview,
         initialTaggedDocIdsString, // <-- Pass to the hook
     });
-    const followUpContext = useFollowUpStore((state) => state.followUpContext);
-    const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
+    const { followUpContext, setFollowUpContext } = useFollowUpStore();
 
     // ---> ADD LOG HERE <---
     console.log('[EditorPage] Received initialMessages from useInitialChatMessages:', JSON.stringify(initialMessages, null, 2));
@@ -237,6 +240,15 @@ export default function EditorPage() {
             throw err;
         }
     }, []); 
+
+    // --- NEW: Handlers for Version History Modal (Moved here) ---
+    const handleOpenHistoryModal = useCallback(() => {
+        setIsVersionHistoryModalOpen(true);
+    }, []);
+
+    const handleCloseHistoryModal = useCallback(() => {
+        setIsVersionHistoryModalOpen(false);
+    }, []);
 
     const handleEditorChange = useCallback((editor: BlockNoteEditorType) => {
         const editorContent = editor.document;
@@ -314,6 +326,19 @@ export default function EditorPage() {
         }, 3000);
         setAutosaveTimerId(newTimerId);
     }, [documentId, autosaveTimerId, revertStatusTimerId]);
+
+    const handleRestoreEditorContent = useCallback((restoredBlocks: Block[]) => {
+        const editor = editorRef.current;
+        if (editor && restoredBlocks) {
+            editor.replaceBlocks(editor.document, restoredBlocks);
+            handleEditorChange(editor); 
+            toast.success("Content restored in editor.");
+        } else {
+            toast.error("Failed to restore content in editor: Editor or content not available.");
+            console.error("[EditorPage] handleRestoreEditorContent: Editor or restoredBlocks missing.", { editor, restoredBlocks });
+        }
+        setIsVersionHistoryModalOpen(false); 
+    }, [editorRef, handleEditorChange]);
 
     const handleSaveContent = useCallback(async () => {
         const editor = editorRef.current;
@@ -995,7 +1020,6 @@ export default function EditorPage() {
             setIsChatCollapsed(!isChatCollapsed);
         }
     };
-    // --- END Handler Definitions ---
 
     // --- Render Logic ---
     // Find the last assistant message to pass down
@@ -1036,6 +1060,7 @@ export default function EditorPage() {
                                 handleNewDocument={handleNewDocument}
                                 handleSaveContent={handleSaveContent}
                                 isSaving={isSaving}
+                                onOpenHistory={handleOpenHistoryModal}
                             />
                             {pageError && !pageError.startsWith("Chat Error:") && (
                                 <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -1151,6 +1176,7 @@ export default function EditorPage() {
                             handleNewDocument={handleNewDocument}
                             handleSaveContent={handleSaveContent}
                             isSaving={isSaving}
+                            onOpenHistory={handleOpenHistoryModal}
                          />
                         {pageError && !pageError.startsWith("Chat Error:") && (
                             <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -1300,6 +1326,17 @@ export default function EditorPage() {
                     : (isChatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />)
                  }
              </button>
+
+            {/* --- NEW: Version History Modal --- */}
+            {isVersionHistoryModalOpen && documentId && (
+                <VersionHistoryModal
+                    documentId={documentId}
+                    isOpen={isVersionHistoryModalOpen}
+                    onClose={handleCloseHistoryModal}
+                    onRestoreContent={handleRestoreEditorContent}
+                />
+            )}
+            {/* --- END NEW --- */}
         </div>
     );
 } 
