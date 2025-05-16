@@ -327,7 +327,7 @@ export default function EditorPage() {
         setAutosaveTimerId(newTimerId);
     }, [documentId, autosaveTimerId, revertStatusTimerId]);
 
-    const handleRestoreEditorContent = useCallback((restoredBlocks: Block[]) => {
+    const handleRestoreEditorContent = useCallback((restoredBlocks: PartialBlock[]) => {
         const editor = editorRef.current;
         if (editor && restoredBlocks) {
             editor.replaceBlocks(editor.document, restoredBlocks);
@@ -343,6 +343,7 @@ export default function EditorPage() {
     const handleSaveContent = useCallback(async () => {
         const editor = editorRef.current;
         if (!documentId || !editor?.document || isSaving) return;
+
         console.log("[Manual Save] Triggered.");
         if (autosaveTimerId) {
             clearTimeout(autosaveTimerId);
@@ -352,32 +353,71 @@ export default function EditorPage() {
             clearTimeout(revertStatusTimerId);
             setRevertStatusTimerId(null);
         }
-        setAutosaveStatus('saving');
-        setIsSaving(true);
+        
+        setAutosaveStatus('saving'); // Indicates a save operation is in progress
+        setIsSaving(true); // Specific to manual save button UI
         setPageError(null);
+
         try {
-            const currentEditorContent = editor.document;
-            const stringifiedContent = JSON.stringify(currentEditorContent);
-            latestEditorBlocksRef.current = currentEditorContent;
-            latestEditorContentRef.current = stringifiedContent;
-            // TODO: Add markdown generation here too?
-            await triggerSaveDocument(stringifiedContent, documentId);
-            toast.success('Document saved!');
-            setAutosaveStatus('saved');
-             const newRevertTimerId = setTimeout(() => {
-                 setAutosaveStatus('idle');
-                 setRevertStatusTimerId(null);
-             }, 2000);
-             setRevertStatusTimerId(newRevertTimerId);
+            const currentEditorContentJSON: Block[] = editor.document;
+            let searchableMarkdownContent: string | null = null;
+
+            if (currentEditorContentJSON.length > 0) {
+                try {
+                    searchableMarkdownContent = await editor.blocksToMarkdownLossy(currentEditorContentJSON);
+                    searchableMarkdownContent = searchableMarkdownContent.trim() || null;
+                } catch (markdownError) {
+                    console.error("[Manual Save] Error generating markdown:", markdownError);
+                    toast.error("Failed to generate markdown for manual save.");
+                    // Decide if we should proceed without markdown or halt. For now, let's proceed with null.
+                }
+            }
+
+            const response = await fetch(`/api/documents/${documentId}/manual-save`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    content: currentEditorContentJSON, 
+                    searchable_content: searchableMarkdownContent 
+                }),
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error?.message || `Manual save failed (${response.status})`);
+            }
+
+            const responseData = await response.json(); // Expect { data: { manual_save_id, manual_save_timestamp, updated_at } }
+
+            // Update refs for unsaved changes detection / beforeunload
+            latestEditorBlocksRef.current = currentEditorContentJSON;
+            latestEditorContentRef.current = JSON.stringify(currentEditorContentJSON);
+            
+            toast.success('Document saved manually!');
+            setAutosaveStatus('saved'); // Reflects that the document is now in a saved state
+            
+            // Update document's last updated time in UI if available from response (e.g. for optimistic update)
+            // This part depends on what `useDocument` hook or title management might need.
+            // For now, the main purpose is saving to the new table.
+            // If responseData.data.updated_at is available, you could potentially update related state.
+            console.log('[Manual Save] Success:', responseData);
+
+
+            const newRevertTimerId = setTimeout(() => {
+                setAutosaveStatus('idle'); // Revert to idle after a short period
+                setRevertStatusTimerId(null);
+            }, 2000);
+            setRevertStatusTimerId(newRevertTimerId);
+
         } catch (err: any) {
             console.error("[Manual Save] Save error:", err);
-            setPageError(`Save failed: ${err.message}`);
-            toast.error(`Save failed: ${err.message}`);
+            setPageError(`Manual save failed: ${err.message}`);
+            toast.error(`Manual save failed: ${err.message}`);
             setAutosaveStatus('error');
         } finally {
             setIsSaving(false);
         }
-    }, [documentId, isSaving, autosaveTimerId, revertStatusTimerId, triggerSaveDocument]);
+    }, [documentId, editorRef, isSaving, autosaveTimerId, revertStatusTimerId, setAutosaveStatus, setIsSaving, setPageError]);
 
     const handleNewDocument = useCallback(() => {
         router.push('/launch');
