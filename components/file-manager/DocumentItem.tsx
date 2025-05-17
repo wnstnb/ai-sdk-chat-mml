@@ -18,9 +18,10 @@ type DocumentLike = Partial<Document> & {
 interface DocumentItemProps {
   document: DocumentLike; // Use the combined type
   level?: number; // Add optional level prop
+  onFileSelect?: (documentId: string, documentName?: string) => void; // Added prop
 }
 
-const DocumentItem: React.FC<DocumentItemProps> = ({ document, level = 0 }) => {
+const DocumentItem: React.FC<DocumentItemProps> = ({ document, level = 0, onFileSelect }) => {
   const [isRenaming, setIsRenaming] = useState(false);
   const [newName, setNewName] = useState(document.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -93,7 +94,11 @@ const DocumentItem: React.FC<DocumentItemProps> = ({ document, level = 0 }) => {
   const handleClick = () => {
     // Only navigate if not renaming or dragging
     if (!isRenaming && !isDragging) {
-      router.push(`/editor/${document.id}`);
+      if (onFileSelect) { // Check if the callback is provided
+        onFileSelect(document.id, document.name);
+      } else {
+        router.push(`/editor/${document.id}`);
+      }
     }
   };
 

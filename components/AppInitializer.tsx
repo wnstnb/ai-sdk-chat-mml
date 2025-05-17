@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore';
 import { createClient } from '@/lib/supabase/client';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
+import ModalManager from '@/components/modals/ModalManager';
 
 interface AppInitializerProps {
   children: React.ReactNode;
@@ -56,5 +57,5 @@ export default function AppInitializer({ children }: AppInitializerProps) {
     }
   }, [isInitialized, isAuthenticated, fetchPreferences]);
 
-  return <>{children}</>;
+  return <ModalManager>{children}</ModalManager>;
 }

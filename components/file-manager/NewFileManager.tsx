@@ -33,7 +33,11 @@ import { FileTextIcon, FolderIcon } from 'lucide-react';
 // ADD: Import Trash2 icon for the delete button
 import { Trash2 } from 'lucide-react';
 
-const NewFileManager = () => {
+interface NewFileManagerProps {
+  onFileSelect?: (documentId: string, documentName?: string) => void; // Added prop
+}
+
+const NewFileManager: React.FC<NewFileManagerProps> = ({ onFileSelect }) => {
   // Get state and setters from Zustand store
   const {
     currentFolderId,
@@ -407,7 +411,11 @@ const NewFileManager = () => {
             ))}
             {/* Render Documents */}
             {currentViewDocuments.map((doc) => (
-              <DocumentItem key={doc.id} document={doc} />
+              <DocumentItem
+                key={doc.id}
+                document={doc}
+                onFileSelect={onFileSelect}
+              />
             ))}
           </>
         );
