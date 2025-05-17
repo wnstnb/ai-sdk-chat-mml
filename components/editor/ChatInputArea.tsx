@@ -36,7 +36,7 @@ interface ChatInputAreaProps {
     setFollowUpContext: (context: string | null) => void;
     
     // Refs needed by ChatInputUI or form
-    formRef: React.RefObject<HTMLFormElement>;
+    formRef: React.RefCallback<HTMLFormElement>;
     inputRef: React.RefObject<HTMLTextAreaElement>;
     fileInputRef: React.RefObject<HTMLInputElement>;
     

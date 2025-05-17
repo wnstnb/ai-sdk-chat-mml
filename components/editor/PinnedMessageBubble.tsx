@@ -32,7 +32,7 @@ export const PinnedMessageBubble: React.FC<PinnedMessageBubbleProps> = ({
                 // Call onCollapse after the fade-out animation completes
                 // Assuming a 300ms fade-out duration (same as the transition)
                 setTimeout(onCollapse, 300);
-            }, 2500);
+            }, 1500);
         }
 
         return () => {

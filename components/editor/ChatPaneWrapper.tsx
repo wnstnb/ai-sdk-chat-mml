@@ -46,7 +46,7 @@ interface ChatPaneWrapperProps {
     uploadedImagePath: string | null;
     followUpContext: string | null;
     setFollowUpContext: (context: string | null) => void;
-    formRef: RefObject<HTMLFormElement>;
+    formRef: React.RefCallback<HTMLFormElement>;
     inputRef: RefObject<HTMLTextAreaElement>;
     fileInputRef: RefObject<HTMLInputElement>;
     handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;

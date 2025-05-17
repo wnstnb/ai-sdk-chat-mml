@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { SunIcon, MoonIcon, FolderIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
-import { SearchIcon } from 'lucide-react';
+import { SunIcon, MoonIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
+import { SearchIcon, Home, FolderOpen } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '../lib/supabase/client';
 import { PreferencesDropdown } from './PreferencesDropdown';
+import { useModalStore } from '@/stores/useModalStore';
 
 interface HeaderProps {
   onToggleTheme: () => void;
@@ -20,6 +21,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const openFileBrowserModal = useModalStore((state) => state.openFileBrowserModal);
 
   const onLogout = async () => {
     console.log('Attempting logout...');
@@ -57,11 +59,11 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
 
   return (
     <header className="app-header">
-      <div className="header-content">
+      <div className="header-content flex justify-between items-center">
         {/* Logo and Launch Link */}
         <div className="flex items-center gap-3">
           <Link href="/launch" className="text-[--text-color] hover:text-[--primary-color] transition-colors" title="Go to Launch Pad">
-            <FolderIcon className="h-6 w-6" />
+            <Home className="h-6 w-6" />
           </Link>
           <div className="header-logo">
             <img src="/tuon-logo-svg-type.svg" alt="Tuon Logo" className="h-8 w-8" style={{ filter: 'var(--logo-filter)' }} />
@@ -76,20 +78,29 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
         )} */}
 
         {/* Actions */}
-        <div className="header-actions">
+        <div className="header-actions ml-auto">
           {/* ADDED: Search Icon Button */}
           <button
             onClick={onOpenSearch}
-            className="theme-toggle"
+            className="theme-toggle text-[--text-color] hover:text-[--primary-color] hover:bg-transparent transition-colors"
             aria-label="Open search"
           >
             <SearchIcon className="h-5 w-5" />
           </button>
 
+          {/* New File Browser Modal Button */}
+          <button
+            onClick={openFileBrowserModal}
+            className="theme-toggle text-[--text-color] hover:text-[--primary-color] hover:bg-transparent transition-colors"
+            aria-label="Open file browser"
+          >
+            <FolderOpen className="h-5 w-5" />
+          </button>
+
           {/* Theme Toggle */}
           <button
             onClick={onToggleTheme}
-            className="theme-toggle"
+            className="theme-toggle text-[--text-color] hover:text-[--primary-color] hover:bg-transparent transition-colors"
             aria-label="Toggle theme"
           >
             {currentTheme === 'light' ? (
@@ -107,7 +118,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
             <button
               ref={triggerRef}
               onClick={() => setIsPreferencesOpen(!isPreferencesOpen)}
-              className="theme-toggle"
+              className="theme-toggle p-0 text-[--text-color] hover:text-[--primary-color] hover:bg-transparent transition-colors"
               aria-label="User Preferences"
               aria-expanded={isPreferencesOpen}
               aria-haspopup="true"

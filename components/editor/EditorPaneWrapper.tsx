@@ -31,6 +31,7 @@ interface EditorPaneWrapperProps {
     isChatCollapsed: boolean;
     // NEW props for pinned message bubble
     lastMessageContent?: string | any; // Can be string or complex content part array
+    lastAssistantMessageId?: string; // NEW: ID of the last assistant message for keying
     handleSendToEditor: (content: string) => Promise<void>; // Or appropriate return type
     // END NEW props
     
@@ -55,7 +56,7 @@ interface EditorPaneWrapperProps {
     followUpContext: string | null;
     setFollowUpContext: (context: string | null) => void;
     // Refs needed by ChatInputUI or form
-    formRef: React.RefObject<HTMLFormElement>;
+    formRef: React.RefCallback<HTMLFormElement>;
     inputRef: React.RefObject<HTMLTextAreaElement>;
     fileInputRef: React.RefObject<HTMLInputElement>;
     // General event handlers
@@ -88,6 +89,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     isChatCollapsed,
     // Destructure new props
     lastMessageContent,
+    lastAssistantMessageId,
     handleSendToEditor,
     // Destructure all props needed for collapsed ChatInputUI
     input,
@@ -156,6 +158,16 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
         }
     }, [followUpContext]);
 
+    // NEW: Effect to show bubble for new messages
+    React.useEffect(() => {
+        // If a new assistant message arrives (indicated by ID change)
+        // and there's no follow-up context,
+        // ensure the message bubble is not considered "collapsed" from a previous message.
+        if (lastAssistantMessageId && !followUpContext) {
+            setIsMessageBubbleCollapsed(false);
+        }
+    }, [lastAssistantMessageId, followUpContext]);
+
     // Memoize the toggle button element to avoid re-creating it on every render
     const collapsedMessageToggle = React.useMemo(() => {
         if (!lastMessageContent) return null;
@@ -212,6 +224,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                     {!followUpContext && lastMessageContent && !isMessageBubbleCollapsed && (
                          <div className="w-full mb-2">
                              <PinnedMessageBubble 
+                                key={lastAssistantMessageId}
                                 messageContent={lastMessageContent} 
                                 onSendToEditor={handleSendToEditor} 
                                 onCollapse={() => setIsMessageBubbleCollapsed(true)}
