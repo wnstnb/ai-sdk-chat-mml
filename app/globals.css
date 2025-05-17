@@ -327,7 +327,7 @@ body {
   }
 
   .header-content {
-    @apply flex justify-between items-center w-full px-4 h-[48px]; /* Adjusted height and padding */
+    @apply flex justify-between items-center w-full pl-4 pr-0 h-[48px]; /* Adjusted height and padding */
   }
 
   .header-logo {

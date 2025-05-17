@@ -59,7 +59,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
 
   return (
     <header className="app-header">
-      <div className="header-content">
+      <div className="header-content flex justify-between items-center">
         {/* Logo and Launch Link */}
         <div className="flex items-center gap-3">
           <Link href="/launch" className="text-[--text-color] hover:text-[--primary-color] transition-colors" title="Go to Launch Pad">
@@ -78,11 +78,11 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
         )} */}
 
         {/* Actions */}
-        <div className="header-actions">
+        <div className="header-actions ml-auto">
           {/* ADDED: Search Icon Button */}
           <button
             onClick={onOpenSearch}
-            className="theme-toggle"
+            className="theme-toggle text-[--text-color] hover:text-[--primary-color] hover:bg-transparent transition-colors"
             aria-label="Open search"
           >
             <SearchIcon className="h-5 w-5" />
@@ -91,7 +91,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
           {/* New File Browser Modal Button */}
           <button
             onClick={openFileBrowserModal}
-            className="theme-toggle"
+            className="theme-toggle text-[--text-color] hover:text-[--primary-color] hover:bg-transparent transition-colors"
             aria-label="Open file browser"
           >
             <FolderOpen className="h-5 w-5" />
@@ -100,7 +100,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
           {/* Theme Toggle */}
           <button
             onClick={onToggleTheme}
-            className="theme-toggle"
+            className="theme-toggle text-[--text-color] hover:text-[--primary-color] hover:bg-transparent transition-colors"
             aria-label="Toggle theme"
           >
             {currentTheme === 'light' ? (
@@ -118,7 +118,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
             <button
               ref={triggerRef}
               onClick={() => setIsPreferencesOpen(!isPreferencesOpen)}
-              className="theme-toggle"
+              className="theme-toggle p-0 text-[--text-color] hover:text-[--primary-color] hover:bg-transparent transition-colors"
               aria-label="User Preferences"
               aria-expanded={isPreferencesOpen}
               aria-haspopup="true"

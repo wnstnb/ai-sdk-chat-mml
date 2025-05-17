@@ -35,6 +35,7 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
   const [taggedDocuments, setTaggedDocuments] = useState<TaggedDocument[]>([]); // State for tagged documents
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const dummyFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -77,8 +78,8 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
     setTaggedDocuments((prevDocs) => prevDocs.filter(d => d.id !== docId));
   };
 
-  const handleCreateDocumentInModal = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleCreateDocumentInModal = async (event?: React.FormEvent<HTMLFormElement>) => {
+    if (event) event.preventDefault();
     if (!input.trim()) {
       toast.error('Please enter a prompt for your new document.');
       return;
@@ -94,7 +95,7 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          userInput: input,
+          initialContent: input,
           model: model,
           taggedDocuments: taggedDocuments, // Include tagged documents in API call
         }),
@@ -106,7 +107,7 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
       }
 
       const result = await response.json();
-      const newDocumentId = result.documentId;
+      const newDocumentId = result.data?.documentId;
 
       if (!newDocumentId) {
         throw new Error('Failed to get new document ID from response.');
@@ -114,7 +115,7 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
 
       toast.success('New document created successfully!');
       onClose(); 
-      router.push(`/editor/${newDocumentId}`);
+      router.push(`/editor/${newDocumentId}?initialMsg=${encodeURIComponent(input)}`);
     } catch (error: any) {
       console.error('Error creating new document:', error);
       const errorMessage = error.message || 'An unexpected error occurred.';
@@ -125,6 +126,17 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
     }
   };
   
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey && !isCreating) {
+      event.preventDefault();
+      if (input.trim()) {
+        handleCreateDocumentInModal();
+      } else {
+        toast.info('Please enter a prompt for your new document.');
+      }
+    }
+  };
+
   const clearPreview = () => {};
 
   if (!isOpen) {
@@ -152,7 +164,7 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
             </div>
         )}
 
-        <form onSubmit={handleCreateDocumentInModal}>
+        <form onSubmit={handleCreateDocumentInModal} ref={formRef}>
           <ChatInputUI
             inputRef={inputRef}
             input={input}
@@ -163,7 +175,7 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
             files={null}
             fileInputRef={dummyFileInputRef}
             handleFileChange={() => {}}
-            handleKeyDown={() => {}}
+            handleKeyDown={handleKeyDown}
             handlePaste={() => {}}
             handleUploadClick={() => {}}
             isUploading={false}
