@@ -151,21 +151,18 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                                 return <p key={`${message.id}-part-${index}-image-fallback`} className="text-gray-500 text-sm">[Image not available]</p>;
                             }
                         } else if (part.type === 'tool-call') {
-                             // Rendering tool calls here, directly from message.content parts
+                            // Parse the stringified args for display
+                            const displayArgs = typeof part.args === 'string' ? JSON.parse(part.args) : part.args;
+                            
                             return (
                                 <div key={`${message.id}-part-${index}-tool`} className="p-2 my-2 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700">
                                     <div className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 mb-1">
-                                         <Wrench size={12} className="flex-shrink-0" />
-                                         <span>Tool Call: <strong>{part.toolName}</strong></span>
-                                     </div>
+                                        <Wrench size={12} className="flex-shrink-0" />
+                                        <span>Tool Call: <strong>{part.toolName}</strong></span>
+                                    </div>
                                     <pre className="mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
-                                        Args: {JSON.stringify(part.args, null, 2)}
+                                        Args: {JSON.stringify(displayArgs, null, 2)}
                                     </pre>
-                                     {/* TODO: Add rendering for tool results if needed. 
-                                         This would require fetching results from the tool_calls table 
-                                         based on part.toolCallId or modifying the loading route 
-                                         to include results in the part object itself. 
-                                     */}
                                 </div>
                             );
                         } else if (part.type === 'tool-invocation') {

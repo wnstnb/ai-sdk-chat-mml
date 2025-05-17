@@ -91,6 +91,9 @@ export function useInitialChatMessages({
         }
 
         try {
+            // Initialize a Map to store tool call results
+            const resultsMap = new Map<string, any>();
+            
             try {
                 const response = await fetch(`/api/documents/${documentId}/messages`);
                 
@@ -181,54 +184,40 @@ export function useInitialChatMessages({
                                     // It has 'toolCallId', 'toolName', 'args', and 'result' due to StoredToolCallPartWithResult type
                                     console.log(`[useInitialChatMessages] DB Content tool-call part for msg ${msg.id}:`, JSON.stringify(part, null, 2));
 
-                                    const dbPartArgsString = JSON.stringify(part.args);
+                                    const toolCallPartWithPotentialResult = part as StoredToolCallPartWithResult & { result?: any };
 
-                                    // 1. For assistantMsgForSdk.tool_calls (AI SDK primary way)
-                                    assistantSdkToolCalls.push({
-                                        id: part.toolCallId,
-                                        type: 'function',
-                                        function: {
-                                            name: part.toolName,
-                                            arguments: dbPartArgsString,
-                                        },
-                                    });
+                                    if (toolCallPartWithPotentialResult.toolCallId && 
+                                        toolCallPartWithPotentialResult.toolName && 
+                                        toolCallPartWithPotentialResult.args !== undefined) {
 
-                                    // 2. For assistantMsgForSdk.content (parts array for page.tsx useEffect)
-                                    // We use part.result directly from the stored content part
-                                    assistantMessageContentParts.push({
-                                        type: 'tool-invocation',
-                                        toolInvocation: {
-                                            toolCallId: part.toolCallId,
-                                            toolName: part.toolName,
-                                            args: part.args,
-                                            result: part.result, // CRITICAL: Use result from this part
-                                            state: 'result',    // CRITICAL: Mark as completed
-                                        } as AiSdkUIToolInvocation,
-                                    });
+                                        // Ensure args is stringified
+                                        const argsString = typeof toolCallPartWithPotentialResult.args === 'string' 
+                                            ? toolCallPartWithPotentialResult.args 
+                                            : JSON.stringify(toolCallPartWithPotentialResult.args);
 
-                                    // 3. Create the separate role: 'tool' message using part.result
-                                    // Ensure part.result exists and is not null before creating tool message
-                                    if (part.result !== undefined && part.result !== null) {
-                                        const toolResultContentStr = typeof part.result === 'string'
-                                            ? part.result
-                                            : JSON.stringify(part.result);
+                                        // Check if the result is directly embedded in this "tool-call" part
+                                        const embeddedResult = toolCallPartWithPotentialResult.result;
                                         
-                                        const toolResponseMessage: CustomUIMessage = {
-                                            id: `${msg.id}-toolres-${part.toolCallId}`,
-                                            role: 'tool',
-                                            content: toolResultContentStr,
-                                            tool_call_id: part.toolCallId,
-                                            createdAt: new Date(msg.created_at), // Fallback to message's createdAt
-                                        };
-                                        // Check if a SupabaseToolCall record exists for this toolCallId to get a more accurate createdAt for the tool result itself.
-                                        const matchingSupabaseToolCall = msg.tool_calls?.find(stc => stc.tool_call_id === part.toolCallId);
-                                        if (matchingSupabaseToolCall?.created_at) {
-                                            toolResponseMessage.createdAt = new Date(matchingSupabaseToolCall.created_at);
-                                        }
-                                        formattedMessages.push(toolResponseMessage);
-                                        console.log(`[useInitialChatMessages] Pushed tool result message for tool_call_id ${part.toolCallId} from DB content part. Result:`, JSON.stringify(part.result, null, 2));
-                                    } else {
-                                        console.log(`[useInitialChatMessages] DB Content tool-call part ${part.toolCallId} for assistant message ${msg.id} has no 'result' field or it's null. Not creating role 'tool' message from this part.`);
+                                        // Still try to get from resultsMap in case the structure is mixed or changes in the future,
+                                        // but prioritize embeddedResult if present.
+                                        const resultFromMap = resultsMap.get(toolCallPartWithPotentialResult.toolCallId);
+                                        
+                                        const finalResult = embeddedResult !== undefined ? embeddedResult : resultFromMap;
+                                        const state: 'result' | 'call' = finalResult !== undefined ? 'result' : 'call';
+
+                                        // Log the determined state and result for this tool call
+                                        console.log(`[useInitialChatMessages] Tool Call ID: ${toolCallPartWithPotentialResult.toolCallId}, Name: ${toolCallPartWithPotentialResult.toolName}, Args: ${argsString}, Embedded Result Found: ${embeddedResult !== undefined}, Result from Map: ${resultFromMap !== undefined}, Final State: ${state}`);
+
+                                        assistantMessageContentParts.push({
+                                            type: 'tool-invocation',
+                                            toolInvocation: {
+                                                toolCallId: toolCallPartWithPotentialResult.toolCallId,
+                                                toolName: toolCallPartWithPotentialResult.toolName,
+                                                args: argsString, // Use the stringified args
+                                                result: finalResult,
+                                                state: state
+                                            },
+                                        });
                                     }
                                 }
                             }
