@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, KeyboardEvent, useState, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, KeyboardEvent, useState, useRef, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MicIcon, StopCircleIcon, X } from 'lucide-react';
 import { AttachmentIcon, SendIcon } from '@/components/icons';
@@ -33,7 +33,7 @@ interface ChatInputUIProps {
     files: FileList | null;
     fileInputRef: React.RefObject<HTMLInputElement>;
     handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-    inputRef: React.RefObject<HTMLTextAreaElement>;
+    inputRef: React.Ref<HTMLTextAreaElement>;
     input: string; // From useChat
     handleInputChange: ( // From useChat
         e:
@@ -115,13 +115,27 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     const [showTooltip, setShowTooltip] = useState(false);
     const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
 
-    // Adjust textarea height dynamically based on content
-    useEffect(() => {
-        if (inputRef.current) {
-            inputRef.current.style.height = 'auto';
-            inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
+    // --- NEW: Callback ref logic for textarea ---
+    const [actualTextareaNode, setActualTextareaNode] = useState<HTMLTextAreaElement | null>(null);
+
+    const textareaCallbackRef = useCallback((node: HTMLTextAreaElement | null) => {
+        setActualTextareaNode(node); // Update local state with the node
+        // Update the parent's inputRef
+        if (typeof inputRef === 'function') {
+            inputRef(node);
+        } else if (inputRef && typeof inputRef === 'object' && 'current' in inputRef) {
+            (inputRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = node;
         }
-    }, [input, inputRef]);
+    }, [inputRef]); // inputRef prop is a dependency
+
+    // Adjust textarea height dynamically based on content
+    useLayoutEffect(() => {
+        if (actualTextareaNode) { // Use the state variable holding the node
+            // console.log('[ChatInputUI] Adjusting height via actualTextareaNode. ScrollHeight:', actualTextareaNode.scrollHeight);
+            actualTextareaNode.style.height = 'auto';
+            actualTextareaNode.style.height = `${actualTextareaNode.scrollHeight}px`;
+        }
+    }, [input, actualTextareaNode]); // Depend on input and the actualTextareaNode state
 
     // Determine if send button should be enabled (check depends on optional props)
     const canSubmitText = !isLoading && !isUploading && !(isTranscribing ?? false) && !!input.trim();
@@ -333,9 +347,9 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                         </div>
                     ) : (
                         <textarea
-                            ref={inputRef}
+                            ref={textareaCallbackRef} // Use the callback ref here
                             rows={1}
-                            className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40 align-bottom"
+                            className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40"
                             // Adjust placeholder based on optional props
                             placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (isRecording ? "Recording audio..." : (isTranscribing ? "Transcribing audio..." : (micAvailable ? "Ask a question, give instructions, or click mic..." : "Ask a question or give instructions...") ) ))}
                             value={input}

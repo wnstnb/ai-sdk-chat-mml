@@ -134,7 +134,6 @@ export default function EditorPage() {
     
     // --- Refs --- (Declare refs early if needed by custom hooks)
     const editorRef = useRef<BlockNoteEditor<typeof schema.blockSchema>>(null);
-    const formRef = useRef<HTMLFormElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -159,6 +158,8 @@ export default function EditorPage() {
     const [pendingMobileEditorToolCall, setPendingMobileEditorToolCall] = useState<{ toolName: string; args: any; toolCallId: string } | null>(null);
     // --- NEW: State for Version History Modal ---
     const [isVersionHistoryModalOpen, setIsVersionHistoryModalOpen] = useState(false);
+    // --- NEW: State for the form element (for callback ref) ---
+    const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
@@ -242,6 +243,12 @@ export default function EditorPage() {
             throw err;
         }
     }, []); 
+
+    // --- NEW: Callback ref for the form ---
+    const formCallbackRef = useCallback((node: HTMLFormElement | null) => {
+        console.log('[EditorPage formCallbackRef] Node received:', node);
+        setFormElement(node);
+    }, []);
 
     // --- NEW: Handlers for Version History Modal (Moved here) ---
     const handleOpenHistoryModal = useCallback(() => {
@@ -430,15 +437,22 @@ export default function EditorPage() {
     }, []);
 
     const handleKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+        console.log('[EditorPage handleKeyDown] Event triggered:', event.key, 'Shift:', event.shiftKey);
+        console.log('[EditorPage handleKeyDown] Conditions: isChatLoading:', isChatLoading, 'isUploading:', isUploading);
+        console.log('[EditorPage handleKeyDown] Input content:', input.trim(), 'Uploaded image:', uploadedImagePath);
+
         if (event.key === 'Enter' && !event.shiftKey && !isChatLoading && !isUploading) {
+            console.log('[EditorPage handleKeyDown] Enter pressed without Shift, not loading/uploading.');
             event.preventDefault();
             if (input.trim() || uploadedImagePath) {
-                formRef.current?.requestSubmit();
+                console.log('[EditorPage handleKeyDown] Valid input found. Calling handleSubmit from useChatInteractions.');
+                handleSubmit(); // Call the hook's handleSubmit directly
             } else {
                 toast.info("Please type a message or attach an image.");
+                console.log('[EditorPage handleKeyDown] No input or image to submit.');
             }
         }
-    }, [isChatLoading, isUploading, input, uploadedImagePath]);
+    }, [isChatLoading, isUploading, input, uploadedImagePath, handleSubmit]); // Added handleSubmit dependency
 
     // Define getEditorMarkdownContent before handleSubmitWithContext
     // Note: This is async but not wrapped in useCallback as it's called within another useCallback
@@ -984,7 +998,6 @@ export default function EditorPage() {
             .catch(error => console.error("[Unmount Embedding] Error sending embedding request:", error));
         };
     }, [documentId]);
-    // --- END Effect Hooks ---
 
     // --- Early Return Checks ---
     if (isLoadingDocument || isLoadingMessages) {
@@ -1133,7 +1146,7 @@ export default function EditorPage() {
                                     uploadedImagePath={uploadedImagePath}
                                     followUpContext={followUpContext}
                                     setFollowUpContext={setFollowUpContext}
-                                    formRef={formRef}
+                                    formRef={formCallbackRef}
                                     inputRef={inputRef}
                                     fileInputRef={fileInputRef}
                                     handleKeyDown={handleKeyDown}
@@ -1179,7 +1192,7 @@ export default function EditorPage() {
                                  uploadedImagePath={uploadedImagePath}
                                  followUpContext={followUpContext}
                                  setFollowUpContext={setFollowUpContext}
-                                 formRef={formRef}
+                                 formRef={formCallbackRef}
                                  inputRef={inputRef}
                                  fileInputRef={fileInputRef}
                                  handleKeyDown={handleKeyDown}
@@ -1249,7 +1262,7 @@ export default function EditorPage() {
                                 uploadedImagePath={uploadedImagePath}
                                 followUpContext={followUpContext}
                                 setFollowUpContext={setFollowUpContext}
-                                formRef={formRef}
+                                formRef={formCallbackRef}
                                 inputRef={inputRef}
                                 fileInputRef={fileInputRef}
                                 handleKeyDown={handleKeyDown}
@@ -1320,7 +1333,7 @@ export default function EditorPage() {
                                     uploadedImagePath={uploadedImagePath}
                                     followUpContext={followUpContext}
                                     setFollowUpContext={setFollowUpContext}
-                                    formRef={formRef}
+                                    formRef={formCallbackRef}
                                     inputRef={inputRef}
                                     fileInputRef={fileInputRef}
                                     handleKeyDown={handleKeyDown}
