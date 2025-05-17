@@ -1129,6 +1129,7 @@ export default function EditorPage() {
                                     onEditorContentChange={handleEditorChange}
                                     isChatCollapsed={true} // Pass true as chat is conceptually 'collapsed'
                                     lastMessageContent={lastAssistantMessage?.content}
+                                    lastAssistantMessageId={lastAssistantMessage?.id}
                                     handleSendToEditor={handleSendToEditor}
                                     input={input}
                                     handleInputChange={handleInputChange}
@@ -1245,6 +1246,7 @@ export default function EditorPage() {
                                 onEditorContentChange={handleEditorChange}
                                 isChatCollapsed={isChatCollapsed}
                                 lastMessageContent={lastAssistantMessage?.content}
+                                lastAssistantMessageId={lastAssistantMessage?.id}
                                 handleSendToEditor={handleSendToEditor}
                                 input={input}
                                 handleInputChange={handleInputChange}
