@@ -59,6 +59,9 @@ export function useInitialChatMessages({
             const allowedInitialRoles = ['user', 'assistant', 'system'];
 
             for (const msg of data) {
+                 // Force rawMsg into a plain JavaScript object
+                 // const msg = JSON.parse(JSON.stringify(rawMsg)) as MessageWithDetails; // REVERT THIS LINE
+
                  const role = msg.role as UIMessage['role'];
                  
                  if (!allowedInitialRoles.includes(role)) { 
@@ -98,6 +101,41 @@ export function useInitialChatMessages({
 
                 // 2. Handle User messages (REVISED LOGIC - v2)
                 if (role === 'user') {
+                    const idForLog = msg.id; 
+                    console.log(`[useInitialChatMessages] User Msg ID ${idForLog}: examining msg object:`, msg);
+                    console.log(`[useInitialChatMessages] User Msg ID ${idForLog}: Object.keys(msg):`, Object.keys(msg));
+                    let enumeratedKeys = [];
+                    for (const key in msg) {
+                        enumeratedKeys.push(key);
+                    }
+                    console.log(`[useInitialChatMessages] User Msg ID ${idForLog}: Enumerated keys (for...in):`, enumeratedKeys);
+                    
+                    let createdAtFromIteration: string | undefined = undefined;
+                    // Iterate Object.keys(msg) to find the actual 'createdAt' (camelCase) key that runtime logs show
+                    for (const key of Object.keys(msg)) { 
+                        if (key === 'createdAt') { // Match the actual key name from runtime logs
+                            createdAtFromIteration = (msg as any)[key]; // Access using bracket notation
+                            break;
+                        }
+                    }
+                    console.log(`[useInitialChatMessages] User Msg ID ${idForLog}: Attempting to get 'createdAt' via Object.keys iteration: msg[key] = "${createdAtFromIteration}" (type: ${typeof createdAtFromIteration})`);
+
+                    const directCreatedAt = (msg as any).createdAt; // Try direct access to the camelCase version
+                    console.log(`[useInitialChatMessages] User Msg ID ${idForLog}: 1a. (msg as any).createdAt value is: "${directCreatedAt}" (type: ${typeof directCreatedAt})`);
+
+                    const createdAtValue = msg.created_at; // Keep original typed attempt (expected to be undefined)
+                    console.log(`[useInitialChatMessages] User Msg ID ${idForLog}: 1b. msg.created_at (typed) value is: "${createdAtValue}" (type: ${typeof createdAtValue})`);
+
+                    const hasOwn = msg.hasOwnProperty('createdAt'); // Check for the actual camelCase key
+                    const descriptor = Object.getOwnPropertyDescriptor(msg, 'createdAt'); // Get descriptor for the actual camelCase key
+                    console.log(`[useInitialChatMessages] User Msg ID ${idForLog}: 2. hasOwnProperty('createdAt'): ${hasOwn}, descriptor:`, descriptor ? JSON.stringify(descriptor) : 'undefined');
+                    
+                    // Now, let's try to use the most likely correct value
+                    const finalCreatedAtValue = createdAtFromIteration || directCreatedAt || createdAtValue;
+
+                    const dateObject = new Date(finalCreatedAtValue);
+                    console.log(`[useInitialChatMessages] User Msg ID ${idForLog}: 3. Using final determined createdAtValue = "${finalCreatedAtValue}", new Date() = ${dateObject}, isValidDate = ${!isNaN(dateObject.getTime())}`);
+
                     let combinedTextContent = '';
                     const uiParts: UIMessage['parts'] = [];
                     let parsedContentArray: any[] = [];
@@ -150,11 +188,11 @@ export function useInitialChatMessages({
 
                     // Push the formatted message WITH parts
                     formattedMessages.push({
-                        id: msg.id,
+                        id: msg.id, // Use msg.id directly here
                         role: 'user',
                         content: combinedTextContent, // Use combined text for top-level content
                         parts: uiParts, // Include the processed parts array
-                        createdAt: new Date(msg.created_at),
+                        createdAt: dateObject, // Use the dateObject we just created and logged
                     });
                     continue; 
                 }
