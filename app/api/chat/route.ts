@@ -52,7 +52,6 @@ const createChecklistSchema = z.object({
   items: z.array(z.string()).describe("An array of plain text strings, where each string is the content for a new checklist item. The tool will handle Markdown formatting (e.g., prepending '* [ ]'). Do NOT include Markdown like '*[ ]' in these strings."),
   targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert the new checklist after. If null, the checklist is appended to the document or inserted at the current selection."),
 });
-// --- END NEW ---
 
 // --- NEW: Search and Tag Documents Tool ---
 const searchAndTagDocumentsSchema = z.object({
@@ -61,7 +60,7 @@ const searchAndTagDocumentsSchema = z.object({
 
 const searchAndTagDocumentsTool = tool({
   description: 'Searches documents by title and semantic content. Returns a list of relevant documents that the user can choose to tag for context.',
-  parameters: searchAndTagDocumentsSchema,
+  parameters: searchAndTagDocumentsSchema as z.ZodTypeAny,
   execute: async ({ searchQuery }) => {
     // 1. Perform title-based, semantic, and content searches in parallel
     const [titleMatches, semanticMatches, contentMatches] = await Promise.all([
@@ -287,30 +286,30 @@ The user wants you to summarize multiple points, likely from an outline, and pro
 const editorTools = {
   addContent: tool({
     description: "Adds new general Markdown content (e.g., paragraphs, headings, simple bullet/numbered lists, or single list/checklist items). For multi-item checklists, use createChecklist.",
-    parameters: addContentSchema,
+    parameters: addContentSchema as z.ZodTypeAny,
     execute: async (args) => ({ status: 'forwarded to client', tool: 'addContent' })
   }),
   modifyContent: tool({
     description: "Modifies content within specific NON-TABLE editor blocks. Can target a single block (with optional specific text replacement) or multiple blocks (replacing entire content of each with corresponding new Markdown from an array). Main tool for altering existing lists/checklists.",
-    parameters: modifyContentSchema,
+    parameters: modifyContentSchema as z.ZodTypeAny,
     execute: async (args) => ({ status: 'forwarded to client', tool: 'modifyContent' })
   }),
   deleteContent: tool({
     description: "Deletes one or more NON-TABLE blocks, or specific text within a NON-TABLE block, from the editor.",
-    parameters: deleteContentSchema,
+    parameters: deleteContentSchema as z.ZodTypeAny,
     execute: async (args) => ({ status: 'forwarded to client', tool: 'deleteContent' })
   }),
   // --- UPDATED: Unified modifyTable tool ---
   modifyTable: tool({
     description: "Modifies an existing TABLE block by providing the complete final Markdown. Reads original from context, applies changes, returns result.",
-    parameters: modifyTableSchema,
+    parameters: modifyTableSchema as z.ZodTypeAny,
     execute: async (args) => ({ status: 'forwarded to client', tool: 'modifyTable' })
   }),
   // --- END UPDATED ---
   // --- NEW: Tool for creating checklists ---
   createChecklist: tool({
     description: "Creates a new checklist with multiple items. Provide an array of plain text strings for the items (e.g., ['Buy milk', 'Read book']). Tool handles Markdown formatting.",
-    parameters: createChecklistSchema,
+    parameters: createChecklistSchema as z.ZodTypeAny,
     execute: async (args) => ({ status: 'forwarded to client', tool: 'createChecklist' })
   }),
   // --- END NEW ---

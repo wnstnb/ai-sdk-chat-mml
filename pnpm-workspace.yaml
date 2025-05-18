@@ -1,0 +1,3 @@
+ignoredBuiltDependencies:
+  - supabase
+  - unrs-resolver

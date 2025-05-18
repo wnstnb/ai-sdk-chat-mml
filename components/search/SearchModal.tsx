@@ -175,7 +175,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                     
                     {/* Display "No Results" from search */}
                     {searchQuery && displayNoResults && !searchError && (
-                       <div className="p-4 text-center text-[--muted-text-color]">No results found for "{searchQuery}".</div>
+                       <div className="p-4 text-center text-[--muted-text-color]">No results found for &quot;{searchQuery}&quot;.</div>
                     )}
 
                     {/* Display Recent Documents if no search query and not loading search results */}

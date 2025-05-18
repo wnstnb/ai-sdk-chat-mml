@@ -1,18 +1,19 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore';
 import { createClient } from '@/lib/supabase/client';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import ModalManager from '@/components/modals/ModalManager';
+import { useAuthStore } from '@/lib/stores/useAuthStore';
 
 interface AppInitializerProps {
-  children: React.ReactElement;
+  children: React.ReactNode;
 }
 
 export default function AppInitializer({ children }: AppInitializerProps) {
   const { fetchPreferences, isInitialized } = usePreferenceStore();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { setIsAuthenticated, setUser, isAuthenticated } = useAuthStore();
   const supabase = createClient();
 
   useEffect(() => {
@@ -20,17 +21,22 @@ export default function AppInitializer({ children }: AppInitializerProps) {
         if (user) {
             console.log('[AppInitializer] Initial auth check: User is authenticated.');
             setIsAuthenticated(true);
+            setUser(user);
         } else {
              console.log('[AppInitializer] Initial auth check: User is not authenticated.');
             setIsAuthenticated(false);
+            setUser(null);
         }
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
         (event: AuthChangeEvent, session: Session | null) => {
-        console.log('[AppInitializer] Auth state changed:', event);
+        console.log('[AppInitializer] Auth state changed:', event, session);
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
-             if (session?.user) {
+             if (currentUser) {
                 console.log('[AppInitializer] Auth Listener: User signed in or session refreshed.');
                 setIsAuthenticated(true);
              } else {
@@ -46,7 +52,7 @@ export default function AppInitializer({ children }: AppInitializerProps) {
     return () => {
       authListener?.subscription.unsubscribe();
     };
-  }, [supabase.auth]);
+  }, [supabase.auth, setIsAuthenticated, setUser]);
 
   useEffect(() => {
     if (!isInitialized && isAuthenticated) {
@@ -57,7 +63,5 @@ export default function AppInitializer({ children }: AppInitializerProps) {
     }
   }, [isInitialized, isAuthenticated, fetchPreferences]);
 
-  const childWithAuthProp = React.cloneElement(children, { isAuthenticated });
-
-  return <ModalManager>{childWithAuthProp}</ModalManager>;
+  return <ModalManager>{children}</ModalManager>;
 }
