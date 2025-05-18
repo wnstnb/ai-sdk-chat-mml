@@ -8,8 +8,8 @@ import { Toaster } from "sonner";
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: "AI SDK Chat MML",
-  description: "AI SDK Chat MML",
+  title: "tuon.io",
+  description: "Bring it all into focus.",
 };
 
 export default function RootLayout({
