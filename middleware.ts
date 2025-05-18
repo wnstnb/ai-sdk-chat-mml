@@ -98,5 +98,6 @@ export const config = {
      '/login', // Match the login page itself to handle redirects when already logged in
      '/launch/:path*', // Match the launch page and any sub-paths
      '/editor/:path*', // Match the editor page and any sub-paths (like document IDs)
+     '/api/:path*', // Add API routes to the matcher
   ],
 } 
