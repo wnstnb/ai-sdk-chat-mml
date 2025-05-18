@@ -67,6 +67,10 @@
   /* NEW Chat Input Font Size */
   --chat-input-font-size: 0.875rem;
 
+  /* Default Font Sizes for Editor and Chat - to be overridden by JS */
+  --editor-font-size: 1rem;
+  --chat-font-size: 1rem;
+
   /* Logo Filters */
   --logo-filter-light: invert(7%) sepia(15%) saturate(300%) hue-rotate(170deg) brightness(90%) contrast(100%); /* For #0F1317 from black */
   --logo-filter-dark: invert(53%) sepia(65%) saturate(328%) hue-rotate(354deg) brightness(101%) contrast(93%);    /* For #C79553 from black */
@@ -200,6 +204,8 @@ body {
   background: rgb(var(--background-rgb));
   transition: background 0.3s ease, color 0.3s ease;
   line-height: 1.5;
+  /* --editor-font-size: 1rem; */ /* MOVED TO :root */
+  /* --chat-font-size: 1rem;   */ /* MOVED TO :root */
 }
 
 body {

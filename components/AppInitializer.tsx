@@ -12,7 +12,7 @@ interface AppInitializerProps {
 }
 
 export default function AppInitializer({ children }: AppInitializerProps) {
-  const { fetchPreferences, isInitialized } = usePreferenceStore();
+  const { fetchPreferences, isInitialized, editorFontSize, chatFontSize } = usePreferenceStore();
   const { setIsAuthenticated, setUser, isAuthenticated } = useAuthStore();
   const supabase = createClient();
 
@@ -62,6 +62,29 @@ export default function AppInitializer({ children }: AppInitializerProps) {
          console.log('[AppInitializer] Waiting for authentication to fetch preferences...');
     }
   }, [isInitialized, isAuthenticated, fetchPreferences]);
+
+  useEffect(() => {
+    const rootStyle = document.documentElement.style;
+
+    if (isInitialized) {
+      // Handle Editor Font Size
+      if (typeof editorFontSize === 'number' && !isNaN(editorFontSize) && editorFontSize > 0) {
+        rootStyle.setProperty('--editor-font-size', `${editorFontSize}rem`, 'important');
+      } else {
+        rootStyle.removeProperty('--editor-font-size');
+      }
+
+      // Handle Chat Font Size
+      if (typeof chatFontSize === 'number' && !isNaN(chatFontSize) && chatFontSize > 0) {
+        rootStyle.setProperty('--chat-font-size', `${chatFontSize}rem`, 'important');
+      } else {
+        rootStyle.removeProperty('--chat-font-size');
+      }
+    } else {
+      rootStyle.removeProperty('--editor-font-size');
+      rootStyle.removeProperty('--chat-font-size');
+    }
+  }, [isInitialized, editorFontSize, chatFontSize]);
 
   return <ModalManager>{children}</ModalManager>;
 }
