@@ -32,7 +32,7 @@ type PreferenceStoreImplementation = PreferenceState & {
 
 // Define default values (used if fetch fails or returns nothing initially)
 const defaultPreferencesData: UserPreferences = {
-  theme: 'light',
+  theme: 'dark',
   default_model: 'gemini-2.0-flash',
   editorFontSize: 1,
   chatFontSize: 1,
