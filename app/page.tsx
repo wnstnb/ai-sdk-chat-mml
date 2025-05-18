@@ -1,6 +1,7 @@
 'use client'; // Add this line because we're using useState
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link'; // Added Link import
 import { ArrowRight, BrainCircuit, Clock, Layers, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button"; // Correct import path
 import { motion, AnimatePresence } from "framer-motion"; // Import AnimatePresence
@@ -192,14 +193,14 @@ export default function LandingPageContent() {
                   variants={headingVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Seamless ideas, <br />seamless work.
+                  Stop fragmented workflows. <br />Keep it all in one place.
                 </motion.h1>
                 <motion.p 
                   className="text-lg md:text-xl text-[color:var(--primary-color)]/90 mb-12 max-w-2xl leading-relaxed mx-auto"
                   variants={contentVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Tuon removes friction between AI and your organic creative flow. Focus on crafting your best notes, documents & research in one place.
+                  Tuon removes friction between AI and organic creative workflows.<br />Start, finish, manage and iterate on your notes and documents in one place
                 </motion.p>
                 <motion.div 
                   className="flex flex-col sm:flex-row gap-4 justify-center"
@@ -503,20 +504,23 @@ export default function LandingPageContent() {
         {/* Footer Section - Added relative z-20 */}
         <footer className="py-12 bg-[color:var(--bg-color)] relative z-20">
           <div className="container mx-auto px-6">
-            {/* <div className="flex flex-col md:flex-row justify-between items-center">
+            <div className="flex flex-col md:flex-row justify-between items-center">
               <div className="mb-6 md:mb-0">
-                <span className="text-xl font-bold text-[color:var(--accent-color)] font-newsreader">tuon.io</span>
-                <p className="text-sm text-[color:var(--primary-color)]/60 mt-2">Focus on what matters most.</p>
+                <Link href="/" className="flex items-center">
+                  <img src="/tuon-logo-svg-type.svg" alt="Tuon Logo" className="h-8 w-8 mr-2" style={{ filter: 'var(--logo-filter)' }} />
+                  <span className="text-xl font-bold text-[color:var(--accent-color)] font-newsreader">tuon.io</span>
+                </Link>
+                <p className="text-sm text-[color:var(--primary-color)]/60 mt-2">Bring it all into focus.</p>
               </div>
-              <div className="flex flex-col md:flex-row gap-8 text-sm text-[color:var(--primary-color)]/60">
-                <a href="#" className="hover:text-[color:var(--accent-color)]">About Us</a>
-                <a href="#" className="hover:text-[color:var(--accent-color)]">Privacy Policy</a>
-                <a href="#" className="hover:text-[color:var(--accent-color)]">Terms of Service</a>
-                <a href="#" className="hover:text-[color:var(--accent-color)]">Contact</a>
+              <div className="flex flex-col md:flex-row gap-x-8 gap-y-4 text-sm text-[color:var(--primary-color)]/60">
+                {/* <Link href="#" className="hover:text-[color:var(--accent-color)]">About Us</Link> */}
+                <Link href="/privacy" className="hover:text-[color:var(--accent-color)]">Privacy Policy</Link>
+                <Link href="/terms" className="hover:text-[color:var(--accent-color)]">Terms of Service</Link>
+                {/* <Link href="mailto:support@dodatathings.dev" className="hover:text-[color:var(--accent-color)]">Contact</Link> */}
               </div>
-            </div> */}
+            </div>
              {/* Use theme variables */}
-            <div className="mt-8 pt-8 text-center text-sm text-[color:var(--primary-color)]/60">
+            <div className="mt-8 pt-8 border-t border-[color:var(--border-color)]/20 text-center text-sm text-[color:var(--primary-color)]/60">
               © {new Date().getFullYear()} dodatathings.dev. All rights reserved.
             </div>
           </div>

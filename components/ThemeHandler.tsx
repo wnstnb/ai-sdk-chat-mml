@@ -8,12 +8,13 @@ import { SearchModal } from '@/components/search/SearchModal'; // ADDED: Import 
 
 interface ThemeHandlerProps {
   children: React.ReactNode;
+  isAuthenticated?: boolean; // Added isAuthenticated as an optional prop
 }
 
 // Define a default theme for fallback
 const defaultTheme = 'dark'; 
 
-const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
+const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children, isAuthenticated }) => {
   const pathname = usePathname();
   // Get theme state and actions from the preference store
   const {
@@ -95,7 +96,12 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   };
 
   // Determine if the header should be shown
-  const showHeader = pathname !== '/' && pathname !== '/login';
+  // Header should be shown if authenticated AND not on landing, login, terms, or privacy pages.
+  const showHeader = isAuthenticated && 
+                     pathname !== '/' && 
+                     pathname !== '/login' && 
+                     pathname !== '/terms' && 
+                     pathname !== '/privacy';
 
   // Determine the theme to pass to the Header (use store value or default)
   const headerTheme = prefTheme || defaultTheme;
