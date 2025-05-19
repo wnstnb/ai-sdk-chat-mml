@@ -5,6 +5,7 @@ import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from '../lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 export default function AuthUI() {
   const [email, setEmail] = useState('');
@@ -101,30 +102,34 @@ export default function AuthUI() {
 
   return (
     <div className="auth-ui-container space-y-6">
-      <div className="flex border-b border-[--border-color]">
+      <div className="flex border-b border-[color:var(--border-color)]/30 mb-8 justify-center">
         <button 
-          className={`py-2 px-4 font-medium text-sm focus:outline-none transition-colors duration-150 
+          className={`py-3 px-4 sm:px-5 font-medium text-xs sm:text-sm md:text-base focus:outline-none transition-all duration-300 ease-in-out relative group
                       ${
                         activeTab === 'standard' 
-                        ? 'border-b-2 border-[--brand-color] text-[--brand-color]' 
-                        : 'text-[--text-color-secondary] hover:text-[--text-color]'
+                        ? 'text-[color:var(--accent-color)]' 
+                        : 'text-[color:var(--muted-text-color)] hover:text-[color:var(--primary-color)]'
                       }`}
           onClick={() => switchTab('standard')}
           type="button"
         >
           Password Login
+          <span className={`absolute bottom-[-1px] left-0 w-full h-0.5 bg-[color:var(--accent-color)] transform transition-transform duration-300 ease-out
+                      ${activeTab === 'standard' ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'}`}></span>
         </button>
         <button 
-          className={`py-2 px-4 font-medium text-sm focus:outline-none transition-colors duration-150 
+          className={`py-3 px-4 sm:px-5 font-medium text-xs sm:text-sm md:text-base focus:outline-none transition-all duration-300 ease-in-out relative group
                       ${
                         activeTab === 'otp' 
-                        ? 'border-b-2 border-[--brand-color] text-[--brand-color]' 
-                        : 'text-[--text-color-secondary] hover:text-[--text-color]'
+                        ? 'text-[color:var(--accent-color)]' 
+                        : 'text-[color:var(--muted-text-color)] hover:text-[color:var(--primary-color)]'
                       }`}
           onClick={() => switchTab('otp')}
           type="button"
         >
           OTP Login
+          <span className={`absolute bottom-[-1px] left-0 w-full h-0.5 bg-[color:var(--accent-color)] transform transition-transform duration-300 ease-out
+                      ${activeTab === 'otp' ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'}`}></span>
         </button>
       </div>
       
@@ -191,80 +196,89 @@ export default function AuthUI() {
             )}
           </div>
         ) : (
-          <Auth
-            supabaseClient={supabase}
-            appearance={{
-              theme: ThemeSupa,
-              variables: {
-                default: {
-                  colors: {
-                    brand: 'var(--brand-color)',
-                    brandAccent: 'var(--brand-color-accent)',
-                    brandButtonText: 'var(--brand-button-text)',
-                    inputBackground: 'var(--input-bg-color)',
-                    inputBorder: 'var(--input-border-color)',
-                    inputPlaceholder: 'var(--input-placeholder-color)',
-                    messageText: 'var(--message-text-color)',
-                    anchorTextColor: 'var(--anchor-text-color)',
-                    anchorTextHoverColor: 'var(--anchor-text-hover-color)',
+          <>
+            <Auth
+              supabaseClient={supabase}
+              appearance={{
+                theme: ThemeSupa,
+                variables: {
+                  default: {
+                    colors: {
+                      brand: 'var(--brand-color)',
+                      brandAccent: 'var(--brand-color-accent)',
+                      brandButtonText: 'var(--brand-button-text)',
+                      inputBackground: 'var(--input-bg-color)',
+                      inputBorder: 'var(--input-border-color)',
+                      inputPlaceholder: 'var(--input-placeholder-color)',
+                      messageText: 'var(--message-text-color)',
+                      anchorTextColor: 'var(--anchor-text-color)',
+                      anchorTextHoverColor: 'var(--anchor-text-hover-color)',
+                    },
+                    radii: {
+                      borderRadiusButton: '4px',
+                      buttonBorderRadius: '4px',
+                      inputBorderRadius: '4px',
+                    },
                   },
-                  radii: {
-                    borderRadiusButton: '4px',
-                    buttonBorderRadius: '4px',
-                    inputBorderRadius: '4px',
-                  },
-                },
-                dark: {
-                  colors: {
-                    brand: 'var(--brand-color)',
-                    brandAccent: 'var(--brand-color-accent)',
-                    brandButtonText: 'var(--brand-button-text)',
-                    defaultButtonBackground: 'var(--button-bg-color)',
-                    defaultButtonBackgroundHover: 'var(--button-bg-hover-color)',
-                    defaultButtonBorder: 'var(--button-border-color)',
-                    defaultButtonText: 'var(--button-text-color)',
-                    dividerBackground: 'var(--border-color)',
-                    inputBackground: 'var(--input-bg-color)',
-                    inputBorder: 'var(--input-border-color)',
-                    inputBorderHover: 'var(--input-border-hover-color)',
-                    inputBorderFocus: 'var(--brand-color)',
-                    inputText: 'var(--text-color)',
-                    inputPlaceholder: 'var(--input-placeholder-color)',
-                    messageText: 'var(--message-text-color)',
-                    messageTextDanger: 'var(--message-text-danger-color)',
-                    anchorTextColor: 'var(--anchor-text-color)',
-                    anchorTextHoverColor: 'var(--anchor-text-hover-color)',
+                  dark: {
+                    colors: {
+                      brand: 'var(--brand-color)',
+                      brandAccent: 'var(--brand-color-accent)',
+                      brandButtonText: 'var(--brand-button-text)',
+                      defaultButtonBackground: 'var(--button-bg-color)',
+                      defaultButtonBackgroundHover: 'var(--button-bg-hover-color)',
+                      defaultButtonBorder: 'var(--button-border-color)',
+                      defaultButtonText: 'var(--button-text-color)',
+                      dividerBackground: 'var(--border-color)',
+                      inputBackground: 'var(--input-bg-color)',
+                      inputBorder: 'var(--input-border-color)',
+                      inputBorderHover: 'var(--input-border-hover-color)',
+                      inputBorderFocus: 'var(--brand-color)',
+                      inputText: 'var(--text-color)',
+                      inputPlaceholder: 'var(--input-placeholder-color)',
+                      messageText: 'var(--message-text-color)',
+                      messageTextDanger: 'var(--message-text-danger-color)',
+                      anchorTextColor: 'var(--anchor-text-color)',
+                      anchorTextHoverColor: 'var(--anchor-text-hover-color)',
+                    }
                   }
-                }
-              },
-              className: {
-                container: 'supabase-auth-container',
-                button: 'auth-button',
-                input: 'auth-input',
-                label: 'auth-label',
-                anchor: 'auth-anchor',
-                message: 'auth-message',
-                divider: 'auth-divider'
-              },
-            }}
-            theme="dark"
-            providers={[]}
-            redirectTo={`${origin}/launch`}
-            view="sign_in"
-            localization={{
-              variables: {
-                sign_in: {
-                  email_label: 'Email address',
-                  password_label: 'Your Password',
-                  button_label: "Sign in",
-                  link_text: "Already have an account? Sign in",
                 },
-                sign_up: {
-                    link_text: "Don't have an account? Sign up"
+                className: {
+                  container: 'supabase-auth-container',
+                  button: 'auth-button',
+                  input: 'auth-input',
+                  label: 'auth-label',
+                  anchor: 'auth-anchor',
+                  message: 'auth-message',
+                  divider: 'auth-divider'
+                },
+              }}
+              theme="dark"
+              providers={[]}
+              redirectTo={`${origin}/launch`}
+              view="sign_in"
+              localization={{
+                variables: {
+                  sign_in: {
+                    email_label: 'Email address',
+                    password_label: 'Your Password',
+                    button_label: "Sign in",
+                  },
+                  sign_up: {
+                      link_text: ""
+                  },
+                  forgotten_password: {
+                    link_text: 'Forgot your password?',
+                  },
                 }
-              }
-            }}
-          />
+              }}
+            />
+            <div className="text-center mt-4 text-sm">
+              <Link href="/signup" className="auth-anchor hover:underline text-[color:var(--anchor-text-color)] hover:text-[color:var(--anchor-text-hover-color)]">
+                Don't have an account? Sign up
+              </Link>
+            </div>
+          </>
         )}
       </div>
     </div>
