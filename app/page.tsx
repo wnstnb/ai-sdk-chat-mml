@@ -180,8 +180,7 @@ export default function LandingPageContent() {
             <section 
               ref={heroRef} // Add the ref here
               className="hero-section container mx-auto py-16 md:py-20 flex items-center justify-center text-center min-h-[40vh] w-full">
-              {/* Add semi-transparent overlay for readability */}
-              <div className="absolute inset-0 bg-black/50 z-0"></div>
+              {/* Removed semi-transparent overlay for readability */}
               <motion.div 
                 className="max-w-4xl mx-auto relative z-10"
                 initial="hidden"

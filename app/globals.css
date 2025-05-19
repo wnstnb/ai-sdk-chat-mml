@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* --- Google Font Import --- */
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,200;6..72,400;6..72,700&display=swap');
+/* Removed Newsreader import, using local Lora font */
 
 /* --- CSS Variables from prds/globals.txt --- */
 :root {
@@ -139,8 +139,11 @@
 /* --- End CSS Variables --- */
 
 @font-face {
-  font-family: "uncut sans";
-  src: url("/uncut-sans.woff2") format("woff2");
+  font-family: "Lora";
+  src: url("/Lora-VariableFont_wght.ttf") format("truetype");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
 }
 
 @font-face {
@@ -150,12 +153,13 @@
 
 /* Apply the font via the class added in the component */
 .font-uncut-sans {
-  font-family: 'uncut sans', sans-serif; /* Fallback to sans-serif */
+  font-family: 'Geist Sans', sans-serif; /* Fallback to sans-serif */
 }
 
-/* Add utility class for Newsreader font */
+/* Add utility class for Lora font */
 .font-newsreader {
-  font-family: 'Newsreader', serif; /* Fallback to serif */
+  font-family: 'Lora', serif; /* Fallback to serif */
+  font-weight: 300;
 }
 
 .typing-text,
@@ -191,7 +195,7 @@
   box-sizing: border-box;
   padding: 0;
   margin: 0;
-  font-family: "uncut sans", sans-serif;
+  /* Do not set font-family here, let layout.tsx control it */
 }
 
 html,
@@ -199,13 +203,13 @@ body {
   max-width: 100vw;
   overflow-x: hidden;
   /* height: 100%; */ /* REMOVED: Allow body to grow naturally */
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   color: rgb(var(--foreground-rgb));
   background: rgb(var(--background-rgb));
   transition: background 0.3s ease, color 0.3s ease;
   line-height: 1.5;
   /* --editor-font-size: 1rem; */ /* MOVED TO :root */
   /* --chat-font-size: 1rem;   */ /* MOVED TO :root */
+  /* Do not set font-family here, let layout.tsx control it */
 }
 
 body {
@@ -338,7 +342,7 @@ body {
 
   .header-logo {
     @apply text-[1.5rem] font-bold text-[--title-color]; /* Changed from --text-color */
-    font-family: 'Newsreader', serif; /* Apply Newsreader font */
+    font-family: 'Lora', serif; /* Apply Lora font */
     @apply flex items-center justify-center; /* Add flex centering */
   }
 

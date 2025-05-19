@@ -1,11 +1,9 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { GeistSans } from 'geist/font/sans';
 import ThemeHandler from '@/components/ThemeHandler';
 import AppInitializer from '@/components/AppInitializer';
 import './globals.css';
 import { Toaster } from "sonner";
-
-const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: "tuon.io",
@@ -19,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning={true}>
-      <body className={inter.className}>
+      <body className={GeistSans.className}>
         <ThemeHandler>
           <AppInitializer>
             {children}
