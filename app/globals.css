@@ -1338,3 +1338,12 @@ html {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+
+@media (max-width: 768px) {
+  .parallax-bg {
+    background-image: url('/tuon-bg-small.png');
+    background-attachment: scroll !important;
+    background-size: cover;
+    background-position: center;
+  }
+}
