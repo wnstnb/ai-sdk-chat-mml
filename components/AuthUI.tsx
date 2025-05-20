@@ -151,7 +151,7 @@ export default function AuthUI() {
                     placeholder="your.email@example.com"
                     required
                     disabled={loading}
-                    className="auth-input w-full px-3 py-2 rounded-md border border-[--input-border-color] bg-[--input-bg-color] text-[--text-color] placeholder-[--input-placeholder-color] focus:outline-none focus:ring-1 focus:ring-[--brand-color] focus:border-[--brand-color]"
+                    className="auth-input w-full px-3 py-2 rounded-md border border-[--input-border-color] bg-[--input-bg-color] text-[--text-color] placeholder-[--input-placeholder-color] focus:outline-none focus:ring-1 focus:ring-[#C79553] focus:border-[#C79553]"
                   />
                 </div>
                 <button 
@@ -174,7 +174,7 @@ export default function AuthUI() {
                     placeholder="123456"
                     required
                     disabled={loading}
-                    className="auth-input w-full px-3 py-2 rounded-md border border-[--input-border-color] bg-[--input-bg-color] text-[--text-color] placeholder-[--input-placeholder-color] focus:outline-none focus:ring-1 focus:ring-[--brand-color] focus:border-[--brand-color]"
+                    className="auth-input w-full px-3 py-2 rounded-md border border-[--input-border-color] bg-[--input-bg-color] text-[--text-color] placeholder-[--input-placeholder-color] focus:outline-none focus:ring-1 focus:ring-[#C79553] focus:border-[#C79553]"
                   />
                 </div>
                 <button 
@@ -233,7 +233,7 @@ export default function AuthUI() {
                       inputBackground: 'var(--input-bg-color)',
                       inputBorder: 'var(--input-border-color)',
                       inputBorderHover: 'var(--input-border-hover-color)',
-                      inputBorderFocus: 'var(--brand-color)',
+                      inputBorderFocus: '#C79553',
                       inputText: 'var(--text-color)',
                       inputPlaceholder: 'var(--input-placeholder-color)',
                       messageText: 'var(--message-text-color)',
@@ -245,8 +245,8 @@ export default function AuthUI() {
                 },
                 className: {
                   container: 'supabase-auth-container',
-                  button: 'auth-button',
-                  input: 'auth-input',
+                  button: 'auth-button text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)]',
+                  input: 'auth-input focus:outline-none focus:ring-1 focus:ring-[#C79553] focus:border-[#C79553]',
                   label: 'auth-label',
                   anchor: 'auth-anchor',
                   message: 'auth-message',
@@ -274,9 +274,12 @@ export default function AuthUI() {
               }}
             />
             <div className="text-center mt-4 text-sm">
-              <Link href="/signup" className="auth-anchor hover:underline text-[color:var(--anchor-text-color)] hover:text-[color:var(--anchor-text-hover-color)]">
+              {/* <Link href="/signup" className="auth-anchor hover:underline text-[color:var(--anchor-text-color)] hover:text-[color:var(--anchor-text-hover-color)]">
                 Don't have an account? Sign up
-              </Link>
+              </Link> */}
+              <p className="auth-anchor text-[color:var(--anchor-text-color)] hover:text-[color:var(--anchor-text-hover-color)]">
+                Sign up will be available soon!
+              </p>
             </div>
           </>
         )}

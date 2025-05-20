@@ -16,7 +16,6 @@ interface Feature {
 // Renamed component to avoid conflict with default export naming conventions if needed elsewhere
 export default function LandingPageContent() {
   console.log("LandingPageContent rendering..."); // Add log here
-  const [email, setEmail] = useState("");
   const [activeTabIndex, setActiveTabIndex] = useState(0); // New state for active tab
   const featuresSectionRef = useRef<HTMLDivElement>(null); // New ref for the features section
   const [currentCanvasImageIndex, setCurrentCanvasImageIndex] = useState(0); // Index for Desktop (0) or Mobile (1) view for the first tab
@@ -76,13 +75,6 @@ export default function LandingPageContent() {
   const buttonVariants = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0 },
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Consider a more robust notification system than alert
-    alert(`Thank you for your interest! We'll notify ${email} when we launch.`);
-    setEmail("");
   };
 
   // Ref for the main parallax container
@@ -171,8 +163,8 @@ export default function LandingPageContent() {
             <Link href="/login">
               <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">Login</Button>
             </Link>
-            <Link href="/signup">
-              <Button className="text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)]">Start Free Trial</Button>
+            <Link href="#">
+              <Button className="text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)]" disabled>Get Started</Button>
             </Link>
           </nav>
         </header>
@@ -183,7 +175,7 @@ export default function LandingPageContent() {
           <div className="card-snap-wrapper flex items-center justify-center px-4">
             <section 
               ref={heroRef} // Add the ref here
-              className="hero-section container mx-auto py-16 md:py-20 flex items-center justify-center text-center min-h-[40vh] w-full">
+              className="hero-section container mx-auto pt-16 md:pt-20 pb-6 flex items-center justify-center text-center min-h-[40vh] w-full"> {/* MODIFIED padding */}
               {/* Removed semi-transparent overlay for readability */}
               <motion.div 
                 className="max-w-4xl mx-auto relative z-10"
@@ -223,7 +215,7 @@ export default function LandingPageContent() {
           </div>
 
           {/* New Tabbed Features Section */}
-          <section ref={featuresSectionRef} id="features-tabs" className="py-20 min-h-screen flex flex-col items-center">
+          <section ref={featuresSectionRef} id="features-tabs" className="pt-6 pb-20 min-h-screen flex flex-col items-center"> {/* MODIFIED padding */}
             {/* Tabs Container - Stays max-w-3xl */}
             <div className="w-full max-w-3xl mx-auto px-4">
               {/* Tabs */}
@@ -476,32 +468,6 @@ export default function LandingPageContent() {
             </div> {/* End of Tab Content Card Container */}
           </section>
 
-          {/* Waitlist Section */}
-           {/* Added background color to section */}
-          <section className="py-20 bg-[color:var(--bg-color)] relative z-10">
-            <div className="container mx-auto px-4 text-center">
-               {/* Use theme variables */}
-              <h2 className="text-3xl md:text-4xl mb-6 text-[color:var(--accent-color)] font-newsreader">
-                Ready to focus on what matters?
-              </h2>
-              <p className="text-[color:var(--primary-color)]/90 max-w-2xl mx-auto mb-8 text-lg">Join the waitlist to be notified when we launch and get early access to Tuon.io</p>
-              <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-4 max-w-md mx-auto">
-                <input
-                  type="email"
-                  placeholder="Enter your email"
-                   // Use theme variables for input styling
-                  className="px-4 py-3 rounded-lg flex-grow bg-[color:var(--input-bg)]/40 border border-[color:var(--border-color)]/20 text-[color:var(--accent-color)] placeholder:text-[color:var(--primary-color)]/50 focus:outline-none focus:ring-2 focus:ring-[color:var(--primary-color)]/30"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-                 {/* Use theme variables */}
-                <Button type="submit" className="bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] px-6 py-3 rounded-lg font-medium">
-                  Join Waitlist
-                </Button>
-              </form>
-            </div>
-          </section>
         </div>
 
         {/* Footer Section - Added relative z-20 */}
