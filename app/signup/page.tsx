@@ -128,7 +128,7 @@ export default function SignupPage() {
                   key={option.id}
                   onClick={() => setSelectedBillingCycle(option.id as 'monthly' | 'annual')}
                   className={`cursor-pointer p-4 rounded-lg border-2 transform transition-all duration-300 ease-in-out 
-                            bg-[color:var(--input-bg-color)]/70 hover:border-[color:var(--brand-color-accent)]
+                            bg-[#0F1317] hover:border-[color:var(--brand-color-accent)]
                             ${selectedBillingCycle === option.id 
                               ? 'border-[#C79553] opacity-100 scale-100' 
                               : 'border-[color:var(--input-border-color)] opacity-60 scale-95 hover:opacity-100 hover:scale-100'}`}
