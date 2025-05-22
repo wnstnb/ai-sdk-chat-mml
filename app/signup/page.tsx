@@ -1,8 +1,20 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import { loadStripe, Stripe } from '@stripe/stripe-js';
+
+// Constants for Stripe Price IDs (easily swappable)
+const STRIPE_PRICE_IDS = {
+  monthly: 'price_1RR50wP5ZTVXN3kSg2UPq3OS', // Product ID: prod_SLmaopjPKETPQ2
+  annual: 'price_1RR50CP5ZTVXN3kS4WaKvfQ6',  // Product ID: prod_SLmZG8yBgYEBqV
+};
+
+// It's best practice to load Stripe.js outside of a component's render to avoid
+// recreating the Stripe object on every render.
+// Your publishable key should be stored in an environment variable.
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || 'STRIPE_PUBLISHABLE_KEY');
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -13,6 +25,18 @@ export default function SignupPage() {
   const [selectedBillingCycle, setSelectedBillingCycle] = useState<'monthly' | 'annual' | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [stripe, setStripe] = useState<Stripe | null>(null);
+
+  useEffect(() => {
+    stripePromise.then((stripeInstance: Stripe | null) => {
+      if (stripeInstance) {
+        setStripe(stripeInstance);
+      } else {
+        console.error("Failed to initialize Stripe.");
+        setError("Payment processing is currently unavailable. Please try again later.");
+      }
+    });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,10 +49,66 @@ export default function SignupPage() {
       setError('Please select a billing cycle.');
       return;
     }
+    if (!stripe) {
+      setError('Payment system is not ready. Please wait a moment and try again.');
+      return;
+    }
+
     setLoading(true);
-    console.log('Form submitted', { email, password, selectedBillingCycle });
-    await new Promise(resolve => setTimeout(resolve, 1500)); 
-    setLoading(false);
+
+    try {
+      // 1. Create user in your backend (Supabase)
+      const userCreationResponse = await fetch('/api/auth/signup-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, billingCycle: selectedBillingCycle }),
+      });
+
+      const userData = await userCreationResponse.json();
+
+      if (!userCreationResponse.ok) {
+        throw new Error(userData.error || 'Failed to create user.');
+      }
+      
+      const userId = userData.userId; // Get userId from the backend response
+      const userEmail = userData.email; // Get email from the backend response (could also use state 'email')
+
+      // 2. Create a Stripe Checkout session by calling your backend
+      const priceId = STRIPE_PRICE_IDS[selectedBillingCycle];
+      
+      const checkoutSessionResponse = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priceId, email: userEmail, userId }),
+      });
+
+      const sessionData = await checkoutSessionResponse.json();
+
+      if (!checkoutSessionResponse.ok) {
+        throw new Error(sessionData.error || 'Failed to create checkout session.');
+      }
+
+      // 3. Redirect to Stripe Checkout
+      const { error: stripeError } = await stripe.redirectToCheckout({
+        sessionId: sessionData.sessionId,
+      });
+
+      if (stripeError) {
+        console.error('Stripe redirect error:', stripeError);
+        setError(stripeError.message || 'Failed to redirect to payment.');
+        // Potentially, you might want to inform the user to try again or contact support.
+        // If redirect fails, the user is still on your page.
+      }
+      // If redirectToCheckout is successful, the user will be navigated away from this page.
+      // No need to setLoading(false) here if redirect is expected to happen.
+
+    } catch (err: any) {
+      console.error('Signup process error:', err);
+      setError(err.message || 'An unexpected error occurred during signup.');
+      setLoading(false); // Ensure loading is turned off on caught error
+    }
+    // setLoading(false) might not be reached if redirectToCheckout is successful, which is fine.
+    // If an error occurs before redirect, or redirect itself fails, then it will be set to false in catch.
   };
 
   const billingOptions = {
