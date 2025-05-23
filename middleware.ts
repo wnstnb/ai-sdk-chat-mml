@@ -1,7 +1,11 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { hasSubscriptionAccess } from './lib/subscription-utils'
 
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+  
+  // Create a response object to modify headers if needed
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -14,81 +18,75 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
+        getAll() {
+          return request.cookies.getAll()
         },
-        set(name: string, value: string, options: CookieOptions) {
-          // If the cookie is updated, update the cookies for the request and response
-          request.cookies.set({ name, value, ...options })
-          response = NextResponse.next({ request: { headers: request.headers } })
-          response.cookies.set({ name, value, ...options })
-        },
-        remove(name: string, options: CookieOptions) {
-          // If the cookie is removed, update the cookies for the request and response
-          request.cookies.set({ name, value: '', ...options })
-          response = NextResponse.next({ request: { headers: request.headers } })
-          response.cookies.set({ name, value: '', ...options })
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          response = NextResponse.next({
+            request,
+          })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          )
         },
       },
     }
   )
 
-  // Refresh session if expired - important!
-  let session = null; // Default to null
-  let sessionError = null;
+  // Get the current user
+  const { data: { user }, error } = await supabase.auth.getUser()
 
-  console.log(`Middleware: Checking session for path: ${request.nextUrl.pathname}`);
-
-  try {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) {
-      sessionError = error;
-      console.error(`Middleware: Error getting session for path ${request.nextUrl.pathname}:`, error.message);
-    } else if (data?.session) {
-      session = data.session;
-      console.log(`Middleware: Session found for path ${request.nextUrl.pathname}. User ID: ${session.user.id.substring(0, 8)}...`);
-    } else {
-      console.log(`Middleware: No session data found for path ${request.nextUrl.pathname}.`);
+  // Handle login page - redirect if already authenticated
+  if (pathname === '/login') {
+    if (user && !error) {
+      return NextResponse.redirect(new URL('/launch', request.url))
     }
-  } catch (error: any) {
-    sessionError = error;
-    console.error(`Middleware: Exception during getSession for path ${request.nextUrl.pathname}:`, error?.message || error);
+    return response
   }
 
-  const { pathname } = request.nextUrl
+  // For protected routes (/launch and /editor), require authentication AND subscription
+  if (pathname.startsWith('/launch') || pathname.startsWith('/editor')) {
+    // First check authentication
+    if (!user || error) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
 
-  // Define public paths accessible without authentication
-  // const publicPaths = ['/', '/login'] // Not strictly needed for this logic
-  // Define protected paths that require authentication
-  const protectedPaths = ['/editor', '/launch']
-
-  // Check if the current path is protected
-  const isProtectedRoute = protectedPaths.some(path => pathname.startsWith(path))
-
-  // If user is not logged in and trying to access a protected route
-  if (!session && isProtectedRoute) {
-    console.log(`Middleware: No session, accessing protected path ${pathname}. Redirecting to /login.`)
-    const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = '/login'
-    // Optional: Keep original path for redirect after login
-    // redirectUrl.searchParams.set('redirectedFrom', pathname)
-    return NextResponse.redirect(redirectUrl)
+    // Then check subscription status
+    try {
+      const hasAccess = await hasSubscriptionAccess(user.id)
+      
+      if (!hasAccess) {
+        console.log(`Access denied for user ${user.id} - no active subscription`)
+        // Redirect to a subscription/billing page or show an access denied page
+        // You can create a /subscription-required page for this
+        const subscriptionUrl = new URL('/subscription-required', request.url)
+        subscriptionUrl.searchParams.set('reason', 'subscription_required')
+        return NextResponse.redirect(subscriptionUrl)
+      }
+      
+      // User has both authentication and active subscription - allow access
+      console.log(`Access granted for user ${user.id} - active subscription verified`)
+      return response
+      
+    } catch (subscriptionError) {
+      console.error(`Subscription check failed for user ${user.id}:`, subscriptionError)
+      // On system error, you might want to allow access or redirect to error page
+      // For security, let's deny access on system errors
+      const errorUrl = new URL('/subscription-required', request.url)
+      errorUrl.searchParams.set('reason', 'system_error')
+      return NextResponse.redirect(errorUrl)
+    }
   }
 
-  // If user is logged in and trying to access login page, redirect to launch
-  if (session && pathname === '/login') {
-    console.log(`Middleware: Session found, accessing /login. Redirecting to /launch.`)
-    const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = '/launch'
-    return NextResponse.redirect(redirectUrl)
+  // For API routes, check authentication (subscription checking can be done per endpoint as needed)
+  if (pathname.startsWith('/api/')) {
+    if (!user || error) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    return response
   }
 
-  // Log access only if no redirect happened
-  if (!(sessionError)) { // Avoid logging access allowed if there was a session error
-    console.log(`Middleware: Access allowed for path ${pathname}. Session: ${!!session}`);
-  }
-
-  // Return the response object, potentially modified by the Supabase client
   return response
 }
 
@@ -98,6 +96,6 @@ export const config = {
      '/login', // Match the login page itself to handle redirects when already logged in
      '/launch/:path*', // Match the launch page and any sub-paths
      '/editor/:path*', // Match the editor page and any sub-paths (like document IDs)
-     '/api/:path*', // Add API routes to the matcher
+     '/api/((?!stripe/webhook).*)', // Match API routes but exclude /api/stripe/webhook
   ],
 } 

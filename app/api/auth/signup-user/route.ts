@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     .update({ 
       billing_cycle: billingCycle,
       email: authData.user.email, // Keep email in sync or ensure trigger handles it well
-      // updated_at: new Date().toISOString() // Manually set updated_at if not auto-updating
+      updated_at: new Date().toISOString() // Manually set updated_at if not auto-updating
     })
     .eq('id', authData.user.id);
 
