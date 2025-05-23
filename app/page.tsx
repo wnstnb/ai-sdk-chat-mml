@@ -155,7 +155,7 @@ export default function LandingPageContent() {
             {/* Use theme variable for logo color */}
             <img src="/tuon-logo-svg-type.svg" alt="Tuon Logo" className="h-8 w-8" style={{ filter: 'var(--logo-filter)' }} />
           </div>
-          <nav className="hidden md:flex items-center space-x-4">
+          <nav className="flex items-center space-x-4 mobile-nav-actions">
             {/* Use theme variables for nav links */}
             {/* <a href="#features" className="text-sm font-medium text-[color:var(--primary-color)]/80 hover:text-[color:var(--accent-color)] transition-colors">Features</a> */}
             {/* <a href="#how-it-works" className="text-sm font-medium text-[color:var(--primary-color)]/80 hover:text-[color:var(--accent-color)] transition-colors">How It Works</a> */}
