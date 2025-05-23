@@ -23,10 +23,24 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   const [isMounted, setIsMounted] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
+  // Apply default dark theme immediately on client-side (before mount)
+  useEffect(() => {
+    // For unauthenticated pages (landing, login, signup), immediately set dark theme
+    const unauthenticatedPages = ['/', '/login', '/signup', '/signup/success', '/terms', '/privacy'];
+    const isUnauthenticatedPage = unauthenticatedPages.includes(pathname);
+    
+    if (isUnauthenticatedPage || !isAuthenticated) {
+      document.documentElement.setAttribute('data-theme', localDefaultTheme);
+      console.log('[ThemeHandler] Applied default dark theme for unauthenticated page:', pathname);
+    }
+  }, [pathname, isAuthenticated]);
+
   // Initialize preferences on mount by calling fetchPreferences
   useEffect(() => {
-    fetchPreferences(); // CORRECTED: Call fetchPreferences directly
-  }, [fetchPreferences]); // CORRECTED: Dependency is fetchPreferences
+    if (isAuthenticated) {
+      fetchPreferences(); // Only fetch if authenticated
+    }
+  }, [fetchPreferences, isAuthenticated]);
 
   // Set mounted state after initial render to avoid hydration mismatch with theme
   useEffect(() => {
@@ -36,12 +50,13 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   // Apply theme to HTML element when prefTheme or localDefaultTheme changes, and after mount
   useEffect(() => {
     if (isMounted) {
-      // Use prefTheme from store if available, otherwise use localDefaultTheme
-      const currentThemeToApply = prefTheme || localDefaultTheme;
+      // For authenticated users, use prefTheme from store if available, otherwise use localDefaultTheme
+      // For unauthenticated users, always use localDefaultTheme
+      const currentThemeToApply = isAuthenticated ? (prefTheme || localDefaultTheme) : localDefaultTheme;
       document.documentElement.setAttribute('data-theme', currentThemeToApply);
       console.log('[ThemeHandler] Applied theme to HTML:', currentThemeToApply);
     }
-  }, [prefTheme, localDefaultTheme, isMounted]); // prefTheme can be null, localDefaultTheme is constant but included for clarity
+  }, [prefTheme, localDefaultTheme, isMounted, isAuthenticated]);
 
   // Handlers for SearchModal
   const handleOpenSearchModal = useCallback(() => {

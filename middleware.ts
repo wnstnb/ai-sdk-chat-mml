@@ -5,6 +5,11 @@ import { hasSubscriptionAccess } from './lib/subscription-utils'
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   
+  // IMPORTANT: Skip middleware entirely for Stripe webhook
+  if (pathname === '/api/stripe/webhook') {
+    return NextResponse.next()
+  }
+  
   // Create a response object to modify headers if needed
   let response = NextResponse.next({
     request: {
@@ -96,6 +101,6 @@ export const config = {
      '/login', // Match the login page itself to handle redirects when already logged in
      '/launch/:path*', // Match the launch page and any sub-paths
      '/editor/:path*', // Match the editor page and any sub-paths (like document IDs)
-     '/api/((?!stripe/webhook).*)', // Match API routes but exclude /api/stripe/webhook
+     '/api/:path*', // Match all API routes (webhook exclusion handled in function)
   ],
 } 
