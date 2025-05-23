@@ -36,7 +36,7 @@ export default function LandingPageContent() {
   const features: Feature[] = [
     {
       icon: <Layers className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
-      title: "One Flow, One Canvas",
+      title: "One Flow,<br />One Canvas",
       description: "Jumpstart ideas with AI and work on the same canvas. Stay in flow."
     },
     {
@@ -46,8 +46,8 @@ export default function LandingPageContent() {
     },
     {
       icon: <Zap className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
-      title: "Interact Your Way",
-      description: "Engage with your AI editor using voice, text, or even images for ultimate flexibility."
+      title: "Interact <br />Your Way",
+      description: "Engage with your AI editor using voice, text, or even images<br />for ultimate flexibility."
     },
     {
       icon: <BrainCircuit className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
@@ -56,7 +56,7 @@ export default function LandingPageContent() {
     },
     {
       icon: <BrainCircuit className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable for the new tab
-      title: "Use different models",
+      title: "Use Different Models",
       description: "One model not getting it done? Switch it up and default the one that works for you."
     }
   ];
@@ -188,14 +188,14 @@ export default function LandingPageContent() {
                   variants={headingVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Stop fragmented workflows. <br />Keep it all in one place.
+                  Stop fragmented workflows <br />Keep it all in one place
                 </motion.h1>
                 <motion.p 
                   className="text-lg md:text-xl text-[color:var(--primary-color)]/90 mb-12 max-w-2xl leading-relaxed mx-auto"
                   variants={contentVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Tuon removes friction between AI and organic creative workflows.<br />Start, finish, manage and iterate on your notes and documents in one place
+                  Tuon removes the friction between AI and organic creative workflows.<br />Start, finish, manage, and iterate on your notes and documents all in one place
                 </motion.p>
                 <motion.div 
                   className="flex flex-col sm:flex-row gap-4 justify-center"
