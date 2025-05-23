@@ -17,6 +17,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning={true}>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              // Immediately apply dark theme to prevent flash
+              if (typeof window !== 'undefined') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+              }
+            `,
+          }}
+        />
+      </head>
       <body className={GeistSans.className}>
         <ThemeHandler>
           <AppInitializer>
