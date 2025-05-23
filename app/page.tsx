@@ -41,22 +41,22 @@ export default function LandingPageContent() {
     },
     {
       icon: <Clock className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
-      title: "Tag Documents",
+      title: "Tag<br />Documents",
       description: "Tag documents as context for AI and never start from zero."
     },
     {
       icon: <Zap className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
-      title: "Interact <br />Your Way",
+      title: "Interact<br />Your Way",
       description: "Engage with your AI editor using voice, text, or even images<br />for ultimate flexibility."
     },
     {
       icon: <BrainCircuit className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
-      title: "Stay Organized",
+      title: "Stay<br />Organized",
       description: "Easily manage your files and notes with an intuitive browser and folder system."
     },
     {
       icon: <BrainCircuit className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable for the new tab
-      title: "Use Different Models",
+      title: "Use Different<br />Models",
       description: "One model not getting it done? Switch it up and default the one that works for you."
     }
   ];
@@ -224,13 +224,17 @@ export default function LandingPageContent() {
                   <button
                     key={index}
                     onClick={() => handleTabClick(index)}
-                    className={`py-3 px-4 sm:px-5 font-medium text-xs sm:text-sm md:text-base focus:outline-none transition-all duration-300 ease-in-out relative group
+                    className={`py-3 px-2 sm:px-3 font-medium text-xs sm:text-sm md:text-base focus:outline-none transition-all duration-300 ease-in-out relative group
+                      w-24 sm:w-28 md:w-32 h-12 sm:h-14 md:h-16 flex items-center justify-center text-center leading-tight
                       ${activeTabIndex === index
                         ? 'text-[color:var(--accent-color)]'
                         : 'text-[color:var(--muted-text-color)] hover:text-[color:var(--primary-color)]'
                       }`}
                   >
-                    {feature.title}
+                    <span 
+                      dangerouslySetInnerHTML={{ __html: feature.title }}
+                      className="block w-full leading-tight"
+                    ></span>
                     <span className={`absolute bottom-[-1px] left-0 w-full h-0.5 bg-[color:var(--accent-color)] transform transition-transform duration-300 ease-out
                       ${activeTabIndex === index ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'}`}></span>
                   </button>
@@ -254,11 +258,11 @@ export default function LandingPageContent() {
                     >
                       {/* Text Content (Title, Description) - Icon Removed */}
                       <div className="flex flex-col items-center text-center">
-                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
-                          {features[activeTabIndex].title}
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader"
+                            dangerouslySetInnerHTML={{ __html: features[activeTabIndex].title }}>
                         </h3>
-                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
-                          {features[activeTabIndex].description}
+                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl"
+                           dangerouslySetInnerHTML={{ __html: features[activeTabIndex].description }}>
                         </p>
                       </div>
 
@@ -311,11 +315,11 @@ export default function LandingPageContent() {
                     >
                       {/* Text Content (Title, Description) - Icon Removed */}
                       <div className="flex flex-col items-center text-center">
-                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
-                          {features[activeTabIndex].title}
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader"
+                            dangerouslySetInnerHTML={{ __html: features[activeTabIndex].title }}>
                         </h3>
-                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
-                          {features[activeTabIndex].description}
+                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl"
+                           dangerouslySetInnerHTML={{ __html: features[activeTabIndex].description }}>
                         </p>
                       </div>
 
@@ -365,11 +369,11 @@ export default function LandingPageContent() {
                     >
                       {/* Text Content (Title, Description) - Icon Removed */}
                       <div className="flex flex-col items-center text-center">
-                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
-                          {features[activeTabIndex].title}
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader"
+                            dangerouslySetInnerHTML={{ __html: features[activeTabIndex].title }}>
                         </h3>
-                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
-                          {features[activeTabIndex].description}
+                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl"
+                           dangerouslySetInnerHTML={{ __html: features[activeTabIndex].description }}>
                         </p>
                       </div>
 
@@ -394,11 +398,11 @@ export default function LandingPageContent() {
                     >
                       {/* Text Content (Title, Description) - Icon Removed */}
                       <div className="flex flex-col items-center text-center">
-                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
-                          {features[activeTabIndex].title}
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader"
+                            dangerouslySetInnerHTML={{ __html: features[activeTabIndex].title }}>
                         </h3>
-                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
-                          {features[activeTabIndex].description}
+                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl"
+                           dangerouslySetInnerHTML={{ __html: features[activeTabIndex].description }}>
                         </p>
                       </div>
 
@@ -423,11 +427,11 @@ export default function LandingPageContent() {
                     >
                       {/* Text Content (Title, Description) - Icon Removed */}
                       <div className="flex flex-col items-center text-center">
-                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
-                          {features[activeTabIndex].title}
+                        <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader"
+                            dangerouslySetInnerHTML={{ __html: features[activeTabIndex].title }}>
                         </h3>
-                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl">
-                          {features[activeTabIndex].description}
+                        <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-xl"
+                           dangerouslySetInnerHTML={{ __html: features[activeTabIndex].description }}>
                         </p>
                       </div>
 
@@ -455,12 +459,12 @@ export default function LandingPageContent() {
                         {React.cloneElement(features[activeTabIndex].icon as React.ReactElement, { className: "h-10 w-10 text-[color:var(--muted-text-color)]" })}
                       </div>
                       */}
-                      <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader">
-                        {features[activeTabIndex].title}
+                      <h3 className="text-2xl md:text-3xl font-semibold mb-4 text-[color:var(--accent-color)] font-newsreader"
+                          dangerouslySetInnerHTML={{ __html: features[activeTabIndex].title }}>
                       </h3>
-                      <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-md">
-                        {features[activeTabIndex].description}
-                      </p>
+                      <p className="text-md md:text-lg text-[color:var(--primary-color)]/90 leading-relaxed max-w-md"
+                         dangerouslySetInnerHTML={{ __html: features[activeTabIndex].description }}>
+                        </p>
                     </motion.div>
                   )}
                 </AnimatePresence>
