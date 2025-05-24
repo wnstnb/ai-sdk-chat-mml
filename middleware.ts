@@ -10,6 +10,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
   
+  // IMPORTANT: Skip middleware for signup endpoint (users can't be authenticated to sign up)
+  if (pathname === '/api/auth/signup-user') {
+    return NextResponse.next()
+  }
+  
+  // IMPORTANT: Skip middleware for Stripe checkout session creation (part of signup flow)
+  if (pathname === '/api/stripe/create-checkout-session') {
+    return NextResponse.next()
+  }
+  
   // Create a response object to modify headers if needed
   let response = NextResponse.next({
     request: {
