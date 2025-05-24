@@ -1,0 +1,10 @@
+{
+  "deploymentProtection": {
+    "bypasses": [
+      {
+        "type": "pathname",
+        "value": "/api/stripe/webhook"
+      }
+    ]
+  }
+} 
