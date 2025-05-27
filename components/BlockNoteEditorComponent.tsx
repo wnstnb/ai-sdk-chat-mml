@@ -15,6 +15,8 @@ import {
   TextAlignButton,
   ColorStyleButton,
   CreateLinkButton,
+  NestBlockButton,
+  UnnestBlockButton,
 } from '@blocknote/react';
 import '@blocknote/core/fonts/inter.css';
 import '@blocknote/mantine/style.css';
@@ -56,8 +58,9 @@ function AddFollowUpButton() {
     <Components.FormattingToolbar.Button
       mainTooltip="Add selection for follow-up"
       onClick={handleAddForFollowUp}
+      className="p-1"
     >
-      <Quote size={18} />
+      <Quote size={18} className="block min-w-[18px] min-h-[18px]" />
     </Components.FormattingToolbar.Button>
   );
 }
@@ -97,6 +100,8 @@ const BlockNoteEditorComponent: React.FC<BlockNoteEditorComponentProps> = ({
             <TextAlignButton textAlignment={"center"} key={"textAlignCenterButton"} />
             <TextAlignButton textAlignment={"right"} key={"textAlignRightButton"} />
             <CreateLinkButton key={"createLinkButton"} />
+            <NestBlockButton key={"nestBlockButton"} />
+            <UnnestBlockButton key={"unnestBlockButton"} />
           </FormattingToolbar>
         )}
       />

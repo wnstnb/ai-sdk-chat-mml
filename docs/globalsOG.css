@@ -1031,7 +1031,17 @@ a:focus {
   text-decoration: underline;
 }
 
+/* Specificity for BlockNote Editor Content (if needed) */
+.bn-editor a {
+  color: var(--link-color); /* Ensure editor overrides don't conflict */
+  text-decoration: none;
+}
 
+.bn-editor a:hover,
+.bn-editor a:focus {
+  color: var(--link-hover-color);
+  text-decoration: underline;
+}
 
 /* Custom styles for @cubone/react-file-manager */
 .rename-file:focus, /* Apply to standard focus too */
