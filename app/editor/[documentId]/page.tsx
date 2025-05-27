@@ -1028,24 +1028,25 @@ export default function EditorPage() {
     // --- Handler Definitions (Place standard handlers here) ---
     const handlePaste = (event: React.ClipboardEvent) => handleFilePasteEvent(event);
     const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        // Only show the drop zone overlay if actual files are being dragged in
+        // Only prevent default and show drop zone for file drags
         if (event.dataTransfer.types.includes('Files')) {
+            event.preventDefault();
             setIsDragging(true);
         }
+        // Don't prevent default for other drag types (like BlockNote's internal drags)
     };
     const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        // Reset regardless of type on leave
+        // No need to prevent default on drag leave
         setIsDragging(false);
     };
     const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        setIsDragging(false);
-        // Only handle file drop if Files type is present
+        // Only handle and prevent default for file drops
         if (event.dataTransfer.types.includes('Files')) {
+            event.preventDefault();
+            setIsDragging(false);
             handleFileDropEvent(event);
         }
+        // Don't prevent default for other drop types (like BlockNote's internal drops)
     };
     const handleUploadClick = () => { if (isUploading || isRecording || isTranscribing) { toast.info("Busy, please wait..."); return; } fileInputRef.current?.click(); };
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => handleFileSelectEvent(event);
@@ -1089,7 +1090,11 @@ export default function EditorPage() {
 
     // Main Render
     return (
-        <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+        <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden" 
+            onDragOver={handleDragOver} 
+            onDragLeave={handleDragLeave} 
+            onDrop={handleDrop}
+        >
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
             {/* Conditional Rendering based on isMobile */}

@@ -25,6 +25,7 @@ const ActualFileBrowserModal: React.FC<FileBrowserModalProps> = ({
 
   const handleFileSelection = (documentId: string, documentName?: string) => {
     closeModal();
+    onClose(); // Also call the onClose prop to notify parent component
     router.push(`/editor/${documentId}`);
     // Optionally, you could toast `documentName` being opened.
     // import { toast } from 'sonner';
