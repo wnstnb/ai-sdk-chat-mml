@@ -11,103 +11,91 @@ interface ThemeHandlerProps {
   children: React.ReactNode;
 }
 
-// Define a local default theme for fallback before store is initialized or if store theme is null
-const localDefaultTheme = 'dark'; 
-
 const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   const pathname = usePathname();
-  // Corrected destructuring: use fetchPreferences, theme, and setTheme from the store.
-  const { fetchPreferences, theme: prefTheme, setTheme } = usePreferenceStore();
+  const { 
+    fetchPreferences, 
+    theme: prefTheme, 
+    setTheme: setPrefTheme, 
+    isInitialized: isPrefStoreInitialized,
+  } = usePreferenceStore();
   const { isAuthenticated } = useAuthStore();
 
   const [isMounted, setIsMounted] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
-  // Apply default dark theme immediately on client-side (before mount)
-  useEffect(() => {
-    // For unauthenticated pages (landing, login, signup), immediately set dark theme
-    const unauthenticatedPages = ['/', '/login', '/signup', '/signup/success', '/terms', '/privacy'];
-    const isUnauthenticatedPage = unauthenticatedPages.includes(pathname);
-    
-    if (isUnauthenticatedPage || !isAuthenticated) {
-      document.documentElement.setAttribute('data-theme', localDefaultTheme);
-      console.log('[ThemeHandler] Applied default dark theme for unauthenticated page:', pathname);
-    }
-  }, [pathname, isAuthenticated]);
-
-  // Initialize preferences on mount by calling fetchPreferences
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchPreferences(); // Only fetch if authenticated
-    }
-  }, [fetchPreferences, isAuthenticated]);
-
-  // Set mounted state after initial render to avoid hydration mismatch with theme
+  // Set mounted state after initial render
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // Apply theme to HTML element when prefTheme or localDefaultTheme changes, and after mount
+  // Fetch preferences when authenticated and store is not yet initialized
   useEffect(() => {
-    if (isMounted) {
-      // For authenticated users, use prefTheme from store if available, otherwise use localDefaultTheme
-      // For unauthenticated users, always use localDefaultTheme
-      const currentThemeToApply = isAuthenticated ? (prefTheme || localDefaultTheme) : localDefaultTheme;
-      document.documentElement.setAttribute('data-theme', currentThemeToApply);
-      console.log('[ThemeHandler] Applied theme to HTML:', currentThemeToApply);
+    if (isMounted && isAuthenticated && !isPrefStoreInitialized) {
+      console.log('[ThemeHandler] Authenticated, mounted, and prefs not initialized. Fetching preferences...');
+      fetchPreferences();
     }
-  }, [prefTheme, localDefaultTheme, isMounted, isAuthenticated]);
+  }, [isAuthenticated, isPrefStoreInitialized, fetchPreferences, isMounted]);
 
-  // Handlers for SearchModal
-  const handleOpenSearchModal = useCallback(() => {
-    setIsSearchModalOpen(true);
-  }, []);
+  // Apply theme from store once it's initialized and mounted
+  useEffect(() => {
+    if (!isMounted) return; // Don't do anything until mounted
 
-  const handleCloseSearchModal = useCallback(() => {
-    setIsSearchModalOpen(false);
-  }, []);
+    // The anti-flicker script in layout.tsx handles the very initial theme.
+    // This effect refines it once the store is ready or auth state changes.
+    let themeToApply = 'dark'; // Default to dark
 
-  // Theme toggling function now uses the store action
+    if (isAuthenticated && isPrefStoreInitialized) {
+      themeToApply = prefTheme || 'dark'; // Use stored preference or fallback to dark
+      console.log('[ThemeHandler] Authenticated and prefs initialized. Applying theme:', themeToApply);
+    } else if (isAuthenticated && !isPrefStoreInitialized) {
+      // Authenticated, but prefs not yet loaded/initialized. Stick to dark (likely set by anti-flicker or previous state).
+      console.log('[ThemeHandler] Authenticated, but prefs NOT initialized. Keeping current theme (expected dark).');
+      // No explicit set needed here if anti-flicker worked, or if it was already dark.
+      // Could re-assert dark if there was a concern: document.documentElement.setAttribute('data-theme', 'dark'); 
+      themeToApply = document.documentElement.getAttribute('data-theme') || 'dark'; // read current, should be dark
+    } else {
+      // Not authenticated (or isMounted is false, though guarded above)
+      // Anti-flicker script should have set it to dark. This ensures it if needed.
+      console.log('[ThemeHandler] Not authenticated or not mounted. Ensuring dark theme:', themeToApply);
+    }
+    document.documentElement.setAttribute('data-theme', themeToApply);
+
+  }, [prefTheme, isAuthenticated, isPrefStoreInitialized, isMounted]);
+
+
   const handleToggleTheme = () => {
-    // Use prefTheme from store if available, otherwise use localDefaultTheme for current theme calculation
-    const currentTheme = prefTheme || localDefaultTheme;
-    const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
+    const currentAppliedTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const nextTheme = currentAppliedTheme === 'light' ? 'dark' : 'light';
     console.log('[ThemeHandler] Toggling theme to:', nextTheme);
-    setTheme(nextTheme); // CORRECTED: Call setTheme directly
+    setPrefTheme(nextTheme); // Update theme in the store (which will also update remote)
   };
+  
+  const showHeader = isAuthenticated && !['/', '/login', '/signup', '/signup/success', '/terms', '/privacy'].includes(pathname);
+  const headerTheme = (isMounted && isAuthenticated && isPrefStoreInitialized && prefTheme) ? prefTheme : 'dark';
 
-  // Determine if the header should be shown
-  const showHeader = isAuthenticated && 
-                     pathname !== '/' && 
-                     pathname !== '/login' && 
-                     pathname !== '/terms' && 
-                     pathname !== '/privacy';
-
-  // Determine the theme to pass to the Header
-  // Use prefTheme from store if available, otherwise use localDefaultTheme
-  const headerTheme = prefTheme || localDefaultTheme;
-
-  // If not mounted yet, render children without theme-dependent UI to prevent hydration errors
-  if (!isMounted) {
-    return <div className="flex flex-col h-screen"><main className="flex-grow overflow-y-auto h-screen">{children}</main></div>;
-  }
-
+  // If not mounted, the anti-flicker script in <head> handles initial theme.
+  // We render children directly to avoid hydration issues with theme-dependent rendering before mount.
+  // A minimal loading UI could be an alternative here if children heavily depend on theme context not yet available.
+  // However, `suppressHydrationWarning` on <html> and direct DOM manipulation by the anti-flicker script
+  // should make this safe.
+  // The main div wrapper is kept for structure.
   return (
     <div className="flex flex-col h-screen">
-      {showHeader && (
+      {isMounted && showHeader && (
         <Header 
           currentTheme={headerTheme} 
           onToggleTheme={handleToggleTheme} 
-          onOpenSearch={handleOpenSearchModal}
+          onOpenSearch={() => setIsSearchModalOpen(true)}
         />
       )}
-      <main className={`flex-grow overflow-y-auto ${!showHeader ? 'h-screen' : ''}`}>
+      <main className={`flex-grow overflow-y-auto ${(!isMounted || !showHeader) ? 'h-screen' : ''}`}>
         {children}
       </main>
-      {isSearchModalOpen && (
+      {isMounted && isSearchModalOpen && (
         <SearchModal 
           isOpen={isSearchModalOpen} 
-          onClose={handleCloseSearchModal} 
+          onClose={() => setIsSearchModalOpen(false)} 
         />
       )}
     </div>

@@ -4,6 +4,7 @@ import ThemeHandler from '@/components/ThemeHandler';
 import AppInitializer from '@/components/AppInitializer';
 import './globals.css';
 import { Toaster } from "sonner";
+import { AuthStateListener } from '@/components/AuthStateListener';
 
 export const viewport: Viewport = {
   themeColor: "#0070f3",
@@ -48,23 +49,38 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning={true}>
       <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              // Immediately apply dark theme to prevent flash
-              if (typeof window !== 'undefined') {
-                document.documentElement.setAttribute('data-theme', 'dark');
-              }
+              (function() {
+                let theme = 'dark'; // Default to dark
+                try {
+                  // Optional: If you also want to respect a localStorage preference set by client-side toggling
+                  // const storedTheme = localStorage.getItem('theme'); // Use the same key your theme toggle might use
+                  // if (storedTheme) {
+                  //   theme = storedTheme;
+                  // }
+                } catch (e) {
+                  // localStorage may not be available (e.g., in some SSR or restricted environments)
+                  console.warn('[AntiFlickerScript] localStorage not accessible.');
+                }
+                document.documentElement.setAttribute('data-theme', theme);
+                console.log('[AntiFlickerScript] Initial theme set to:', theme);
+              })();
             `,
           }}
         />
       </head>
       <body className={GeistSans.className}>
-        <ThemeHandler>
-          <AppInitializer>
-            {children}
-          </AppInitializer>
-        </ThemeHandler>
+        <AuthStateListener>
+          <ThemeHandler>
+            <AppInitializer>
+              {children}
+            </AppInitializer>
+          </ThemeHandler>
+        </AuthStateListener>
         <Toaster position="bottom-center" offset="4rem" />
       </body>
     </html>
