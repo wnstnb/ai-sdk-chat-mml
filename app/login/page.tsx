@@ -88,6 +88,14 @@ export default function Login() {
           <p className="text-sm text-[color:var(--primary-color)]/70 mt-1">Bring it all into focus.</p>
         </div>
         <AuthUI />
+        <div className="text-center text-sm mt-6">
+          <p className="text-[color:var(--muted-text-color)]">
+            Don&apos;t have an account?{" "}
+            <Link href="/signup" className="font-medium text-[color:var(--anchor-text-color)] hover:text-[color:var(--anchor-text-hover-color)] hover:underline">
+              Sign Up
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );

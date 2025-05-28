@@ -4,6 +4,9 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { loadStripe, Stripe } from '@stripe/stripe-js';
+import { Auth } from '@supabase/auth-ui-react';
+import { ThemeSupa } from '@supabase/auth-ui-shared';
+import { supabase } from '../../lib/supabase/client';
 
 // Constants for Stripe Price IDs (easily swappable)
 const STRIPE_PRICE_IDS = {
@@ -133,6 +136,28 @@ export default function SignupPage() {
         <p className="text-center text-[color:var(--primary-color)]/80 mb-6 text-sm">
           Try all features for free with your 7-day trial. <br /><b>Cancel or upgrade anytime</b>.
         </p>
+
+        {/* Social Logins First */}
+        <div className="mb-6">
+          <Auth
+            supabaseClient={supabase}
+            appearance={{ theme: ThemeSupa }}
+            providers={['google', 'github']}
+            socialLayout="horizontal"
+            onlyThirdPartyProviders={true}
+            view="sign_up"
+            redirectTo={`${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback?next=/launch`}
+          />
+        </div>
+
+        <div className="relative mb-6">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-[color:var(--border-color)]/30"></span>
+          </div>
+          <div className="relative flex justify-center text-xs">
+            <span className="bg-[color:var(--card-bg)] px-2 text-[color:var(--muted-text-color)]">Or sign up with email</span>
+          </div>
+        </div>
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -246,7 +271,7 @@ export default function SignupPage() {
           </div>
         </form>
 
-        <div className="text-center text-sm mt-6">
+        <div className="text-center text-sm mt-8">
           <Link href="/login" className="font-medium text-[color:var(--anchor-text-color)] hover:text-[color:var(--anchor-text-hover-color)] hover:underline">
             Already have an account? Login
           </Link>
