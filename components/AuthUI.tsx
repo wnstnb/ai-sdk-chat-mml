@@ -215,7 +215,7 @@ export default function AuthUI({
                 </div>
                 <button 
                   type="submit" 
-                  className="auth-button w-full justify-center rounded-md"
+                  className="auth-button w-full justify-center text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] py-2.5 rounded-md"
                   disabled={loading}
                 >
                   {loading ? 'Sending...' : 'Send One-Time Password'}
@@ -238,7 +238,7 @@ export default function AuthUI({
                 </div>
                 <button 
                   type="submit" 
-                  className="auth-button w-full justify-center rounded-md"
+                  className="auth-button w-full justify-center text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] py-2.5 rounded-md"
                   disabled={loading}
                 >
                   {loading ? 'Verifying...' : 'Verify Code'}
