@@ -29,10 +29,10 @@ export default function ConfirmEmailPage() {
           Your account has been successfully created! 
         </p>
         <p className="text-center text-[color:var(--primary-color)]/80 mb-6 text-sm">
-          We've sent a confirmation link to your email address. Please click the link in the email to activate your account and complete the signup process.
+          We&apos;ve sent a confirmation link to your email address. Please click the link in the email to activate your account and complete the signup process.
         </p>
         <p className="text-center text-[color:var(--primary-color)]/70 mb-8 text-sm">
-          You won't be able to log in until your email is confirmed.
+          You won&apos;t be able to log in until your email is confirmed.
         </p>
         
         <div className="mt-6 flex flex-col space-y-3">
@@ -57,7 +57,7 @@ export default function ConfirmEmailPage() {
         </div>
 
         <p className="text-xs text-[color:var(--primary-color)]/60 mt-8">
-          If you don't see the email, please check your spam folder. If you have any issues, contact support@tuon.io.
+          If you don&apos;t see the email, please check your spam folder. If you have any issues, contact support@tuon.io.
         </p>
       </div>
     </div>
