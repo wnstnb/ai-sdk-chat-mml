@@ -6,9 +6,22 @@ import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from '../lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Eye, EyeOff } from 'lucide-react';
 
-export default function AuthUI() {
+interface AuthUIProps {
+  providers?: ('google' | 'github' | 'azure' | 'bitbucket' | 'gitlab' | 'apple' | 'discord' | 'facebook' | 'keycloak' | 'linkedin' | 'notion' | 'slack' | 'spotify' | 'twitch' | 'twitter' | 'workos')[];
+  view?: 'sign_in' | 'sign_up' | 'forgotten_password' | 'update_password' | 'magic_link';
+  socialLayout?: 'horizontal' | 'vertical';
+  onlyThirdPartyProviders?: boolean;
+}
+
+export default function AuthUI({ 
+  providers = ['google', 'github'],
+  socialLayout = 'horizontal',
+}: AuthUIProps) {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -17,8 +30,32 @@ export default function AuthUI() {
   const [activeTab, setActiveTab] = useState<'standard' | 'otp'>('standard');
   const router = useRouter();
   
-  // Get the current origin for redirects
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
+
+  const handlePasswordSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setMessage('');
+    try {
+      const { error: signInError, data } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (signInError) {
+        setError(signInError.message);
+      } else {
+        setMessage('Sign in successful! Redirecting...');
+        console.log('Authentication successful via Password with user:', data.session?.user?.id);
+        router.replace('/launch');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in. Please try again.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,14 +107,12 @@ export default function AuthUI() {
       } else {
         setMessage('Login successful! Redirecting...');
         
-        // Log authentication success and cookies for debugging
         console.log('Authentication successful via OTP with user:', data.session?.user?.id);
         
-        // Force a direct navigation instead of waiting for context
         setTimeout(() => {
           console.log('Manually redirecting to /launch after successful OTP login');
           router.replace('/launch');
-        }, 500); // Short delay to allow state to update
+        }, 500);
       }
     } catch (err) {
       setError('Failed to verify OTP. Please try again.');
@@ -102,6 +137,30 @@ export default function AuthUI() {
 
   return (
     <div className="auth-ui-container space-y-6">
+      <div className="social-providers-section mb-6">
+        <Auth
+          supabaseClient={supabase}
+          appearance={{ theme: ThemeSupa }}
+          providers={providers}
+          socialLayout={socialLayout}
+          onlyThirdPartyProviders={true}
+          redirectTo={`${origin}/auth/callback?next=/launch`}
+        />
+      </div>
+      
+      {providers && providers.length > 0 && (activeTab === 'standard' || activeTab === 'otp') && (
+        <div className="relative my-4">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-[color:var(--border-color)]/30"></span>
+          </div>
+          <div className="relative flex justify-center text-xs">
+            <span className="bg-[color:var(--card-bg)] px-2 text-[color:var(--muted-text-color)]">
+              Or sign in with
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="flex border-b border-[color:var(--border-color)]/30 mb-8 justify-center">
         <button 
           className={`py-3 px-4 sm:px-5 font-medium text-xs sm:text-sm md:text-base focus:outline-none transition-all duration-300 ease-in-out relative group
@@ -136,8 +195,8 @@ export default function AuthUI() {
       <div className="auth-content mt-4">
         {activeTab === 'otp' ? (
           <div className="otp-section space-y-4">
-            {message && <div className="text-sm text-green-400">{message}</div>}
-            {error && <div className="text-sm text-red-400">{error}</div>}
+            {message && <div className={`text-sm ${error ? 'text-red-400' : 'text-green-400'}`}>{message}</div>}
+            {error && !message && <div className="text-sm text-red-400">{error}</div>}
             
             {!otpSent ? (
               <form onSubmit={handleSendOTP} className="space-y-4">
@@ -156,7 +215,7 @@ export default function AuthUI() {
                 </div>
                 <button 
                   type="submit" 
-                  className="auth-button w-full justify-center"
+                  className="auth-button w-full justify-center text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] py-2.5 rounded-md"
                   disabled={loading}
                 >
                   {loading ? 'Sending...' : 'Send One-Time Password'}
@@ -179,7 +238,7 @@ export default function AuthUI() {
                 </div>
                 <button 
                   type="submit" 
-                  className="auth-button w-full justify-center"
+                  className="auth-button w-full justify-center text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] py-2.5 rounded-md"
                   disabled={loading}
                 >
                   {loading ? 'Verifying...' : 'Verify Code'}
@@ -196,92 +255,66 @@ export default function AuthUI() {
             )}
           </div>
         ) : (
-          <>
-            <Auth
-              supabaseClient={supabase}
-              appearance={{
-                theme: ThemeSupa,
-                variables: {
-                  default: {
-                    colors: {
-                      brand: 'var(--brand-color)',
-                      brandAccent: 'var(--brand-color-accent)',
-                      brandButtonText: 'var(--brand-button-text)',
-                      inputBackground: 'var(--input-bg-color)',
-                      inputBorder: 'var(--input-border-color)',
-                      inputPlaceholder: 'var(--input-placeholder-color)',
-                      messageText: 'var(--message-text-color)',
-                      anchorTextColor: 'var(--anchor-text-color)',
-                      anchorTextHoverColor: 'var(--anchor-text-hover-color)',
-                    },
-                    radii: {
-                      borderRadiusButton: '4px',
-                      buttonBorderRadius: '4px',
-                      inputBorderRadius: '4px',
-                    },
-                  },
-                  dark: {
-                    colors: {
-                      brand: 'var(--brand-color)',
-                      brandAccent: 'var(--brand-color-accent)',
-                      brandButtonText: 'var(--brand-button-text)',
-                      defaultButtonBackground: 'var(--button-bg-color)',
-                      defaultButtonBackgroundHover: 'var(--button-bg-hover-color)',
-                      defaultButtonBorder: 'var(--button-border-color)',
-                      defaultButtonText: 'var(--button-text-color)',
-                      dividerBackground: 'var(--border-color)',
-                      inputBackground: 'var(--input-bg-color)',
-                      inputBorder: 'var(--input-border-color)',
-                      inputBorderHover: 'var(--input-border-hover-color)',
-                      inputBorderFocus: '#C79553',
-                      inputText: 'var(--text-color)',
-                      inputPlaceholder: 'var(--input-placeholder-color)',
-                      messageText: 'var(--message-text-color)',
-                      messageTextDanger: 'var(--message-text-danger-color)',
-                      anchorTextColor: 'var(--anchor-text-color)',
-                      anchorTextHoverColor: 'var(--anchor-text-hover-color)',
-                    }
-                  }
-                },
-                className: {
-                  container: 'supabase-auth-container',
-                  button: 'auth-button text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)]',
-                  input: 'auth-input focus:outline-none focus:ring-1 focus:ring-[#C79553] focus:border-[#C79553]',
-                  label: 'auth-label',
-                  anchor: 'auth-anchor',
-                  message: 'auth-message',
-                  divider: 'auth-divider'
-                },
-              }}
-              theme="dark"
-              providers={[]}
-              redirectTo={`${origin}/launch`}
-              view="sign_in"
-              localization={{
-                variables: {
-                  sign_in: {
-                    email_label: 'Email address',
-                    password_label: 'Your Password',
-                    button_label: "Sign in",
-                  },
-                  sign_up: {
-                      link_text: ""
-                  },
-                  forgotten_password: {
-                    link_text: 'Forgot your password?',
-                  },
-                }
-              }}
-            />
-            <div className="text-center mt-4 text-sm">
-              {/* <Link href="/signup" className="auth-anchor hover:underline text-[color:var(--anchor-text-color)] hover:text-[color:var(--anchor-text-hover-color)]">
-                Don't have an account? Sign up
-              </Link> */}
-              <p className="auth-anchor text-[color:var(--anchor-text-color)] hover:text-[color:var(--anchor-text-hover-color)]">
-                Sign up will be available soon!
-              </p>
+          <form onSubmit={handlePasswordSignIn} className="space-y-4">
+            {message && <div className={`text-sm ${error ? 'text-red-400' : 'text-green-400'}`}>{message}</div>}
+            {error && !message && <div className="text-sm text-red-400">{error}</div>}
+            
+            <div>
+              <label htmlFor="email-standard" className="block text-sm font-medium text-[color:var(--text-color-secondary)] mb-1">Email address</label>
+              <input
+                id="email-standard"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="your.email@example.com"
+                required
+                disabled={loading}
+                className="auth-input w-full px-3 py-2 rounded-md border border-[color:var(--input-border-color)] bg-[color:var(--input-bg-color)] text-[color:var(--text-color)] placeholder-[color:var(--input-placeholder-color)] focus:outline-none focus:ring-1 focus:ring-[#C79553] focus:border-[#C79553]"
+              />
             </div>
-          </>
+            <div>
+              <label htmlFor="password-standard" className="block text-sm font-medium text-[color:var(--text-color-secondary)] mb-1">Password</label>
+              <div className="relative">
+                <input
+                  id="password-standard"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Your password"
+                  required
+                  disabled={loading}
+                  className="auth-input w-full px-3 py-2 rounded-md border border-[color:var(--input-border-color)] bg-[color:var(--input-bg-color)] text-[color:var(--text-color)] placeholder-[color:var(--input-placeholder-color)] focus:outline-none focus:ring-1 focus:ring-[#C79553] focus:border-[#C79553]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-[color:var(--muted-text-color)] hover:text-[color:var(--text-color)]"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+            <div className="text-right text-sm">
+              <button 
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setMessage('Forgot password functionality is not yet implemented. Please contact support if you need to reset your password.');
+                }}
+                className="font-medium text-[color:var(--anchor-text-color)] hover:text-[color:var(--anchor-text-hover-color)] hover:underline focus:outline-none"
+              >
+                Forgot your password?
+              </button>
+            </div>
+            <button 
+              type="submit" 
+              className="auth-button w-full justify-center text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] py-2.5 rounded-md"
+              disabled={loading || !email || !password}
+            >
+              {loading ? 'Signing in...' : 'Sign In'}
+            </button>
+          </form>
         )}
       </div>
     </div>

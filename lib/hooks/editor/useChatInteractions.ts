@@ -85,22 +85,25 @@ const processBlocksRecursive = async (
     let processedBlocks: ProcessedBlock[] = [];
 
     for (const b of blocks) {
+        // --- DEBUG LOGGING: Print the structure of each block --- 
+        console.log("[processBlocksRecursive] Processing block:", JSON.stringify(b, null, 2));
+        // --- END DEBUG LOGGING ---
+
         let snippet = '';
         if (b.type === 'table') {
             try {
                 snippet = await editor.blocksToMarkdownLossy([b]);
-                snippet = `[Table Markdown]\n${snippet}`;
             } catch (mdError) {
                 console.error(`Failed to convert table block ${b.id} to Markdown:`, mdError);
                 snippet = `[table - Error generating Markdown snippet]`;
             }
+        } else if (b.type === 'checkListItem') {
+            const isChecked = b.props?.checked === true;
+            const prefix = isChecked ? "[x] " : "[ ] ";
+            const itemText = Array.isArray(b.content) ? getInlineContentText(b.content) : '';
+            snippet = prefix + itemText;
         } else {
-            // For other block types, get inline content text.
-            // Ensure this does NOT include children's text.
-            // BlockNote's getInlineContentText (or direct b.content access for Paragraphs)
-            // usually handles this correctly for standard blocks.
-            // For list items, b.content is the content of the item itself, b.children are sub-items.
-            snippet = (Array.isArray(b.content) ? getInlineContentText(b.content).slice(0, 100) : '') || `[${b.type}]`;
+            snippet = (Array.isArray(b.content) ? getInlineContentText(b.content) : '') || `[${b.type}]`;
         }
 
         processedBlocks.push({
@@ -111,7 +114,6 @@ const processBlocksRecursive = async (
             parentId: currentParentId,
         });
 
-        // If the block has children, process them recursively
         if (b.children && b.children.length > 0) {
             const childBlocks = await processBlocksRecursive(
                 b.children,
