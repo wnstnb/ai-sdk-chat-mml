@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff, CheckCircle2 } from 'lucide-react';
@@ -27,7 +27,8 @@ interface SociallyAuthenticatedUser {
   provider: string | undefined;
 }
 
-export default function SignupPage() {
+// This new component will contain the logic and JSX that uses useSearchParams
+function SignupFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -226,7 +227,7 @@ export default function SignupPage() {
     monthly: { id: 'monthly', name: 'Monthly', price: '$16', period: 'per month', savingsText: null },
     annual: { id: 'annual', name: 'Annual', price: '$160', period: 'per year', savingsText: '(Save 20%)' }, 
   };
-
+  
   return (
     <div className="flex items-center justify-center min-h-screen bg-[url('/tuon-bg.png')] bg-cover bg-center p-4">
       <div className="w-full max-w-md bg-[color:var(--card-bg)]/70 backdrop-blur-lg rounded-xl shadow-2xl border border-[color:var(--border-color)]/25 p-6 md:p-8">
@@ -407,5 +408,13 @@ export default function SignupPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <SignupFormContent />
+    </Suspense>
   );
 } 
