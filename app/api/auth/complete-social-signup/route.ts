@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import Stripe from 'stripe';
 
 // Initialize Stripe with the secret key
@@ -18,12 +18,30 @@ const STRIPE_PRICE_IDS = {
 export async function POST(request: Request) {
   try {
     const { billingCycle } = await request.json(); // 'monthly' or 'annual'
+    const cookieStore = cookies(); // Get cookie store
 
     if (!billingCycle || !(billingCycle in STRIPE_PRICE_IDS)) {
       return NextResponse.json({ error: 'Invalid billing cycle provided.' }, { status: 400 });
     }
 
-    const supabase = createRouteHandlerClient({ cookies });
+    // Create Supabase client using createServerClient from @supabase/ssr
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+          set(name: string, value: string, options: any) {
+            cookieStore.set({ name, value, ...options });
+          },
+          remove(name: string, options: any) {
+            cookieStore.set({ name, value: '', ...options });
+          },
+        },
+      }
+    );
 
     // 1. Identify User from Session
     const { data: { user }, error: authError } = await supabase.auth.getUser();
