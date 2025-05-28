@@ -1,15 +1,19 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
 export async function GET(request: NextRequest) {
+  console.log('[AuthCallback] Full request URL:', request.url);
+
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
-  const next = requestUrl.searchParams.get('next') ?? '/'; // Default redirect to home if 'next' is not present
-  const cookieStore = cookies();
+  const nextPath = requestUrl.searchParams.get('next') ?? '/';
+
+  console.log(`[AuthCallback] Received code: ${code ? 'YES' : 'NO'}, nextPath: ${nextPath}`);
 
   if (code) {
+    const cookieStore = cookies();
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -18,27 +22,25 @@ export async function GET(request: NextRequest) {
           get(name: string) {
             return cookieStore.get(name)?.value;
           },
-          set(name: string, value: string, options: any) {
+          set(name: string, value: string, options: CookieOptions) {
             cookieStore.set({ name, value, ...options });
           },
-          remove(name: string, options: any) {
+          remove(name: string, options: CookieOptions) {
             cookieStore.set({ name, value: '', ...options });
           },
         },
       }
     );
-    try {
-      await supabase.auth.exchangeCodeForSession(code);
-      // URL to redirect to after sign in process completes
-      return NextResponse.redirect(new URL(next, requestUrl.origin).toString());
-    } catch (error) {
-      console.error('Error exchanging code for session:', error);
-      // Redirect to an error page or back to login with an error message
-      return NextResponse.redirect(new URL('/login?error=auth_callback_failed', requestUrl.origin).toString());
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) {
+      console.error('[AuthCallback] Error exchanging code for session:', error.message);
+      const errorRedirectUrl = new URL('/login', requestUrl.origin);
+      errorRedirectUrl.searchParams.set('error', 'auth_callback_failed');
+      errorRedirectUrl.searchParams.set('error_description', error.message);
+      return NextResponse.redirect(errorRedirectUrl);
     }
   }
 
-  // Redirect to an error page or back to login if code is not present
-  console.warn('OAuth callback called without a code.');
-  return NextResponse.redirect(new URL('/login?error=no_code_provided', requestUrl.origin).toString());
+  console.log(`[AuthCallback] Redirecting to: ${new URL(nextPath, requestUrl.origin).toString()}`);
+  return NextResponse.redirect(new URL(nextPath, requestUrl.origin));
 } 
