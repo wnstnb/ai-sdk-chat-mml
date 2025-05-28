@@ -3,8 +3,8 @@
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon } from '@heroicons/react/24/outline';
-import { loadStripe } from '@stripe/stripe-js';
+import { ExclamationTriangleIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import Link from 'next/link';
 
 function SubscriptionRequiredContent() {
   const searchParams = useSearchParams();
@@ -31,35 +31,17 @@ function SubscriptionRequiredContent() {
     }
     setIsProcessing(true);
     setErrorMessage('');
-
     try {
       const priceId = 'price_1RR50wP5ZTVXN3kSg2UPq3OS';
-
       const response = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          priceId: priceId,
-          email: user.email,
-          userId: user.id,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priceId, email: user.email, userId: user.id }),
       });
-
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create Stripe checkout session.');
-      }
-
-      if (data.checkoutUrl) {
-        window.location.href = data.checkoutUrl;
-      } else {
-        console.error('Checkout URL not found in response, data:', data);
-        throw new Error('Could not retrieve the checkout URL. Please try again.');
-      }
-
+      if (!response.ok) throw new Error(data.error || 'Failed to create Stripe checkout session.');
+      if (data.checkoutUrl) window.location.href = data.checkoutUrl;
+      else throw new Error('Could not retrieve the checkout URL. Please try again.');
     } catch (error: any) {
       console.error('Start Subscription Error:', error);
       setErrorMessage(error.message || 'An unexpected error occurred.');
@@ -69,27 +51,27 @@ function SubscriptionRequiredContent() {
   };
 
   const getStatusMessage = () => {
+    let iconClass = "h-12 w-12 text-[color:var(--warning-text-color)]";
+    if (reason === 'system_error') iconClass = "h-12 w-12 text-[color:var(--destructive-text-color)]";
+    
     switch (reason) {
       case 'subscription_required':
         return {
-          icon: <ExclamationTriangleIcon className="h-12 w-12 text-yellow-500" />,
+          icon: <ExclamationTriangleIcon className={iconClass} />,
           title: 'Subscription Required',
           message: 'To access this application, you need an active subscription.',
-          color: 'yellow'
         };
       case 'system_error':
         return {
-          icon: <XCircleIcon className="h-12 w-12 text-red-500" />,
+          icon: <XCircleIcon className={iconClass} />,
           title: 'System Error',
           message: 'We encountered an error checking your subscription. Please try again.',
-          color: 'red'
         };
       default:
         return {
-          icon: <ExclamationTriangleIcon className="h-12 w-12 text-yellow-500" />,
+          icon: <ExclamationTriangleIcon className={iconClass} />,
           title: 'Access Restricted',
           message: 'You need an active subscription to access this application.',
-          color: 'yellow'
         };
     }
   };
@@ -98,61 +80,68 @@ function SubscriptionRequiredContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center min-h-screen bg-[url('/tuon-bg.png')] bg-cover bg-center text-[color:var(--text-color)]">
+        Loading your details...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div className="text-center">
-          <div className="flex justify-center">
+    <div className="flex items-center justify-center min-h-screen bg-[url('/tuon-bg.png')] bg-cover bg-center p-4">
+      <div className="w-full max-w-md bg-[color:var(--card-bg)]/70 backdrop-blur-lg rounded-xl shadow-2xl border border-[color:var(--border-color)]/25 p-6 md:p-8">
+        <div className="flex flex-col items-center mb-6">
+          <div className="flex justify-center mb-4">
             {statusInfo.icon}
           </div>
-          <h1 className="mt-6 text-3xl font-extrabold text-gray-900">
+          <h1 className="text-2xl font-semibold text-center text-[color:var(--accent-color)] font-newsreader">
             {statusInfo.title}
           </h1>
-          <p className="mt-2 text-sm text-gray-600">
+          <p className="mt-2 text-sm text-center text-[color:var(--primary-color)]/80">
             {statusInfo.message}
           </p>
         </div>
 
-        <div className="bg-white shadow rounded-lg p-6">
+        <div className="space-y-6">
           {user && (
-            <div className="mb-4 p-3 bg-gray-50 rounded">
-              <p className="text-sm text-gray-600">
-                Signed in as: <span className="font-medium">{user.email}</span>
+            <div className="p-3 bg-[color:var(--input-bg-color)] rounded-md border border-[color:var(--input-border-color)]">
+              <p className="text-sm text-center text-[color:var(--muted-text-color)]">
+                Signed in as: <span className="font-medium text-[color:var(--text-color)]">{user.email}</span>
               </p>
             </div>
           )}
           {errorMessage && (
-            <div className="my-2 p-3 bg-red-100 border border-red-300 text-red-700 text-sm rounded-md text-center">
+            <div className="my-2 p-3 bg-red-700/20 border border-red-500/30 text-red-400 text-sm rounded-md text-center">
               {errorMessage}
             </div>
           )}
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             <button
               onClick={handleStartSubscription}
               disabled={isProcessing || !user || loading}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium 
+                         bg-[color:var(--primary-color)] text-[color:var(--bg-color)] 
+                         hover:bg-[color:var(--accent-color)] 
+                         focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[color:var(--card-bg)] focus:ring-[color:var(--accent-color)] 
+                         disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isProcessing ? 'Processing...' : 'Start Subscription'}
             </button>
 
             <button
               onClick={() => window.location.href = '/api/stripe/create-portal-session'}
-              className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="w-full flex justify-center py-2.5 px-4 border border-[color:var(--input-border-color)] rounded-md shadow-sm text-sm font-medium 
+                         text-[color:var(--text-color-secondary)] bg-[color:var(--input-bg-color)] 
+                         hover:bg-[color:var(--input-border-color)] hover:text-[color:var(--text-color)]
+                         focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[color:var(--card-bg)] focus:ring-[color:var(--accent-color)]"
             >
               Manage Existing Subscription
             </button>
 
-            <div className="text-center">
+            <div className="text-center pt-2">
               <button
                 onClick={() => window.location.href = '/login'}
-                className="text-blue-600 hover:text-blue-500 text-sm font-medium"
+                className="text-[color:var(--anchor-text-color)] hover:text-[color:var(--anchor-text-hover-color)] hover:underline text-sm font-medium"
               >
                 Sign Out & Return to Login
               </button>
@@ -160,9 +149,9 @@ function SubscriptionRequiredContent() {
           </div>
         </div>
 
-        <div className="text-center">
-          <p className="text-xs text-gray-500">
-            Having trouble? Contact support for assistance.
+        <div className="text-center mt-8">
+          <p className="text-xs text-[color:var(--muted-text-color)]">
+            Having trouble? Contact <a href="mailto:support@tuon.io" className="underline hover:text-[color:var(--anchor-text-hover-color)]">support@tuon.io</a> for assistance.
           </p>
         </div>
       </div>
@@ -173,8 +162,8 @@ function SubscriptionRequiredContent() {
 export default function SubscriptionRequired() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center min-h-screen bg-[url('/tuon-bg.png')] bg-cover bg-center text-[color:var(--text-color)]">
+        Loading...
       </div>
     }>
       <SubscriptionRequiredContent />
