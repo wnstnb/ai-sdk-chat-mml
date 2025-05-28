@@ -4,12 +4,15 @@ import { useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import { loadStripe } from '@stripe/stripe-js';
 
 function SubscriptionRequiredContent() {
   const searchParams = useSearchParams();
   const reason = searchParams.get('reason');
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     const getUser = async () => {
@@ -20,6 +23,50 @@ function SubscriptionRequiredContent() {
     };
     getUser();
   }, []);
+
+  const handleStartSubscription = async () => {
+    if (!user || !user.email) {
+      setErrorMessage('User information is not available. Please try signing out and back in.');
+      return;
+    }
+    setIsProcessing(true);
+    setErrorMessage('');
+
+    try {
+      const priceId = 'price_1RR50wP5ZTVXN3kSg2UPq3OS';
+
+      const response = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          priceId: priceId,
+          email: user.email,
+          userId: user.id,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create Stripe checkout session.');
+      }
+
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      } else {
+        console.error('Checkout URL not found in response, data:', data);
+        throw new Error('Could not retrieve the checkout URL. Please try again.');
+      }
+
+    } catch (error: any) {
+      console.error('Start Subscription Error:', error);
+      setErrorMessage(error.message || 'An unexpected error occurred.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const getStatusMessage = () => {
     switch (reason) {
@@ -80,13 +127,19 @@ function SubscriptionRequiredContent() {
               </p>
             </div>
           )}
+          {errorMessage && (
+            <div className="my-2 p-3 bg-red-100 border border-red-300 text-red-700 text-sm rounded-md text-center">
+              {errorMessage}
+            </div>
+          )}
 
           <div className="space-y-4">
             <button
-              onClick={() => window.location.href = '/api/stripe/create-checkout-session'}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              onClick={handleStartSubscription}
+              disabled={isProcessing || !user || loading}
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
             >
-              Start Subscription
+              {isProcessing ? 'Processing...' : 'Start Subscription'}
             </button>
 
             <button
