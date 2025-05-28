@@ -100,7 +100,7 @@ export async function POST(request: Request) {
         // metadata can be used to pass additional info if needed by webhooks, e.g., userId
         // metadata: { supabase_user_id: userId } // client_reference_id is usually preferred for this
       },
-      success_url: `${siteUrl}/launch?signup=success&session_id={CHECKOUT_SESSION_ID}`, // session_id can be useful
+      success_url: `${siteUrl}/signup/success?session_id={CHECKOUT_SESSION_ID}`, // Changed to /signup/success
       cancel_url: `${siteUrl}/signup?stripe_cancel=true`,
     });
 

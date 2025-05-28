@@ -10,7 +10,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 });
 
 export async function POST(request: NextRequest) {
-  const { priceId, email, userId } = await request.json();
+  const { priceId, email, userId, isSocialSignup } = await request.json();
 
   if (!priceId) {
     return NextResponse.json({ error: 'Price ID is required.' }, { status: 400 });
@@ -21,7 +21,15 @@ export async function POST(request: NextRequest) {
 
   // Construct absolute URLs for success and cancel
   const baseUrl = request.nextUrl.origin;
-  const successUrl = new URL('/signup/success', baseUrl).toString(); // Example: redirect to a success page
+  // Default success URL for social signups or if type is not specified
+  let successUrl = new URL('/signup/success', baseUrl).toString(); 
+  
+  // If it's an email/password signup (indicated by presence of userId in the initial request payload)
+  // and isSocialSignup is not explicitly true, then redirect to confirm email page.
+  if (userId && !isSocialSignup) { 
+    successUrl = new URL('/signup/confirm-email', baseUrl).toString();
+  }
+  
   const cancelUrl = new URL('/signup', baseUrl).toString(); // Redirect back to signup page on cancellation
 
   try {

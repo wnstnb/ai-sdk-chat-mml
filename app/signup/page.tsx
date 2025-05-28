@@ -27,6 +27,19 @@ interface SociallyAuthenticatedUser {
   provider: string | undefined;
 }
 
+// Helper function to get the site URL
+const getURL = () => {
+  let url =
+    process?.env?.NEXT_PUBLIC_SITE_URL ?? // Set this to your site URL in production
+    process?.env?.NEXT_PUBLIC_VERCEL_URL ?? // Automatically set by Vercel.
+    'http://localhost:3000/';
+  // Make sure to include `https://` when not localhost.
+  url = url.includes('http') ? url : `https://${url}`;
+  // Make sure to include a trailing '/'.
+  url = url.charAt(url.length - 1) === '/' ? url : `${url}/`;
+  return url;
+};
+
 // This new component will contain the logic and JSX that uses useSearchParams
 function SignupFormContent() {
   const router = useRouter();
@@ -263,11 +276,14 @@ function SignupFormContent() {
             <Auth
               supabaseClient={supabase}
               appearance={{ theme: ThemeSupa }}
-              providers={['google', 'github']}
+              providers={['google']}
               socialLayout="horizontal"
-              onlyThirdPartyProviders={true}
-              view="sign_up"
-              redirectTo={`${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback?next=/signup?social_auth_pending=true`}
+              redirectTo={`${getURL()}signup?from_oauth=true`}
+              localization={{
+                variables: {
+                  // ... existing code ...
+                },
+              }}
             />
           </div>
         )}

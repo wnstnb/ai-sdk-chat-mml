@@ -16,7 +16,7 @@ interface AuthUIProps {
 }
 
 export default function AuthUI({ 
-  providers = ['google', 'github'],
+  providers = ['google'],
   socialLayout = 'horizontal',
 }: AuthUIProps) {
   const [email, setEmail] = useState('');
