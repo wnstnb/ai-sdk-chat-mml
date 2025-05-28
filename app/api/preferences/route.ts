@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 const defaultPreferences = {
-  theme: 'light',
+  theme: 'dark',
   default_model: 'gemini-2.0-flash',
   editorFontSize: 1,
   chatFontSize: 1,
