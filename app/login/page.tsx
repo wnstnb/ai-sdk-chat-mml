@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabase/client';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { useRouter } from 'next/navigation';
-import { Session } from '@supabase/supabase-js';
+import { Session, User } from '@supabase/supabase-js';
 import dynamic from 'next/dynamic';
 
 // Dynamically import the Auth component with SSR disabled
@@ -22,50 +22,71 @@ export default function Login() {
   const redirectAttempted = useRef(false);
   const router = useRouter();
 
+  const checkProfileAndRedirect = useCallback(async (user: User) => {
+    if (redirectAttempted.current) return;
+    redirectAttempted.current = true;
+    setIsRedirecting(true);
+
+    try {
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('billing_cycle, stripe_subscription_status')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError && profileError.code !== 'PGRST116') {
+        console.error('Error fetching profile for redirect check:', profileError);
+        router.replace('/launch');
+        return;
+      }
+
+      if (profile && profile.stripe_subscription_status === 'legacy') {
+        console.log(`User ${user.id.substring(0,8)} is legacy, redirecting to /launch`);
+        router.replace('/launch');
+      } else if (profile && profile.billing_cycle) {
+        console.log(`User ${user.id.substring(0,8)} has billing_cycle (and not legacy), redirecting to /launch`);
+        router.replace('/launch');
+      } else {
+        console.log(`User ${user.id.substring(0,8)} missing billing_cycle (and not legacy), redirecting to /signup?step=complete_plan_selection`);
+        router.replace('/signup?step=complete_plan_selection');
+      }
+    } catch (e) {
+      console.error('Exception in checkProfileAndRedirect:', e);
+      router.replace('/launch');
+    }
+  }, [router]);
+
   useEffect(() => {
-    const checkSession = async () => {
-      if (redirectAttempted.current) return;
-      
-      setIsLoading(true);
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        console.log("Login page session check:", !!session, session?.user?.id?.substring(0, 8));
-        
-        setSession(session);
-        
-        if (session?.user && !isRedirecting) {
-          console.log("Session found in login page, setting redirect flag");
-          setIsRedirecting(true);
-          redirectAttempted.current = true;
-          router.replace('/launch');
-        } else {
-          setIsLoading(false);
-        }
-      } catch (error) {
-        console.error("Error checking session in login page:", error);
+    const handleAuthSession = async (currentSession: Session | null) => {
+      if (currentSession?.user) {
+        await checkProfileAndRedirect(currentSession.user);
+      } else {
         setIsLoading(false);
+        setIsRedirecting(false);
+        redirectAttempted.current = false;
       }
     };
-    
-    checkSession();
 
-    // Listen for auth state changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      console.log("Auth state changed in login page:", _event);
-      setSession(session);
-      
-      if (session && !redirectAttempted.current && !isRedirecting) {
-        console.log("Session detected in login page auth change");
-        setIsRedirecting(true);
-        redirectAttempted.current = true;
-        router.replace('/launch');
+    const initialSessionCheck = async () => {
+      setIsLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log("Login page initial session check:", !!session, session?.user?.id?.substring(0, 8));
+      await handleAuthSession(session);
+    };
+
+    initialSessionCheck();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      console.log("Auth state changed in login page:", _event, newSession?.user?.id?.substring(0,8));
+      if (!redirectAttempted.current) {
+         await handleAuthSession(newSession);
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, [router, isRedirecting]);
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [checkProfileAndRedirect]);
 
   if (isLoading || isRedirecting) {
     return (

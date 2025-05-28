@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { loadStripe, Stripe } from '@stripe/stripe-js';
 import { Auth } from '@supabase/auth-ui-react';
@@ -19,7 +20,17 @@ const STRIPE_PRICE_IDS = {
 // Your publishable key should be stored in an environment variable.
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || 'STRIPE_PUBLISHABLE_KEY');
 
+// Define a type for the socially authenticated user
+interface SociallyAuthenticatedUser {
+  email: string | undefined;
+  id: string;
+  provider: string | undefined;
+}
+
 export default function SignupPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -29,6 +40,8 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [stripe, setStripe] = useState<Stripe | null>(null);
+  const [sociallyAuthenticatedUser, setSociallyAuthenticatedUser] = useState<SociallyAuthenticatedUser | null>(null);
+  const [socialAuthMessage, setSocialAuthMessage] = useState('');
 
   useEffect(() => {
     stripePromise.then((stripeInstance: Stripe | null) => {
@@ -41,13 +54,73 @@ export default function SignupPage() {
     });
   }, []);
 
+  // useEffect for handling social_auth_pending and step=complete_plan_selection
+  useEffect(() => {
+    const socialAuthPending = searchParams.get('social_auth_pending');
+    const completePlanSelectionStep = searchParams.get('step');
+
+    const processAuthContinuation = async (messageType: 'social_auth' | 'complete_plan') => {
+      setLoading(true);
+      setError('');
+      setSocialAuthMessage('');
+
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error('Error getting session:', sessionError);
+        setError('Could not verify your authentication. Please try again.');
+        setLoading(false);
+        router.replace('/signup', { scroll: false }); // Clear params
+        return;
+      }
+
+      if (session && session.user) {
+        const user = session.user;
+        const provider = user.app_metadata?.provider; // May be undefined if not a social login
+        const userEmail = user.email;
+
+        setSociallyAuthenticatedUser({
+          email: userEmail,
+          id: user.id,
+          provider: provider, // Will be undefined for email users completing profile, that's fine
+        });
+        
+        if (messageType === 'social_auth') {
+          let providerName = 'your social account';
+          if (provider === 'google') providerName = 'Google';
+          else if (provider === 'github') providerName = 'GitHub';
+          setSocialAuthMessage(`Successfully authenticated via ${providerName} as ${userEmail}. Please choose your plan.`);
+        } else { // complete_plan
+          setSocialAuthMessage(`Welcome back, ${userEmail}! Please complete your signup by selecting a plan to start your trial.`);
+        }
+        
+        // Clear the query params from URL
+        router.replace('/signup', { scroll: false });
+      } else {
+        if (messageType === 'social_auth') {
+          setError('Social authentication was initiated but could not be completed. Please try again.');
+        } else { // complete_plan
+          setError('Could not verify your session to complete plan selection. Please log in again.');
+          // Optionally redirect to login if session is expected but not found
+          // router.replace('/login'); 
+        }
+        router.replace('/signup', { scroll: false }); // Clear params
+      }
+      setLoading(false);
+    };
+
+    if (socialAuthPending === 'true') {
+      processAuthContinuation('social_auth');
+    } else if (completePlanSelectionStep === 'complete_plan_selection') {
+      processAuthContinuation('complete_plan');
+    }
+  }, [searchParams, router]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
+
+    // Common validations for both flows
     if (!selectedBillingCycle) {
       setError('Please select a billing cycle.');
       return;
@@ -57,61 +130,96 @@ export default function SignupPage() {
       return;
     }
 
+    // Email/Password specific validation (only if not socially authenticated)
+    if (!sociallyAuthenticatedUser && password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // 1. Create user in your backend (Supabase)
-      const userCreationResponse = await fetch('/api/auth/signup-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, billingCycle: selectedBillingCycle }),
-      });
+      let sessionId: string | null = null;
 
-      const userData = await userCreationResponse.json();
+      if (sociallyAuthenticatedUser) {
+        // -------- Socially Authenticated Flow --------
+        // User is already authenticated via Supabase (Google/GitHub)
+        // We just need to update their profile with billing cycle and create Stripe session.
+        
+        const response = await fetch('/api/auth/complete-social-signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            billingCycle: selectedBillingCycle 
+          }),
+        });
 
-      if (!userCreationResponse.ok) {
-        throw new Error(userData.error || 'Failed to create user.');
+        const sessionData = await response.json();
+        if (!response.ok) {
+          throw new Error(sessionData.error || 'Failed to complete social signup process.');
+        }
+        sessionId = sessionData.sessionId;
+
+      } else {
+        // -------- Email/Password Signup Flow --------
+        // 1. Create user in Supabase (this also updates profile with billing cycle via API logic)
+        const userCreationResponse = await fetch('/api/auth/signup-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, billingCycle: selectedBillingCycle }),
+        });
+
+        const userData = await userCreationResponse.json();
+        if (!userCreationResponse.ok) {
+          throw new Error(userData.error || 'Failed to create user.');
+        }
+        
+        const userId = userData.userId; 
+        const userEmail = userData.email; 
+
+        // 2. Create a Stripe Checkout session for the new email/password user
+        const priceId = STRIPE_PRICE_IDS[selectedBillingCycle];
+        
+        const checkoutSessionResponse = await fetch('/api/stripe/create-checkout-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ priceId, email: userEmail, userId }),
+        });
+
+        const stripeSessionData = await checkoutSessionResponse.json();
+        if (!checkoutSessionResponse.ok) {
+          throw new Error(stripeSessionData.error || 'Failed to create checkout session.');
+        }
+        sessionId = stripeSessionData.sessionId;
       }
-      
-      const userId = userData.userId; // Get userId from the backend response
-      const userEmail = userData.email; // Get email from the backend response (could also use state 'email')
 
-      // 2. Create a Stripe Checkout session by calling your backend
-      const priceId = STRIPE_PRICE_IDS[selectedBillingCycle];
-      
-      const checkoutSessionResponse = await fetch('/api/stripe/create-checkout-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ priceId, email: userEmail, userId }),
-      });
-
-      const sessionData = await checkoutSessionResponse.json();
-
-      if (!checkoutSessionResponse.ok) {
-        throw new Error(sessionData.error || 'Failed to create checkout session.');
+      // -------- Common: Redirect to Stripe Checkout --------
+      if (!sessionId) {
+        throw new Error('Could not retrieve Stripe session ID.');
       }
 
-      // 3. Redirect to Stripe Checkout
       const { error: stripeError } = await stripe.redirectToCheckout({
-        sessionId: sessionData.sessionId,
+        sessionId: sessionId,
       });
 
       if (stripeError) {
         console.error('Stripe redirect error:', stripeError);
-        setError(stripeError.message || 'Failed to redirect to payment.');
-        // Potentially, you might want to inform the user to try again or contact support.
-        // If redirect fails, the user is still on your page.
+        setError(stripeError.message || 'Failed to redirect to payment. Please try again.');
+        // Button should remain active for retry - setLoading(false) is in catch block
       }
-      // If redirectToCheckout is successful, the user will be navigated away from this page.
-      // No need to setLoading(false) here if redirect is expected to happen.
+      // If redirectToCheckout is successful, user is navigated away.
 
     } catch (err: any) {
       console.error('Signup process error:', err);
-      setError(err.message || 'An unexpected error occurred during signup.');
-      setLoading(false); // Ensure loading is turned off on caught error
+      let displayError = err.message || 'An unexpected error occurred during signup. Please try again.';
+      if (err.message && err.message.includes('Failed to connect to our payment system')) {
+        // More specific error if it was a Stripe redirect fail as per PRD
+        displayError = "We couldn't connect to our payment system to start your trial. Please try again.";
+      }
+      setError(displayError);
+    } finally {
+      setLoading(false); // Ensure loading is turned off in all cases (success redirect or error)
     }
-    // setLoading(false) might not be reached if redirectToCheckout is successful, which is fine.
-    // If an error occurs before redirect, or redirect itself fails, then it will be set to false in catch.
   };
 
   const billingOptions = {
@@ -137,93 +245,113 @@ export default function SignupPage() {
           Try all features for free with your 7-day trial. <br /><b>Cancel or upgrade anytime</b>.
         </p>
 
-        {/* Social Logins First */}
-        <div className="mb-6">
-          <Auth
-            supabaseClient={supabase}
-            appearance={{ theme: ThemeSupa }}
-            providers={['google', 'github']}
-            socialLayout="horizontal"
-            onlyThirdPartyProviders={true}
-            view="sign_up"
-            redirectTo={`${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback?next=/launch`}
-          />
-        </div>
+        {/* Display social auth message if present */}
+        {socialAuthMessage && (
+          <div className="mb-4 p-3 rounded-md bg-green-100 border border-green-300 text-green-700 text-sm text-center">
+            {socialAuthMessage}
+          </div>
+        )}
 
-        <div className="relative mb-6">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-[color:var(--border-color)]/30"></span>
-          </div>
-          <div className="relative flex justify-center text-xs">
-            <span className="bg-[color:var(--card-bg)] px-2 text-[color:var(--muted-text-color)]">Or sign up with email</span>
-          </div>
-        </div>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-[color:var(--text-color-secondary)] mb-1">Email address</label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="your.email@example.com"
-              required
-              disabled={loading}
-              className="auth-input w-full px-3 py-2 rounded-md border border-[color:var(--input-border-color)] bg-[color:var(--input-bg-color)] text-[color:var(--text-color)] placeholder-[color:var(--input-placeholder-color)] focus:outline-none focus:ring-1 focus:ring-[#C79553] focus:border-[#C79553]"
+        {/* General Error messages (show if no specific social auth message) */}
+        {error && !socialAuthMessage && <p className="text-sm text-red-500 text-center mb-4">{error}</p>}
+
+        {/* Social Logins First */}
+        {/* Show social login buttons ONLY IF user is NOT yet socially authenticated */}
+        {!sociallyAuthenticatedUser && (
+          <div className="mb-6">
+            <Auth
+              supabaseClient={supabase}
+              appearance={{ theme: ThemeSupa }}
+              providers={['google', 'github']}
+              socialLayout="horizontal"
+              onlyThirdPartyProviders={true}
+              view="sign_up"
+              redirectTo={`${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback?next=/signup?social_auth_pending=true`}
             />
           </div>
+        )}
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Conditionally render email/password form fields */}
+          {!sociallyAuthenticatedUser && (
+            <>
+              <div className="relative mb-6">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-[color:var(--border-color)]/30"></span>
+                </div>
+                <div className="relative flex justify-center text-xs">
+                  <span className="bg-[color:var(--card-bg)] px-2 text-[color:var(--muted-text-color)]">Or sign up with email</span>
+                </div>
+              </div>
+            
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-[color:var(--text-color-secondary)] mb-1">Email address</label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="your.email@example.com"
+                  required
+                  disabled={loading || !!sociallyAuthenticatedUser} // Disable if loading or socially authenticated
+                  className="auth-input w-full px-3 py-2 rounded-md border border-[color:var(--input-border-color)] bg-[color:var(--input-bg-color)] text-[color:var(--text-color)] placeholder-[color:var(--input-placeholder-color)] focus:outline-none focus:ring-1 focus:ring-[#C79553] focus:border-[#C79553]"
+                />
+              </div>
 
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-[color:var(--text-color-secondary)] mb-1">Password</label>
-            <div className="relative">
-              <input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-                minLength={6}
-                disabled={loading}
-                className="auth-input w-full px-3 py-2 rounded-md border border-[color:var(--input-border-color)] bg-[color:var(--input-bg-color)] text-[color:var(--text-color)] placeholder-[color:var(--input-placeholder-color)] focus:outline-none focus:ring-1 focus:ring-[#C79553] focus:border-[#C79553]"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-[color:var(--muted-text-color)] hover:text-[color:var(--text-color)]"
-                aria-label={showPassword ? "Hide password" : "Show password"}
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </div>
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-[color:var(--text-color-secondary)] mb-1">Password</label>
+                <div className="relative">
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter your password"
+                    required
+                    minLength={6}
+                    disabled={loading || !!sociallyAuthenticatedUser} // Disable if loading or socially authenticated
+                    className="auth-input w-full px-3 py-2 rounded-md border border-[color:var(--input-border-color)] bg-[color:var(--input-bg-color)] text-[color:var(--text-color)] placeholder-[color:var(--input-placeholder-color)] focus:outline-none focus:ring-1 focus:ring-[#C79553] focus:border-[#C79553]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-[color:var(--muted-text-color)] hover:text-[color:var(--text-color)]"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    disabled={!!sociallyAuthenticatedUser}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
 
-          <div>
-            <label htmlFor="confirm-password" className="block text-sm font-medium text-[color:var(--text-color-secondary)] mb-1">Confirm Password</label>
-            <div className="relative">
-              <input
-                id="confirm-password"
-                type={showConfirmPassword ? 'text' : 'password'}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm your password"
-                required
-                disabled={loading}
-                className="auth-input w-full px-3 py-2 rounded-md border border-[color:var(--input-border-color)] bg-[color:var(--input-bg-color)] text-[color:var(--text-color)] placeholder-[color:var(--input-placeholder-color)] focus:outline-none focus:ring-1 focus:ring-[#C79553] focus:border-[#C79553]"
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-[color:var(--muted-text-color)] hover:text-[color:var(--text-color)]"
-                aria-label={showConfirmPassword ? "Hide password" : "Show password"}
-              >
-                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </div>
+              <div>
+                <label htmlFor="confirm-password" className="block text-sm font-medium text-[color:var(--text-color-secondary)] mb-1">Confirm Password</label>
+                <div className="relative">
+                  <input
+                    id="confirm-password"
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm your password"
+                    required
+                    disabled={loading || !!sociallyAuthenticatedUser} // Disable if loading or socially authenticated
+                    className="auth-input w-full px-3 py-2 rounded-md border border-[color:var(--input-border-color)] bg-[color:var(--input-bg-color)] text-[color:var(--text-color)] placeholder-[color:var(--input-placeholder-color)] focus:outline-none focus:ring-1 focus:ring-[#C79553] focus:border-[#C79553]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-[color:var(--muted-text-color)] hover:text-[color:var(--text-color)]"
+                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                    disabled={!!sociallyAuthenticatedUser}
+                  >
+                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
 
-          {/* Billing Cycle Selection Section */}
+          {/* Billing Cycle Selection Section - always visible */}
           <div className="pt-2 space-y-3">
             <label className="block text-sm font-medium text-[color:var(--text-color-secondary)] mb-2">Choose your plan</label>
             <div className="space-y-3">
@@ -255,7 +383,8 @@ export default function SignupPage() {
             </div>
           </div>
 
-          {error && <p className="text-sm text-red-500 text-center pt-1">{error}</p>}
+          {/* Error messages for billing/submit specifically (show if there's a socialAuthMessage, meaning user is in that flow) */}
+          {error && socialAuthMessage && <p className="text-sm text-red-500 text-center pt-1">{error}</p>}
 
           <div className="pt-2">
             <button 
