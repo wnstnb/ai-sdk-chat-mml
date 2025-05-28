@@ -749,10 +749,10 @@ export default function LaunchPage() {
       </h2>
 
       {/* Row for the two cards below the title */}
-      <div className="flex flex-col md:flex-row flex-grow gap-4 overflow-hidden max-w-[1400px] mx-auto w-full"> {/* Changed max-width to 1400px */} 
+      <div className="flex flex-col flex-grow gap-4 overflow-hidden max-w-[1024px] mx-auto w-full"> {/* Changed max-width to 1200px */} 
         
         {/* Left Card: Chat Input */}
-        <div className="w-full md:w-1/2 flex flex-col items-center space-y-2"> {/* Removed hover/focus effects */} 
+        <div className="w-full flex flex-col items-center space-y-2"> {/* Removed hover/focus effects */} 
            <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Start New</h2> {/* Added Title */} 
            <Card className="flex flex-col bg-[--bg-primary] border-[--border-color] w-full 
                          transition-all duration-200 ease-in-out 
@@ -834,7 +834,7 @@ export default function LaunchPage() {
         </div>
 
         {/* Right Card: Tabs (Recent/Browser) */}
-        <div className="w-full md:w-1/2 flex flex-col items-center space-y-2 min-h-0"> {/* Added min-h-0 */}
+        <div className="w-full flex flex-col items-center space-y-2 min-h-0"> {/* Added min-h-0 */}
           <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Continue Working</h2> {/* Added Title */}
           <Tabs defaultValue="recent" className="flex flex-col w-full h-[calc(100vh-12rem)] max-h-[800px] min-h-0"> {/* Changed h-full to h-[calc(100vh-12rem)] */}
             <TabsList className="grid w-full grid-cols-2 flex-shrink-0 bg-transparent p-1 h-10 rounded-lg"> {/* Make background transparent, adjust padding/height/rounding if needed */} 

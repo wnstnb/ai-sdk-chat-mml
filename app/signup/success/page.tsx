@@ -23,7 +23,7 @@ export default function SignupSuccessPage() {
           Welcome to Tuon! Your account has been created and your 7-day free trial is now active.
         </p>
         <p className="text-center text-[color:var(--primary-color)]/70 mb-8 text-sm">
-          You can now explore all the features. Get ready to bring it all into focus.
+          You can now explore all the features. Get ready to Bring it all into focus
         </p>
         
         <div className="mt-6 flex flex-col space-y-3">

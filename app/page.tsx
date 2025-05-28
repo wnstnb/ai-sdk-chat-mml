@@ -483,7 +483,7 @@ export default function LandingPageContent() {
                   <img src="/tuon-logo-svg-type.svg" alt="Tuon Logo" className="h-8 w-8 mr-2" style={{ filter: 'var(--logo-filter)' }} />
                   <span className="text-xl font-bold text-[color:var(--accent-color)] font-newsreader">tuon.io</span>
                 </Link>
-                <p className="text-sm text-[color:var(--primary-color)]/60 mt-2">Bring it all into focus.</p>
+                <p className="text-sm text-[color:var(--primary-color)]/60 mt-2">Bring it all into focus</p>
               </div>
               <div className="flex flex-col md:flex-row gap-x-8 gap-y-4 text-sm text-[color:var(--primary-color)]/60">
                 {/* <Link href="#" className="hover:text-[color:var(--accent-color)]">About Us</Link> */}

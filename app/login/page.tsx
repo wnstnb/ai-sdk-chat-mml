@@ -106,7 +106,7 @@ export default function Login() {
             <img src="/tuon-logo-svg-type.svg" alt="Tuon Logo" className="h-10 w-10 mr-2" style={{ filter: 'var(--logo-filter)' }} />
             <span className="text-3xl font-bold text-[color:var(--accent-color)] font-newsreader">tuon.io</span>
           </Link>
-          <p className="text-sm text-[color:var(--primary-color)]/70 mt-1">Bring it all into focus.</p>
+          <p className="text-sm text-[color:var(--primary-color)]/70 mt-1">Bring it all into focus</p>
         </div>
         <AuthUI />
         <div className="text-center text-sm mt-6">

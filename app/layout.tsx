@@ -16,7 +16,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: "tuon.io",
-  description: "Bring it all into focus.",
+  description: "Bring it all into focus",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

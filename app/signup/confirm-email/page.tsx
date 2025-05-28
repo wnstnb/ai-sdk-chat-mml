@@ -20,7 +20,7 @@ export default function ConfirmEmailPage() {
           </Link>
         </div>
 
-        <MailCheck size={60} className="text-blue-500 mx-auto mb-5" /> {/* Changed icon and color */}
+        <MailCheck size={60} className="text-white mx-auto mb-5" /> {/* Changed icon and color */}
 
         <h1 className="text-2xl font-semibold text-center text-[color:var(--accent-color)] mb-4 font-newsreader">
           Confirm Your Email
