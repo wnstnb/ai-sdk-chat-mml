@@ -279,7 +279,7 @@ function SignupFormContent() {
               providers={['google']}
               socialLayout="horizontal"
               onlyThirdPartyProviders={true}
-              redirectTo={`${getURL()}signup?from_oauth=true`}
+              redirectTo={`${getURL()}signup?social_auth_pending=true`}
               localization={{
                 variables: {
                   // ... existing code ...
