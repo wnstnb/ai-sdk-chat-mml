@@ -127,27 +127,54 @@ Total ≈ **5 dev-days** + 1 QA buffer.
 This section enumerates the concrete engineering tasks, in the order they should be executed. Check each box as you complete it.
 
 ### 11.1 Repo & Environment Prep
-- [ ] Create **feature branch** `feat/live-transcription`.  
-- [ ] Upgrade `openai` NPM package to `^4.24.0` (first version with `gpt-4o-transcribe`) and run `pnpm i`.
-- [ ] Install `ws@^8` (server WebSocket) and `uuid` (for connection IDs).
-- [ ] Verify `OPENAI_API_KEY` has the `tts.transcriptions` scope.
+- [x] Create **feature branch** `live-transcription`.  
+- [x] Upgrade `openai` NPM package to `^4.24.0` (first version with `gpt-4o-transcribe`) and run `pnpm i`.
+- [x] Install `ws@^8` (server WebSocket) and `uuid` (for connection IDs).
+- [x] Verify `OPENAI_API_KEY` has the `tts.transcriptions` scope.
 
 ### 11.2 Backend – WebSocket Transcription Gateway
-1. **Route skeleton**  
-   - [ ] Create `app/api/transcribe/live/route.ts`.  
-   - [ ] Use the **Pages-Router edge → Node** workaround: `export const config = { runtime: "nodejs" }`.
-2. **Connection lifecycle**  
-   - [ ] On upgrade, authenticate user via Supabase cookie (`getServerSession`).  
-   - [ ] Generate `connectionId = uuid()` and log `user_id`, `document_id`, `connected_at` to `live_ws_connections` table (for analytics/debug).
-3. **Streaming to OpenAI**  
-   - [ ] Instantiate `openai.audio.transcriptions.create({ model:'gpt-4o-transcribe', stream:true, format:'text' })` and keep the returned `stream` handle.  
-   - [ ] For each binary WS message (raw 16-kHz PCM) → `stream.write(chunk)`.
-4. **Fan-out partials to client**  
-   - [ ] `stream.on('transcript', ({ text, is_final }) => ws.send(JSON.stringify({ type:'partial', text, isFinal:is_final })) )`.
-5. **Close handshake**  
-   - [ ] On client `{"type":"finish"}` or socket close, call `stream.end()` and `ws.close()`.
-6. **Budget & metrics**  
-   - [ ] Capture `totalAudioMs`, `promptTokens`, `completionTokens` from `stream.on('end')` and INSERT into `tool_calls` with tool `gpt-4o-transcribe`.
+1. **Route skeleton**
+   - [x] Create `app/api/transcribe/live/route.ts`.  
+   - [x] Use the **Pages-Router edge → Node** workaround: `export const config = { runtime: "nodejs" }`.
+2. **Client WebSocket Connection & Authentication**
+   - [x] On client WebSocket upgrade, authenticate user via Supabase cookie (`getServerSession`).
+   - [x] Generate `connectionId = uuid()` for the client connection and log `user_id`, `document_id` (if provided by client), `connectionId`, `connected_at` to `live_ws_connections` table.
+3. **OpenAI Realtime WebSocket Connection & Session Setup**
+   - [ ] Establish a new WebSocket connection from our backend to OpenAI's Realtime API endpoint (e.g., `wss://api.openai.com/v1/realtime?intent=transcription`).
+   - [ ] In the connection headers, include `Authorization: Bearer $OPENAI_API_KEY` and the beta header `openai-beta: realtime=v1`.
+   - [ ] Upon successful connection to OpenAI, await the initial `transcription_session.created` event to retrieve the `session.id`.
+   - [ ] Immediately after receiving `transcription_session.created`, send a `transcription_session.update` message to the OpenAI WebSocket to configure the session, including:
+       - `session.id` (the one received).
+       - `session.input_audio_format: "pcm16"` (matching client output).
+       - `session.input_audio_transcription.model: "gpt-4o-transcribe"`.
+       - `session.input_audio_transcription.language` (e.g., "en"; consider making this configurable or auto-detected if possible).
+       - `session.turn_detection` (configure VAD settings, e.g., `type: "server_vad"`, `silence_duration_ms: 2000` to align with client's 2s silence detection, or use default).
+       - `session.input_audio_noise_reduction` (e.g., `{ type: "near_field" }`).
+       - `session.include` (e.g., `["item.input_audio_transcription.logprobs"]` if needed for confidence scores, as per PRD's extended features).
+4. **Streaming Audio from Client to OpenAI Realtime API**
+   - [ ] For each binary WebSocket message (raw 16-kHz PCM audio chunk) received from the client:
+       - Base64 encode the audio chunk.
+       - Send an `input_audio_buffer.append` JSON message to the OpenAI WebSocket. The message should be structured like: `{ "type": "input_audio_buffer.append", "audio": "<base64_encoded_chunk>" }`.
+5. **Receiving Transcripts from OpenAI & Fan-out to Client**
+   - [ ] On receiving a message from the OpenAI WebSocket:
+       - If `event.type === "conversation.item.input_audio_transcription.delta"`:
+           - Extract the transcribed text: `text = event.delta`.
+           - Send to the connected client: `ws.send(JSON.stringify({ type: 'partial', text: text, isFinal: false }))`.
+       - If `event.type === "conversation.item.input_audio_transcription.completed"`:
+           - Extract the final transcribed text: `text = event.transcript`.
+           - Send to the connected client: `ws.send(JSON.stringify({ type: 'partial', text: text, isFinal: true }))`.
+       - Log other relevant events from OpenAI (e.g., `input_audio_buffer.speech_started`, `input_audio_buffer.speech_stopped`) for debugging or advanced state management if necessary.
+6. **Handling Client Finish Signal & Closing Connections**
+   - [ ] On receiving a `{"type":"finish"}` JSON message from the client, or if the client WebSocket closes unexpectedly:
+       - If VAD is disabled or manual commit is required by the chosen VAD configuration, send an `input_audio_buffer.commit` message to the OpenAI WebSocket.
+       - Gracefully close the WebSocket connection to OpenAI.
+       - Gracefully close the WebSocket connection to the client.
+7. **Error Handling & Logging (Backend to OpenAI)**
+   - [ ] Implement robust error handling for the OpenAI WebSocket connection itself (e.g., connection failures, errors sent by OpenAI).
+   - [ ] If the OpenAI WebSocket sends an error event or closes unexpectedly, relay an appropriate error status/message to our client and clean up resources.
+8. **Budget & Metrics (Realtime API)**
+   - [ ] **Investigate**: Determine how to capture audio duration and any available token/usage metrics from the OpenAI Realtime API for logging into the `tool_calls` table (with tool `gpt-4o-transcribe-realtime`). The Realtime API documentation does not immediately detail this; it may differ from the batch REST API.
+   - [ ] If direct metrics are unavailable, log at least the duration of the audio streamed (e.g., based on the lifetime of the OpenAI WebSocket connection or summed duration of audio chunks).
 
 ### 11.3 Client – Audio Capture & Streaming
 1. **AudioWorklet node**  
