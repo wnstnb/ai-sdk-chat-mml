@@ -32,8 +32,8 @@ export function ModelSelector({
         className={finalSelectClasses}
         disabled={disabled}
       >
-        <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-        <option value="gemini-2.5-flash-preview-04-17">Gemini 2.5 Flash</option>
+        {/* <option value="gemini-2.0-flash">Gemini 2.0 Flash</option> */}
+        <option value="gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash</option>
         <option value="gemini-2.5-pro-preview-05-06">Gemini 2.5 Pro</option>
         <option value="gpt-4o">GPT‑4o</option>
         <option value="gpt-4.1">GPT-4.1</option>

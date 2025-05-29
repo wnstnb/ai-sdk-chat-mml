@@ -116,7 +116,7 @@ const MESSAGE_LOAD_BATCH_SIZE = 20;
 const INITIAL_CHAT_PANE_WIDTH_PERCENT = 35;
 const MIN_CHAT_PANE_WIDTH_PX = 250;
 const MAX_CHAT_PANE_WIDTH_PERCENT = 70;
-const defaultModelFallback = 'gemini-2.0-flash'; // Define fallback
+const defaultModelFallback = 'gemini-2.5-flash-preview-05-20'; // Define fallback
 // NEW: Define mobile breakpoint query
 const MOBILE_BREAKPOINT_QUERY = '(max-width: 768px)'; // Corresponds to Tailwind's 'md'
 

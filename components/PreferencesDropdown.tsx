@@ -34,7 +34,7 @@ export const PreferencesDropdown: React.FC = () => {
   }
 
   // Ensure default_model has a fallback for ModelSelector if still null after init (shouldn't happen with current store logic, but safe)
-  const currentModel = default_model ?? 'gemini-2.0-flash'; // Use default from store logic
+  const currentModel = default_model ?? 'gemini-2.5-flash-preview-05-20'; // Use default from store logic
   const currentTheme = theme ?? 'light'; // Use default from store logic
   const currentEditorFontSize = editorFontSize ?? 1;
   const currentChatFontSize = chatFontSize ?? 1;

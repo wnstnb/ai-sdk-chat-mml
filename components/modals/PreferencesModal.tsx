@@ -69,7 +69,7 @@ const PreferencesModal: React.FC<PreferencesModalProps> = ({ isOpen, onClose }) 
   }
 
   // Ensure fallbacks for the values
-  const currentModel = default_model ?? 'gemini-2.0-flash';
+  const currentModel = default_model ?? 'gemini-2.5-flash-preview-05-20';
   const currentTheme = theme ?? 'dark';
   const currentEditorFontSize = editorFontSize ?? 1;
   const currentChatFontSize = chatFontSize ?? 1;
@@ -251,7 +251,7 @@ const PreferencesModal: React.FC<PreferencesModalProps> = ({ isOpen, onClose }) 
                 <div className="text-xs text-[--muted-text-color] space-y-1 pt-1">
                   <p><span className="font-medium text-[--text-color]">Email:</span> {billingInfo.email || '-'}</p>
                   <p><span className="font-medium text-[--text-color]">Billing Cycle:</span> {billingInfo.billing_cycle || '-'}</p>
-                  <p><span className="font-medium text-[--text-color]">Trial End At:</span> {billingInfo.trial_ends_at? new Date(billingInfo.trial_ends_at).toLocaleDateString() : '-'}</p>
+                  <p><span className="font-medium text-[--text-color]">Trial Ends At:</span> {billingInfo.trial_ends_at? new Date(billingInfo.trial_ends_at).toLocaleDateString() : '-'}</p>
                   <p><span className="font-medium text-[--text-color]">Subscription End:</span> {billingInfo.subscription_ends_at ? new Date(billingInfo.subscription_ends_at).toLocaleDateString() : '-'}</p>
                   <p><span className="font-medium text-[--text-color]">Status:</span> {billingInfo.stripe_subscription_status || '-'}</p>
                 </div>
