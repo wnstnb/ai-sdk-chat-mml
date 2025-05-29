@@ -1004,28 +1004,6 @@ export default function EditorPage() {
         };
     }, [documentId]);
 
-    // --- NEW: Effect for Mini-Pane Click-Off --- 
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (isMiniPaneOpen && 
-                miniPaneRef.current && 
-                !miniPaneRef.current.contains(event.target as Node) &&
-                miniPaneToggleRef.current && 
-                !miniPaneToggleRef.current.contains(event.target as Node)
-            ) {
-                setIsMiniPaneOpen(false);
-            }
-        };
-
-        if (isMiniPaneOpen) {
-            document.addEventListener('mousedown', handleClickOutside);
-        }
-
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, [isMiniPaneOpen, setIsMiniPaneOpen]);
-
     // --- Early Return Checks ---
     if (isLoadingDocument || isLoadingMessages) {
         return <div className="flex justify-center items-center h-screen bg-[--bg-color] text-[--text-color]">Loading document...</div>;
@@ -1134,16 +1112,14 @@ export default function EditorPage() {
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
             {/* --- Mini-Pane Container (Rendered conditionally) --- */}
-            {isMiniPaneOpen && (isChatCollapsed || (isMobile && mobileVisiblePane === 'editor')) && (
+            {isMiniPaneOpen && (isChatCollapsed || mobileVisiblePane !== 'chat') && (
                 <motion.div
                     ref={miniPaneRef}
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 20 }}
-                    transition={{ duration: 0.2, ease: 'easeInOut' }}
-                    className="absolute bottom-[70px] left-1/2 -translate-x-1/2 w-[clamp(300px,40%,500px)] max-h-[250px] bg-[--input-bg] border border-[--border-color] rounded-md shadow-lg z-[1050] flex flex-col overflow-hidden"
-                    // Style further: e.g., ensure ChatInputArea height is accounted for in `bottom`
-                    // The `bottom` value might need adjustment based on the actual height of ChatInputArea/EditorPaneWrapper\'s input section
+                    exit={{ opacity: 0, y: 10 }}
+                    transition={{ duration: 0.2 }}
+                    className="fixed bottom-[calc(var(--chat-input-area-height,174px)_+_8px)] left-0 right-0 mx-auto w-[calc(100%-2rem)] max-w-[700px] max-h-[350px] z-[1050] overflow-y-auto bg-[--input-bg] border border-[--border-color] rounded-md shadow-lg flex flex-col"
                 >
                     <div className="flex-1 overflow-y-auto styled-scrollbar p-2">
                         <ChatMessagesList 

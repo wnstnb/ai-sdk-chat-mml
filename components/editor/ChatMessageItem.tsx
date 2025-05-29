@@ -383,11 +383,16 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                     </div>
                 )}
                 {/* Timestamp for mini mode */}
-                {isMiniMode && message.createdAt && (
-                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5 text-right">
-                        {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
-                    </div>
-                )}
+                {isMiniMode && message.createdAt && (() => {
+                    if (message.role === 'assistant') {
+                        console.log('[ChatMessageItem MINI MODE ASSISTANT] createdAt:', message.createdAt, 'Type:', typeof message.createdAt);
+                    }
+                    return (
+                        <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5 text-right">
+                            {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
+                        </div>
+                    );
+                })()}
             </div>
         </motion.div>
     );
