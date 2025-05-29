@@ -79,6 +79,12 @@ interface EditorPaneWrapperProps {
     taggedDocuments: TaggedDocument[];
     setTaggedDocuments: React.Dispatch<React.SetStateAction<TaggedDocument[]>>;
     // --- END NEW ---
+    // --- NEW: Props for Mini-Pane toggle ---
+    isMiniPaneOpen?: boolean;
+    onToggleMiniPane?: () => void;
+    isMainChatCollapsed?: boolean;
+    miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
+    // --- END NEW ---
 }
 
 export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
@@ -128,6 +134,12 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     // --- NEW: Destructure shared tagged documents props ---
     taggedDocuments,
     setTaggedDocuments,
+    // --- END NEW ---
+    // --- NEW: Destructure Mini-Pane props ---
+    isMiniPaneOpen,
+    onToggleMiniPane,
+    isMainChatCollapsed,
+    miniPaneToggleRef, // Destructure the ref
     // --- END NEW ---
 }) => {
     // State for the pinned message bubble collapse state
@@ -309,6 +321,12 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 taggedDocuments={taggedDocuments}
                                 onAddTaggedDocument={handleAddTaggedDocument}
                                 onRemoveTaggedDocument={handleRemoveTaggedDocument}
+                                // --- NEW: Pass Mini-Pane props to ChatInputUI ---
+                                isMiniPaneOpen={isMiniPaneOpen}
+                                onToggleMiniPane={onToggleMiniPane}
+                                isMainChatCollapsed={isMainChatCollapsed}
+                                miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
+                                // --- END NEW ---
                             />
                         </form>
                     </div>

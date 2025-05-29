@@ -8,6 +8,7 @@ This document outlines the implementation details for a "mini-pane" feature for 
 *   Implementation should NOT Cause loss of EXISTING functionality for users to view messages, interact with message bubbles, add to editor, searching for tagged documents via chat, etc.
 *   Implentation should NOT cause loss of functionality for messages to be STORED and RETRIEVED by the app.
 *   Implementation should EXTEND functionality of the messages pane, meaning all its current functionality SHOULD WORK in the mini-pane. It is supposed to be a smaller version of it.
+*  To reiterate: ALL EXISTING FUNCTIONALITY OF THE MESSAGES WORKS 100% TODAY. **ANY LOSS OF EXISTING FUNCTIONALITY (tool calls, links, formatting, etc.) FROM IMPLEMENTING IS NOT ACCEPTABLE.** If changes are required: existing functionality/format MUST be restored after change is done.
 
 ## 2. User Experience and Interaction Flow
 

@@ -62,6 +62,12 @@ interface ChatInputAreaProps {
     // For document tagging - these props are still relevant
     taggedDocuments: TaggedDocument[];
     setTaggedDocuments: React.Dispatch<React.SetStateAction<TaggedDocument[]>>;
+    // --- NEW: Props for Mini-Pane toggle (from parent, passed to ChatInputUI) ---
+    isMiniPaneOpen?: boolean;
+    onToggleMiniPane?: () => void;
+    isMainChatCollapsed?: boolean;
+    miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
+    // --- END NEW ---
 }
 
 export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
@@ -101,6 +107,12 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     // --- END DESTRUCTURE CLEAR PREVIEW PROP ---
     taggedDocuments, // Destructure taggedDocuments
     setTaggedDocuments, // Destructure setTaggedDocuments
+    // --- NEW: Destructure Mini-Pane props ---
+    isMiniPaneOpen,
+    onToggleMiniPane,
+    isMainChatCollapsed,
+    miniPaneToggleRef, // Destructure the ref
+    // --- END NEW ---
 }) => {
     // const [showTagDropdown, setShowTagDropdown] = useState(false); // Removed
     // const [tagQuery, setTagQuery] = useState(''); // Removed
@@ -217,6 +229,12 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     taggedDocuments={taggedDocuments}
                     onAddTaggedDocument={handleAddTaggedDocument}
                     onRemoveTaggedDocument={handleRemoveTaggedDocument}
+                    // --- NEW: Pass Mini-Pane props to ChatInputUI ---
+                    isMiniPaneOpen={isMiniPaneOpen}
+                    onToggleMiniPane={onToggleMiniPane}
+                    isMainChatCollapsed={isMainChatCollapsed}
+                    miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
+                    // --- END NEW ---
                 />
             </form>
             {/* {showTagDropdown && dropdownPosition && ( // Removed old dropdown rendering

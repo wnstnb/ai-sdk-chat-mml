@@ -71,6 +71,12 @@ interface ChatInputUIProps {
     onAddTaggedDocument?: (doc: TaggedDocument) => void;
     onRemoveTaggedDocument?: (docId: string) => void; // <<< ADD THIS PROP TYPE
     // --- END Document Tagging Props ---
+    // --- NEW: Props for Mini-Pane toggle ---
+    isMiniPaneOpen?: boolean;
+    onToggleMiniPane?: () => void;
+    isMainChatCollapsed?: boolean;
+    miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
+    // --- END NEW ---
 }
 
 export const ChatInputUI: React.FC<ChatInputUIProps> = ({
@@ -110,6 +116,12 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     onAddTaggedDocument,
     onRemoveTaggedDocument, // <<< DESTRUCTURE THIS PROP
     // --- END Document Tagging Props DESTRUCTURED ---
+    // --- NEW: Destructure Mini-Pane props ---
+    isMiniPaneOpen,
+    onToggleMiniPane,
+    isMainChatCollapsed,
+    miniPaneToggleRef, // Destructure the ref
+    // --- END NEW ---
 }) => {
     // Tooltip state remains if needed elsewhere, otherwise remove
     const [showTooltip, setShowTooltip] = useState(false);
@@ -404,6 +416,21 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                         </div>
                        {/* Render the passed-in toggle icon button if it exists */}
                        {renderCollapsedMessageToggle}
+                       {/* --- NEW: Mini-Pane Toggle Button --- */}
+                       {isMainChatCollapsed && onToggleMiniPane && (
+                            <button
+                                ref={miniPaneToggleRef} // Apply the ref here
+                                type="button"
+                                onClick={onToggleMiniPane}
+                                className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
+                                aria-label={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
+                            >
+                                {/* Placeholder for a real icon, e.g., from lucide-react */}
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            </button>
+                       )}
+                       {/* --- END NEW --- */}
                     </div>
                 </div>
             </div>

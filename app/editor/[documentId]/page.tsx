@@ -142,6 +142,9 @@ export default function EditorPage() {
     const isContentLoadedRef = useRef<boolean>(false);
     const previousPathnameRef = useRef(pathname);
     const routerForReplace = useRouter(); 
+    // --- NEW: Refs for Mini-Pane click-off logic ---
+    const miniPaneRef = useRef<HTMLDivElement>(null);
+    const miniPaneToggleRef = useRef<HTMLButtonElement>(null); // Assuming ChatInputUI renders a button we can get a ref to, or adjust as needed
 
     // --- State Variables --- (Declare state early)
     const { default_model: preferredModel, isInitialized: isPreferencesInitialized } = usePreferenceStore();
@@ -160,6 +163,8 @@ export default function EditorPage() {
     const [isVersionHistoryModalOpen, setIsVersionHistoryModalOpen] = useState(false);
     // --- NEW: State for the form element (for callback ref) ---
     const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
+    // --- NEW: State for Mini-Pane ---
+    const [isMiniPaneOpen, setIsMiniPaneOpen] = useState(false);
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
@@ -999,6 +1004,28 @@ export default function EditorPage() {
         };
     }, [documentId]);
 
+    // --- NEW: Effect for Mini-Pane Click-Off --- 
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (isMiniPaneOpen && 
+                miniPaneRef.current && 
+                !miniPaneRef.current.contains(event.target as Node) &&
+                miniPaneToggleRef.current && 
+                !miniPaneToggleRef.current.contains(event.target as Node)
+            ) {
+                setIsMiniPaneOpen(false);
+            }
+        };
+
+        if (isMiniPaneOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isMiniPaneOpen, setIsMiniPaneOpen]);
+
     // --- Early Return Checks ---
     if (isLoadingDocument || isLoadingMessages) {
         return <div className="flex justify-center items-center h-screen bg-[--bg-color] text-[--text-color]">Loading document...</div>;
@@ -1072,10 +1099,19 @@ export default function EditorPage() {
     const handleToggleChat = () => {
         if (isMobile) {
             setMobileVisiblePane(pane => pane === 'chat' ? 'editor' : 'chat');
+            if (mobileVisiblePane === 'editor') { // If switching to chat, ensure mini-pane is closed
+                setIsMiniPaneOpen(false);
+            }
         } else {
             setIsChatCollapsed(!isChatCollapsed);
+            if (!isChatCollapsed) { // If main chat is being opened, close mini-pane
+                setIsMiniPaneOpen(false);
+            }
         }
     };
+
+    // --- NEW: Handler for Mini-Pane Toggle ---
+    const handleToggleMiniPane = () => setIsMiniPaneOpen(prev => !prev);
 
     // --- Render Logic ---
     // Find the last assistant message to pass down
@@ -1090,12 +1126,38 @@ export default function EditorPage() {
 
     // Main Render
     return (
-        <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden" 
+        <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden relative" 
             onDragOver={handleDragOver} 
             onDragLeave={handleDragLeave} 
             onDrop={handleDrop}
         >
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
+
+            {/* --- Mini-Pane Container (Rendered conditionally) --- */}
+            {isMiniPaneOpen && (isChatCollapsed || (isMobile && mobileVisiblePane === 'editor')) && (
+                <motion.div
+                    ref={miniPaneRef}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 20 }}
+                    transition={{ duration: 0.2, ease: 'easeInOut' }}
+                    className="absolute bottom-[70px] left-1/2 -translate-x-1/2 w-[clamp(300px,40%,500px)] max-h-[250px] bg-[--input-bg] border border-[--border-color] rounded-md shadow-lg z-[1050] flex flex-col overflow-hidden"
+                    // Style further: e.g., ensure ChatInputArea height is accounted for in `bottom`
+                    // The `bottom` value might need adjustment based on the actual height of ChatInputArea/EditorPaneWrapper\'s input section
+                >
+                    <div className="flex-1 overflow-y-auto styled-scrollbar p-2">
+                        <ChatMessagesList 
+                            chatMessages={chatMessages}
+                            isLoadingMessages={isLoadingMessages} // Or a mini-specific loading state if different
+                            isChatLoading={isChatLoading} // Or a mini-specific loading state
+                            handleSendToEditor={handleSendToEditor} // Actions should still work
+                            messagesEndRef={messagesEndRef} // May need a separate ref for mini-pane scroll
+                            onAddTaggedDocument={(doc) => { /* Define or pass handler */ }}
+                            displayMode="mini"
+                        />
+                    </div>
+                </motion.div>
+            )}
 
             {/* Conditional Rendering based on isMobile */}
             {isMobile ? (
@@ -1165,6 +1227,10 @@ export default function EditorPage() {
                                     clearPreview={clearPreview}
                                     taggedDocuments={taggedDocuments}
                                     setTaggedDocuments={setTaggedDocuments}
+                                    isMiniPaneOpen={isMiniPaneOpen}
+                                    onToggleMiniPane={handleToggleMiniPane}
+                                    isMainChatCollapsed={true} // For mobile, editor implies main chat is hidden
+                                    miniPaneToggleRef={miniPaneToggleRef} 
                                 />
                             </div>
                         </div>
@@ -1173,45 +1239,49 @@ export default function EditorPage() {
                          <div className="w-full h-full flex flex-col bg-[--bg-secondary] relative">
                              {/* ChatPaneWrapper */}
                              <ChatPaneWrapper
-                                 isChatCollapsed={false} // Pass false as chat is visible
-                                 chatMessages={chatMessages}
-                                 isLoadingMessages={isLoadingMessages}
-                                 isChatLoading={isChatLoading}
-                                 handleSendToEditor={handleSendToEditor}
-                                 messagesEndRef={messagesEndRef}
-                                 messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
-                                 input={input}
-                                 setInput={setInput}
-                                 taggedDocuments={taggedDocuments}
-                                 setTaggedDocuments={setTaggedDocuments}
-                                 handleInputChange={handleInputChange}
-                                 handleSubmit={handleSubmit}
-                                 model={model}
-                                 setModel={setModel}
-                                 stop={stop}
-                                 files={files}
-                                 handleFileChange={handleFileChange}
-                                 handlePaste={handlePaste}
-                                 handleUploadClick={handleUploadClick}
-                                 isUploading={isUploading}
-                                 uploadError={uploadError}
-                                 uploadedImagePath={uploadedImagePath}
-                                 followUpContext={followUpContext}
-                                 setFollowUpContext={setFollowUpContext}
-                                 formRef={formCallbackRef}
-                                 inputRef={inputRef}
-                                 fileInputRef={fileInputRef}
-                                 handleKeyDown={handleKeyDown}
-                                 initialChatPaneWidthPercent={100} // Full width
-                                 minChatPaneWidthPx={0} // No min width
-                                 isRecording={isRecording}
-                                 isTranscribing={isTranscribing}
-                                 micPermissionError={micPermissionError}
-                                 startRecording={startRecording}
-                                 stopRecording={stopRecording}
-                                 audioTimeDomainData={audioTimeDomainData}
-                                 clearPreview={clearPreview}
-                             />
+                                isChatCollapsed={false} // Pass false as chat is visible
+                                chatMessages={chatMessages}
+                                isLoadingMessages={isLoadingMessages}
+                                isChatLoading={isChatLoading}
+                                handleSendToEditor={handleSendToEditor}
+                                messagesEndRef={messagesEndRef}
+                                messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
+                                input={input}
+                                setInput={setInput}
+                                taggedDocuments={taggedDocuments}
+                                setTaggedDocuments={setTaggedDocuments}
+                                handleInputChange={handleInputChange}
+                                handleSubmit={handleSubmit}
+                                model={model}
+                                setModel={setModel}
+                                stop={stop}
+                                files={files}
+                                handleFileChange={handleFileChange}
+                                handlePaste={handlePaste}
+                                handleUploadClick={handleUploadClick}
+                                isUploading={isUploading}
+                                uploadError={uploadError}
+                                uploadedImagePath={uploadedImagePath}
+                                followUpContext={followUpContext}
+                                setFollowUpContext={setFollowUpContext}
+                                formRef={formCallbackRef}
+                                inputRef={inputRef}
+                                fileInputRef={fileInputRef}
+                                handleKeyDown={handleKeyDown}
+                                initialChatPaneWidthPercent={100} // Full width
+                                minChatPaneWidthPx={0} // No min width
+                                isRecording={isRecording}
+                                isTranscribing={isTranscribing}
+                                micPermissionError={micPermissionError}
+                                startRecording={startRecording}
+                                stopRecording={stopRecording}
+                                audioTimeDomainData={audioTimeDomainData}
+                                clearPreview={clearPreview}
+                                isMiniPaneOpen={isMiniPaneOpen}
+                                onToggleMiniPane={handleToggleMiniPane}
+                                isMainChatCollapsed={false} // Chat is visible here
+                                miniPaneToggleRef={miniPaneToggleRef}
+                            />
                          </div>
                     )}
                 </>
@@ -1282,6 +1352,10 @@ export default function EditorPage() {
                                 clearPreview={clearPreview}
                                 taggedDocuments={taggedDocuments}
                                 setTaggedDocuments={setTaggedDocuments}
+                                isMiniPaneOpen={isMiniPaneOpen}
+                                onToggleMiniPane={handleToggleMiniPane}
+                                isMainChatCollapsed={isChatCollapsed}
+                                miniPaneToggleRef={miniPaneToggleRef}
                             />
                         </div>
                     </div>
@@ -1353,6 +1427,10 @@ export default function EditorPage() {
                                     stopRecording={stopRecording}
                                     audioTimeDomainData={audioTimeDomainData}
                                     clearPreview={clearPreview}
+                                    isMiniPaneOpen={isMiniPaneOpen}
+                                    onToggleMiniPane={handleToggleMiniPane}
+                                    isMainChatCollapsed={isChatCollapsed}
+                                    miniPaneToggleRef={miniPaneToggleRef}
                                 />
                             </motion.div>
                         )}
