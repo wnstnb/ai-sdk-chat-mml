@@ -96,13 +96,13 @@ const searchAndTagDocumentsTool = tool({
 const modelProviders: Record<string, () => LanguageModel> = {
   "gpt-4o": () => openai("gpt-4o"),
   "gpt-4.1": () => openai("gpt-4.1"),
-  "gemini-2.5-flash-preview-04-17": () => google("gemini-2.5-flash-preview-04-17"),
+  "gemini-2.5-flash-preview-05-20": () => google("gemini-2.5-flash-preview-05-20"),
   "gemini-2.5-pro-preview-05-06": () => google("gemini-2.5-pro-preview-05-06"),
-  "gemini-2.0-flash": () => google("gemini-2.0-flash"),
+//   "gemini-2.0-flash": () => google("gemini-2.0-flash"),
 };
 
 // Define the default model ID
-const defaultModelId = "gemini-2.0-flash";
+const defaultModelId = "gemini-2.5-flash-preview-05-20";
 
 // System Prompt updated for Tool Calling, Web Search, and direct Table Markdown modification
 const systemPrompt = `# SYSTEM PROMPT: Collaborative Editor AI Assistant

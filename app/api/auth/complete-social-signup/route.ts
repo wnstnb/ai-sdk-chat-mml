@@ -11,8 +11,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 // Constants for Stripe Price IDs (should match frontend or be centrally managed)
 // TODO: Ensure these are the correct and live Price IDs for your Stripe products
 const STRIPE_PRICE_IDS = {
-  monthly: process.env.STRIPE_PRICE_ID_MONTHLY || 'price_1RR50wP5ZTVXN3kSg2UPq3OS', // Example, replace with actual env var or ID
-  annual: process.env.STRIPE_PRICE_ID_ANNUAL || 'price_1RR50CP5ZTVXN3kS4WaKvfQ6',    // Example, replace with actual env var or ID
+  monthly: process.env.STRIPE_PRICE_ID_MONTHLY || 'price_1RQXg5P5ZTVXN3kSlh5Pk9CJ', // Example, replace with actual env var or ID
+  annual: process.env.STRIPE_PRICE_ID_ANNUAL || 'price_1RQXh2P5ZTVXN3kSicpHUmdd',    // Example, replace with actual env var or ID
 };
 
 export async function POST(request: Request) {
