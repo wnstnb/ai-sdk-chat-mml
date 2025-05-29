@@ -6,6 +6,7 @@ export interface ModalState {
   isVersionHistoryModalOpen: boolean;
   isFileBrowserModalOpen: boolean;
   isNewDocumentModalOpen: boolean;
+  isPreferencesModalOpen: boolean;
   openSearchModal: () => void;
   closeSearchModal: () => void;
   openVersionHistoryModal: () => void;
@@ -14,6 +15,8 @@ export interface ModalState {
   closeFileBrowserModal: () => void;
   openNewDocumentModal: () => void;
   closeNewDocumentModal: () => void;
+  openPreferencesModal: () => void;
+  closePreferencesModal: () => void;
 }
 
 export const useModalStore = create<ModalState>()(
@@ -23,6 +26,7 @@ export const useModalStore = create<ModalState>()(
       isVersionHistoryModalOpen: false,
       isFileBrowserModalOpen: false,
       isNewDocumentModalOpen: false,
+      isPreferencesModalOpen: false,
       openSearchModal: () => set({ isSearchModalOpen: true }),
       closeSearchModal: () => set({ isSearchModalOpen: false }),
       openVersionHistoryModal: () => set({ isVersionHistoryModalOpen: true }),
@@ -32,6 +36,8 @@ export const useModalStore = create<ModalState>()(
       closeFileBrowserModal: () => set({ isFileBrowserModalOpen: false }),
       openNewDocumentModal: () => set({ isNewDocumentModalOpen: true }),
       closeNewDocumentModal: () => set({ isNewDocumentModalOpen: false }),
+      openPreferencesModal: () => set({ isPreferencesModalOpen: true }),
+      closePreferencesModal: () => set({ isPreferencesModalOpen: false }),
     }),
     {
       name: "modal-storage",

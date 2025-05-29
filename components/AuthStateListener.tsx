@@ -3,10 +3,12 @@ import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client'; // Your client-side Supabase instance
 import { useAuthStore } from '@/lib/stores/useAuthStore';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // Import preference store
+import { useRouter } from 'next/navigation'; // Add this import
 
 export function AuthStateListener({ children }: { children: React.ReactNode }) {
   const { setIsAuthenticated, setUser } = useAuthStore();
   const { fetchPreferences } = usePreferenceStore(); // Get fetchPreferences
+  const router = useRouter(); // Initialize the router
 
   useEffect(() => {
     // Initial check for session on component mount
@@ -44,7 +46,8 @@ export function AuthStateListener({ children }: { children: React.ReactNode }) {
         setUser(null);
         // Optionally, reset preference store theme to default when signed out
         // usePreferenceStore.getState().resetToDefaults(); // You'd need to add a reset action to your preference store
-        console.log('[AuthStateListener] User SIGNED_OUT.');
+        console.log('[AuthStateListener] User SIGNED_OUT, redirecting to /login.');
+        router.push('/login'); // Add this line
       } else if (event === 'USER_UPDATED' && session?.user) {
         setUser(session.user);
         console.log('[AuthStateListener] User data UPDATED.');
@@ -70,7 +73,7 @@ export function AuthStateListener({ children }: { children: React.ReactNode }) {
       authListener?.subscription.unsubscribe();
       console.log('[AuthStateListener] Unsubscribed from auth state changes.');
     };
-  }, [setIsAuthenticated, setUser, fetchPreferences]);
+  }, [setIsAuthenticated, setUser, fetchPreferences, router]); // Add router to dependency array
 
   return <>{children}</>;
 } 

@@ -5,7 +5,7 @@ import Header from '@/components/header';
 import { usePathname } from 'next/navigation';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore';
 import { useAuthStore } from '@/lib/stores/useAuthStore';
-import { SearchModal } from '@/components/search/SearchModal';
+import { useModalStore } from '@/stores/useModalStore';
 
 interface ThemeHandlerProps {
   children: React.ReactNode;
@@ -20,9 +20,9 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     isInitialized: isPrefStoreInitialized,
   } = usePreferenceStore();
   const { isAuthenticated } = useAuthStore();
+  const openSearchModal = useModalStore((state) => state.openSearchModal);
 
   const [isMounted, setIsMounted] = useState(false);
-  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
   // Set mounted state after initial render
   useEffect(() => {
@@ -86,18 +86,12 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
         <Header 
           currentTheme={headerTheme} 
           onToggleTheme={handleToggleTheme} 
-          onOpenSearch={() => setIsSearchModalOpen(true)}
+          onOpenSearch={openSearchModal}
         />
       )}
       <main className={`flex-grow overflow-y-auto ${(!isMounted || !showHeader) ? 'h-screen' : ''}`}>
         {children}
       </main>
-      {isMounted && isSearchModalOpen && (
-        <SearchModal 
-          isOpen={isSearchModalOpen} 
-          onClose={() => setIsSearchModalOpen(false)} 
-        />
-      )}
     </div>
   );
 };

@@ -6,7 +6,6 @@ import { SearchIcon, Home, FolderOpen } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '../lib/supabase/client';
-import { PreferencesDropdown } from './PreferencesDropdown';
 import { useModalStore } from '@/stores/useModalStore';
 
 interface HeaderProps {
@@ -18,10 +17,8 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSearch }) => {
   const router = useRouter();
   const pathname = usePathname();
-  const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
   const openFileBrowserModal = useModalStore((state) => state.openFileBrowserModal);
+  const openPreferencesModal = useModalStore((state) => state.openPreferencesModal);
 
   const onLogout = async () => {
     console.log('Attempting logout...');
@@ -33,29 +30,6 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
       router.push('/login');
     }
   };
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node) &&
-        triggerRef.current &&
-        !triggerRef.current.contains(event.target as Node)
-      ) {
-        setIsPreferencesOpen(false);
-      }
-    };
-
-    if (isPreferencesOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    } else {
-      document.removeEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isPreferencesOpen]);
 
   return (
     <header className="app-header">
@@ -79,7 +53,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
 
         {/* Actions */}
         <div className="header-actions ml-auto">
-          {/* ADDED: Search Icon Button */}
+          {/* Search Icon Button */}
           <button
             onClick={onOpenSearch}
             className="theme-toggle text-[--text-color] hover:text-[--primary-color] hover:bg-transparent transition-colors"
@@ -88,7 +62,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
             <SearchIcon className="h-5 w-5" />
           </button>
 
-          {/* New File Browser Modal Button */}
+          {/* File Browser Modal Button */}
           <button
             onClick={openFileBrowserModal}
             className="theme-toggle text-[--text-color] hover:text-[--primary-color] hover:bg-transparent transition-colors"
@@ -113,29 +87,14 @@ const Header: React.FC<HeaderProps> = ({ onToggleTheme, currentTheme, onOpenSear
           {/* Logout Button */}
           <button onClick={onLogout} className="sign-out-button">Logout</button>
 
-          {/* Preferences Dropdown Trigger */}
-          <div className="relative">
-            <button
-              ref={triggerRef}
-              onClick={() => setIsPreferencesOpen(!isPreferencesOpen)}
-              className="theme-toggle p-0 text-[--text-color] hover:text-[--primary-color] hover:bg-transparent transition-colors"
-              aria-label="User Preferences"
-              aria-expanded={isPreferencesOpen}
-              aria-haspopup="true"
-            >
-              <Cog6ToothIcon className="h-5 w-5" />
-            </button>
-
-            {isPreferencesOpen && (
-              <div
-                ref={dropdownRef}
-                className="absolute top-full right-0 mt-2 z-50"
-                role="menu"
-              >
-                <PreferencesDropdown />
-              </div>
-            )}
-          </div>
+          {/* Preferences Modal Trigger */}
+          <button
+            onClick={openPreferencesModal}
+            className="theme-toggle p-0 text-[--text-color] hover:text-[--primary-color] hover:bg-transparent transition-colors"
+            aria-label="Open Preferences"
+          >
+            <Cog6ToothIcon className="h-5 w-5" />
+          </button>
         </div>
       </div>
     </header>
