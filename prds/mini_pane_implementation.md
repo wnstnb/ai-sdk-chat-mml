@@ -100,58 +100,75 @@ This section details the phased approach to implementing the mini-pane feature.
 
 1.  **Modify `ChatMessagesListProps` in `components/editor/ChatMessagesList.tsx`:**
     *   Add an optional prop `displayMode?: 'full' | 'mini';`.
-    *   Ensure it defaults to `'full'` if not provided.
+    *   Set the default value in the component's destructuring: `displayMode = 'full'`.
 2.  **Update `ChatMessagesList` Component (`components/editor/ChatMessagesList.tsx`):**
     *   Accept the `displayMode` prop.
     *   Pass the `displayMode` prop down to each `ChatMessageItem` component instance.
     *   Conditionally render the "No Messages" placeholder:
-        *   If `displayMode` is `'mini'`, render a very compact version (e.g., `<div className="text-center p-2 text-xs text-zinc-500"><p>No messages yet.</p></div>`).
+        *   If `displayMode` is `'mini'`, render a very compact version (e.g., `<div className="text-center p-2 text-xs text-zinc-500"><p>No messages.</p></div>`).
         *   Else, render the existing `motion.div` placeholder.
-    *   Conditionally adapt the `isLoadingMessages` indicator:
-        *   If `displayMode` is `'mini'`, consider using a smaller spinner or more concise text.
+    *   Conditionally adapt the `isLoadingMessages` (initial history load) indicator:
+        *   If `displayMode` is `'mini'`, use more concise text like "Loading..." or a small, unobtrusive spinner icon. The existing three-dot animation used for `isChatLoading` (assistant responding) is already suitable for mini mode if reused or adapted.
         *   Else, use the existing "Loading messages..." text.
-    *   The `isChatLoading` (assistant responding) indicator might be suitable for both modes as is, but review for potential scaling if needed in mini mode.
-3.  **Identify/Prepare the Parent Component:**
-    *   Locate the React component that currently manages the pinned chat input bar and the logic for the message preview (and its recall button).
+3.  **Identify/Prepare the Parent Component (`app/editor/[documentId]/page.tsx`):**
+    *   This component already manages chat visibility (`isChatCollapsed`, `mobileVisiblePane`) and the toggle button.
     *   In this parent component, introduce a new state variable: `const [isMiniPaneOpen, setIsMiniPaneOpen] = useState(false);`.
-4.  **Modify Preview Recall Button Logic:**
-    *   Update the event handler for the button (that currently recalls the message preview) to toggle the `isMiniPaneOpen` state (e.g., `setIsMiniPaneOpen(prev => !prev);`).
+4.  **Integrate Mini-Pane Toggle Logic:**
+    *   **State Management in `app/editor/[documentId]/page.tsx`:**
+        *   Confirm the state `const [isMiniPaneOpen, setIsMiniPaneOpen] = useState(false);` is present.
+        *   Define the callback: `const handleToggleMiniPane = () => setIsMiniPaneOpen(prev => !prev);`.
+    *   **Prop Drilling from `app/editor/[documentId]/page.tsx` down to `components/editor/ChatInputArea.tsx` (potentially through `EditorPaneWrapper.tsx`):**
+        *   Pass `isMiniPaneOpen` (Boolean, for the button's visual state if it changes, e.g., tooltip text).
+        *   Pass `onToggleMiniPane` (the function defined above).
+        *   Pass `isMainChatCollapsed` (Boolean, derived from `isChatCollapsed` or `mobileVisiblePane !== 'chat'` in `page.tsx`). This determines the new button's visibility.
+    *   **New Mini-Pane Toggle Button in `components/editor/ChatInputArea.tsx`:**
+        *   Receive `isMainChatCollapsed`, `isMiniPaneOpen`, and `onToggleMiniPane` as props.
+        *   Conditionally render a *new, distinct button* if `isMainChatCollapsed` is `true`. This button is specifically for the mini-pane and is separate from the existing main chat pane toggle.
+            *   **Placement:** Position this button appropriately within the `ChatInputArea` layout, near the input field.
+            *   **Styling:** Style to be clear and accessible, fitting with the existing UI controls.
+            *   **Icon:** Use a suitable icon (e.g., chat history, stacked messages icon).
+            *   **Action:** Its `onClick` handler must call the received `onToggleMiniPane` function.
+            *   **Tooltip/Aria-label:** Dynamically set based on `isMiniPaneOpen` (e.g., "Show Chat History" / "Hide Chat History").
+    *   **Ensure Existing Main Chat Toggle in `app/editor/[documentId]/page.tsx` Closes Mini-Pane:**
+        *   Modify the `handleToggleChat` function (or the logic that toggles the main chat pane visibility).
+        *   When this function is invoked to *open* the main chat pane (i.e., `isChatCollapsed` becomes `false`, or on mobile, `mobileVisiblePane` becomes `'chat'`), it must also ensure the mini-pane is closed by calling `setIsMiniPaneOpen(false)`.
 
 ### Phase 2: `ChatMessageItem` Adaptation for Mini Mode
 
 **Goal:** Implement the compact visual representation for individual messages.
 
 1.  **Modify `ChatMessageItemProps` in `components/editor/ChatMessageItem.tsx`:**
-    *   Add an optional prop `displayMode?: 'full' | 'mini';`.
+    *   Add an optional prop `displayMode?: 'full' | 'mini';` (defaulting to `'full'` if not passed, e.g., `displayMode = 'full'` in destructuring).
 2.  **Update `ChatMessageItem` Component (`components/editor/ChatMessageItem.tsx`):**
     *   Accept the `displayMode` prop.
     *   Based on `displayMode === 'mini'`:
         *   Apply conditional styling (e.g., using `clsx` or utility classes) to reduce font sizes for message text, sender, and timestamps.
         *   Reduce padding and margins within and around the item.
-        *   Use smaller avatars for user/bot icons (or make them optional if space is extremely tight).
+        *   Use smaller avatars for user/bot icons.
         *   Re-style action buttons ("Send to Editor," "Add Tagged Document"):
-            *   Consider using smaller icon-only buttons.
-            *   Alternatively, reveal actions on hover to save static space.
-        *   For images or complex data within messages: ensure they scale down gracefully or have a simplified representation in mini mode. The `getTextFromDataUrl` usage might need review if images are handled differently.
+            *   Use smaller icon-only buttons.
+            *   Alternatively, reveal actions on hover.
+        *   For images or complex data within messages (e.g., previews from `TextFilePreview` if used, or image parts): ensure they scale down gracefully. The `getTextFromDataUrl` function seems primarily for `TextFilePreview` and might not directly impact standard message rendering unless data URLs are embedded in message content for text extraction, which is unlikely for main display. Focus on visual scaling of image parts if they appear in messages.
 
 ### Phase 3: Mini-Pane Container and Display Logic
 
 **Goal:** Render and style the mini-pane overlay.
 
-1.  **In the Parent Component (from Phase 1.3):**
-    *   Conditionally render the mini-pane container `div` when `isMiniPaneOpen` is `true`.
+1.  **In `app/editor/[documentId]/page.tsx` (Parent Component):**
+    *   Conditionally render the mini-pane container `div` when `isMiniPaneOpen` is `true` AND the main chat pane is collapsed (`isChatCollapsed` is true, or on mobile, `mobileVisiblePane` is not `'chat'`).
     *   **Styling the Container:**
-        *   `position: absolute` (or `fixed` depending on the relation to the pinned input bar's positioning).
-        *   `z-index` to ensure it overlays other content.
-        *   `bottom`: Position it anchored above the pinned input bar.
-        *   `left`, `right` or `width`: Define its horizontal span (e.g., match pinned input bar width).
-        *   `max-height`: (e.g., `200px` or `250px`).
+        *   `position: fixed` (or `absolute` relative to a full-viewport wrapper if available) to overlay the document.
+        *   `bottom`: Position it anchored above/near the pinned chat input area. The exact value will depend on the pinned input's height and desired spacing.
+        *   `left`, `right` or `width`: Define its horizontal span. E.g., `width: 'clamp(300px, 40%, 500px)'` centered, or aligned to one side spanning a portion of the screen. Values TBD, subject to design.
+        *   `max-height`: e.g., `'250px'` or `'30vh'`.
+        *   `z-index`: A high value (e.g., `1050` if other overlays like modals are `1000`).
         *   `overflow-y: auto` for scrollability.
-        *   `background-color`, `border`, `border-radius`, `box-shadow` for visual appearance and separation.
+        *   `background-color`, `border`, `border-radius`, `box-shadow` for visual appearance. E.g., `bg-[--input-bg]`, `border border-[--border-color]`, `rounded-md`, `shadow-lg`.
+        *   Implement a subtle fade-in animation (e.g., using `framer-motion` if already in use, or simple CSS transitions).
     *   Inside this container, render `<ChatMessagesList ... chatMessages={chatMessages} ... displayMode="mini" />`, passing all necessary props.
-2.  **Implement "Click-Off" to Close:**
-    *   Add a `useEffect` hook in the parent component that listens for clicks outside the mini-pane.
-    *   If `isMiniPaneOpen` is true and a click occurs outside the mini-pane container AND outside the toggle button, set `isMiniPaneOpen` to `false`. (Requires careful handling of refs to the pane and button).
+2.  **Implement "Click-Off" to Close in `app/editor/[documentId]/page.tsx`:**
+    *   Add a `useEffect` hook that listens for clicks on `document`.
+    *   If `isMiniPaneOpen` is true and a click occurs outside the mini-pane container (use a ref for the container) AND outside the mini-pane toggle button (if that button is separate and also needs a ref), set `isMiniPaneOpen` to `false`. (Requires careful `ref.current.contains(event.target)` checks).
 
 ### Phase 4: Refinements and Testing
 
@@ -160,7 +177,7 @@ This section details the phased approach to implementing the mini-pane feature.
 1.  **Visual Polish:**
     *   Fine-tune all `mini` mode styles for `ChatMessagesList` and `ChatMessageItem` for clarity, aesthetics, and information density.
     *   Ensure scrollbar styling (`styled-scrollbar`) is applied and looks good in the compact view.
-    *   Verify the transition/animation of the mini-pane appearing/disappearing (if any).
+    *   Verify the subtle fade-in animation for the mini-pane.
 2.  **Functional Testing:**
     *   Test all message types (text, with data, tool calls if applicable) in mini mode.
     *   Verify all actions ("Send to Editor," "Add Tagged Document") work correctly from the mini-pane.
