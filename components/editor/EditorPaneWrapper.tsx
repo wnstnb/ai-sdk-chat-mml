@@ -79,6 +79,10 @@ interface EditorPaneWrapperProps {
     taggedDocuments: TaggedDocument[];
     setTaggedDocuments: React.Dispatch<React.SetStateAction<TaggedDocument[]>>;
     // --- END NEW ---
+
+    /** Mini chat history pane state & toggle */
+    isMiniPaneOpen: boolean;
+    onToggleMiniPane: () => void;
 }
 
 export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
@@ -128,6 +132,8 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     // --- NEW: Destructure shared tagged documents props ---
     taggedDocuments,
     setTaggedDocuments,
+    isMiniPaneOpen,
+    onToggleMiniPane,
     // --- END NEW ---
 }) => {
     // State for the pinned message bubble collapse state
@@ -198,6 +204,28 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
             </TooltipProvider>
         );
     }, [lastMessageContent]); // Re-create only if last message content changes
+
+    // Mini pane toggle button – always visible when chat is collapsed
+    const miniPaneToggle = React.useMemo(() => (
+        <TooltipProvider delayDuration={100}>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={onToggleMiniPane}
+                        aria-label={isMiniPaneOpen ? 'Hide chat history' : 'Show chat history'}
+                    >
+                        <MessageSquare size={18} className={isMiniPaneOpen ? 'text-primary' : ''} />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="bg-background text-foreground border shadow-md">
+                    {isMiniPaneOpen ? 'Hide chat history' : 'Show chat history'}
+                </TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
+    ), [isMiniPaneOpen, onToggleMiniPane]);
 
     return (
         <div className="flex-1 flex flex-col relative bg-[--editor-bg] overflow-hidden">
@@ -279,9 +307,12 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 key={isChatCollapsed ? 'collapsed-input' : 'unmounted'}
                                 // Pass down the toggle button only when appropriate
                                 renderCollapsedMessageToggle={
-                                    !followUpContext && lastMessageContent && isMessageBubbleCollapsed
-                                        ? collapsedMessageToggle
-                                        : undefined
+                                    <div className="flex items-center gap-1">
+                                        {/* Bubble recall toggle */}
+                                        {!followUpContext && lastMessageContent && isMessageBubbleCollapsed && collapsedMessageToggle}
+                                        {/* Mini pane toggle */}
+                                        {miniPaneToggle}
+                                    </div>
                                 }
                                 files={files} 
                                 fileInputRef={fileInputRef} 

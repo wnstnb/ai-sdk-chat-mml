@@ -33,6 +33,10 @@ interface ChatMessageItemProps {
     message: Message;
     handleSendToEditor: (content: string) => void;
     onAddTaggedDocument: (doc: TaggedDocument) => void;
+    /**
+     * Visual density mode passed down from ChatMessagesList. Defaults to `'full'`.
+     */
+    displayMode?: 'full' | 'mini';
 }
 
 // --- Helper Function to Extract User Display Content ---
@@ -65,7 +69,8 @@ type ContentPart = TextPart | ImagePart | ToolCallPart | ToolInvocationPart; // 
 export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({ 
     message, 
     handleSendToEditor,
-    onAddTaggedDocument
+    onAddTaggedDocument,
+    displayMode = 'full'
 }) => {
     // console.log('[ChatMessageItem] Rendering message:', JSON.stringify(message, null, 2));
     
@@ -197,18 +202,27 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
         }
     };
 
+    // Tailor spacing & text size based on display mode
+    const containerClass = displayMode === 'mini'
+        ? 'flex flex-row gap-2 w-full mb-2 md:px-0'
+        : 'flex flex-row gap-2 w-full mb-4 md:px-0';
+
+    const messageBubbleClass = displayMode === 'mini'
+        ? 'flex flex-col gap-1 flex-grow break-words overflow-hidden p-1.5 rounded-md bg-[--message-bg] shadow-sm text-xs'
+        : 'flex flex-col gap-1 flex-grow break-words overflow-hidden p-2 rounded-md bg-[--message-bg] shadow-sm';
+
     return (
         <motion.div
             key={message.id}
-            className={`flex flex-row gap-2 w-full mb-4 md:px-0`} 
+            className={containerClass}
             initial={{ y: 5, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.2 }}
         >
-            <div className="size-[24px] flex flex-col justify-start items-center flex-shrink-0 text-zinc-400 pt-1">
+            <div className={`flex flex-col justify-start items-center flex-shrink-0 text-zinc-400 pt-1 ${displayMode === 'mini' ? 'size-[18px]' : 'size-[24px]' }`}>
                 {message.role === 'assistant' ? <BotIcon /> : <UserIcon />}
             </div>
-            <div className="flex flex-col gap-1 flex-grow break-words overflow-hidden p-2 rounded-md bg-[--message-bg] shadow-sm">
+            <div className={messageBubbleClass}>
                 {/* 1. Render the main text content (if it exists) */}
                 {(typeof message.content === 'string' && message.content.trim()) && (
                     <div className="prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 mb-2">
@@ -353,9 +367,9 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                     <div className="mt-1 flex justify-end">
                         <button
                             onClick={() => handleSendToEditor(displayableRawText)}
-                            className="p-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-md focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500"
+                            className={`p-1 rounded-md focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500 ${displayMode === 'mini' ? 'text-zinc-400 hover:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'}`}
                             title="Send to Editor">
-                            <SendToBack size={14} />
+                            <SendToBack size={displayMode === 'mini' ? 12 : 14} />
                         </button>
                     </div>
                 )}

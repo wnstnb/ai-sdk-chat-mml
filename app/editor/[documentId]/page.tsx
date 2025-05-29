@@ -142,6 +142,8 @@ export default function EditorPage() {
     const isContentLoadedRef = useRef<boolean>(false);
     const previousPathnameRef = useRef(pathname);
     const routerForReplace = useRouter(); 
+    const miniPaneRef = useRef<HTMLDivElement>(null);
+    const miniMessagesEndRef = useRef<HTMLDivElement>(null);
 
     // --- State Variables --- (Declare state early)
     const { default_model: preferredModel, isInitialized: isPreferencesInitialized } = usePreferenceStore();
@@ -160,6 +162,8 @@ export default function EditorPage() {
     const [isVersionHistoryModalOpen, setIsVersionHistoryModalOpen] = useState(false);
     // --- NEW: State for the form element (for callback ref) ---
     const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
+    // --- NEW: State for mini chat history pane ---
+    const [isMiniPaneOpen, setIsMiniPaneOpen] = useState(false);
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
@@ -1072,10 +1076,47 @@ export default function EditorPage() {
     const handleToggleChat = () => {
         if (isMobile) {
             setMobileVisiblePane(pane => pane === 'chat' ? 'editor' : 'chat');
+            // Close mini pane on mobile toggle just in case
+            setIsMiniPaneOpen(false);
         } else {
+            const willOpen = isChatCollapsed; // if currently collapsed, it will open
             setIsChatCollapsed(!isChatCollapsed);
+            if (willOpen) {
+                // If main chat is about to open, ensure mini pane is closed to avoid duplication
+                setIsMiniPaneOpen(false);
+            }
         }
     };
+
+    // --- NEW: Mini pane toggle handler ---
+    const handleToggleMiniPane = () => {
+        setIsMiniPaneOpen(prev => !prev);
+    };
+
+    // Close mini pane automatically when main chat becomes visible (desktop) or mobile view switches
+    useEffect(() => {
+        if (!isChatCollapsed) {
+            setIsMiniPaneOpen(false);
+        }
+    }, [isChatCollapsed]);
+
+    // Close mini pane when clicking outside
+    useEffect(() => {
+        function handleClickOutside(e: MouseEvent) {
+            if (!isMiniPaneOpen) return;
+            if (miniPaneRef.current && !miniPaneRef.current.contains(e.target as Node)) {
+                setIsMiniPaneOpen(false);
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [isMiniPaneOpen]);
+
+    useEffect(() => {
+        if (isMobile && mobileVisiblePane === 'chat') {
+            setIsMiniPaneOpen(false);
+        }
+    }, [isMobile, mobileVisiblePane]);
 
     // --- Render Logic ---
     // Find the last assistant message to pass down
@@ -1178,7 +1219,7 @@ export default function EditorPage() {
                                  isLoadingMessages={isLoadingMessages}
                                  isChatLoading={isChatLoading}
                                  handleSendToEditor={handleSendToEditor}
-                                 messagesEndRef={messagesEndRef}
+                                 messagesEndRef={miniMessagesEndRef}
                                  messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
                                  input={input}
                                  setInput={setInput}
@@ -1320,7 +1361,7 @@ export default function EditorPage() {
                                     isLoadingMessages={isLoadingMessages}
                                     isChatLoading={isChatLoading}
                                     handleSendToEditor={handleSendToEditor}
-                                    messagesEndRef={messagesEndRef}
+                                    messagesEndRef={miniMessagesEndRef}
                                     messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
                                     input={input}
                                     setInput={setInput}
@@ -1399,6 +1440,29 @@ export default function EditorPage() {
                 />
             )}
             {/* --- END NEW --- */}
+
+            {/* --- Mini Chat History Pane Overlay --- */}
+            {isMiniPaneOpen && !isMobile && isChatCollapsed && (
+                <div
+                    ref={miniPaneRef}
+                    className="fixed bottom-24 right-4 z-[1050] w-[clamp(300px,40%,500px)] max-h-[250px] bg-[--bg-secondary] border border-[--border-color] rounded-md shadow-lg overflow-y-auto"
+                >
+                    <ChatMessagesList
+                        chatMessages={chatMessages}
+                        isLoadingMessages={isLoadingMessages}
+                        isChatLoading={isChatLoading}
+                        handleSendToEditor={handleSendToEditor}
+                        messagesEndRef={miniMessagesEndRef}
+                        messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
+                        onAddTaggedDocument={(doc) => {
+                            if (!taggedDocuments.find(d => d.id === doc.id)) {
+                                setTaggedDocuments(prev => [...prev, doc]);
+                            }
+                        }}
+                        displayMode="mini"
+                    />
+                </div>
+            )}
         </div>
     );
 } 
