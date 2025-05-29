@@ -145,7 +145,7 @@ export const DocumentSearchInput: React.FC<DocumentSearchInputProps> = ({ onDocu
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 disabled={disabled}
-                className="text-xs w-full px-3 py-1.5 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white dark:focus:ring-blue-600 dark:focus:border-blue-600" // Added styling classes
+                className="text-xs w-full px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white dark:focus:ring-blue-600 dark:focus:border-blue-600" // Adjusted padding
                 onFocus={() => query.length > 0 && results.length > 0 && setShowDropdown(true)} // Show dropdown on focus if there are results
             />
             {showDropdown && (

@@ -290,11 +290,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                             <ChatInputUI 
                                 key={isChatCollapsed ? 'collapsed-input' : 'unmounted'}
                                 // Pass down the toggle button only when appropriate
-                                renderCollapsedMessageToggle={
-                                    !followUpContext && lastMessageContent && isMessageBubbleCollapsed
-                                        ? collapsedMessageToggle
-                                        : undefined
-                                }
+                                renderCollapsedMessageToggle={undefined}
                                 files={files} 
                                 fileInputRef={fileInputRef} 
                                 handleFileChange={handleFileChange} 

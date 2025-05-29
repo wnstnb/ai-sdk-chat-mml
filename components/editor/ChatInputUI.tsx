@@ -2,7 +2,7 @@
 
 import React, { useEffect, useLayoutEffect, KeyboardEvent, useState, useRef, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { MicIcon, StopCircleIcon, X } from 'lucide-react';
+import { MicIcon, StopCircleIcon, X, History, GalleryVerticalEnd, ImageUp } from 'lucide-react';
 import { AttachmentIcon, SendIcon } from '@/components/icons';
 import { ModelSelector } from '@/components/ModelSelector';
 import { TextFilePreview } from './TextFilePreview'; // Import from sibling file
@@ -393,7 +393,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                             className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Attach Image"
                         >
-                            <span className="w-5 h-5 block"><AttachmentIcon aria-hidden="true" /></span>
+                            <span className="w-5 h-5 block"><ImageUp aria-hidden="true" /></span>
                         </button>
                         <div className="relative w-8 h-8 flex items-center justify-center">
                             {showLoadingSpinner && (
@@ -426,8 +426,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                                 title={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
                                 aria-label={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
                             >
-                                {/* Placeholder for a real icon, e.g., from lucide-react */}
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                                {isMiniPaneOpen ? <X size={20} /> : <GalleryVerticalEnd size={20} />}
                             </button>
                        )}
                        {/* --- END NEW --- */}
