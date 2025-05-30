@@ -5,6 +5,7 @@ import Link from 'next/link'; // Added Link import
 import { ArrowRight, BrainCircuit, Clock, Layers, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button"; // Correct import path
 import { motion, AnimatePresence } from "framer-motion"; // Import AnimatePresence
+import FeaturesCarouselSection from "@/components/landing/FeaturesCarouselSection";
 
 // Define the type for features explicitly
 interface Feature {
@@ -214,8 +215,13 @@ export default function LandingPageContent() {
             </section>
           </div>
 
-          {/* New Tabbed Features Section */}
-          <section ref={featuresSectionRef} id="features-tabs" className="pt-6 pb-20 min-h-screen flex flex-col items-center"> {/* MODIFIED padding */}
+          {/* Features Carousel Section */}
+          <section id="features-carousel" className="pt-6 pb-20 min-h-screen flex flex-col items-center">
+            <FeaturesCarouselSection />
+          </section>
+
+          {/* Legacy Tabbed Features Section (hidden) */}
+          <section ref={featuresSectionRef} id="features-tabs" className="pt-6 pb-20 min-h-screen flex flex-col items-center hidden"> {/* Hidden old section */}
             {/* Tabs Container - Stays max-w-3xl */}
             <div className="w-full max-w-3xl mx-auto px-4">
               {/* Tabs */}
