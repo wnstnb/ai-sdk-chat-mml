@@ -21,7 +21,7 @@ const FolderItem = React.forwardRef<
   const [isRenaming, setIsRenaming] = useState(false);
   const [newName, setNewName] = useState(folder.name);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { renameFolder, deleteFolder } = useFileData();
+  const { renameFolder, deleteFolder, toggleStarDocument } = useFileData();
 
   // Store state for expansion and children
   const {
@@ -234,6 +234,8 @@ const FolderItem = React.forwardRef<
               key={childDoc.id}
               document={childDoc}
               level={level + 1} // Pass level for indentation
+              isStarred={!!childDoc.is_starred} // Pass isStarred
+              onToggleStar={toggleStarDocument} // Pass onToggleStar
             />
           ))}
            {childFolders.length === 0 && childDocuments.length === 0 && (

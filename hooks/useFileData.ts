@@ -23,6 +23,7 @@ export const useFileData = () => {
     currentFolderId, // Get currentFolderId to use as parent_folder_id
     allFolders, // Needed for setCurrentFolder
     currentViewDocuments, // Needed for confirmation message
+    updateDocumentInStore, // Added for optimistic updates
   } = useFileMediaStore();
 
   // Function to fetch data for a specific folder (or root if null)
@@ -355,6 +356,58 @@ export const useFileData = () => {
     }
   }, [currentFolderId, setError, fetchData]); // Dependencies
 
+  // --- NEW: Function to toggle star status of a document ---
+  const toggleStarDocument = useCallback(async (documentId: string) => {
+    if (!documentId) {
+      toast.error("Cannot star/unstar: Document ID is missing.");
+      return false;
+    }
+
+    const currentDoc = useFileMediaStore.getState().allDocuments.find(d => d.id === documentId);
+    if (!currentDoc) {
+      toast.error("Document not found.");
+      return false;
+    }
+
+    const newStarredStatus = !currentDoc.is_starred;
+    console.log(`[useFileData] Attempting to toggle star for document ${documentId} to ${newStarredStatus}`);
+
+    // Optimistic update in the store
+    updateDocumentInStore(documentId, { is_starred: newStarredStatus });
+
+    try {
+      const response = await fetch(`/api/documents/${documentId}/star`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        // No body needed, the endpoint toggles based on current state
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to toggle star status.'}));
+        throw new Error(errorData.message || `Failed to toggle star status (${response.status})`);
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        // Confirm update with server response
+        updateDocumentInStore(documentId, { is_starred: result.is_starred });
+        toast.success(`Document "${currentDoc.name}" ${result.is_starred ? 'starred' : 'unstarred'}.`);
+        // Optionally, refetch if other parts of the UI depend on a full refresh
+        // await fetchData(currentFolderId); 
+        return true;
+      } else {
+        throw new Error(result.message || 'Failed to toggle star status on server.');
+      }
+    } catch (err: any) {
+      console.error("[useFileData] Error inside toggleStarDocument:", err);
+      const errorMsg = err.message || 'An unknown error occurred while toggling star status.';
+      toast.error(`Error: ${errorMsg}`);
+      // Revert optimistic update on error
+      updateDocumentInStore(documentId, { is_starred: currentDoc.is_starred });
+      return false;
+    }
+  }, [updateDocumentInStore, fetchData, currentFolderId]); // Added updateDocumentInStore and potentially fetchData
+
   // Function to move an item (folder or document) to a new folder
   const moveItem = useCallback(async (itemId: string, itemType: 'folder' | 'document', targetFolderId: string | null) => {
     if (!itemId || !itemType) {
@@ -429,5 +482,6 @@ export const useFileData = () => {
     renameDocument,
     deleteDocument,
     moveItem, // Expose the moveItem function
+    toggleStarDocument, // Expose the new function
   };
 }; 
