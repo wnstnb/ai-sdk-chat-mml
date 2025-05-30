@@ -384,12 +384,26 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                 )}
                 {/* Timestamp for mini mode */}
                 {isMiniMode && message.createdAt && (() => {
+                    const date = new Date(message.createdAt);
+                    const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' });
+
                     if (message.role === 'assistant') {
-                        console.log('[ChatMessageItem MINI MODE ASSISTANT] createdAt:', message.createdAt, 'Type:', typeof message.createdAt);
+                        // More detailed logging for assistant messages, especially if an invalid date is produced
+                        if (timeString === 'Invalid Date') {
+                            console.error('[ChatMessageItem MINI MODE ASSISTANT - INVALID DATE] Original createdAt:', message.createdAt, 'Type:', typeof message.createdAt, 'Parsed Date:', date);
+                        } else {
+                            // console.log('[ChatMessageItem MINI MODE ASSISTANT - VALID DATE] Original createdAt:', message.createdAt, 'Type:', typeof message.createdAt, 'Formatted Time:', timeString);
+                        }
                     }
+                    
+                    if (timeString === 'Invalid Date') {
+                        // Optionally, return a placeholder or null instead of "Invalid Date"
+                        return <div className="text-[10px] text-red-500 dark:text-red-400 mt-0.5 text-right">Invalid Date</div>; // Keep showing for now to highlight issue
+                    }
+
                     return (
                         <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5 text-right">
-                            {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
+                            {timeString}
                         </div>
                     );
                 })()}

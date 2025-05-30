@@ -2,8 +2,7 @@
 
 import React, { useEffect, useLayoutEffect, KeyboardEvent, useState, useRef, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { MicIcon, StopCircleIcon, X, History, GalleryVerticalEnd, ImageUp } from 'lucide-react';
-import { AttachmentIcon, SendIcon } from '@/components/icons';
+import { MicIcon, StopCircleIcon, X, History, GalleryVerticalEnd, ImageUp, Minimize, Send } from 'lucide-react';
 import { ModelSelector } from '@/components/ModelSelector';
 import { TextFilePreview } from './TextFilePreview'; // Import from sibling file
 import Image from 'next/image'; // Import Next.js Image
@@ -213,7 +212,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
         buttonClassName += buttonDisabled ? ` opacity-50 cursor-not-allowed` : ` enabled:hover:bg-[--hover-bg] enabled:hover:text-[--text-color]`;
         buttonOnClick = handleMicButtonClick;
     } else { // Input has text, image, OR mic is unavailable -> show Send/Submit logic
-        buttonIcon = <SendIcon aria-hidden="true" />;
+        buttonIcon = <Send aria-hidden="true" />;
         buttonTitle = "Send message";
         // Disable if cannot submit OR if recording/transcribing is happening (even if mic isn't primary action now)
         buttonDisabled = !canSubmitText || isTranscribing || isRecording || isLoading || isUploading; 
@@ -363,7 +362,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                             rows={1}
                             className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40"
                             // Adjust placeholder based on optional props
-                            placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (isRecording ? "Recording audio..." : (isTranscribing ? "Transcribing audio..." : (micAvailable ? "Ask a question, give instructions, or click mic..." : "Ask a question or give instructions...") ) ))}
+                            placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (isRecording ? "Recording audio..." : (isTranscribing ? "Transcribing audio..." : (micAvailable ? "Type, show or say anything..." : "Type or show something...") ) ))}
                             value={input}
                             onChange={handleInputChange}
                             onKeyDown={handleKeyDown}
@@ -426,7 +425,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                                 title={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
                                 aria-label={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
                             >
-                                {isMiniPaneOpen ? <X size={20} /> : <GalleryVerticalEnd size={20} />}
+                                {isMiniPaneOpen ? <Minimize size={20} /> : <GalleryVerticalEnd size={20} />}
                             </button>
                        )}
                        {/* --- END NEW --- */}

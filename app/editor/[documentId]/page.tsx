@@ -46,7 +46,7 @@ import {
 } from '@/components/icons';
 // Added Clock, CheckCircle2, AlertCircle, XCircle for autosave status
 // Added Sparkles for Infer Title
-import { ChevronLeft, ChevronRight, Wrench, SendToBack, Edit, Save, X, Clock, CheckCircle2, AlertCircle, XCircle, Sparkles, MessageSquare } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Wrench, SendToBack, NotebookPen, Save, X, Clock, CheckCircle2, AlertCircle, XCircle, Sparkles, MessageCircleMore } from 'lucide-react';
 import {
     DocumentPlusIcon,
     ArrowDownTrayIcon,
@@ -1438,7 +1438,7 @@ export default function EditorPage() {
              >
                  {/* Conditional Icon Rendering */}
                  {isMobile
-                    ? (mobileVisiblePane === 'chat' ? <Edit size={16} /> : <MessageSquare size={16} />)
+                    ? (mobileVisiblePane === 'chat' ? <NotebookPen size={16} /> : <MessageCircleMore size={16} />)
                     : (isChatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />)
                  }
              </button>

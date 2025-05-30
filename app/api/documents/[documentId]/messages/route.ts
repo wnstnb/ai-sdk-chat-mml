@@ -232,11 +232,23 @@ export async function GET(
         // console.log(`[Messages GET] Msg ${dbMsg.id} (Role: ${dbMsg.role}) - Final content type: ${typeof finalContent}, IsArray: ${Array.isArray(finalContent)}`);
 
         // 4. Construct the final message object for the frontend (using ai/react Message type)
+        let validCreatedAt: Date | undefined = undefined;
+        if (dbMsg.created_at && typeof dbMsg.created_at === 'string' && dbMsg.created_at.trim() !== '') {
+            const parsedDate = new Date(dbMsg.created_at);
+            if (!isNaN(parsedDate.getTime())) {
+                validCreatedAt = parsedDate;
+            } else {
+                console.warn(`[API Messages GET] Msg ID ${dbMsg.id}: dbMsg.created_at ('${dbMsg.created_at}') resulted in an invalid date.`);
+            }
+        } else {
+            console.warn(`[API Messages GET] Msg ID ${dbMsg.id}: dbMsg.created_at is null, undefined, or empty. Value:`, dbMsg.created_at);
+        }
+
         const frontendMessage: FrontendMessage = {
              id: dbMsg.id,
              role: dbMsg.role as FrontendMessage['role'], 
              content: finalContent as any, // Use type assertion 
-             createdAt: new Date(dbMsg.created_at),
+             createdAt: validCreatedAt, // Use the validated date
              // Include other relevant fields if needed
         };
         processedMessages.push(frontendMessage);
