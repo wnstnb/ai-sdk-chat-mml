@@ -67,6 +67,10 @@ const formatTimestamp = (date: Date, isMiniMode: boolean): string => {
 };
 // --- END NEW ---
 
+// --- NEW: Control for showing/hiding timestamps globally ---
+const SHOW_TIMESTAMPS = false;
+// --- END NEW ---
+
 // Define Part types inline for clarity if not importing from 'ai' core
 type TextPart = { type: 'text'; text: string };
 type ImagePart = { type: 'image'; image: string | URL; error?: string }; // image received should be signed URL string
@@ -395,9 +399,11 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                         </button>
                     </div>
                 )}
-                <div className={`text-[9.5px] text-zinc-500 dark:text-zinc-400 mt-0.5 ${isMiniMode ? 'self-end' : 'self-start'}`}>
-                    {message.createdAt ? formatTimestamp(new Date(message.createdAt), isMiniMode) : 'Sending...'}
-                </div>
+                {SHOW_TIMESTAMPS && (
+                    <div className={`text-[9.5px] text-zinc-500 dark:text-zinc-400 mt-0.5 ${isMiniMode ? 'self-end' : 'self-start'}`}>
+                        {message.createdAt ? formatTimestamp(new Date(message.createdAt), isMiniMode) : 'Sending...'}
+                    </div>
+                )}
             </div>
         </motion.div>
     );
