@@ -100,6 +100,7 @@ import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import { VersionHistoryModal } from '@/components/editor/VersionHistoryModal';
 // REMOVED: SearchModal import for now, will be re-added at a higher level
 // import { SearchModal } from '@/components/search/SearchModal'; 
+import { useSWRConfig } from 'swr'; // ADDED for cache mutation
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -165,9 +166,13 @@ export default function EditorPage() {
     const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
     // --- NEW: State for Mini-Pane ---
     const [isMiniPaneOpen, setIsMiniPaneOpen] = useState(false);
+    // --- ADDED: State for document star status ---
+    const [currentDocIsStarred, setCurrentDocIsStarred] = useState(false);
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
+    // --- ADDED: SWR config for cache mutation ---
+    const { mutate } = useSWRConfig();
     // NEW: Add useMediaQuery hook
     const isMobile = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
     // NEW: Add state for mobile pane visibility
@@ -227,6 +232,73 @@ export default function EditorPage() {
     console.log('[EditorPage] Received initialMessages from useInitialChatMessages:', JSON.stringify(initialMessages, null, 2));
     // NEW: Log mobile state
     console.log('[EditorPage] Mobile detection:', { isMobile });
+
+    // --- ADDED: Effect to set initial star status ---
+    useEffect(() => {
+        if (documentData) {
+            setCurrentDocIsStarred(documentData.is_starred || false);
+        }
+    }, [documentData]);
+
+    // --- ADDED: Handler to toggle star status for the current document ---
+    const handleToggleCurrentDocumentStar = async () => {
+        if (!documentId || !documentData) return;
+
+        const newStarredStatus = !currentDocIsStarred;
+        // Optimistic UI update
+        setCurrentDocIsStarred(newStarredStatus);
+
+        // Optimistically update the SWR cache for useDocument
+        mutate(
+            `/api/documents/${documentId}`,
+            (currentData: SupabaseDocument | undefined) => {
+                if (!currentData) return undefined;
+                return { ...currentData, is_starred: newStarredStatus };
+            },
+            false // Important: Do not revalidate immediately, wait for API response
+        );
+
+        try {
+            const response = await fetch(`/api/documents/${documentId}/star`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Failed to toggle star status.' }));
+                throw new Error(errorData.message);
+            }
+
+            const result = await response.json();
+            if (result.success) {
+                // Update local state and SWR cache with confirmed status from server
+                setCurrentDocIsStarred(result.is_starred);
+                mutate(
+                    `/api/documents/${documentId}`,
+                    (currentData: SupabaseDocument | undefined) => {
+                        if (!currentData) return undefined;
+                        return { ...currentData, is_starred: result.is_starred };
+                    },
+                    false // No need to revalidate, we have the latest from server
+                );
+                toast.success(`Document ${result.is_starred ? 'starred' : 'unstarred'}.`);
+            } else {
+                throw new Error(result.message || 'Failed to toggle star status on server.');
+            }
+        } catch (error: any) {
+            toast.error(error.message || "An error occurred while toggling star status.");
+            // Revert optimistic updates on error
+            setCurrentDocIsStarred(!newStarredStatus); // Revert local state
+            mutate(
+                `/api/documents/${documentId}`,
+                (currentData: SupabaseDocument | undefined) => {
+                    if (!currentData) return undefined;
+                    return { ...currentData, is_starred: !newStarredStatus };
+                },
+                false // Revert cache without revalidation
+            );
+        }
+    };
 
     // --- Callback Hooks (Defined BEFORE Early Returns) ---
     const triggerSaveDocument = useCallback(async (content: string, docId: string) => {
@@ -1155,10 +1227,12 @@ export default function EditorPage() {
                                 handleInferTitle={handleInferTitle}
                                 editorRef={editorRef}
                                 autosaveStatus={autosaveStatus}
-                                handleNewDocument={handleNewDocument}
                                 handleSaveContent={handleSaveContent}
                                 isSaving={isSaving}
                                 onOpenHistory={handleOpenHistoryModal}
+                                isDocumentStarred={currentDocIsStarred}
+                                onToggleDocumentStar={handleToggleCurrentDocumentStar}
+                                handleNewDocument={handleNewDocument}
                             />
                             {pageError && !pageError.startsWith("Chat Error:") && (
                                 <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -1280,10 +1354,12 @@ export default function EditorPage() {
                             handleInferTitle={handleInferTitle}
                             editorRef={editorRef}
                             autosaveStatus={autosaveStatus}
-                            handleNewDocument={handleNewDocument}
                             handleSaveContent={handleSaveContent}
                             isSaving={isSaving}
                             onOpenHistory={handleOpenHistoryModal}
+                            isDocumentStarred={currentDocIsStarred}
+                            onToggleDocumentStar={handleToggleCurrentDocumentStar}
+                            handleNewDocument={handleNewDocument}
                          />
                         {pageError && !pageError.startsWith("Chat Error:") && (
                             <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>

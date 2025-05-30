@@ -1,10 +1,16 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll } from 'lucide-react';
+import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, Star, ListTree } from 'lucide-react';
 import { DocumentPlusIcon } from '@heroicons/react/24/outline';
 import { AutosaveStatusIndicator } from '@/app/components/editor/AutosaveStatusIndicator';
 import { BlockNoteEditor } from '@blocknote/core'; // Added for editorRef type
 import { useModalStore } from '@/stores/useModalStore'; // Import the modal store
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { QuickAccessDropdown } from '@/components/editor/QuickAccessDropdown'; // IMPORT ACTUAL COMPONENT
 
 // Define the props for the EditorTitleBar component
 interface EditorTitleBarProps {
@@ -27,6 +33,10 @@ interface EditorTitleBarProps {
     handleSaveContent: () => void;
     isSaving: boolean; // Manual save button state
     onOpenHistory: () => void; // Prop to open version history modal
+
+    // ADDED for starring
+    isDocumentStarred: boolean;
+    onToggleDocumentStar: () => void;
 }
 
 export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
@@ -45,6 +55,9 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
     handleSaveContent,
     isSaving,
     onOpenHistory, // Destructure new prop
+    // ADDED for starring
+    isDocumentStarred,
+    onToggleDocumentStar,
 }) => {
     const { openNewDocumentModal } = useModalStore(); // Get the action from the store
     const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'error'>('idle');
@@ -81,6 +94,18 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
     return (
         <div className="flex justify-between items-center mb-2 flex-shrink-0">
             <div className="flex items-center gap-2 flex-grow min-w-0">
+                {/* Quick Access Dropdown Trigger */}
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <button className="p-1 mr-1 text-[--muted-text-color] hover:text-[--text-color] hover:bg-[--hover-bg] rounded flex-shrink-0" title="Quick Access">
+                            <ListTree size={18} />
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-72 md:w-96" align="start">
+                        <QuickAccessDropdown />
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
                 {isEditingTitle ? (
                     <>
                         <input
@@ -97,6 +122,15 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
                 ) : (
                     <>
                         <h2 className="text-lg font-semibold text-[--text-color] truncate" title={currentTitle}>{currentTitle}</h2>
+                        {/* Star Button for current document */}
+                        <button 
+                            onClick={onToggleDocumentStar}
+                            className="p-1 text-yellow-500 hover:text-yellow-400 rounded focus:outline-none focus:ring-1 focus:ring-yellow-500 ml-1 flex-shrink-0"
+                            aria-label={isDocumentStarred ? `Unstar this document` : `Star this document`}
+                            title={isDocumentStarred ? "Unstar document" : "Star document"}
+                        >
+                            {isDocumentStarred ? <Star size={16} className="fill-current" /> : <Star size={16} />}
+                        </button>
                         <button
                             onClick={handleInferTitle}
                             className="p-1 rounded hover:bg-[--hover-bg] text-[--muted-text-color] hover:text-[--text-color] disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"

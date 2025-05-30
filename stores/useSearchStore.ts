@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-interface SearchResult {
+export interface SearchResult {
     id: string;
     name: string;
     folder_id: string | null;
