@@ -14,26 +14,20 @@ export const QuickAccessDropdown: React.FC = () => {
   const { documents: recentDocs, isLoading: isLoadingRecent, error: recentError } = useRecentDocuments();
   const { documents: starredDocs, isLoading: isLoadingStarred, error: starredError } = useStarredDocuments();
 
-  const renderDocumentList = (
-    docs: QuickAccessDocument[] | null | undefined, 
-    isLoading: boolean, 
-    error: string | null,
-    emptyMessage: string
-  ) => {
+  const renderDocumentList = (docs: any[], isLoading: boolean, error: string | null) => {
     if (isLoading) return <div className="flex justify-center items-center p-4"><Loader2 className="h-5 w-5 animate-spin text-[--muted-text-color]" /></div>;
-    if (error) return <div className="p-2 text-xs text-center text-red-500">Error: {error}</div>;
-    if (!docs || docs.length === 0) return <div className="p-3 text-xs text-center text-[--muted-text-color]">{emptyMessage}</div>;
+    if (error) return <div className="p-2 text-red-500 text-xs">Error: {error}</div>;
+    if (docs.length === 0) return <div className="p-2 text-xs text-center text-[--muted-text-color]">No documents found.</div>;
 
     return (
-      <ul className="space-y-0.5 p-1 max-h-60 overflow-y-auto styled-scrollbar">
+      <ul className="space-y-1 p-1 max-h-60 overflow-y-auto">
         {docs.map((doc) => (
           <li key={doc.id}>
             <Link 
               href={`/editor/${doc.id}`} 
               className="block p-1.5 text-sm text-[--text-color] hover:bg-[--hover-bg] rounded truncate"
-              title={doc.name}
             >
-              {doc.name || 'Untitled Document'}
+              {doc.name}
             </Link>
           </li>
         ))}
@@ -43,19 +37,25 @@ export const QuickAccessDropdown: React.FC = () => {
 
   return (
     <Tabs defaultValue="recent" className="p-1">
-      <TabsList className="grid w-full grid-cols-2 mb-1">
-        <TabsTrigger value="recent" className="text-xs px-2 py-1.5">
-          <FileClock className="w-3.5 h-3.5 mr-1.5" /> Recent
+      <TabsList className="grid w-full grid-cols-2 bg-[--input-bg] border-[--border-color]">
+        <TabsTrigger 
+          value="recent" 
+          className="data-[state=active]:bg-[--primary-color] data-[state=active]:text-gray-700 text-[--muted-text-color] hover:text-[--text-color]"
+        >
+          <FileClock className="w-4 h-4 mr-1.5" /> Recent
         </TabsTrigger>
-        <TabsTrigger value="starred" className="text-xs px-2 py-1.5">
-          <Star className="w-3.5 h-3.5 mr-1.5" /> Starred
+        <TabsTrigger 
+          value="starred"
+          className="data-[state=active]:bg-[--primary-color] data-[state=active]:text-gray-700 text-[--muted-text-color] hover:text-[--text-color]"
+        >
+          <Star className="w-4 h-4 mr-1.5" /> Starred
         </TabsTrigger>
       </TabsList>
-      <TabsContent value="recent" className="mt-0">
-        {renderDocumentList(recentDocs, isLoadingRecent, recentError, "No recent documents.")}
+      <TabsContent value="recent" className="mt-1">
+        {renderDocumentList(recentDocs, isLoadingRecent, recentError)}
       </TabsContent>
-      <TabsContent value="starred" className="mt-0">
-        {renderDocumentList(starredDocs, isLoadingStarred, starredError, "No starred documents yet. Star a document to see it here.")}
+      <TabsContent value="starred" className="mt-1">
+        {renderDocumentList(starredDocs, isLoadingStarred, starredError)}
       </TabsContent>
     </Tabs>
   );

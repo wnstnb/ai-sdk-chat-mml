@@ -101,7 +101,10 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
                             <ListTree size={18} />
                         </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-72 md:w-96" align="start">
+                    <DropdownMenuContent 
+                        className="w-72 md:w-96 bg-[--bg-color] border-[--border-color] shadow-xl text-[--text-color]" 
+                        align="start"
+                    >
                         <QuickAccessDropdown />
                     </DropdownMenuContent>
                 </DropdownMenu>
