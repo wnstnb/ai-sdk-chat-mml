@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter
 import { Document } from '@/types/supabase'; // Assuming types are defined here
-import { FileTextIcon, Edit2, Check, X, Trash2 } from 'lucide-react'; // Using lucide-react for icons
+import { FileTextIcon, Edit2, Check, X, Trash2, Star } from 'lucide-react'; // Using lucide-react for icons
 import { useFileData } from '@/hooks/useFileData'; // Import hook
 import { useDraggable } from '@dnd-kit/core'; // Import useDraggable
 import { CSS } from '@dnd-kit/utilities'; // Import CSS utility
@@ -13,15 +13,18 @@ type DocumentLike = Partial<Document> & {
   id: string; 
   name: string; 
   folder_id: string | null; // Keep folder_id, though not directly used here
+  is_starred?: boolean; // Add is_starred
 };
 
 interface DocumentItemProps {
   document: DocumentLike; // Use the combined type
   level?: number; // Add optional level prop
   onFileSelect?: (documentId: string, documentName?: string) => void; // Added prop
+  isStarred: boolean; // ADD isStarred prop
+  onToggleStar: (documentId: string) => void; // ADD onToggleStar prop
 }
 
-const DocumentItem: React.FC<DocumentItemProps> = ({ document, level = 0, onFileSelect }) => {
+const DocumentItem: React.FC<DocumentItemProps> = ({ document, level = 0, onFileSelect, isStarred, onToggleStar }) => {
   const [isRenaming, setIsRenaming] = useState(false);
   const [newName, setNewName] = useState(document.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -180,6 +183,15 @@ const DocumentItem: React.FC<DocumentItemProps> = ({ document, level = 0, onFile
       {/* Action Buttons container - outside the inner draggable div */}
       {!isRenaming && (
         <div onClick={(e) => e.stopPropagation()} className="ml-auto flex items-center space-x-1 pl-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 flex-shrink-0">
+            {/* Star Button */}
+            <button 
+              onClick={(e) => { e.stopPropagation(); onToggleStar(document.id); }}
+              className="p-1 text-yellow-500 hover:text-yellow-400 rounded focus:outline-none focus:ring-1 focus:ring-yellow-500"
+              aria-label={isStarred ? `Unstar document ${document.name}` : `Star document ${document.name}`}
+              title={isStarred ? "Unstar document" : "Star document"}
+            >
+              {isStarred ? <Star size={16} className="fill-current" /> : <Star size={16} />}
+            </button>
             {/* Rename button */}
             <button
                 onClick={handleRenameClick}

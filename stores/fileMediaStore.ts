@@ -38,6 +38,7 @@ interface FileMediaStoreState {
   toggleSelectItem: (id: string) => void;
   clearSelection: () => void;
   // TODO: Add more specific actions later (e.g., addFolder, removeDocument, updateItem)
+  updateDocumentInStore: (documentId: string, updates: Partial<Document>) => void;
 }
 
 // Helper function to build the breadcrumb path
@@ -110,6 +111,16 @@ export const useFileMediaStore = create<FileMediaStoreState>((set, get) => ({
 
   clearSelection: () => set({ selectedItemIds: new Set() }),
   // --- End Selection Actions ---
+
+  // Add this function to update a document in the store
+  updateDocumentInStore: (documentId, updates) => set((state) => ({
+    allDocuments: state.allDocuments.map(doc =>
+      doc.id === documentId ? { ...doc, ...updates } : doc
+    ),
+    currentViewDocuments: state.currentViewDocuments.map(doc =>
+      doc.id === documentId ? { ...doc, ...updates } : doc
+    ),
+  })),
 }));
 
 // Example Usage (can be removed later):

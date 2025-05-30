@@ -7,6 +7,12 @@ export async function GET(request: Request) {
   const cookieStore = cookies();
   const supabase = createSupabaseServerClient(); // Service role client
 
+  const { searchParams } = new URL(request.url);
+  const getStarred = searchParams.get('starred') === 'true';
+  const getRecent = searchParams.get('recent') === 'true';
+  const limitParam = searchParams.get('limit');
+  const limit = limitParam ? parseInt(limitParam, 10) : (getRecent ? 10 : undefined); // Default limit 10 for recent
+
   try {
     // 1. Get User Session
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -36,12 +42,25 @@ export async function GET(request: Request) {
     }
 
     // 3. Fetch Documents for the User
-    // RLS policy ensures only user's documents are returned
-    const { data: documents, error: documentsError } = await supabase
+    let documentsQuery = supabase
       .from('documents')
-      .select('*') // Select all columns for now
-      .eq('user_id', userId)
-      .order('updated_at', { ascending: false }); // Order by most recently updated
+      .select('*') // Select all columns, including is_starred
+      .eq('user_id', userId);
+
+    if (getStarred) {
+      documentsQuery = documentsQuery.eq('is_starred', true);
+    }
+
+    // Always order by updated_at for general file manager use and for recents
+    documentsQuery = documentsQuery.order('updated_at', { ascending: false });
+
+    if (getRecent && limit) {
+      documentsQuery = documentsQuery.limit(limit);
+    } else if (getStarred && limit) { // Also allow limiting starred results if ?limit is passed with ?starred=true
+      documentsQuery = documentsQuery.limit(limit);
+    }
+
+    const { data: documents, error: documentsError } = await documentsQuery;
 
     if (documentsError) {
         console.error('Documents Fetch Error:', documentsError.message);

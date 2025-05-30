@@ -123,7 +123,7 @@ export function useInitialChatMessages({
                         continue;
                     }
                     const role = msg.role as AiReactMessageRoot['role']; // Role from ai/react Message
-                    const createdAt = new Date(msg.created_at);
+                    const createdAtTimestamp = (msg as any).createdAt || msg.created_at;
 
                     if (role === 'system') {
                         console.log(`[useInitialChatMessages] Skipping system message ${msg.id}`);
@@ -157,7 +157,7 @@ export function useInitialChatMessages({
                             id: msg.id,
                             role: 'user',
                             content: userTextContent, // User content is string
-                            createdAt: createdAt,
+                            createdAt: new Date(createdAtTimestamp),
                             signedDownloadUrl: msg.signedDownloadUrl
                         };
 
@@ -167,6 +167,11 @@ export function useInitialChatMessages({
                     }
                     if (role === 'assistant') {
                         console.log(`[useInitialChatMessages] Processing ASSISTANT message ID: ${msg.id}, Raw msg:`, JSON.stringify(msg, null, 2));
+                        // --- MODIFIED LOGS FOR ASSISTANT createdAt ---
+                        console.log(`[useInitialChatMessages] Assistant msg ID ${msg.id} - Original createdAtTimestamp:`, createdAtTimestamp, "Type:", typeof createdAtTimestamp);
+                        const createdAt = new Date(createdAtTimestamp); // Use the determined timestamp
+                        console.log(`[useInitialChatMessages] Assistant msg ID ${msg.id} - Parsed createdAt object:`, createdAt, "Is Valid Date:", !isNaN(createdAt.getTime()));
+                        // --- END MODIFIED LOGS ---
                         
                         const assistantMessageContentParts: CustomMessageContentPart[] = [];
                         const assistantSdkToolCalls: AssistantToolCall[] = [];
@@ -249,7 +254,7 @@ export function useInitialChatMessages({
                                         const toolResultContentStr = typeof tc.tool_output === 'string' ? tc.tool_output : JSON.stringify(tc.tool_output);
                                         formattedMessages.push({
                                             id: `${msg.id}-toolres-${tc.tool_call_id}`, role: 'tool', content: toolResultContentStr,
-                                            tool_call_id: tc.tool_call_id, createdAt: new Date(tc.created_at || msg.created_at),
+                                            tool_call_id: tc.tool_call_id, createdAt: new Date(tc.created_at || createdAtTimestamp), // Use determined timestamp as fallback
                                         });
                                         console.log(`[useInitialChatMessages] Pushed tool result message for ${tc.tool_call_id} from JOINED SupabaseToolCall (string content path).`);
                                     }
@@ -265,7 +270,7 @@ export function useInitialChatMessages({
                             id: msg.id,
                             role: 'assistant',
                             content: finalContentForSdkMessage,
-                            createdAt: new Date(msg.created_at),
+                            createdAt: new Date(createdAtTimestamp), // Use the determined timestamp
                             signedDownloadUrl: msg.signedDownloadUrl,
                             ...(assistantSdkToolCalls.length > 0 && { tool_calls: assistantSdkToolCalls }),
                         };

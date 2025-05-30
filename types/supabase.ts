@@ -21,6 +21,7 @@ export interface Document {
   content: any | null; // jsonb or text
   created_at: string; // timestamp with time zone
   updated_at: string; // timestamp with time zone
+  is_starred: boolean; // Added for Quick Access feature
 }
 
 export interface Message {
