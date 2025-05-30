@@ -2,8 +2,7 @@
 
 import React, { useEffect, useLayoutEffect, KeyboardEvent, useState, useRef, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { MicIcon, StopCircleIcon, X } from 'lucide-react';
-import { AttachmentIcon, SendIcon } from '@/components/icons';
+import { MicIcon, StopCircleIcon, X, History, GalleryVerticalEnd, ImageUp, Minimize, Send } from 'lucide-react';
 import { ModelSelector } from '@/components/ModelSelector';
 import { TextFilePreview } from './TextFilePreview'; // Import from sibling file
 import Image from 'next/image'; // Import Next.js Image
@@ -71,6 +70,12 @@ interface ChatInputUIProps {
     onAddTaggedDocument?: (doc: TaggedDocument) => void;
     onRemoveTaggedDocument?: (docId: string) => void; // <<< ADD THIS PROP TYPE
     // --- END Document Tagging Props ---
+    // --- NEW: Props for Mini-Pane toggle ---
+    isMiniPaneOpen?: boolean;
+    onToggleMiniPane?: () => void;
+    isMainChatCollapsed?: boolean;
+    miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
+    // --- END NEW ---
 }
 
 export const ChatInputUI: React.FC<ChatInputUIProps> = ({
@@ -110,6 +115,12 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     onAddTaggedDocument,
     onRemoveTaggedDocument, // <<< DESTRUCTURE THIS PROP
     // --- END Document Tagging Props DESTRUCTURED ---
+    // --- NEW: Destructure Mini-Pane props ---
+    isMiniPaneOpen,
+    onToggleMiniPane,
+    isMainChatCollapsed,
+    miniPaneToggleRef, // Destructure the ref
+    // --- END NEW ---
 }) => {
     // Tooltip state remains if needed elsewhere, otherwise remove
     const [showTooltip, setShowTooltip] = useState(false);
@@ -201,7 +212,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
         buttonClassName += buttonDisabled ? ` opacity-50 cursor-not-allowed` : ` enabled:hover:bg-[--hover-bg] enabled:hover:text-[--text-color]`;
         buttonOnClick = handleMicButtonClick;
     } else { // Input has text, image, OR mic is unavailable -> show Send/Submit logic
-        buttonIcon = <SendIcon aria-hidden="true" />;
+        buttonIcon = <Send aria-hidden="true" />;
         buttonTitle = "Send message";
         // Disable if cannot submit OR if recording/transcribing is happening (even if mic isn't primary action now)
         buttonDisabled = !canSubmitText || isTranscribing || isRecording || isLoading || isUploading; 
@@ -351,7 +362,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                             rows={1}
                             className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40"
                             // Adjust placeholder based on optional props
-                            placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (isRecording ? "Recording audio..." : (isTranscribing ? "Transcribing audio..." : (micAvailable ? "Ask a question, give instructions, or click mic..." : "Ask a question or give instructions...") ) ))}
+                            placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (isRecording ? "Recording audio..." : (isTranscribing ? "Transcribing audio..." : (micAvailable ? "Type, show or say anything..." : "Type or show something...") ) ))}
                             value={input}
                             onChange={handleInputChange}
                             onKeyDown={handleKeyDown}
@@ -381,7 +392,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                             className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Attach Image"
                         >
-                            <span className="w-5 h-5 block"><AttachmentIcon aria-hidden="true" /></span>
+                            <span className="w-5 h-5 block"><ImageUp aria-hidden="true" /></span>
                         </button>
                         <div className="relative w-8 h-8 flex items-center justify-center">
                             {showLoadingSpinner && (
@@ -404,6 +415,20 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                         </div>
                        {/* Render the passed-in toggle icon button if it exists */}
                        {renderCollapsedMessageToggle}
+                       {/* --- NEW: Mini-Pane Toggle Button --- */}
+                       {isMainChatCollapsed && onToggleMiniPane && (
+                            <button
+                                ref={miniPaneToggleRef} // Apply the ref here
+                                type="button"
+                                onClick={onToggleMiniPane}
+                                className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
+                                aria-label={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
+                            >
+                                {isMiniPaneOpen ? <Minimize size={20} /> : <GalleryVerticalEnd size={20} />}
+                            </button>
+                       )}
+                       {/* --- END NEW --- */}
                     </div>
                 </div>
             </div>

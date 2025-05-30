@@ -74,7 +74,8 @@ export const PinnedMessageBubble: React.FC<PinnedMessageBubbleProps> = ({
                     </TooltipContent>
                 </Tooltip>
             </TooltipProvider>
-            <div className="flex items-center gap-1 flex-shrink-0">
+            {/* REMOVE THE BUTTONS CONTAINER */}
+            {/* <div className="flex items-center gap-1 flex-shrink-0">
                 <TooltipProvider delayDuration={100}>
                     <Tooltip>
                         <TooltipTrigger asChild>
@@ -109,7 +110,7 @@ export const PinnedMessageBubble: React.FC<PinnedMessageBubbleProps> = ({
                          </TooltipContent>
                     </Tooltip>
                 </TooltipProvider>
-            </div>
+            </div> */}
         </div>
     );
 }; 

@@ -46,7 +46,7 @@ import {
 } from '@/components/icons';
 // Added Clock, CheckCircle2, AlertCircle, XCircle for autosave status
 // Added Sparkles for Infer Title
-import { ChevronLeft, ChevronRight, Wrench, SendToBack, Edit, Save, X, Clock, CheckCircle2, AlertCircle, XCircle, Sparkles, MessageSquare } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Wrench, SendToBack, NotebookPen, Save, X, Clock, CheckCircle2, AlertCircle, XCircle, Sparkles, MessageCircleMore } from 'lucide-react';
 import {
     DocumentPlusIcon,
     ArrowDownTrayIcon,
@@ -142,6 +142,9 @@ export default function EditorPage() {
     const isContentLoadedRef = useRef<boolean>(false);
     const previousPathnameRef = useRef(pathname);
     const routerForReplace = useRouter(); 
+    // --- NEW: Refs for Mini-Pane click-off logic ---
+    const miniPaneRef = useRef<HTMLDivElement>(null);
+    const miniPaneToggleRef = useRef<HTMLButtonElement>(null); // Assuming ChatInputUI renders a button we can get a ref to, or adjust as needed
 
     // --- State Variables --- (Declare state early)
     const { default_model: preferredModel, isInitialized: isPreferencesInitialized } = usePreferenceStore();
@@ -160,6 +163,8 @@ export default function EditorPage() {
     const [isVersionHistoryModalOpen, setIsVersionHistoryModalOpen] = useState(false);
     // --- NEW: State for the form element (for callback ref) ---
     const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
+    // --- NEW: State for Mini-Pane ---
+    const [isMiniPaneOpen, setIsMiniPaneOpen] = useState(false);
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
@@ -1072,10 +1077,19 @@ export default function EditorPage() {
     const handleToggleChat = () => {
         if (isMobile) {
             setMobileVisiblePane(pane => pane === 'chat' ? 'editor' : 'chat');
+            if (mobileVisiblePane === 'editor') { // If switching to chat, ensure mini-pane is closed
+                setIsMiniPaneOpen(false);
+            }
         } else {
             setIsChatCollapsed(!isChatCollapsed);
+            if (!isChatCollapsed) { // If main chat is being opened, close mini-pane
+                setIsMiniPaneOpen(false);
+            }
         }
     };
+
+    // --- NEW: Handler for Mini-Pane Toggle ---
+    const handleToggleMiniPane = () => setIsMiniPaneOpen(prev => !prev);
 
     // --- Render Logic ---
     // Find the last assistant message to pass down
@@ -1090,12 +1104,36 @@ export default function EditorPage() {
 
     // Main Render
     return (
-        <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden" 
+        <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden relative" 
             onDragOver={handleDragOver} 
             onDragLeave={handleDragLeave} 
             onDrop={handleDrop}
         >
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
+
+            {/* --- Mini-Pane Container (Rendered conditionally) --- */}
+            {isMiniPaneOpen && (isChatCollapsed || mobileVisiblePane !== 'chat') && (
+                <motion.div
+                    ref={miniPaneRef}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    transition={{ duration: 0.2 }}
+                    className="fixed bottom-[calc(var(--chat-input-area-height,174px)_+_8px)] left-0 right-0 mx-auto w-[calc(100%-2rem)] max-w-[700px] max-h-[350px] z-[1050] overflow-y-auto bg-[--input-bg] border border-[--border-color] rounded-md shadow-lg flex flex-col"
+                >
+                    <div className="flex-1 overflow-y-auto styled-scrollbar p-2">
+                        <ChatMessagesList 
+                            chatMessages={chatMessages}
+                            isLoadingMessages={isLoadingMessages} // Or a mini-specific loading state if different
+                            isChatLoading={isChatLoading} // Or a mini-specific loading state
+                            handleSendToEditor={handleSendToEditor} // Actions should still work
+                            messagesEndRef={messagesEndRef} // May need a separate ref for mini-pane scroll
+                            onAddTaggedDocument={(doc) => { /* Define or pass handler */ }}
+                            displayMode="mini"
+                        />
+                    </div>
+                </motion.div>
+            )}
 
             {/* Conditional Rendering based on isMobile */}
             {isMobile ? (
@@ -1165,6 +1203,10 @@ export default function EditorPage() {
                                     clearPreview={clearPreview}
                                     taggedDocuments={taggedDocuments}
                                     setTaggedDocuments={setTaggedDocuments}
+                                    isMiniPaneOpen={isMiniPaneOpen}
+                                    onToggleMiniPane={handleToggleMiniPane}
+                                    isMainChatCollapsed={true} // For mobile, editor implies main chat is hidden
+                                    miniPaneToggleRef={miniPaneToggleRef} 
                                 />
                             </div>
                         </div>
@@ -1173,45 +1215,49 @@ export default function EditorPage() {
                          <div className="w-full h-full flex flex-col bg-[--bg-secondary] relative">
                              {/* ChatPaneWrapper */}
                              <ChatPaneWrapper
-                                 isChatCollapsed={false} // Pass false as chat is visible
-                                 chatMessages={chatMessages}
-                                 isLoadingMessages={isLoadingMessages}
-                                 isChatLoading={isChatLoading}
-                                 handleSendToEditor={handleSendToEditor}
-                                 messagesEndRef={messagesEndRef}
-                                 messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
-                                 input={input}
-                                 setInput={setInput}
-                                 taggedDocuments={taggedDocuments}
-                                 setTaggedDocuments={setTaggedDocuments}
-                                 handleInputChange={handleInputChange}
-                                 handleSubmit={handleSubmit}
-                                 model={model}
-                                 setModel={setModel}
-                                 stop={stop}
-                                 files={files}
-                                 handleFileChange={handleFileChange}
-                                 handlePaste={handlePaste}
-                                 handleUploadClick={handleUploadClick}
-                                 isUploading={isUploading}
-                                 uploadError={uploadError}
-                                 uploadedImagePath={uploadedImagePath}
-                                 followUpContext={followUpContext}
-                                 setFollowUpContext={setFollowUpContext}
-                                 formRef={formCallbackRef}
-                                 inputRef={inputRef}
-                                 fileInputRef={fileInputRef}
-                                 handleKeyDown={handleKeyDown}
-                                 initialChatPaneWidthPercent={100} // Full width
-                                 minChatPaneWidthPx={0} // No min width
-                                 isRecording={isRecording}
-                                 isTranscribing={isTranscribing}
-                                 micPermissionError={micPermissionError}
-                                 startRecording={startRecording}
-                                 stopRecording={stopRecording}
-                                 audioTimeDomainData={audioTimeDomainData}
-                                 clearPreview={clearPreview}
-                             />
+                                isChatCollapsed={false} // Pass false as chat is visible
+                                chatMessages={chatMessages}
+                                isLoadingMessages={isLoadingMessages}
+                                isChatLoading={isChatLoading}
+                                handleSendToEditor={handleSendToEditor}
+                                messagesEndRef={messagesEndRef}
+                                messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
+                                input={input}
+                                setInput={setInput}
+                                taggedDocuments={taggedDocuments}
+                                setTaggedDocuments={setTaggedDocuments}
+                                handleInputChange={handleInputChange}
+                                handleSubmit={handleSubmit}
+                                model={model}
+                                setModel={setModel}
+                                stop={stop}
+                                files={files}
+                                handleFileChange={handleFileChange}
+                                handlePaste={handlePaste}
+                                handleUploadClick={handleUploadClick}
+                                isUploading={isUploading}
+                                uploadError={uploadError}
+                                uploadedImagePath={uploadedImagePath}
+                                followUpContext={followUpContext}
+                                setFollowUpContext={setFollowUpContext}
+                                formRef={formCallbackRef}
+                                inputRef={inputRef}
+                                fileInputRef={fileInputRef}
+                                handleKeyDown={handleKeyDown}
+                                initialChatPaneWidthPercent={100} // Full width
+                                minChatPaneWidthPx={0} // No min width
+                                isRecording={isRecording}
+                                isTranscribing={isTranscribing}
+                                micPermissionError={micPermissionError}
+                                startRecording={startRecording}
+                                stopRecording={stopRecording}
+                                audioTimeDomainData={audioTimeDomainData}
+                                clearPreview={clearPreview}
+                                isMiniPaneOpen={isMiniPaneOpen}
+                                onToggleMiniPane={handleToggleMiniPane}
+                                isMainChatCollapsed={false} // Chat is visible here
+                                miniPaneToggleRef={miniPaneToggleRef}
+                            />
                          </div>
                     )}
                 </>
@@ -1282,6 +1328,10 @@ export default function EditorPage() {
                                 clearPreview={clearPreview}
                                 taggedDocuments={taggedDocuments}
                                 setTaggedDocuments={setTaggedDocuments}
+                                isMiniPaneOpen={isMiniPaneOpen}
+                                onToggleMiniPane={handleToggleMiniPane}
+                                isMainChatCollapsed={isChatCollapsed}
+                                miniPaneToggleRef={miniPaneToggleRef}
                             />
                         </div>
                     </div>
@@ -1353,6 +1403,10 @@ export default function EditorPage() {
                                     stopRecording={stopRecording}
                                     audioTimeDomainData={audioTimeDomainData}
                                     clearPreview={clearPreview}
+                                    isMiniPaneOpen={isMiniPaneOpen}
+                                    onToggleMiniPane={handleToggleMiniPane}
+                                    isMainChatCollapsed={isChatCollapsed}
+                                    miniPaneToggleRef={miniPaneToggleRef}
                                 />
                             </motion.div>
                         )}
@@ -1384,7 +1438,7 @@ export default function EditorPage() {
              >
                  {/* Conditional Icon Rendering */}
                  {isMobile
-                    ? (mobileVisiblePane === 'chat' ? <Edit size={16} /> : <MessageSquare size={16} />)
+                    ? (mobileVisiblePane === 'chat' ? <NotebookPen size={16} /> : <MessageCircleMore size={16} />)
                     : (isChatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />)
                  }
              </button>

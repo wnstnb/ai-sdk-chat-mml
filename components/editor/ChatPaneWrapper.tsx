@@ -71,6 +71,12 @@ interface ChatPaneWrapperProps {
     // ADDED: For document tagging, passed from useChatInteractions hook result
     taggedDocuments: TaggedDocument[];
     setTaggedDocuments: React.Dispatch<React.SetStateAction<TaggedDocument[]>>;
+    // --- NEW: Props for Mini-Pane toggle (passed to ChatInputArea) ---
+    isMiniPaneOpen?: boolean;
+    onToggleMiniPane?: () => void;
+    isMainChatCollapsed?: boolean;
+    miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
+    // --- END NEW ---
 }
 
 export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
@@ -116,6 +122,12 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     clearPreview,
     taggedDocuments,
     setTaggedDocuments,
+    // --- NEW: Destructure Mini-Pane props ---
+    isMiniPaneOpen,
+    onToggleMiniPane,
+    isMainChatCollapsed,
+    miniPaneToggleRef, // Destructure the ref
+    // --- END NEW ---
 }) => {
     // State to force remount of ChatInputArea after animation - Keep if still needed
     // const [inputAreaKey, setInputAreaKey] = useState(0);
@@ -193,6 +205,12 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                     clearPreview={clearPreview}
                     taggedDocuments={taggedDocuments}
                     setTaggedDocuments={setTaggedDocuments}
+                    // --- NEW: Pass Mini-Pane props to ChatInputArea ---
+                    isMiniPaneOpen={isMiniPaneOpen}
+                    onToggleMiniPane={onToggleMiniPane}
+                    isMainChatCollapsed={isMainChatCollapsed}
+                    miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
+                    // --- END NEW ---
                 />
             </div>
         // </Resizable> // REMOVED

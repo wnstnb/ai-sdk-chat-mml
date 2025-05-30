@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import type { Message } from 'ai/react';
 import { type ToolInvocation } from '@ai-sdk/ui-utils';
-import { BotIcon, UserIcon, Wrench, SendToBack } from 'lucide-react';
+import { BotIcon, UserIcon, Wrench, SendToBack, Image as ImageIcon } from 'lucide-react';
 import { NonMemoizedMarkdown } from '@/components/markdown';
 import { getTextFromDataUrl } from '@/lib/editorUtils';
 import Image from 'next/image';
@@ -33,6 +33,7 @@ interface ChatMessageItemProps {
     message: Message;
     handleSendToEditor: (content: string) => void;
     onAddTaggedDocument: (doc: TaggedDocument) => void;
+    displayMode?: 'full' | 'mini';
 }
 
 // --- Helper Function to Extract User Display Content ---
@@ -65,10 +66,14 @@ type ContentPart = TextPart | ImagePart | ToolCallPart | ToolInvocationPart; // 
 export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({ 
     message, 
     handleSendToEditor,
-    onAddTaggedDocument
+    onAddTaggedDocument,
+    displayMode = 'full',
 }) => {
     // console.log('[ChatMessageItem] Rendering message:', JSON.stringify(message, null, 2));
+    // console.log('[ChatMessageItem] Display Mode:', displayMode); // Log displayMode
     
+    const isMiniMode = displayMode === 'mini';
+
     // --- State for Collapsible Tool Details ---
     const [expandedToolCalls, setExpandedToolCalls] = useState<Record<string, boolean>>({});
     
@@ -91,96 +96,93 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 
     const renderContent = () => {
         if (typeof message.content === 'string') {
-            // Handle plain string content (no change needed here)
             const textToRender = extractUserDisplayContent(message.content, message.role);
-            // --- ADDED LOGGING ---
-            console.log(`[ChatMessageItem renderContent - STRING] msgId: ${message.id}, original content:`, JSON.stringify(message.content));
-            console.log(`[ChatMessageItem renderContent - STRING] msgId: ${message.id}, textToRender after extract:`, JSON.stringify(textToRender));
-            const shouldRender = textToRender.trim();
-            console.log(`[ChatMessageItem renderContent - STRING] msgId: ${message.id}, shouldRender (non-empty trim):`, !!shouldRender);
-            // --- END LOGGING ---
             // Render only if there is actual text after removing potential prefix
-            return shouldRender ? (
-                <div className="prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0">
+            return textToRender.trim() ? (
+                <div className={`prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 ${isMiniMode ? 'text-xs' : ''}`}>
                     <NonMemoizedMarkdown>
                         {textToRender}
                     </NonMemoizedMarkdown>
                 </div>
-            ) : null; // Return null if only prefix existed
+            ) : null;
         } else if (Array.isArray(message.content)) {
-            // Handle content as an array of parts (now handles text, image, AND tool-call)
             const parts = message.content as ContentPart[];
-            // Filter out empty text parts that might exist alongside tool calls
             const visibleParts = parts.filter(part => part.type !== 'text' || part.text?.trim());
             
-            if (visibleParts.length === 0) return null; // Nothing to render
+            if (visibleParts.length === 0) return null;
 
             return (
-                <div className="space-y-3">
+                <div className={`space-y-2 ${isMiniMode ? 'space-y-1' : 'space-y-3'}`}>
                     {visibleParts.map((part, index) => {
                         if (part.type === 'text') {
                              const textToRender = extractUserDisplayContent(part.text, message.role);
-                             // Render only if there is actual text after removing potential prefix
                              return textToRender.trim() ? (
-                                <div key={`${message.id}-part-${index}-text`} className="prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0">
+                                <div key={`${message.id}-part-${index}-text`} className={`prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 ${isMiniMode ? 'text-xs' : ''}`}>
                                     <NonMemoizedMarkdown>
                                         {textToRender}
                                     </NonMemoizedMarkdown>
                                 </div>
                             ) : null;
                         } else if (part.type === 'image') {
-                            // (Image rendering logic remains the same)
                             const imageUrl = typeof part.image === 'string' ? part.image : part.image instanceof URL ? part.image.href : null;
                             if (part.error) {
-                                return <p key={`${message.id}-part-${index}-image-error`} className="text-red-500 text-sm">[Error: {part.error}]</p>;
+                                return <p key={`${message.id}-part-${index}-image-error`} className={`text-red-500 ${isMiniMode ? 'text-xs' : 'text-sm'}`}>[Error: {part.error}]</p>;
                             }
                             if (imageUrl) {
+                                if (isMiniMode) {
+                                    return (
+                                        <div key={`${message.id}-part-${index}-image`} className="flex items-center text-xs text-zinc-500 dark:text-zinc-400 my-1">
+                                            <ImageIcon size={14} className="mr-1 flex-shrink-0" />
+                                            <span>Image content</span>
+                                        </div>
+                                    );
+                                }
                                 return (
-                                    <div key={`${message.id}-part-${index}-image`} className="relative w-full max-w-xs h-auto my-2"> 
+                                    <div key={`${message.id}-part-${index}-image`} className={`relative w-full h-auto my-2 ${isMiniMode ? 'max-w-[150px]' : 'max-w-xs'}`}> 
                                         <Image 
                                             src={imageUrl} 
                                             alt="User uploaded image" 
-                                            width={300} 
-                                            height={200} 
+                                            width={isMiniMode ? 150 : 300} 
+                                            height={isMiniMode ? 100 : 200} 
                                             className="rounded-md object-contain"
                                             unoptimized={true}
                                         />
                                     </div>
                                 );
                             } else {
-                                return <p key={`${message.id}-part-${index}-image-fallback`} className="text-gray-500 text-sm">[Image not available]</p>;
+                                return <p key={`${message.id}-part-${index}-image-fallback`} className={`text-gray-500 ${isMiniMode ? 'text-xs' : 'text-sm'}`}>[Image not available]</p>;
                             }
                         } else if (part.type === 'tool-call') {
-                            // Parse the stringified args for display
                             const displayArgs = typeof part.args === 'string' ? JSON.parse(part.args) : part.args;
-                            
                             return (
-                                <div key={`${message.id}-part-${index}-tool`} className="p-2 my-2 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700">
-                                    <div className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 mb-1">
-                                        <Wrench size={12} className="flex-shrink-0" />
+                                <div key={`${message.id}-part-${index}-tool`} className={`my-1 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700 ${isMiniMode ? 'p-1 text-xs' : 'p-2 my-2'}`}>
+                                    <div className={`flex items-center gap-1 text-zinc-600 dark:text-zinc-400 ${isMiniMode ? 'gap-0.5 mb-0.5 text-[10px]' : 'gap-1.5 mb-1 text-xs'}`}>
+                                        <Wrench size={isMiniMode ? 10 : 12} className="flex-shrink-0" />
                                         <span>Tool Call: <strong>{part.toolName}</strong></span>
                                     </div>
-                                    <pre className="mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
-                                        Args: {JSON.stringify(displayArgs, null, 2)}
-                                    </pre>
+                                    {!isMiniMode && (
+                                      <pre className="mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
+                                          Args: {JSON.stringify(displayArgs, null, 2)}
+                                      </pre>
+                                    )}
                                 </div>
                             );
                         } else if (part.type === 'tool-invocation') {
                             const toolInvocation = (part as ToolInvocationPart).toolInvocation;
                             return (
-                                <div key={`${message.id}-part-${index}-tool`} className="mt-2 p-2 my-2 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700">
-                                    <div className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 mb-1">
-                                        <Wrench size={12} className="flex-shrink-0" />
+                                <div key={`${message.id}-part-${index}-tool`} className={`my-1 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700 ${isMiniMode ? 'p-1 text-xs' : 'mt-2 p-2 my-2'}`}>
+                                    <div className={`flex items-center gap-1 text-zinc-600 dark:text-zinc-400 ${isMiniMode ? 'gap-0.5 mb-0.5 text-[10px]' : 'gap-1.5 mb-1 text-xs'}`}>
+                                        <Wrench size={isMiniMode ? 10 : 12} className="flex-shrink-0" />
                                         <span>Tool Used: <strong>{toolInvocation.toolName}</strong></span>
                                     </div>
-                                    <pre className="mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
-                                        Args: {JSON.stringify(toolInvocation.args, null, 2)}
-                                    </pre>
-                                    {/* TODO: Add rendering for tool results if/when available */}
-                                    {/* Check state before accessing result */}
-                                    {toolInvocation.state === 'result' && (toolInvocation as any).result && (
+                                    {!isMiniMode && toolInvocation.state === 'result' && (toolInvocation as any).result && (
                                         <pre className="mt-1 text-xs text-green-600 dark:text-green-400 whitespace-pre-wrap break-all">
                                             Result: {JSON.stringify((toolInvocation as any).result, null, 2)}
+                                        </pre>
+                                    )}
+                                     {!isMiniMode && toolInvocation.args && (
+                                        <pre className="mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
+                                            Args: {JSON.stringify(toolInvocation.args, null, 2)}
                                         </pre>
                                     )}
                                 </div>
@@ -191,27 +193,33 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                 </div>
             );
         } else {
-            // Handle unexpected content types (no change)
             console.warn('[ChatMessageItem] Unexpected message content type:', typeof message.content, message.content);
-            return <p className="text-red-500">[Invalid message content]</p>;
+            return <p className={`text-red-500 ${isMiniMode ? 'text-xs' : 'text-sm'}`}>[Invalid message content]</p>;
         }
     };
 
     return (
         <motion.div
             key={message.id}
-            className={`flex flex-row gap-2 w-full mb-4 md:px-0`} 
+            className={`flex flex-row w-full md:px-0 ${isMiniMode ? 'gap-1 mb-1.5' : 'gap-2 mb-4'}`} 
             initial={{ y: 5, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.2 }}
         >
-            <div className="size-[24px] flex flex-col justify-start items-center flex-shrink-0 text-zinc-400 pt-1">
-                {message.role === 'assistant' ? <BotIcon /> : <UserIcon />}
+            <div className={`flex flex-col justify-start items-center flex-shrink-0 text-zinc-400 ${isMiniMode ? 'size-[18px] pt-0.5' : 'size-[24px] pt-1'}`}>
+                {message.role === 'assistant' ? <BotIcon size={isMiniMode ? 16 : 24} /> : <UserIcon size={isMiniMode ? 16 : 24} />}
             </div>
-            <div className="flex flex-col gap-1 flex-grow break-words overflow-hidden p-2 rounded-md bg-[--message-bg] shadow-sm">
+            <div className={`flex flex-col flex-grow break-words overflow-hidden rounded-md bg-[--message-bg] shadow-sm ${isMiniMode ? 'p-1.5 gap-0.5' : 'p-2 gap-1'}`}>
+                {/* Render User/Bot Name - Mini mode might omit or make smaller */}
+                {!isMiniMode && (
+                    <div className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                        {message.role === 'user' ? 'User' : 'Assistant'}
+                    </div>
+                )}
+                
                 {/* 1. Render the main text content (if it exists) */}
                 {(typeof message.content === 'string' && message.content.trim()) && (
-                    <div className="prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 mb-2">
+                     <div className={`prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 ${isMiniMode ? 'text-xs mb-1' : 'mb-2'}`}>
                         <NonMemoizedMarkdown>
                             {extractUserDisplayContent(message.content, message.role)}
                         </NonMemoizedMarkdown>
@@ -220,17 +228,13 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                 
                 {/* 2. Render any Tool Invocations or Images found in parts */}
                 {Array.isArray(message.parts) && message.parts.map((part, index) => {
-                     // Explicitly cast part to ContentPart to help linter
                      const contentPart = part as ContentPart;
-
                     let effectiveToolInvocation: ToolInvocation | undefined = undefined;
                     let toolCallIdForExpansion: string | undefined = undefined;
 
                     if (contentPart.type === 'tool-invocation') {
                         effectiveToolInvocation = (contentPart as ToolInvocationPart).toolInvocation;
-                        if (effectiveToolInvocation) {
-                            toolCallIdForExpansion = effectiveToolInvocation.toolCallId;
-                        }
+                        if (effectiveToolInvocation) toolCallIdForExpansion = effectiveToolInvocation.toolCallId;
                     } else if (contentPart.type === 'tool-call' && (contentPart as any).result !== undefined) {
                         const toolCallPart = contentPart as ToolCallPart & { result: any; toolCallId: string };
                         toolCallIdForExpansion = toolCallPart.toolCallId;
@@ -244,18 +248,26 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                     }
 
                     if (effectiveToolInvocation && toolCallIdForExpansion) {
-                        const toolCallId = toolCallIdForExpansion; // Use the extracted ID
+                        const toolCallId = toolCallIdForExpansion;
                         const isExpanded = !!expandedToolCalls[toolCallId];
                         
-                        // --- NEW: Specific rendering for searchAndTagDocumentsTool ---
-                        if (
-                            effectiveToolInvocation.toolName === 'searchAndTagDocumentsTool' &&
+                        if (effectiveToolInvocation.toolName === 'searchAndTagDocumentsTool' &&
                             effectiveToolInvocation.state === 'result' &&
                             effectiveToolInvocation.result &&
                             typeof effectiveToolInvocation.result === 'object' &&
-                            (effectiveToolInvocation.result as SearchAndTagDocumentsToolResult).presentationStyle === 'listWithTagButtons'
-                        ) {
+                            (effectiveToolInvocation.result as SearchAndTagDocumentsToolResult).presentationStyle === 'listWithTagButtons') {
                             const searchResult = effectiveToolInvocation.result as SearchAndTagDocumentsToolResult;
+                            if (isMiniMode) {
+                                return (
+                                    <div key={`${message.id}-part-${index}-search-results-mini`} className={`mt-0.5 p-1 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800/30 text-xs`}>
+                                        <div className="flex items-center gap-1 text-blue-700 dark:text-blue-300 mb-0.5 font-medium text-[10px]">
+                                            <Wrench size={10} className="flex-shrink-0" />
+                                            <span>Found {searchResult.documents.length} doc(s) for: <strong>{searchResult.queryUsed || 'query'}</strong></span>
+                                        </div>
+                                        {/* Mini mode might not show document list or show a very compact one */}
+                                    </div>
+                                );
+                            }
                             return (
                                 <div key={`${message.id}-part-${index}-search-results`} className="mt-1 p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800/30">
                                     <div className="flex items-center gap-1.5 text-xs text-blue-700 dark:text-blue-300 mb-2 font-medium">
@@ -287,7 +299,16 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                                 </div>
                             );
                         } else {
-                            // --- EXISTING: Fallback generic tool invocation rendering (collapsible) ---
+                            if (isMiniMode) {
+                                return (
+                                    <div key={`${message.id}-part-${index}-tool-mini`} className={`mt-0.5 p-1 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700 text-xs`}>
+                                        <div className="flex items-center gap-1 text-zinc-600 dark:text-zinc-400 text-[10px]">
+                                            <Wrench size={10} className="flex-shrink-0" />
+                                            <span>Tool: <strong>{effectiveToolInvocation.toolName}</strong></span>
+                                        </div>
+                                    </div>
+                                );
+                            }
                             return (
                                 <div key={`${message.id}-part-${index}-tool`} className="mt-1 p-2 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700">
                                     <div 
@@ -314,52 +335,78 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                                 </div>
                             );
                         }
-                    } else if (contentPart.type === 'image') { // Check contentPart.type
-                        // --- Image rendering logic (no change needed here) --- 
-                        const imagePart = contentPart as ImagePart; // Assert type
-                        const imageUrl = typeof imagePart.image === 'string' 
-                            ? imagePart.image 
-                            : imagePart.image instanceof URL 
-                                ? imagePart.image.href 
-                                : null;
+                    } else if (contentPart.type === 'image') {
+                        const imagePart = contentPart as ImagePart;
+                        const imageUrl = typeof imagePart.image === 'string' ? imagePart.image : imagePart.image instanceof URL ? imagePart.image.href : null;
                         
                         if (imagePart.error) {
-                            return <p key={`${message.id}-part-${index}-image-error`} className="text-red-500 text-sm">[Error: {imagePart.error}]</p>;
+                            return <p key={`${message.id}-part-${index}-image-error`} className={`text-red-500 ${isMiniMode ? 'text-xs' : 'text-sm'}`}>[Error: {imagePart.error}]</p>;
                         }
                         if (imageUrl) {
+                            if (isMiniMode) {
+                                return (
+                                    <div key={`${message.id}-part-${index}-image-mini`} className="flex items-center text-xs text-zinc-500 dark:text-zinc-400 my-0.5">
+                                        <ImageIcon size={14} className="mr-1 flex-shrink-0" />
+                                        <span>Image attachment</span>
+                                    </div>
+                                );
+                            }
                             return (
-                                <div key={`${message.id}-part-${index}-image`} className="relative w-full max-w-xs h-auto my-2"> 
+                                <div key={`${message.id}-part-${index}-image`} className={`relative w-full h-auto my-2 ${isMiniMode ? 'max-w-[150px]' : 'max-w-xs'}`}> 
                                     <Image 
                                         src={imageUrl} 
-                                        alt="User uploaded content" 
-                                        width={300} 
-                                        height={200} 
-                                        className="rounded-md object-contain" 
-                                        unoptimized={true} 
+                                        alt="User uploaded image" 
+                                        width={isMiniMode ? 150 : 300} 
+                                        height={isMiniMode ? 100 : 200} 
+                                        className="rounded-md object-contain"
+                                        unoptimized={true}
                                     />
                                 </div>
                             );
                         } else {
-                            return <p key={`${message.id}-part-${index}-image-fallback`} className="text-gray-500 text-sm">[Image not available]</p>;
+                            return <p key={`${message.id}-part-${index}-image-fallback`} className={`text-gray-500 ${isMiniMode ? 'text-xs' : 'text-sm'}`}>[Image not available]</p>;
                         }
                     } 
-                    // TextParts should be handled by the main message.content string rendering if present.
-                    // Rendering them here from message.parts can lead to duplication.
                     return null; 
                 })}
 
                 {/* Send to Editor Button - Uses specifically extracted text */}
                 {canSendToEditor && (
-                    <div className="mt-1 flex justify-end">
+                    <div className={`flex justify-end ${isMiniMode ? 'mt-0.5' : 'mt-1'}`}>
                         <button
                             onClick={() => handleSendToEditor(displayableRawText)}
-                            className="p-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-md focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500"
-                            title="Send to Editor">
-                            <SendToBack size={14} />
+                            className={`p-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-md focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500 ${isMiniMode ? '' : ''}`}
+                            title="Send to Editor"
+                        >
+                            <SendToBack size={isMiniMode ? 12 : 14} />
                         </button>
                     </div>
                 )}
-                
+                {/* Timestamp for mini mode */}
+                {isMiniMode && message.createdAt && (() => {
+                    const date = new Date(message.createdAt);
+                    const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' });
+
+                    if (message.role === 'assistant') {
+                        // More detailed logging for assistant messages, especially if an invalid date is produced
+                        if (timeString === 'Invalid Date') {
+                            console.error('[ChatMessageItem MINI MODE ASSISTANT - INVALID DATE] Original createdAt:', message.createdAt, 'Type:', typeof message.createdAt, 'Parsed Date:', date);
+                        } else {
+                            // console.log('[ChatMessageItem MINI MODE ASSISTANT - VALID DATE] Original createdAt:', message.createdAt, 'Type:', typeof message.createdAt, 'Formatted Time:', timeString);
+                        }
+                    }
+                    
+                    if (timeString === 'Invalid Date') {
+                        // Optionally, return a placeholder or null instead of "Invalid Date"
+                        return <div className="text-[10px] text-red-500 dark:text-red-400 mt-0.5 text-right">Invalid Date</div>; // Keep showing for now to highlight issue
+                    }
+
+                    return (
+                        <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5 text-right">
+                            {timeString}
+                        </div>
+                    );
+                })()}
             </div>
         </motion.div>
     );
