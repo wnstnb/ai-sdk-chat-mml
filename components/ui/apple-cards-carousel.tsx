@@ -1,13 +1,12 @@
 // @ts-nocheck
 "use client";
 
-import * as React from "react";
-import { useEffect, useRef, useState, createContext, useContext } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import Image, { ImageProps } from "next/image";
 import { useOutsideClick } from "@/hooks/useOutsideClick";
+import { ImageProps } from "next/image";
 
 // ------------------------------------
 // Types
@@ -21,7 +20,7 @@ type CardType = {
   src: string;
   title: string;
   category: string;
-  content: React.ReactNode;
+  content: ReactNode;
 };
 
 // ------------------------------------
@@ -31,7 +30,7 @@ export const CarouselContext = createContext<{
   onCardClose: (index: number) => void;
   currentIndex: number;
 }>({
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  // eslint-disable-next-line no-empty-function
   onCardClose: () => {},
   currentIndex: 0,
 });
@@ -164,7 +163,7 @@ interface CardProps {
 export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { onCardClose, currentIndex } = useContext(CarouselContext);
+  const { onCardClose } = useContext(CarouselContext);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
