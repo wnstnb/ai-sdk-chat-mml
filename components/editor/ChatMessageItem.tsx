@@ -54,6 +54,23 @@ function extractUserDisplayContent(content: string, role: Message['role']): stri
 }
 // --- End Helper Function ---
 
+// --- NEW: Helper function to format timestamp ---
+const formatTimestamp = (date: Date, isMiniMode: boolean): string => {
+    // Always include date: YYYY-MM-DD, HH:MM AM/PM
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    return `${year}-${month}-${day}, ${date.toLocaleTimeString(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+    })}`;
+};
+// --- END NEW ---
+
+// --- NEW: Control for showing/hiding timestamps globally ---
+const SHOW_TIMESTAMPS = false;
+// --- END NEW ---
+
 // Define Part types inline for clarity if not importing from 'ai' core
 type TextPart = { type: 'text'; text: string };
 type ImagePart = { type: 'image'; image: string | URL; error?: string }; // image received should be signed URL string
@@ -201,7 +218,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     return (
         <motion.div
             key={message.id}
-            className={`flex flex-row w-full md:px-0 ${isMiniMode ? 'gap-1 mb-1.5' : 'gap-2 mb-4'}`} 
+            className={`flex flex-row w-full md:px-0 ${isMiniMode ? 'gap-1 mb-1.5 border-b border-[--border-color]' : 'gap-2 mb-4'}`} 
             initial={{ y: 5, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.2 }}
@@ -382,31 +399,11 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                         </button>
                     </div>
                 )}
-                {/* Timestamp for mini mode */}
-                {isMiniMode && message.createdAt && (() => {
-                    const date = new Date(message.createdAt);
-                    const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' });
-
-                    if (message.role === 'assistant') {
-                        // More detailed logging for assistant messages, especially if an invalid date is produced
-                        if (timeString === 'Invalid Date') {
-                            console.error('[ChatMessageItem MINI MODE ASSISTANT - INVALID DATE] Original createdAt:', message.createdAt, 'Type:', typeof message.createdAt, 'Parsed Date:', date);
-                        } else {
-                            // console.log('[ChatMessageItem MINI MODE ASSISTANT - VALID DATE] Original createdAt:', message.createdAt, 'Type:', typeof message.createdAt, 'Formatted Time:', timeString);
-                        }
-                    }
-                    
-                    if (timeString === 'Invalid Date') {
-                        // Optionally, return a placeholder or null instead of "Invalid Date"
-                        return <div className="text-[10px] text-red-500 dark:text-red-400 mt-0.5 text-right">Invalid Date</div>; // Keep showing for now to highlight issue
-                    }
-
-                    return (
-                        <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5 text-right">
-                            {timeString}
-                        </div>
-                    );
-                })()}
+                {SHOW_TIMESTAMPS && (
+                    <div className={`text-[9.5px] text-zinc-500 dark:text-zinc-400 mt-0.5 ${isMiniMode ? 'self-end' : 'self-start'}`}>
+                        {message.createdAt ? formatTimestamp(new Date(message.createdAt), isMiniMode) : 'Sending...'}
+                    </div>
+                )}
             </div>
         </motion.div>
     );

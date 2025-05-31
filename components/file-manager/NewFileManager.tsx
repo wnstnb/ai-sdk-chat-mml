@@ -1,12 +1,12 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useFileMediaStore } from '@/stores/fileMediaStore';
 import { useFileData } from '@/hooks/useFileData';
-import { useSearchStore } from '@/stores/useSearchStore';
+import { useSearchStore, type SearchResult } from '@/stores/useSearchStore';
 import FolderItem from './FolderItem';
 import DocumentItem from './DocumentItem';
 import FolderTree from './FolderTree';
 import Breadcrumbs from './Breadcrumbs';
-import { FolderPlus, Check, X, Loader2, XCircle } from 'lucide-react'; // Icons for create folder UI and XCircle
+import { FolderPlus, Check, X, Loader2, XCircle, Star } from 'lucide-react'; // Icons for create folder UI and XCircle
 import {
   DndContext,
   closestCenter,
@@ -32,6 +32,7 @@ import { toast } from 'sonner';
 import { FileTextIcon, FolderIcon } from 'lucide-react';
 // ADD: Import Trash2 icon for the delete button
 import { Trash2 } from 'lucide-react';
+import { type Document as DocumentType } from '@/types/supabase'; // Import Document type for casting
 
 interface NewFileManagerProps {
   onFileSelect?: (documentId: string, documentName?: string) => void; // Added prop
@@ -48,9 +49,10 @@ const NewFileManager: React.FC<NewFileManagerProps> = ({ onFileSelect }) => {
     isLoading: isLoadingFiles,
     error: fileError,
     setCurrentFolder,
-    selectedItemIds, // Get selected IDs
-    clearSelection,  // Get clear selection action
-    toggleSelectItem, // Added toggleSelectItem
+    selectedItemIds,
+    clearSelection,
+    toggleSelectItem,
+    updateDocumentInStore, // For updating local state after starring
   } = useFileMediaStore();
 
   // Get Search State
@@ -71,6 +73,46 @@ const NewFileManager: React.FC<NewFileManagerProps> = ({ onFileSelect }) => {
 
   // NEW: State to track IDs being dragged in a multi-select scenario
   const [draggedItemIds, setDraggedItemIds] = useState<Set<string> | null>(null);
+
+  // ADD: Function to handle toggling star status
+  const handleToggleStar = async (documentId: string) => {
+    const originalDocument = allDocuments.find(doc => doc.id === documentId);
+    if (!originalDocument) {
+      toast.error("Document not found.");
+      return;
+    }
+
+    // Optimistically update UI
+    const newStarredStatus = !originalDocument.is_starred;
+    updateDocumentInStore(documentId, { is_starred: newStarredStatus });
+
+    try {
+      const response = await fetch(`/api/documents/${documentId}/star`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to toggle star status.' }));
+        throw new Error(errorData.message || 'Failed to toggle star status.');
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        // Confirm update with server response (though already optimistically updated)
+        updateDocumentInStore(documentId, { is_starred: result.is_starred });
+        toast.success(`Document ${result.is_starred ? 'starred' : 'unstarred'}.`);
+      } else {
+        throw new Error(result.message || 'Failed to toggle star status on server.');
+      }
+    } catch (error: any) {
+      toast.error(error.message || "An error occurred while toggling star status.");
+      // Revert optimistic update on error
+      updateDocumentInStore(documentId, { is_starred: originalDocument.is_starred });
+    }
+  };
 
   // Fetch data whenever the currentFolderId changes
   useEffect(() => {
@@ -341,10 +383,15 @@ const NewFileManager: React.FC<NewFileManagerProps> = ({ onFileSelect }) => {
       if (searchResults && searchResults.length > 0) {
           mainContent = (
               <>
-                {searchResults.map((doc) => (
-                  // Assuming DocumentItem can handle the SearchResult structure
-                  // Or create a specific SearchResultItem component
-                  <DocumentItem key={doc.id} document={doc} />
+                {/* Render Document Items from search */}
+                {searchResults.map((doc: SearchResult) => (
+                  <DocumentItem
+                    key={doc.id}
+                    document={doc as DocumentType} // Cast SearchResult doc to DocumentType
+                    onFileSelect={onFileSelect ? () => onFileSelect(doc.id, doc.name) : undefined}
+                    isStarred={(doc as any).is_starred || false} // Cast to any for is_starred, as SearchResult doesn't have it
+                    onToggleStar={handleToggleStar}
+                  />
                 ))}
               </>
           );
@@ -414,7 +461,9 @@ const NewFileManager: React.FC<NewFileManagerProps> = ({ onFileSelect }) => {
               <DocumentItem
                 key={doc.id}
                 document={doc}
-                onFileSelect={onFileSelect}
+                onFileSelect={onFileSelect ? () => onFileSelect(doc.id, doc.name) : undefined}
+                isStarred={doc.is_starred || false}
+                onToggleStar={handleToggleStar}
               />
             ))}
           </>
