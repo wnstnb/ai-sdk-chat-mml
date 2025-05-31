@@ -9,8 +9,6 @@ import { ChevronRight } from "lucide-react";
 export default function FaqAccordion() {
   return (
     <Accordion
-      type="single"
-      collapsible
       className="w-full rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900"
     >
       <AccordionItem
