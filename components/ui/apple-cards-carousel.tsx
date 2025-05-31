@@ -263,6 +263,7 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
           alt={card.title}
           className="absolute inset-0 z-10 object-cover"
         />
+        <div className="absolute inset-0 z-20 bg-gradient-to-b from-[color:var(--card-bg)]/70 to-transparent backdrop-blur-lg"></div>
       </motion.button>
     </>
   );
