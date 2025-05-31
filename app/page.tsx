@@ -6,7 +6,7 @@ import { ArrowRight, BrainCircuit, Clock, Layers, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button"; // Correct import path
 import { motion, AnimatePresence } from "framer-motion"; // Import AnimatePresence
 import FeaturesCarouselSection from "@/components/landing/FeaturesCarouselSection";
-import FaqAccordion from "@/components/landing/FaqAccordion";
+import FaqAccordion from "@/components/landing/FaqAccordion"; // This should already be correct for a default import
 
 // Define the type for features explicitly
 interface Feature {

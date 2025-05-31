@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/accordion";
 import { ChevronRight } from "lucide-react";
 
-export function FaqAccordion() {
+export default function FaqAccordion() {
   return (
     <Accordion
       type="single"
