@@ -5,6 +5,8 @@ import Link from 'next/link'; // Added Link import
 import { ArrowRight, BrainCircuit, Clock, Layers, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button"; // Correct import path
 import { motion, AnimatePresence } from "framer-motion"; // Import AnimatePresence
+import FeaturesCarouselSection from "@/components/landing/FeaturesCarouselSection";
+import FaqAccordion from "@/components/landing/FaqAccordion"; // This should already be correct for a default import
 
 // Define the type for features explicitly
 interface Feature {
@@ -18,6 +20,7 @@ export default function LandingPageContent() {
   console.log("LandingPageContent rendering..."); // Add log here
   const [activeTabIndex, setActiveTabIndex] = useState(0); // New state for active tab
   const featuresSectionRef = useRef<HTMLDivElement>(null); // New ref for the features section
+  const carouselSectionRef = useRef<HTMLDivElement>(null); // Declare carouselSectionRef
   const [currentCanvasImageIndex, setCurrentCanvasImageIndex] = useState(0); // Index for Desktop (0) or Mobile (1) view for the first tab
   const [currentTagDocsImageIndex, setCurrentTagDocsImageIndex] = useState(0); // Index for Tag Directly (0) or Ask AI (1)
 
@@ -143,6 +146,10 @@ export default function LandingPageContent() {
     setCurrentTagDocsImageIndex(index);
   };
 
+  const scrollToCarousel = () => {
+    carouselSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     // Removed min-h-screen from main, letting inner div control height
     // <main ref={mainRef} className="parallax-bg text-[color:var(--text-color)] "> // REMOVED mainRef
@@ -214,8 +221,23 @@ export default function LandingPageContent() {
             </section>
           </div>
 
-          {/* New Tabbed Features Section */}
-          <section ref={featuresSectionRef} id="features-tabs" className="pt-6 pb-20 min-h-screen flex flex-col items-center"> {/* MODIFIED padding */}
+          {/* Features Carousel Section */}
+          <section id="features-carousel" ref={carouselSectionRef} className="pt-6 pb-0 flex flex-col items-center">
+            <FeaturesCarouselSection scrollToCarousel={scrollToCarousel} carouselRef={carouselSectionRef} />
+          </section>
+
+          {/* FAQ Accordion Section */}
+          <section id="faq-accordion" className="pt-0 md:pt-8 pb-10 md:pb-12 flex flex-col items-center">
+            <div className="container mx-auto px-4 w-full max-w-3xl">
+              <h2 className="text-3xl md:text-4xl font-semibold text-center mb-6 md:mb-8 text-[color:var(--accent-color)] font-newsreader">
+                Frequently Asked Questions
+              </h2>
+              <FaqAccordion />
+            </div>
+          </section>
+
+          {/* Legacy Tabbed Features Section (hidden) */}
+          <section ref={featuresSectionRef} id="features-tabs" className="pt-6 pb-20 min-h-screen flex flex-col items-center hidden"> {/* Hidden old section */}
             {/* Tabs Container - Stays max-w-3xl */}
             <div className="w-full max-w-3xl mx-auto px-4">
               {/* Tabs */}
