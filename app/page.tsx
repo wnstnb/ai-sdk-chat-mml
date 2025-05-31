@@ -225,14 +225,14 @@ export default function LandingPageContent() {
           </div>
 
           {/* Features Carousel Section */}
-          <section id="features-carousel" ref={carouselSectionRef} className="pt-6 pb-20 min-h-screen flex flex-col items-center">
+          <section id="features-carousel" ref={carouselSectionRef} className="pt-6 pb-0 flex flex-col items-center">
             <FeaturesCarouselSection scrollToCarousel={scrollToCarousel} carouselRef={carouselSectionRef} />
           </section>
 
           {/* FAQ Accordion Section */}
-          <section id="faq-accordion" className="py-12 md:py-20 flex flex-col items-center">
-            <div className="container mx-auto px-4 w-full max-w-3xl"> {/* Added container and max-width for consistency */}
-              <h2 className="text-3xl md:text-4xl font-semibold text-center mb-10 md:mb-12 text-[color:var(--accent-color)] font-newsreader">
+          <section id="faq-accordion" className="pt-0 md:pt-8 pb-10 md:pb-12 flex flex-col items-center">
+            <div className="container mx-auto px-4 w-full max-w-3xl">
+              <h2 className="text-3xl md:text-4xl font-semibold text-center mb-6 md:mb-8 text-[color:var(--accent-color)] font-newsreader">
                 Frequently Asked Questions
               </h2>
               <FaqAccordion />
