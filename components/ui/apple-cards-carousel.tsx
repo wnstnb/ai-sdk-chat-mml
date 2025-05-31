@@ -253,7 +253,7 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
           </motion.p>
           <motion.p
             layoutId={layout ? `title-${card.title}` : undefined}
-            className="mt-2 max-w-xs text-left font-sans text-xl font-semibold [text-wrap:balance] text-white md:text-3xl"
+            className="text-3xl md:text-4xl font-semibold text-center mb-10 md:mb-12 text-[color:var(--accent-color)] font-newsreader"
           >
             {card.title}
           </motion.p>
