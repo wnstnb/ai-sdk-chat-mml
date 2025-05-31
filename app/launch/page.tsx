@@ -136,6 +136,16 @@ export default function LaunchPage() {
   const isStartingRecordingRef = useRef(false);
   // --- END: NEW Ref ---
 
+  // After the existing refs for visualisation (audioTimeDomainData etc.) insert:
+  const SILENCE_THRESHOLD = 0.02;
+  const SILENCE_DURATION_MS = 1500;
+  const lastSoundTimeRef = useRef<number>(0);
+  const soundDetectedRef = useRef<boolean>(false);
+  const recordingStartTimeRef = useRef<number>(0);
+
+  // Add below isRecordingRef
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+
   // ADDED: Effect to update local model state if preference loads *after* initial render
   useEffect(() => {
       if (isPreferencesInitialized && preferredModel && model !== preferredModel) {
@@ -285,10 +295,37 @@ export default function LaunchPage() {
 
     // Continue the loop
     animationFrameRef.current = requestAnimationFrame(visualize);
+
+    // --- Silence detection ---
+    let sumSq = 0;
+    for (let i = 0; i < dataArrayRef.current.length; i++) {
+      const v = (dataArrayRef.current[i] - 128) / 128;
+      sumSq += v * v;
+    }
+    const rms = Math.sqrt(sumSq / dataArrayRef.current.length);
+    const now = Date.now();
+    if (rms > SILENCE_THRESHOLD) {
+      soundDetectedRef.current = true;
+      lastSoundTimeRef.current = now;
+    } else if (now - lastSoundTimeRef.current > SILENCE_DURATION_MS && isRecordingRef.current) {
+      console.log('[visualize] Silence >1.5s, auto stop.');
+      handleStopRecording(false);
+      return;
+    }
   }, []); // No dependencies needed as it reads refs
 
   // Process recorded audio (called by recorder onstop)
   const handleProcessRecordedAudio = useCallback(async () => {
+    // --- NEW: Validate duration and sound presence BEFORE heavy processing ---
+    const durationMs = Date.now() - (recordingStartTimeRef.current || Date.now());
+    if (durationMs < SILENCE_DURATION_MS || !soundDetectedRef.current) {
+        toast.info(durationMs < SILENCE_DURATION_MS ? 'Recording too short.' : 'No audio detected.');
+        setIsRecording(false);
+        setIsTranscribing(false);
+        soundDetectedRef.current = false;
+        return;
+    }
+    soundDetectedRef.current = false; // reset flag for next recording
     // Use a functional update for audioChunks to ensure we get the latest state
     let processed = false; // Flag to ensure processing runs only once if called multiple times
     setAudioChunks(currentChunks => {
@@ -313,9 +350,17 @@ export default function LaunchPage() {
 
         setIsTranscribing(true);
         // Use currentChunks directly instead of relying on potentially stale state
-        const audioBlob = new Blob(currentChunks, { type: mediaRecorder?.mimeType || 'audio/webm' });
+        let audioBlob: Blob;
+        let mimeType: string | undefined;
 
-        // --- Removed mediaRecorder cleanup from here ---
+        const activeRecorderMime = mediaRecorderRef.current?.mimeType || mediaRecorder?.mimeType;
+        if (activeRecorderMime) {
+            mimeType = activeRecorderMime;
+            const effectiveMimeType = mimeType || 'audio/webm'; // Default to webm if not available
+            audioBlob = new Blob(currentChunks, { type: effectiveMimeType });
+        } else {
+            throw new Error("No valid MIME type found for audio recording.");
+        }
 
         const formData = new FormData();
         formData.append('audioFile', audioBlob, 'recording.webm');
@@ -379,39 +424,20 @@ export default function LaunchPage() {
         setDisplayTimerId(null);
     }
     // --- END: Clear display timer ---
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-        console.log("Stopping recording...");
-        mediaRecorder.stop(); // This triggers onstop -> handleProcessRecordedAudio & cleanup
+    const activeRecorder = mediaRecorderRef.current || mediaRecorder;
+    if (activeRecorder && activeRecorder.state === 'recording') {
+        console.log("Stopping MediaRecorder via ref...");
+        activeRecorder.stop();
         setIsRecording(false);
-        isRecordingRef.current = false; // Update ref immediately
-        if (timedOut) {
-            toast.info("Recording stopped after 30 seconds.");
-        }
-        // Note: Visualization cleanup now happens in the recorder's onstop handler
+        if (timedOut) toast.info("Recording stopped automatically after 30 seconds.");
     } else {
-        console.warn("Stop recording called but recorder not active or found.");
-        setIsRecording(false); // Ensure state is reset
-        isRecordingRef.current = false;
-        // --- NEW: Clear display timer if stop called unexpectedly ---
-        if (displayTimerId) {
-            clearInterval(displayTimerId);
-            setDisplayTimerId(null);
+        console.log("Recorder already stopped or null.");
+        setIsRecording(false);
+        if (mediaRecorderRef.current?.stream) {
+            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
         }
-        setRecordingDuration(0); // Reset duration
-        // --- END: Clear display timer ---
-        // Attempt cleanup even if recorder state is unexpected
-        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-        audioSourceNodeRef.current?.disconnect();
-        analyserRef.current?.disconnect();
-        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-             audioContextRef.current.close().catch(console.error);
-        }
-        setAudioTimeDomainData(null);
-        audioContextRef.current = null;
-        analyserRef.current = null;
-        audioSourceNodeRef.current = null;
-        animationFrameRef.current = null;
-        dataArrayRef.current = null;
+        mediaRecorderRef.current = null;
+        setMediaRecorder(null);
     }
   }, [mediaRecorder, recordingTimerId, displayTimerId]); // Dependencies
 
@@ -522,6 +548,7 @@ export default function LaunchPage() {
             console.error("Error stopping media stream tracks:", e);
           }
           setMediaRecorder(null); // Clear the recorder state variable
+          mediaRecorderRef.current = null;
         };
 
         recorder.onerror = (event) => {
@@ -554,6 +581,14 @@ export default function LaunchPage() {
           handleStopRecording(true); // Pass true for timed out
         }, 30000);
         setRecordingTimerId(timerId);
+
+        // In handleStartRecording, right after `isRecordingRef.current = true;`
+        recordingStartTimeRef.current = Date.now();
+        lastSoundTimeRef.current = recordingStartTimeRef.current;
+        soundDetectedRef.current = false;
+
+        // In handleStartRecording, after const recorder = new MediaRecorder(...)
+        mediaRecorderRef.current = recorder;
 
       } catch (err) { // Catch for media operations
           console.error("Error getting user media or starting recorder:", err);
