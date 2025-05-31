@@ -6,6 +6,7 @@ import { ArrowRight, BrainCircuit, Clock, Layers, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button"; // Correct import path
 import { motion, AnimatePresence } from "framer-motion"; // Import AnimatePresence
 import FeaturesCarouselSection from "@/components/landing/FeaturesCarouselSection";
+import FaqAccordion from "@/components/landing/FaqAccordion";
 
 // Define the type for features explicitly
 interface Feature {
@@ -218,6 +219,16 @@ export default function LandingPageContent() {
           {/* Features Carousel Section */}
           <section id="features-carousel" className="pt-6 pb-20 min-h-screen flex flex-col items-center">
             <FeaturesCarouselSection />
+          </section>
+
+          {/* FAQ Accordion Section */}
+          <section id="faq-accordion" className="py-12 md:py-20 flex flex-col items-center">
+            <div className="container mx-auto px-4 w-full max-w-3xl"> {/* Added container and max-width for consistency */}
+              <h2 className="text-3xl md:text-4xl font-semibold text-center mb-10 md:mb-12 text-[color:var(--accent-color)] font-newsreader">
+                Frequently Asked Questions
+              </h2>
+              <FaqAccordion />
+            </div>
           </section>
 
           {/* Legacy Tabbed Features Section (hidden) */}
