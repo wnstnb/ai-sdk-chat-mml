@@ -4,10 +4,15 @@
 import React from "react";
 import { Carousel, Card } from "@/components/ui/apple-cards-carousel";
 
-const FeaturesCarouselSection: React.FC = () => {
+interface FeaturesCarouselSectionProps {
+  scrollToCarousel?: () => void;
+  carouselRef?: React.RefObject<HTMLDivElement>;
+}
+
+const FeaturesCarouselSection: React.FC<FeaturesCarouselSectionProps> = ({ scrollToCarousel, carouselRef }) => {
   const cards = [
     {
-      src: "/one_flow_one_canvas.png",
+      // src: "/one_flow_one_canvas.png",
       title: "One Flow, One Canvas",
       category: "Workflow",
       content: (
@@ -59,10 +64,10 @@ const FeaturesCarouselSection: React.FC = () => {
   ];
 
   const items = cards.map((card, idx) => (
-    <Card key={idx} card={card} index={idx} />
+    <Card key={idx} card={card} index={idx} scrollToCarousel={scrollToCarousel} />
   ));
 
-  return <Carousel items={items} />;
+  return <Carousel items={items} carouselRef={carouselRef} />;
 };
 
 export default FeaturesCarouselSection;

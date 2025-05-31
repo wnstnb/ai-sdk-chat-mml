@@ -158,9 +158,10 @@ interface CardProps {
   card: CardType;
   index: number;
   layout?: boolean;
+  scrollToCarousel?: () => void;
 }
 
-export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
+export const Card: React.FC<CardProps> = ({ card, index, layout = false, scrollToCarousel }) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { onCardClose } = useContext(CarouselContext);
@@ -184,7 +185,10 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
 
   useOutsideClick(containerRef, () => handleClose());
 
-  const handleOpen = () => setOpen(true);
+  const handleOpen = () => {
+    if (scrollToCarousel) scrollToCarousel();
+    setOpen(true);
+  };
 
   const handleClose = () => {
     setOpen(false);
@@ -237,33 +241,29 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
         )}
       </AnimatePresence>
 
-      {/* Collapsed card */}
+      {/* Collapsed card with gradient mask and image */}
       <motion.button
         layoutId={layout ? `card-${card.title}` : undefined}
         onClick={handleOpen}
-        className="relative z-10 flex h-80 w-56 flex-col items-start justify-start overflow-hidden rounded-3xl bg-gray-100 md:h-[40rem] md:w-96 dark:bg-neutral-900"
+        className="relative z-10 flex h-80 w-56 flex-col items-start justify-start overflow-hidden bg-[color:var(--card-bg)]/70 backdrop-blur-lg rounded-xl shadow-2xl border border-[color:var(--border-color)]/25 p-6 md:p-8 md:h-[30rem] md:w-96 cursor-pointer transition-transform hover:scale-[1.03]"
       >
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-full bg-gradient-to-b from-black/50 via-transparent to-transparent" />
-        <div className="relative z-40 p-8">
-          <motion.p
-            layoutId={layout ? `category-${card.category}` : undefined}
-            className="text-left font-sans text-sm font-medium text-white md:text-base"
-          >
-            {card.category}
-          </motion.p>
-          <motion.p
-            layoutId={layout ? `title-${card.title}` : undefined}
-            className="text-3xl md:text-4xl font-semibold text-center mb-10 md:mb-12 text-[color:var(--accent-color)] font-newsreader"
-          >
-            {card.title}
-          </motion.p>
-        </div>
-        <BlurImage
-          src={card.src}
-          alt={card.title}
-          className="absolute inset-0 z-10 object-cover"
+        {/* Image masked to bottom half only */}
+        <img
+          src="/one_flow_one_canvas.png"
+          alt="Canvas"
+          className="absolute inset-0 w-full h-full object-cover rounded-xl pointer-events-none"
+          style={{
+            maskImage: 'linear-gradient(to bottom, transparent 25%, black 100%)',
+            WebkitMaskImage: 'linear-gradient(to bottom, transparent 25%, black 100%)',
+            zIndex: 0,
+          }}
         />
-        <div className="absolute inset-0 z-20 bg-gradient-to-b from-[color:var(--card-bg)]/70 to-transparent backdrop-blur-lg"></div>
+        {/* Card content above mask */}
+        <div className="relative z-10 w-full flex flex-col items-center">
+          <p className="text-left font-sans text-sm font-medium text-[color:var(--muted-text-color)] md:text-base mb-2 w-full">{card.category}</p>
+          <p className="text-2xl md:text-3xl font-semibold text-center mb-4 text-[color:var(--accent-color)] font-newsreader w-full">{card.title}</p>
+        </div>
+        <div className="relative z-10 w-full">{card.content}</div>
       </motion.button>
     </>
   );
@@ -285,7 +285,7 @@ export const BlurImage: React.FC<ImageProps> = ({ height, width, src, className,
       src={src as string}
       width={width}
       height={height}
-      loading="lazy"
+      // loading="lazy"
       decoding="async"
       alt={alt ? alt : "Background"}
       {...rest}

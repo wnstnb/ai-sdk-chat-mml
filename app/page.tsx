@@ -23,15 +23,15 @@ export default function LandingPageContent() {
   const [currentCanvasImageIndex, setCurrentCanvasImageIndex] = useState(0); // Index for Desktop (0) or Mobile (1) view for the first tab
   const [currentTagDocsImageIndex, setCurrentTagDocsImageIndex] = useState(0); // Index for Tag Directly (0) or Ask AI (1)
 
-  const canvasImageSources = [
-    "/one_flow_one_canvas.png",
-    "/one_flow_one_canvas_2.png"
-  ];
+  // const canvasImageSources = [
+  //   "/one_flow_one_canvas.png",
+  //   "/one_flow_one_canvas_2.png"
+  // ];
 
-  const tagDocsImageSources = [
-    "/tag_docs_2.png", // Image for "Tag Directly"
-    "/tag_docs_3.png"  // Image for "Ask AI"
-  ];
+  // const tagDocsImageSources = [
+  //   "/tag_docs_2.png", // Image for "Tag Directly"
+  //   "/tag_docs_3.png"  // Image for "Ask AI"
+  // ];
 
   const tagDocsViewNames = ["Tag Directly", "Ask AI"];
 
@@ -145,6 +145,14 @@ export default function LandingPageContent() {
     setCurrentTagDocsImageIndex(index);
   };
 
+  const carouselSectionRef = useRef<HTMLDivElement>(null);
+
+  const scrollToCarousel = () => {
+    if (carouselSectionRef.current) {
+      carouselSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   return (
     // Removed min-h-screen from main, letting inner div control height
     // <main ref={mainRef} className="parallax-bg text-[color:var(--text-color)] "> // REMOVED mainRef
@@ -217,8 +225,8 @@ export default function LandingPageContent() {
           </div>
 
           {/* Features Carousel Section */}
-          <section id="features-carousel" className="pt-6 pb-20 min-h-screen flex flex-col items-center">
-            <FeaturesCarouselSection />
+          <section id="features-carousel" ref={carouselSectionRef} className="pt-6 pb-20 min-h-screen flex flex-col items-center">
+            <FeaturesCarouselSection scrollToCarousel={scrollToCarousel} carouselRef={carouselSectionRef} />
           </section>
 
           {/* FAQ Accordion Section */}
@@ -306,8 +314,8 @@ export default function LandingPageContent() {
                       <div className="w-full flex justify-center items-center relative min-h-[250px] sm:min-h-[300px] md:min-h-[400px]">
                         <AnimatePresence mode="wait">
                           <motion.img
-                            key={canvasImageSources[currentCanvasImageIndex]}
-                            src={canvasImageSources[currentCanvasImageIndex]}
+                            // key={canvasImageSources[currentCanvasImageIndex]}
+                            // src={canvasImageSources[currentCanvasImageIndex]}
                             alt={`${features[activeTabIndex].title} - ${currentCanvasImageIndex === 0 ? "Desktop" : "Mobile"} View`}
                             className={`rounded-lg shadow-xl h-auto object-contain 
                               ${currentCanvasImageIndex === 0 ? 'w-full' : 'w-4/5 mx-auto' // Desktop full width, Mobile 80% width and centered
@@ -363,8 +371,8 @@ export default function LandingPageContent() {
                       <div className="w-full flex justify-center items-start relative min-h-[250px] sm:min-h-[300px] md:min-h-[400px]">
                         <AnimatePresence mode="wait">
                           <motion.img
-                            key={tagDocsImageSources[currentTagDocsImageIndex]}
-                            src={tagDocsImageSources[currentTagDocsImageIndex]}
+                            // key={tagDocsImageSources[currentTagDocsImageIndex]}
+                            // src={tagDocsImageSources[currentTagDocsImageIndex]}
                             alt={`${features[activeTabIndex].title} - ${tagDocsViewNames[currentTagDocsImageIndex]}`}
                             className="rounded-lg shadow-xl h-auto object-contain w-full max-w-lg" // Added max-w-lg for consistency
                             initial={{ opacity: 0 }}
