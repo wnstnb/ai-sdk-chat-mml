@@ -837,7 +837,7 @@ export function useChatInteractions({
             // After recorder creation, assign mediaRecorderRef.current = recorder;
             mediaRecorderRef.current = recorder;
             // After recorder.onstop, after setMediaRecorder(null) add mediaRecorderRef.current = null;
-            mediaRecorderRef.current = null;
+            // mediaRecorderRef.current = null;
 
         } catch (err: any) {
             // ... existing getUserMedia error handling ...
