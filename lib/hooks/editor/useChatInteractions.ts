@@ -177,6 +177,18 @@ export function useChatInteractions({
     const [taggedDocuments, setTaggedDocuments] = useState<TaggedDocument[]>([]);
     // --- END NEW ---
 
+    // --- NEW: Silence Detection State ---
+    const SILENCE_THRESHOLD = 0.02; // RMS level considered as speech
+    const SILENCE_DURATION_MS = 1500; // 1.5 s of silence triggers autostop
+    const lastSoundTimeRef = useRef<number>(0); // Timestamp of last detected sound
+    const soundDetectedRef = useRef<boolean>(false); // Whether any sound above threshold occurred
+    const recordingStartTimeRef = useRef<number>(0); // Recording start timestamp
+    // --- END NEW ---
+
+    // --- NEW: MediaRecorder Ref ---
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    // --- END NEW ---
+
     // --- Effect to load initial tagged documents from URL string ---
     useEffect(() => {
         if (initialTaggedDocIdsString) {
@@ -503,6 +515,18 @@ export function useChatInteractions({
                 if (transcribedText) {
                     console.log(`Transcription successful: "${transcribedText}"`);
                     
+                    // --- NEW: Validate duration & sound before processing ---
+                    const recordingDurationMs = Date.now() - (recordingStartTimeRef.current || Date.now());
+                    if (recordingDurationMs < SILENCE_DURATION_MS || !soundDetectedRef.current) {
+                        toast.info(recordingDurationMs < SILENCE_DURATION_MS ? 'Recording too short.' : 'No audio detected.');
+                        setIsTranscribing(false);
+                        setIsRecording(false);
+                        audioChunksRef.current = [];
+                        soundDetectedRef.current = false;
+                        return;
+                    }
+                    soundDetectedRef.current = false; // reset flag for future recordings
+                    
                     // ---> NEW: Set pending state instead of direct submit <---
                     setInput(transcribedText); // Set the input field
                     setPendingInitialSubmission(transcribedText); // Mark for auto-submit
@@ -560,6 +584,23 @@ export function useChatInteractions({
             const newData = new Uint8Array(dataArrayRef.current);
             setAudioTimeDomainData(newData);
 
+            // --- Silence detection ---
+            let sumSq = 0;
+            for (let i = 0; i < newData.length; i++) {
+                const v = (newData[i] - 128) / 128; // Normalise –1..1
+                sumSq += v * v;
+            }
+            const rms = Math.sqrt(sumSq / newData.length);
+            const now = Date.now();
+            if (rms > SILENCE_THRESHOLD) {
+                soundDetectedRef.current = true;
+                lastSoundTimeRef.current = now;
+            } else if (now - lastSoundTimeRef.current > SILENCE_DURATION_MS && isRecordingRef.current) {
+                console.log('[analyseAudio] 1.5 s of silence → autostop');
+                handleStopRecording(false);
+                return; // stop scheduling further frames
+            }
+
             // Continue the loop based on the ref
             if (isRecordingRef.current) { 
                 animationFrameRef.current = requestAnimationFrame(analyseAudio);
@@ -600,23 +641,20 @@ export function useChatInteractions({
         }
 
         // Stop MediaRecorder if active
-        if (mediaRecorder && mediaRecorder.state === 'recording') {
-            console.log("Stopping MediaRecorder...");
-            mediaRecorder.stop(); // Triggers onstop -> handleProcessRecordedAudio
-            // Set recording state immediately - ensures UI updates even if onstop takes time
-            setIsRecording(false); // <--- MOVED setIsRecording(false) here
-            if (timedOut) {
-                toast.info("Recording stopped automatically after 30 seconds.");
-            }
+        const activeRecorder = mediaRecorderRef.current || mediaRecorder;
+        if (activeRecorder && activeRecorder.state === 'recording') {
+            console.log("Stopping MediaRecorder via ref...");
+            activeRecorder.stop();
+            setIsRecording(false);
+            if (timedOut) { toast.info("Recording stopped automatically after 30 seconds."); }
         } else {
-             console.log("MediaRecorder not active or already stopped, ensuring isRecording is false.");
-            setIsRecording(false); // Ensure state is false even if recorder was not active
-            // Cleanup stream tracks if they exist and weren't cleaned by recorder.onstop
-             if (mediaRecorder?.stream) {
-                console.log("[handleStopRecording] Cleaning up tracks for non-recording recorder.");
-                 mediaRecorder.stream.getTracks().forEach(track => track.stop());
-             }
-             setMediaRecorder(null); // Clear recorder state here too
+            console.log("Recorder already stopped or null.");
+            setIsRecording(false);
+            if (mediaRecorderRef.current?.stream) {
+               mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+            }
+            mediaRecorderRef.current = null;
+            setMediaRecorder(null);
         }
 
         // --- NEW: Cleanup AudioContext and Nodes ---
@@ -789,6 +827,17 @@ export function useChatInteractions({
             }, 30000);
             setRecordingTimerId(timerId);
             console.log(`Recording timer set with ID: ${timerId}`);
+
+            // --- NEW: Start Recording Timestamp ---
+            recordingStartTimeRef.current = Date.now();
+            lastSoundTimeRef.current = recordingStartTimeRef.current;
+            soundDetectedRef.current = false;
+            // --- END NEW ---
+
+            // After recorder creation, assign mediaRecorderRef.current = recorder;
+            mediaRecorderRef.current = recorder;
+            // After recorder.onstop, after setMediaRecorder(null) add mediaRecorderRef.current = null;
+            mediaRecorderRef.current = null;
 
         } catch (err: any) {
             // ... existing getUserMedia error handling ...
