@@ -19,7 +19,7 @@ const FeaturesCarouselSection: React.FC<FeaturesCarouselSectionProps> = ({ scrol
       content: [
         <div key="section1">
           <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
-          <strong>Working on the same canvas as your AI means you're not jumping between tools, tabs, or mental contexts.</strong> Everything you and the AI generate stays unified. This eliminates the friction of switching modes, so your flow remains uninterrupted. The result is faster iteration, clearer collaboration, and a workspace that actually feels collaborative.
+          <strong>Working on the same canvas as your AI means you&apos;re not jumping between tools, tabs, or mental contexts.</strong> Everything you and the AI generate stays unified. This eliminates the friction of switching modes, so your flow remains uninterrupted. The result is faster iteration, clearer collaboration, and a workspace that actually feels collaborative.
             <br />
           </p>
           <div className="flex justify-center mt-4">
@@ -28,7 +28,7 @@ const FeaturesCarouselSection: React.FC<FeaturesCarouselSectionProps> = ({ scrol
         </div>,
         <div key="section2">
           <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
-            <strong>Whether you're on your phone or at your desk, the experience stays seamless.</strong> The same canvas adapts to your screen so you never lose your place. Start an idea on mobile, refine it on desktop, and pick up right where you left off. Your workflow stays fluid, no matter the device.
+            <strong>Whether you&apos;re on your phone or at your desk, the experience stays seamless.</strong> The same canvas adapts to your screen so you never lose your place. Start an idea on mobile, refine it on desktop, and pick up right where you left off. Your workflow stays fluid, no matter the device.
           </p>
           <div className="flex justify-center mt-4">
             <img src="/mobile-view.png" alt="One Flow, One Canvas" className="w-auto h-full object-contain rounded-xl max-h-[400px]" />
@@ -84,7 +84,7 @@ const FeaturesCarouselSection: React.FC<FeaturesCarouselSectionProps> = ({ scrol
       content: [
         <div key="section-stay-organized">
         <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
-          <strong>Stay organized without the clutter or complexity of traditional note apps.</strong> Most apps either bury your content in rigid folder hierarchies or overwhelm you with tagging systems that don't scale. This feature strikes the balance, giving you just enough structure to keep things clean and accessible.
+          <strong>Stay organized without the clutter or complexity of traditional note apps.</strong> Most apps either bury your content in rigid folder hierarchies or overwhelm you with tagging systems that don&apos;t scale. This feature strikes the balance, giving you just enough structure to keep things clean and accessible.
         </p>
         <div className="flex justify-center mt-4">
           <img src="/file_browser_1.png" alt="Stay Organized" className="w-full h-full object-cover rounded-xl max-w-xl" />
@@ -100,7 +100,7 @@ const FeaturesCarouselSection: React.FC<FeaturesCarouselSectionProps> = ({ scrol
       content: [
         <div key="section-use-different-models">
         <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
-          <strong>One model not getting it done?</strong> Some are better at writing, others at reasoning, summarizing, or translating. Switching lets you play to each model's strengths without being locked into one tool or platform. You get more accurate results and avoid the frustration of forcing one model to do everything.
+          <strong>One model not getting it done?</strong> Some are better at writing, others at reasoning, summarizing, or translating. Switching lets you play to each model&apos;s strengths without being locked into one tool or platform. You get more accurate results and avoid the frustration of forcing one model to do everything.
         </p>
         <div className="flex justify-center mt-4">
           <img src="/user_diff_models_1.png" alt="Use Different Models" className="w-full h-full object-cover rounded-xl max-w-xl" />
