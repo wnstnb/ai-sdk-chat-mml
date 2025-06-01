@@ -15,6 +15,94 @@ interface Feature {
   description: string;
 }
 
+// Define the type for the new feature list items
+interface FeatureListItem {
+  text: string;
+}
+
+// New FeatureListSection component
+const FeatureListSection = () => {
+  const featureItems: FeatureListItem[] = [
+    { text: "Beautiful rich text editing with Markdown and drag-and-drop blocks." },
+    { text: "Smart AI integration to help you write, ideate, and refine effortlessly." },
+    { text: "Autosave and manual version history so you never lose your work." },
+    { text: "Browse previous versions with a clean, intuitive interface." },
+    { text: "Auto-title your documents with AI so you can stay in flow." },
+    { text: "Organize with folders, or star your favorites for easy access." },
+    { text: "Stay productive anywhere with both desktop and mobile layouts." },
+    { text: "Tag notes and documents as context, and never start from zero." },
+    { text: "Talk, type, or drop in images. Engage however you want." },
+    { text: "Access to mutliple models so you're not platform hopping." },
+  ];
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: (i: number) => ({
+      opacity: 1,
+      y: 0,
+      transition: {
+        delay: i * 0.2, // Stagger animation
+        duration: 0.5,
+        ease: "easeOut",
+      },
+    }),
+  };
+
+  return (
+    <section id="full-feature-list" className="py-16 md:py-24">
+      <div className="container mx-auto px-4">
+        <motion.h2
+          className="text-3xl md:text-4xl font-semibold text-center mb-12 md:mb-16 text-[color:var(--accent-color)] font-newsreader"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: false, amount: 0.5 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          variants={{
+            hidden: { opacity: 0, y: 20 },
+            visible: { opacity: 1, y: 0 },
+          }}
+        >
+          Everything Your<br />Notes App Should Be
+        </motion.h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 max-w-4xl mx-auto">
+          {featureItems.map((item, index) => (
+            <motion.div
+              key={index}
+              className="text-lg md:text-xl text-[color:var(--primary-color)]/90 flex items-start"
+              custom={index}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: false, amount: 0.5 }}
+              variants={itemVariants}
+            >
+              <ArrowRight className="mr-2 h-5 w-5 flex-shrink-0 mt-1" />
+              <span>{item.text}</span>
+            </motion.div>
+          ))}
+        </div>
+        <motion.div
+          className="text-center mt-16 md:mt-24"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: false, amount: 0.3 }}
+          transition={{ duration: 0.8, ease: "easeOut", delay: featureItems.length * 0.2 + 0.5 }}
+           variants={{
+            hidden: { opacity: 0, y: 20 },
+            visible: { opacity: 1, y: 0 },
+          }}
+        >
+          <Link href="/signup">
+            <Button className="bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] px-10 py-7 text-lg">
+              Get Started
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Button>
+          </Link>
+        </motion.div>
+      </div>
+    </section>
+  );
+};
+
 // Renamed component to avoid conflict with default export naming conventions if needed elsewhere
 export default function LandingPageContent() {
   console.log("LandingPageContent rendering..."); // Add log here
@@ -23,6 +111,17 @@ export default function LandingPageContent() {
   const carouselSectionRef = useRef<HTMLDivElement>(null); // Declare carouselSectionRef
   const [currentCanvasImageIndex, setCurrentCanvasImageIndex] = useState(0); // Index for Desktop (0) or Mobile (1) view for the first tab
   const [currentTagDocsImageIndex, setCurrentTagDocsImageIndex] = useState(0); // Index for Tag Directly (0) or Ask AI (1)
+
+  const handleSmoothScroll = (event: React.MouseEvent<HTMLAnchorElement, MouseEvent>, targetId: string) => {
+    event.preventDefault();
+    const targetElement = document.getElementById(targetId);
+    if (targetElement) {
+      targetElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    }
+  };
 
   const canvasImageSources = [
     "/one_flow_one_canvas.png",
@@ -170,14 +269,23 @@ export default function LandingPageContent() {
             <Link href="/login">
               <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">Login</Button>
             </Link>
-            <Link href="#">
-              <Button className="text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)]" disabled>Get Started</Button>
+            <Link 
+              href="#faq-accordion" 
+              onClick={(e) => handleSmoothScroll(e, 'faq-accordion')}  /* Added FAQ link */
+            >
+              <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">FAQ</Button>
+            </Link>
+            <Link 
+              href="#full-feature-list" 
+              onClick={(e) => handleSmoothScroll(e, 'full-feature-list')}
+            >
+              <Button className="text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)]">Get Started</Button>
             </Link>
           </nav>
         </header>
 
         {/* Main Content Area - Added ref and overflow */}
-        <div ref={scrollContainerRef} className="flex-grow overflow-y-auto"> 
+        <div ref={scrollContainerRef} className="flex-grow overflow-y-auto scroll-smooth"> {/* Added scroll-smooth */}
           {/* Hero Section */}
           <div className="card-snap-wrapper flex items-center justify-center px-4">
             <section 
@@ -235,6 +343,9 @@ export default function LandingPageContent() {
               <FaqAccordion />
             </div>
           </section>
+
+          {/* Full Feature List Section */}
+          <FeatureListSection />
 
           {/* Legacy Tabbed Features Section (hidden) */}
           <section ref={featuresSectionRef} id="features-tabs" className="pt-6 pb-20 min-h-screen flex flex-col items-center hidden"> {/* Hidden old section */}

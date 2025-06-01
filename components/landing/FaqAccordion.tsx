@@ -7,6 +7,11 @@ import {
 
 const items = [
   {
+    id: "0",
+    title: "What is Tuon.io?",
+    content: "Tuon.io is a platform for creating and managing your notes and documents. The term 'tuon' (pronounced TOO-on) is Tagalog for 'focus'. I got tired of jumping between tools and apps to keep notes and documents, so I built this. I wanted it to be light enough for me to replace Apple Notes but have capabilities that some platforms just don't get right.",
+  },
+  {
     id: "1",
     title: "Is there a free trial?",
     content: "Yes, there is a 7 day free trial. All features are available during the trial.",
@@ -28,8 +33,8 @@ const items = [
   },
   {
     id: "5",
-    title: "Can I export content from notes to another platform?",
-    content: "Yes you can. All documents are markdown, and there is a copy to clipboard button for each document in the title bar.",
+    title: "Can I export content from my notes to another platform?",
+    content: "Yes you can. All documents are markdown, and there is a copy to clipboard button for each document in the title bar. Exporting to PDF is on the roadmap.",
   },
   {
     id: "6",
