@@ -311,7 +311,7 @@ export default function LandingPageContent() {
     visible: { opacity: 1, y: 0 },
   };
 
-  // Ref for the main parallax container
+  // Add ref for the main parallax container
   // const mainRef = useRef<HTMLDivElement>(null); // REMOVED: No longer needed for JS parallax
 
   // Add ref for intersection observer
@@ -387,44 +387,51 @@ export default function LandingPageContent() {
     <main className="parallax-bg text-[color:var(--text-color)] "> 
       {/* Content wrapper - Make it a flex container filling height */}
       <div className="relative z-10 flex flex-col min-h-screen">
-        {/* Header Section - Added relative z-20 */}
-        <header className="container mx-auto px-6 py-6 flex items-center justify-between relative z-20">
-          <div className="flex items-center">
-            {/* Use theme variable for logo color */}
-            <img src="/tuon-logo-svg-type.svg" alt="Tuon Logo" className="h-8 w-8" style={{ filter: 'var(--logo-filter)' }} />
+        {/* Header Section - Static glass-like background */}
+        <header 
+          className={`fixed top-0 left-0 right-0 z-50 bg-[color:var(--card-bg)]/70 backdrop-blur-lg shadow-md`}
+        >
+          <div 
+            className={`container mx-auto px-6 flex items-center justify-between py-1`}
+          >
+            <div className="flex items-center">
+              {/* Use theme variable for logo color */}
+              <img src="/tuon-logo-svg-type.svg" alt="Tuon Logo" className="h-8 w-8" style={{ filter: 'var(--logo-filter)' }} />
+              {/* Removed TEMP UI DEBUG */}
+            </div>
+            <nav className="flex items-center space-x-4 mobile-nav-actions">
+              {/* Use theme variables for nav links */}
+              {/* <a href="#features" className="text-sm font-medium text-[color:var(--primary-color)]/80 hover:text-[color:var(--accent-color)] transition-colors">Features</a> */}
+              {/* <a href="#how-it-works" className="text-sm font-medium text-[color:var(--primary-color)]/80 hover:text-[color:var(--accent-color)] transition-colors">How It Works</a> */}
+              {/* Use theme variables for button colors/hover */}
+              <Link 
+                href="#pricing" 
+                onClick={(e) => handleSmoothScroll(e, 'pricing')}
+              >
+                <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">Pricing</Button>
+              </Link>
+              <Link 
+                href="#faq-accordion" 
+                onClick={(e) => handleSmoothScroll(e, 'faq-accordion')}  /* Added FAQ link */
+              >
+                <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">FAQ</Button>
+              </Link>
+              <Link 
+                href="#full-feature-list" 
+                onClick={(e) => handleSmoothScroll(e, 'full-feature-list')}
+              >
+                <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">Features</Button>
+              </Link>
+              
+              <Link href="/login">
+                <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">Login</Button>
+              </Link>
+            </nav>
           </div>
-          <nav className="flex items-center space-x-4 mobile-nav-actions">
-            {/* Use theme variables for nav links */}
-            {/* <a href="#features" className="text-sm font-medium text-[color:var(--primary-color)]/80 hover:text-[color:var(--accent-color)] transition-colors">Features</a> */}
-            {/* <a href="#how-it-works" className="text-sm font-medium text-[color:var(--primary-color)]/80 hover:text-[color:var(--accent-color)] transition-colors">How It Works</a> */}
-            {/* Use theme variables for button colors/hover */}
-            <Link 
-              href="#pricing" 
-              onClick={(e) => handleSmoothScroll(e, 'pricing')}
-            >
-              <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">Pricing</Button>
-            </Link>
-            <Link 
-              href="#faq-accordion" 
-              onClick={(e) => handleSmoothScroll(e, 'faq-accordion')}  /* Added FAQ link */
-            >
-              <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">FAQ</Button>
-            </Link>
-            <Link 
-              href="#full-feature-list" 
-              onClick={(e) => handleSmoothScroll(e, 'full-feature-list')}
-            >
-              <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">Features</Button>
-            </Link>
-            
-            <Link href="/login">
-              <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">Login</Button>
-            </Link>
-          </nav>
         </header>
 
         {/* Main Content Area - Added ref and overflow */}
-        <div ref={scrollContainerRef} className="flex-grow overflow-y-auto scroll-smooth"> {/* Added scroll-smooth */}
+        <div ref={scrollContainerRef} className="flex-grow overflow-y-auto scroll-smooth pt-20"> {/* Added scroll-smooth and padding-top to account for fixed header */}
           {/* Hero Section */}
           <div className="card-snap-wrapper flex items-center justify-center px-4">
             <section 
@@ -477,7 +484,7 @@ export default function LandingPageContent() {
           <PricingSection />
 
           {/* FAQ Accordion Section */}
-          <section id="faq-accordion" className="pt-0 md:pt-8 pb-10 md:pb-12 flex flex-col items-center">
+          <section id="faq-accordion" className="pt-6 md:pt-8 pb-10 md:pb-12 flex flex-col items-center scroll-mt-12">
             <div className="container mx-auto px-4 w-full max-w-3xl">
               <h2 className="text-3xl md:text-4xl font-semibold text-center mb-6 md:mb-8 text-[color:var(--accent-color)] font-newsreader">
                 Frequently Asked Questions
