@@ -15,8 +15,9 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "tuon.io",
-  description: "Bring it all into focus",
+  metadataBase: new URL("https://www.tuon.io"),
+  title: "Tuon | Everything your notes app should be",
+  description: "Tuon helps you write, store, and retrieve documents with AI assistance. Clean interface. Version control. No clutter.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -25,19 +26,44 @@ export const metadata: Metadata = {
     startupImage: "/icons/apple-touch-icon.png",
   },
   icons: {
-    icon: [
-      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' }
-    ],
-    apple: [
-      { url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }
-    ]
+    icon: ["/favicon.ico", { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }, { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' }],
+    apple: '/icons/apple-touch-icon.png',
   },
   other: {
     'mobile-web-app-capable': 'yes',
     'apple-mobile-web-app-capable': 'yes',
     'apple-mobile-web-app-status-bar-style': 'black-translucent',
     'apple-mobile-web-app-title': 'tuon.io'
+  },
+  // Twitter Meta Tags
+  twitter: {
+    card: "summary_large_image",
+    site: "@DoDataThings",
+    title: "Tuon | Everything your notes app should be",
+    description: "Write better, stay organized, and bring AI into your flow. Try Tuon for free.",
+    images: [
+      {
+        url: "https://www.tuon.io/landing-page.png",
+        width: 1200,
+        height: 630,
+        alt: "Tuon landing page hero image",
+      },
+    ],
+  },
+  // Open Graph Meta Tags
+  openGraph: {
+    title: "Tuon | Everything your notes app should be",
+    description: "AI-powered document writing and versioning.",
+    images: [
+      {
+        url: "https://www.tuon.io/landing-page.png",
+        width: 1200,
+        height: 630,
+        alt: "Tuon landing page hero image",
+      },
+    ],
+    url: "https://www.tuon.io",
+    type: "website",
   }
 };
 
