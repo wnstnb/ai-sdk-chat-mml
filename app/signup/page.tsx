@@ -415,6 +415,9 @@ function SignupFormContent() {
             >
               {loading ? 'Processing...' : 'Start Free 7-Day Trial'}
             </button>
+            <div className="flex flex-col items-center">
+            <p className="text-xs text-[color:var(--muted-text-color)] text-center mt-2">No charges until trial is done. Cancel anytime.<br />All features included during your trial.</p>
+            </div>
           </div>
         </form>
 
