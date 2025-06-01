@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link'; // Added Link import
-import { ArrowRight, BrainCircuit, Clock, Layers, Zap } from "lucide-react";
+import { ArrowRight, BrainCircuit, Clock, Layers, Zap, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button"; // Correct import path
 import { motion, AnimatePresence } from "framer-motion"; // Import AnimatePresence
 import FeaturesCarouselSection from "@/components/landing/FeaturesCarouselSection";
@@ -19,6 +19,138 @@ interface Feature {
 interface FeatureListItem {
   text: string;
 }
+
+// Define type for pricing plans
+interface PricingPlan {
+  id: 'monthly' | 'annual';
+  name: string;
+  price: string;
+  priceDetails: string;
+  features: string[];
+  highlight?: string;
+}
+
+// New PricingSection component
+const PricingSection = () => {
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual' | null>(null);
+
+  const plans: PricingPlan[] = [
+    {
+      id: 'monthly',
+      name: "Monthly",
+      price: "$16",
+      priceDetails: "/ month",
+      features: ["7-day free trial", "Cancel anytime", "All features included"],
+    },
+    {
+      id: 'annual',
+      name: "Annual",
+      price: "$150",
+      priceDetails: "/ year",
+      features: ["7-day free trial", "Cancel anytime", "All features included"],
+      highlight: "Save 22%",
+    },
+  ];
+
+  const handlePlanSelect = (planId: 'monthly' | 'annual') => {
+    setSelectedPlan(planId);
+  };
+
+  const getStartedLink = selectedPlan ? `/signup?plan=${selectedPlan}` : "/signup";
+
+  return (
+    <section id="pricing" className="py-16 md:py-24">
+      <div className="container mx-auto px-4">
+        <motion.h2
+          className="text-3xl md:text-4xl font-semibold text-center mb-4 text-[color:var(--accent-color)] font-newsreader"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: false, amount: 0.5 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          variants={{
+            hidden: { opacity: 0, y: 20 },
+            visible: { opacity: 1, y: 0 },
+          }}
+        >
+          Simple Pricing. Full Access.
+        </motion.h2>
+        <motion.p
+          className="text-lg md:text-xl text-center text-[color:var(--primary-color)]/80 mb-12 md:mb-16 max-w-2xl mx-auto"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: false, amount: 0.5 }}
+          transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
+          variants={{
+            hidden: { opacity: 0, y: 20 },
+            visible: { opacity: 1, y: 0 },
+          }}
+        >
+          Every feature, one clear price.
+        </motion.p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto mb-12 md:mb-16">
+          {plans.map((plan, index) => (
+            <motion.div
+              key={plan.id}
+              className={`bg-[color:var(--card-bg)]/60 backdrop-blur-md p-6 md:p-8 rounded-xl border shadow-xl cursor-pointer transition-all duration-300 ease-in-out relative overflow-hidden
+                ${selectedPlan === plan.id ? 'border-[color:var(--accent-color)] shadow-2xl scale-105' : 'border-[color:var(--border-color)]/25 hover:border-[color:var(--accent-color)] hover:shadow-lg hover:scale-[1.02]'}`}
+              onClick={() => handlePlanSelect(plan.id)}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: false, amount: 0.3 }}
+              transition={{ duration: 0.5, delay: 0.3 + index * 0.15 }}
+              variants={{
+                hidden: { opacity: 0, y: 30, scale: 0.95 },
+                visible: { opacity: 1, y: 0, scale: 1 },
+              }}
+            >
+              {plan.highlight && (
+                <div className="absolute top-0 right-0 bg-[color:var(--accent-color)] text-[color:var(--bg-color)] px-3 py-1 text-xs font-semibold rounded-bl-lg">
+                  {plan.highlight}
+                </div>
+              )}
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-2xl font-semibold text-[color:var(--primary-color)]">{plan.name}</h3>
+                {selectedPlan === plan.id && <CheckCircle className="h-6 w-6 text-[color:var(--accent-color)]" />}
+              </div>
+              <p className="text-4xl font-bold text-[color:var(--accent-color)] mb-1">
+                {plan.price}
+                <span className="text-lg font-normal text-[color:var(--primary-color)]/70">{plan.priceDetails}</span>
+              </p>
+              <ul className="space-y-2 mt-6 text-[color:var(--primary-color)]/80">
+                {plan.features.map((feature, i) => (
+                  <li key={i} className="flex items-center">
+                    <ArrowRight className="h-4 w-4 mr-2 text-[color:var(--accent-color)] flex-shrink-0" />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+          ))}
+        </div>
+
+        <motion.div
+          className="text-center"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: false, amount: 0.3 }}
+          transition={{ duration: 0.8, ease: "easeOut", delay: 0.8 }}
+           variants={{
+            hidden: { opacity: 0, y: 20 },
+            visible: { opacity: 1, y: 0 },
+          }}
+        >
+          <Link href={getStartedLink}>
+            <Button className="bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] px-10 py-7 text-lg">
+              Get Started
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Button>
+          </Link>
+        </motion.div>
+      </div>
+    </section>
+  );
+};
 
 // New FeatureListSection component
 const FeatureListSection = () => {
@@ -93,7 +225,7 @@ const FeatureListSection = () => {
         >
           <Link href="/signup">
             <Button className="bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] px-10 py-7 text-lg">
-              Get Started
+              Try Free For 7 Days 
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </Link>
@@ -266,8 +398,11 @@ export default function LandingPageContent() {
             {/* <a href="#features" className="text-sm font-medium text-[color:var(--primary-color)]/80 hover:text-[color:var(--accent-color)] transition-colors">Features</a> */}
             {/* <a href="#how-it-works" className="text-sm font-medium text-[color:var(--primary-color)]/80 hover:text-[color:var(--accent-color)] transition-colors">How It Works</a> */}
             {/* Use theme variables for button colors/hover */}
-            <Link href="/login">
-              <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">Login</Button>
+            <Link 
+              href="#pricing" 
+              onClick={(e) => handleSmoothScroll(e, 'pricing')}
+            >
+              <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">Pricing</Button>
             </Link>
             <Link 
               href="#faq-accordion" 
@@ -279,7 +414,11 @@ export default function LandingPageContent() {
               href="#full-feature-list" 
               onClick={(e) => handleSmoothScroll(e, 'full-feature-list')}
             >
-              <Button className="text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)]">Get Started</Button>
+              <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">Features</Button>
+            </Link>
+            
+            <Link href="/login">
+              <Button variant="ghost" className="text-sm text-[color:var(--primary-color)] hover:text-[color:var(--accent-color)] hover:bg-[color:var(--hover-bg)]/20">Login</Button>
             </Link>
           </nav>
         </header>
@@ -310,7 +449,7 @@ export default function LandingPageContent() {
                   variants={contentVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Tuon removes the friction between AI and organic creative workflows.<br />Start, finish, manage, and iterate on your notes and documents all in one place
+                  Tuon removes the friction between AI and organic creative workflows.<br />Start, finish, manage, and iterate on your notes and documents<br />all in one place
                 </motion.p>
                 <motion.div 
                   className="flex flex-col sm:flex-row gap-4 justify-center"
@@ -333,6 +472,9 @@ export default function LandingPageContent() {
           <section id="features-carousel" ref={carouselSectionRef} className="pt-6 pb-0 flex flex-col items-center">
             <FeaturesCarouselSection scrollToCarousel={scrollToCarousel} carouselRef={carouselSectionRef} />
           </section>
+
+          {/* Pricing Section */}
+          <PricingSection />
 
           {/* FAQ Accordion Section */}
           <section id="faq-accordion" className="pt-0 md:pt-8 pb-10 md:pb-12 flex flex-col items-center">

@@ -12,7 +12,7 @@ import { supabase } from '../../lib/supabase/client';
 // Constants for Stripe Price IDs (easily swappable)
 const STRIPE_PRICE_IDS = {
   monthly: 'price_1RR50wP5ZTVXN3kSg2UPq3OS', // Product ID: prod_SLmaopjPKETPQ2
-  annual: 'price_1RR50CP5ZTVXN3kS4WaKvfQ6',  // Product ID: prod_SLmZG8yBgYEBqV
+  annual: 'price_1RV2ReP5ZTVXN3kSMAaU77b2',  // Product ID: prod_SLmZG8yBgYEBqV
 };
 
 // It's best practice to load Stripe.js outside of a component's render to avoid
@@ -66,7 +66,13 @@ function SignupFormContent() {
         setError("Payment processing is currently unavailable. Please try again later.");
       }
     });
-  }, []);
+
+    // Check for plan query parameter and set selectedBillingCycle
+    const planFromQuery = searchParams.get('plan');
+    if (planFromQuery === 'monthly' || planFromQuery === 'annual') {
+      setSelectedBillingCycle(planFromQuery);
+    }
+  }, [searchParams]); // Added searchParams to dependency array
 
   // useEffect for handling social_auth_pending and step=complete_plan_selection
   useEffect(() => {
@@ -238,7 +244,7 @@ function SignupFormContent() {
 
   const billingOptions = {
     monthly: { id: 'monthly', name: 'Monthly', price: '$16', period: 'per month', savingsText: null },
-    annual: { id: 'annual', name: 'Annual', price: '$160', period: 'per year', savingsText: '(Save 20%)' }, 
+    annual: { id: 'annual', name: 'Annual', price: '$150', period: 'per year', savingsText: '(Save 22%)' }, 
   };
   
   return (
