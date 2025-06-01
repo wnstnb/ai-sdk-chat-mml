@@ -28,6 +28,7 @@ export default function AuthUI({
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'standard' | 'otp'>('standard');
+  const [showForgotPasswordForm, setShowForgotPasswordForm] = useState(false);
   const router = useRouter();
   
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -133,7 +134,56 @@ export default function AuthUI({
     setError('');
     setOtp('');
     setOtpSent(false);
+    setShowForgotPasswordForm(false);
   };
+
+  const handleForgotPasswordClick = () => {
+    setShowForgotPasswordForm(true);
+    setMessage('');
+    setError('');
+  };
+
+  const getPasswordResetRedirectURL = () => {
+    return `${origin}/auth/reset-password`;
+  };
+
+  if (showForgotPasswordForm) {
+    return (
+      <div className="auth-ui-container space-y-6">
+        <h2 className="text-xl font-semibold text-center text-[color:var(--primary-color)]">Reset Your Password</h2>
+        <Auth
+          supabaseClient={supabase}
+          appearance={{
+            theme: ThemeSupa,
+            variables: {
+              default: {
+                colors: {
+                  brand: 'var(--primary-color)',
+                  brandAccent: 'var(--accent-color)',
+                  brandButtonText: 'var(--bg-color)',
+                },
+                radii: {
+                  buttonBorderRadius: '0.375rem',
+                  inputBorderRadius: '0.375rem'
+                }
+              },
+            },
+            extend: true,
+          }}
+          view="forgotten_password"
+          providers={[]}
+          redirectTo={getPasswordResetRedirectURL()}
+          showLinks={false}
+        />
+        <button 
+          onClick={() => setShowForgotPasswordForm(false)} 
+          className="w-full text-sm text-center text-[color:var(--anchor-text-color)] hover:text-[color:var(--anchor-text-hover-color)] hover:underline mt-4"
+        >
+          Back to Login
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="auth-ui-container space-y-6">
@@ -295,25 +345,24 @@ export default function AuthUI({
                 </button>
               </div>
             </div>
-            <div className="text-right text-sm">
+            <div className="text-right text-sm mb-3">
               <button 
-                type="button"
-                onClick={() => {
-                  setError('');
-                  setMessage('Forgot password functionality is not yet implemented. Please contact support if you need to reset your password.');
-                }}
+                type="button" 
+                onClick={handleForgotPasswordClick} 
                 className="font-medium text-[color:var(--anchor-text-color)] hover:text-[color:var(--anchor-text-hover-color)] hover:underline focus:outline-none"
               >
                 Forgot your password?
               </button>
             </div>
-            <button 
-              type="submit" 
-              className="auth-button w-full justify-center text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] py-2.5 rounded-md"
-              disabled={loading || !email || !password}
-            >
-              {loading ? 'Signing in...' : 'Sign In'}
-            </button>
+            <div>
+              <button 
+                type="submit" 
+                className="auth-button w-full justify-center text-sm bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] py-2.5 rounded-md"
+                disabled={loading || !email || !password}
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </button>
+            </div>
           </form>
         )}
       </div>
