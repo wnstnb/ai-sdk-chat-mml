@@ -96,7 +96,7 @@ export async function POST(request: Request) {
       ],
       mode: 'subscription',
       subscription_data: {
-        trial_period_days: 3,
+        trial_period_days: 7,
         // metadata can be used to pass additional info if needed by webhooks, e.g., userId
         // metadata: { supabase_user_id: userId } // client_reference_id is usually preferred for this
       },
