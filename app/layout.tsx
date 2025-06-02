@@ -5,6 +5,8 @@ import AppInitializer from '@/components/AppInitializer';
 import './globals.css';
 import { Toaster } from "sonner";
 import { AuthStateListener } from '@/components/AuthStateListener';
+import { Analytics } from '@vercel/analytics/next';
+
 
 export const viewport: Viewport = {
   themeColor: "#0070f3",
@@ -108,6 +110,7 @@ export default function RootLayout({
           </ThemeHandler>
         </AuthStateListener>
         <Toaster position="bottom-center" offset="4rem" />
+        <Analytics />
       </body>
     </html>
   );
