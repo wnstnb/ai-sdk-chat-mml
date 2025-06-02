@@ -255,7 +255,58 @@ export function useChatInteractions({
         },
         onError: (err) => {
             console.error('[useChat onError] Full error object:', err);
-            const errorMsg = `Chat Error: ${err.message || 'Unknown error'}`;
+            
+            // Check if this is a structured error response from our API
+            if (err.message) {
+                try {
+                    const parsedError = JSON.parse(err.message);
+                    if (parsedError.error) {
+                        const { code, message, details } = parsedError.error;
+                        console.error(`[useChat onError] Structured error - Code: ${code}, Message: ${message}`);
+                        
+                        switch (code) {
+                            case 'TOOL_VALIDATION_ERROR':
+                                toast.error('Configuration issue detected. Please refresh the page and try again.');
+                                break;
+                            case 'MODEL_ERROR':
+                                toast.error('AI service temporarily unavailable. Please try again in a moment.');
+                                break;
+                            case 'UNAUTHENTICATED':
+                                toast.error('Authentication expired. Please refresh the page and log in again.');
+                                break;
+                            default:
+                                toast.error(`Chat Error: ${message}`);
+                        }
+                        
+                        // Log details for debugging if available
+                        if (details && process.env.NODE_ENV === 'development') {
+                            console.error('[useChat onError] Error details:', details);
+                        }
+                        return;
+                    }
+                } catch (parseError) {
+                    // Not a JSON error, continue with generic handling
+                    console.log('[useChat onError] Error message is not JSON, treating as generic error');
+                }
+            }
+            
+            // Generic error handling for non-structured errors
+            let errorMsg = 'Chat Error: ';
+            if (err.message) {
+                // Handle specific known error patterns
+                if (err.message.includes('fetch')) {
+                    errorMsg += 'Network connection issue. Please check your internet and try again.';
+                } else if (err.message.includes('timeout')) {
+                    errorMsg += 'Request timed out. Please try again.';
+                } else if (err.message.includes('invalid_union')) {
+                    errorMsg += 'Configuration issue detected. Please refresh the page.';
+                } else {
+                    errorMsg += err.message;
+                }
+            } else {
+                errorMsg += 'Unknown error occurred. Please try again.';
+            }
+            
             toast.error(errorMsg);
         },
         onFinish: (message) => {

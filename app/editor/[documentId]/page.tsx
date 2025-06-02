@@ -188,6 +188,18 @@ export default function EditorPage() {
         maxWidthPercent: MAX_CHAT_PANE_WIDTH_PERCENT,
     });
     const { files, isUploading, uploadError, uploadedImagePath, uploadedImageSignedUrl, handleFileSelectEvent, handleFilePasteEvent, handleFileDropEvent, clearPreview } = useFileUpload({ documentId });
+    
+    // === DEBUG LOGGING FOR IMAGE UPLOAD STATE ===
+    console.log("=== [EditorPage] IMAGE UPLOAD DEBUG START ===");
+    console.log("[EditorPage] Current image upload state:");
+    console.log("  - files:", files);
+    console.log("  - isUploading:", isUploading);
+    console.log("  - uploadError:", uploadError);
+    console.log("  - uploadedImagePath:", uploadedImagePath);
+    console.log("  - uploadedImageSignedUrl:", uploadedImageSignedUrl);
+    console.log("  - documentId:", documentId);
+    console.log("=== [EditorPage] IMAGE UPLOAD DEBUG END ===");
+    
     const { isLoadingMessages, initialMessages } = useInitialChatMessages({
         documentId,
         setPageError
@@ -195,6 +207,18 @@ export default function EditorPage() {
     // --- NEW: Get initialTaggedDocIdsString from searchParams ---
     const initialTaggedDocIdsString = searchParams.get('taggedDocIds');
     // --- END NEW ---
+    
+    // === DEBUG LOGGING FOR CHAT INTERACTIONS INPUT ===
+    console.log("=== [EditorPage] CHAT INTERACTIONS INPUT DEBUG START ===");
+    console.log("[EditorPage] Values being passed to useChatInteractions:");
+    console.log("  - documentId:", documentId);
+    console.log("  - initialModel:", initialModel);
+    console.log("  - uploadedImagePath:", uploadedImagePath);
+    console.log("  - uploadedImageSignedUrl:", uploadedImageSignedUrl);
+    console.log("  - isUploading:", isUploading);
+    console.log("  - initialTaggedDocIdsString:", initialTaggedDocIdsString);
+    console.log("=== [EditorPage] CHAT INTERACTIONS INPUT DEBUG END ===");
+    
     const {
         messages: chatMessages, 
         setMessages: setChatMessages, 
