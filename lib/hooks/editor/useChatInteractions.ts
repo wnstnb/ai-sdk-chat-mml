@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { useFollowUpStore } from '@/lib/stores/followUpStore';
 import type { BlockNoteEditor, Block } from '@blocknote/core';
 import { getInlineContentText } from '@/lib/editorUtils';
+import { tool } from 'ai';
+import { z } from 'zod';
 
 // Define the shape of the processed block with structural information
 interface ProcessedBlock {
@@ -74,6 +76,65 @@ interface UseChatInteractionsReturn {
     setTaggedDocuments: React.Dispatch<React.SetStateAction<TaggedDocument[]>>;
     // --- END NEW TAGGED DOCUMENTS PROPS ---
 }
+
+// Define Zod schemas for the editor tools (matching backend)
+const addContentSchema = z.object({
+  markdownContent: z.string().describe("The Markdown content to be added to the editor."),
+  targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert relative to (e.g., insert 'after'). If null, append or use current selection."),
+});
+
+const modifyContentSchema = z.object({
+  targetBlockId: z.string().describe("The ID of the block to modify."),
+  targetText: z.string().nullable().describe("The specific text within the block to modify. If null, the modification applies to the entire block's content."),
+  newMarkdownContent: z.string().describe("The new Markdown content for the block."),
+});
+
+const deleteContentSchema = z.object({
+  targetBlockId: z.string().describe("The ID of the block to remove."),
+  targetText: z.string().nullable().describe("The specific text within the targetBlockId block to delete. If null, the entire block is deleted."),
+});
+
+const modifyTableSchema = z.object({
+    tableBlockId: z.string().describe("The ID of the table block to modify."),
+    newTableMarkdown: z.string().describe("The COMPLETE, final Markdown content for the entire table after the requested modifications have been applied by the AI."),
+});
+
+const createChecklistSchema = z.object({
+  items: z.array(z.string()).describe("An array of plain text strings, where each string is the content for a new checklist item. The tool will handle Markdown formatting (e.g., prepending '* [ ]'). Do NOT include Markdown like '*[ ]' in these strings."),
+  targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert the new checklist after. If null, the checklist is appended to the document or inserted at the current selection."),
+});
+
+const searchAndTagDocumentsSchema = z.object({
+  searchQuery: z.string().describe("The user's query to search for in the documents.")
+});
+
+// Define client-side tools (no execute functions)
+const clientTools = {
+  addContent: tool({
+    description: "Adds new general Markdown content (e.g., paragraphs, headings, simple bullet/numbered lists, or single list/checklist items). For multi-item checklists, use createChecklist.",
+    parameters: addContentSchema,
+  }),
+  modifyContent: tool({
+    description: "Modifies content within specific NON-TABLE editor blocks. Can target a single block (with optional specific text replacement) or multiple blocks (replacing entire content of each with corresponding new Markdown from an array). Main tool for altering existing lists/checklists.",
+    parameters: modifyContentSchema,
+  }),
+  deleteContent: tool({
+    description: "Deletes one or more NON-TABLE blocks, or specific text within a NON-TABLE block, from the editor.",
+    parameters: deleteContentSchema,
+  }),
+  modifyTable: tool({
+    description: "Modifies an existing TABLE block by providing the complete final Markdown. Reads original from context, applies changes, returns result.",
+    parameters: modifyTableSchema,
+  }),
+  createChecklist: tool({
+    description: "Creates a new checklist with multiple items. Provide an array of plain text strings for the items (e.g., ['Buy milk', 'Read book']). Tool handles Markdown formatting.",
+    parameters: createChecklistSchema,
+  }),
+  searchAndTagDocumentsTool: tool({
+    description: 'Searches documents by title and semantic content. Returns a list of relevant documents that the user can choose to tag for context.',
+    parameters: searchAndTagDocumentsSchema,
+  }),
+};
 
 // Recursive helper function to process blocks and their children
 const processBlocksRecursive = async (
@@ -245,7 +306,7 @@ export function useChatInteractions({
         api: apiEndpoint,
         id: documentId,
         // --- Pass initialMessages directly, fallback to empty array ---
-        initialMessages: initialMessages || [], 
+        initialMessages: initialMessages || [],
         onResponse: (res) => {
             console.log('[useChat onResponse] Received response:', res);
             if (!res.ok) {

@@ -10,6 +10,7 @@ import { Message as SupabaseMessage, ToolCall as SupabaseToolCall } from '@/type
 import { createClient } from '@supabase/supabase-js'; // <-- ADDED for explicit client for signed URLs if needed
 import crypto from 'crypto'; // Import crypto for UUID generation
 import { searchByTitle, searchByEmbeddings, searchByContentBM25, combineAndRankResults } from '@/lib/ai/searchService'; // UPDATED: Import searchByContentBM25
+import { serverTools } from '@/lib/tools/server-tools';
 
 // Define a type for messages coming from the client (e.g., from useChat)
 // This aligns with the expected structure for convertToCoreMessages
@@ -273,30 +274,30 @@ const editorTools = {
   addContent: tool({
     description: "Adds new general Markdown content (e.g., paragraphs, headings, simple bullet/numbered lists, or single list/checklist items). For multi-item checklists, use createChecklist.",
     parameters: addContentSchema,
-    execute: async (args) => ({ status: 'forwarded to client', tool: 'addContent' })
+    // No execute function - handled client-side
   }),
   modifyContent: tool({
     description: "Modifies content within specific NON-TABLE editor blocks. Can target a single block (with optional specific text replacement) or multiple blocks (replacing entire content of each with corresponding new Markdown from an array). Main tool for altering existing lists/checklists.",
     parameters: modifyContentSchema,
-    execute: async (args) => ({ status: 'forwarded to client', tool: 'modifyContent' })
+    // No execute function - handled client-side
   }),
   deleteContent: tool({
     description: "Deletes one or more NON-TABLE blocks, or specific text within a NON-TABLE block, from the editor.",
     parameters: deleteContentSchema,
-    execute: async (args) => ({ status: 'forwarded to client', tool: 'deleteContent' })
+    // No execute function - handled client-side
   }),
   // --- UPDATED: Unified modifyTable tool ---
   modifyTable: tool({
     description: "Modifies an existing TABLE block by providing the complete final Markdown. Reads original from context, applies changes, returns result.",
     parameters: modifyTableSchema,
-    execute: async (args) => ({ status: 'forwarded to client', tool: 'modifyTable' })
+    // No execute function - handled client-side
   }),
   // --- END UPDATED ---
   // --- NEW: Tool for creating checklists ---
   createChecklist: tool({
     description: "Creates a new checklist with multiple items. Provide an array of plain text strings for the items (e.g., ['Buy milk', 'Read book']). Tool handles Markdown formatting.",
     parameters: createChecklistSchema,
-    execute: async (args) => ({ status: 'forwarded to client', tool: 'createChecklist' })
+    // No execute function - handled client-side
   }),
   // --- END NEW ---
 };
@@ -1145,7 +1146,7 @@ export async function POST(req: Request) {
     const result = streamText({
         model: aiModel,
         messages: finalMessagesForStreamText,
-        tools: { addContent: editorTools.addContent }, // TESTING: Enable only addContent tool
+        // tools: combinedToolsWithRateLimit, // DISABLED: Remove tools for now
         maxSteps: 10,
         ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
         
@@ -1182,7 +1183,14 @@ export async function POST(req: Request) {
         },
         
         async onFinish({ usage, response }) {
-            console.log(`[onFinish] Stream finished. Usage: ${JSON.stringify(usage)}`);
+            console.log("[onFinish] Stream finished. Usage:", JSON.stringify(usage));
+            console.log("[onFinish] Response object:", JSON.stringify(response, null, 2));
+            console.log("[onFinish] Response.messages:", response.messages?.map(msg => ({
+                role: msg.role,
+                content: msg.content
+            })));
+            
+            // === EXISTING SAVING LOGIC ===
             const assistantMetadata = { usage: usage, raw_content: response.messages };
             const allResponseMessages: CoreMessage[] = response.messages;
             if (!userId) {
