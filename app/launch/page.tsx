@@ -316,16 +316,8 @@ export default function LaunchPage() {
 
   // Process recorded audio (called by recorder onstop)
   const handleProcessRecordedAudio = useCallback(async () => {
-    // --- NEW: Validate duration and sound presence BEFORE heavy processing ---
-    const durationMs = Date.now() - (recordingStartTimeRef.current || Date.now());
-    if (durationMs < SILENCE_DURATION_MS || !soundDetectedRef.current) {
-        toast.info(durationMs < SILENCE_DURATION_MS ? 'Recording too short.' : 'No audio detected.');
-        setIsRecording(false);
-        setIsTranscribing(false);
-        soundDetectedRef.current = false;
-        return;
-    }
-    soundDetectedRef.current = false; // reset flag for next recording
+    // Reset flag for next recording
+    soundDetectedRef.current = false;
     // Use a functional update for audioChunks to ensure we get the latest state
     let processed = false; // Flag to ensure processing runs only once if called multiple times
     setAudioChunks(currentChunks => {
@@ -353,14 +345,11 @@ export default function LaunchPage() {
         let audioBlob: Blob;
         let mimeType: string | undefined;
 
-        const activeRecorderMime = mediaRecorderRef.current?.mimeType || mediaRecorder?.mimeType;
-        if (activeRecorderMime) {
-            mimeType = activeRecorderMime;
-            const effectiveMimeType = mimeType || 'audio/webm'; // Default to webm if not available
-            audioBlob = new Blob(currentChunks, { type: effectiveMimeType });
-        } else {
-            throw new Error("No valid MIME type found for audio recording.");
-        }
+        // Try to get mimeType from the recorder if available
+        mimeType = mediaRecorderRef.current?.mimeType || mediaRecorder?.mimeType;
+        const effectiveMimeType = mimeType || 'audio/webm'; // Default to webm if not available
+        console.log(`Creating Blob with effective mimeType: ${effectiveMimeType}`);
+        audioBlob = new Blob(currentChunks, { type: effectiveMimeType });
 
         const formData = new FormData();
         formData.append('audioFile', audioBlob, 'recording.webm');
@@ -567,7 +556,7 @@ export default function LaunchPage() {
         isRecordingRef.current = true; // Set ref for animation loop
 
         // --- Start Visualization ---
-        visualize(); // Start the animation loop
+        animationFrameRef.current = requestAnimationFrame(visualize); // Start the animation loop
 
         // --- NEW: Start display timer ---
         setDisplayTimerId(setInterval(() => {

@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
       ],
       mode: 'subscription',
       subscription_data: {
-        trial_period_days: 3, // Explicitly set 3-day trial as per PRD
+        trial_period_days: 7, // Explicitly set 7-day trial as per PRD
         metadata: userId ? { app_user_id: userId } : undefined, // Pass userId to subscription metadata
       },
       success_url: successUrl,

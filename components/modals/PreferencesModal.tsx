@@ -69,7 +69,7 @@ const PreferencesModal: React.FC<PreferencesModalProps> = ({ isOpen, onClose }) 
   }
 
   // Ensure fallbacks for the values
-  const currentModel = default_model ?? 'gemini-2.5-flash-preview-05-20';
+  const currentModel = default_model ?? 'gpt-4.1';
   const currentTheme = theme ?? 'dark';
   const currentEditorFontSize = editorFontSize ?? 1;
   const currentChatFontSize = chatFontSize ?? 1;

@@ -117,7 +117,7 @@ const MESSAGE_LOAD_BATCH_SIZE = 20;
 const INITIAL_CHAT_PANE_WIDTH_PERCENT = 35;
 const MIN_CHAT_PANE_WIDTH_PX = 250;
 const MAX_CHAT_PANE_WIDTH_PERCENT = 70;
-const defaultModelFallback = 'gemini-2.5-flash-preview-05-20'; // Define fallback
+const defaultModelFallback = 'gpt-4.1'; // Define fallback
 // NEW: Define mobile breakpoint query
 const MOBILE_BREAKPOINT_QUERY = '(max-width: 768px)'; // Corresponds to Tailwind's 'md'
 
@@ -188,6 +188,18 @@ export default function EditorPage() {
         maxWidthPercent: MAX_CHAT_PANE_WIDTH_PERCENT,
     });
     const { files, isUploading, uploadError, uploadedImagePath, uploadedImageSignedUrl, handleFileSelectEvent, handleFilePasteEvent, handleFileDropEvent, clearPreview } = useFileUpload({ documentId });
+    
+    // === DEBUG LOGGING FOR IMAGE UPLOAD STATE ===
+    console.log("=== [EditorPage] IMAGE UPLOAD DEBUG START ===");
+    console.log("[EditorPage] Current image upload state:");
+    console.log("  - files:", files);
+    console.log("  - isUploading:", isUploading);
+    console.log("  - uploadError:", uploadError);
+    console.log("  - uploadedImagePath:", uploadedImagePath);
+    console.log("  - uploadedImageSignedUrl:", uploadedImageSignedUrl);
+    console.log("  - documentId:", documentId);
+    console.log("=== [EditorPage] IMAGE UPLOAD DEBUG END ===");
+    
     const { isLoadingMessages, initialMessages } = useInitialChatMessages({
         documentId,
         setPageError
@@ -195,6 +207,18 @@ export default function EditorPage() {
     // --- NEW: Get initialTaggedDocIdsString from searchParams ---
     const initialTaggedDocIdsString = searchParams.get('taggedDocIds');
     // --- END NEW ---
+    
+    // === DEBUG LOGGING FOR CHAT INTERACTIONS INPUT ===
+    console.log("=== [EditorPage] CHAT INTERACTIONS INPUT DEBUG START ===");
+    console.log("[EditorPage] Values being passed to useChatInteractions:");
+    console.log("  - documentId:", documentId);
+    console.log("  - initialModel:", initialModel);
+    console.log("  - uploadedImagePath:", uploadedImagePath);
+    console.log("  - uploadedImageSignedUrl:", uploadedImageSignedUrl);
+    console.log("  - isUploading:", isUploading);
+    console.log("  - initialTaggedDocIdsString:", initialTaggedDocIdsString);
+    console.log("=== [EditorPage] CHAT INTERACTIONS INPUT DEBUG END ===");
+    
     const {
         messages: chatMessages, 
         setMessages: setChatMessages, 
@@ -968,40 +992,132 @@ export default function EditorPage() {
 
     // --- ADDED useEffect for handling pending tool call after mobile pane switch --- (ensure executeCreateChecklist is added to switch)
     useEffect(() => {
-        if (mobileVisiblePane === 'editor' && pendingMobileEditorToolCall && editorRef.current) {
-            console.log('[ToolProcessing] Editor is visible on mobile. Executing pending tool call:', pendingMobileEditorToolCall);
+        if (isMobile && mobileVisiblePane === 'editor' && pendingMobileEditorToolCall) {
             const { toolName, args, toolCallId } = pendingMobileEditorToolCall;
             
-            // Ensure editor is truly ready, e.g. by a micro-task delay.
-            // This helps if the editor component itself has internal async setup after mounting.
-            Promise.resolve().then(() => {
-                if (!editorRef.current) {
-                    console.log(`[ToolProcessing] Pending tool ${toolName} (ID: ${toolCallId}) aborted: Editor disappeared before execution.`);
-                    toast.error(`Could not apply AI edit: Editor not ready.`);
-                    setPendingMobileEditorToolCall(null);
-                    return;
-                }
-                try {
-                    switch (toolName) {
-                        case 'addContent': executeAddContent(args); break;
-                        case 'modifyContent': executeModifyContent(args); break;
-                        case 'deleteContent': executeDeleteContent(args); break;
-                        case 'modifyTable': executeModifyTable(args); break;
-                        case 'createChecklist': executeCreateChecklist(args); break; // <-- ADDED CASE
-                        default: console.error(`Unknown pending tool: ${toolName}`); toast.error(`Unknown pending tool: ${toolName}`);
-                    }
-                } catch (toolError: any) {
-                    console.error(`Pending Tool ${toolName} (ID: ${toolCallId}) error:`, toolError);
-                    toast.error(`Pending tool error: ${toolError.message}`);
-                } finally {
-                    setPendingMobileEditorToolCall(null); // Clear the pending call
-                }
-            });
+            console.log("[Mobile Editor] Executing pending tool call on editor pane switch:", { toolName, args, toolCallId });
+            
+            // Execute the tool
+            switch (toolName) {
+                case 'addContent': executeAddContent(args); break;
+                case 'modifyContent': executeModifyContent(args); break;
+                case 'deleteContent': executeDeleteContent(args); break;
+                case 'modifyTable': executeModifyTable(args); break;
+                case 'createChecklist': executeCreateChecklist(args); break; // <-- ADDED CASE
+                default:
+                    console.warn("[Mobile Editor] Unknown tool name:", toolName);
+                    toast.error(`Unknown tool: ${toolName}`);
+            }
+            
+            // Clear the pending tool call
+            setPendingMobileEditorToolCall(null);
         }
     }, [mobileVisiblePane, pendingMobileEditorToolCall, executeAddContent, executeModifyContent, executeDeleteContent, executeModifyTable, executeCreateChecklist]); // <-- ADDED to dependency array
-    // Note: editorRef.current is accessed but refs aren't typical useEffect dependencies.
-    // The check `editorRef.current` inside and dependency on `pendingMobileEditorToolCall` (which changes from null to object)
-    // is usually sufficient to trigger this when needed.
+
+    // --- NEW: Event listener for Gemini tool execution ---
+    useEffect(() => {
+        const handleGeminiToolExecution = (event: CustomEvent) => {
+            console.log('[EditorPage] Received geminiToolExecution event:', event.detail);
+            
+            const { action, params } = event.detail;
+            
+            // Execute the appropriate tool based on the action
+            switch (action) {
+                case 'addContent':
+                    if (isMobile && mobileVisiblePane !== 'editor') {
+                        // Store for later execution when switching to editor pane
+                        setPendingMobileEditorToolCall({ 
+                            toolName: action, 
+                            args: params, 
+                            toolCallId: `gemini-${Date.now()}` 
+                        });
+                        setMobileVisiblePane('editor');
+                        toast.info("Switching to editor to apply changes...");
+                    } else {
+                        executeAddContent(params);
+                    }
+                    break;
+                    
+                case 'modifyContent':
+                    if (isMobile && mobileVisiblePane !== 'editor') {
+                        setPendingMobileEditorToolCall({ 
+                            toolName: action, 
+                            args: params, 
+                            toolCallId: `gemini-${Date.now()}` 
+                        });
+                        setMobileVisiblePane('editor');
+                        toast.info("Switching to editor to apply changes...");
+                    } else {
+                        executeModifyContent(params);
+                    }
+                    break;
+                    
+                case 'deleteContent':
+                    if (isMobile && mobileVisiblePane !== 'editor') {
+                        setPendingMobileEditorToolCall({ 
+                            toolName: action, 
+                            args: params, 
+                            toolCallId: `gemini-${Date.now()}` 
+                        });
+                        setMobileVisiblePane('editor');
+                        toast.info("Switching to editor to apply changes...");
+                    } else {
+                        executeDeleteContent(params);
+                    }
+                    break;
+                    
+                case 'modifyTable':
+                    if (isMobile && mobileVisiblePane !== 'editor') {
+                        setPendingMobileEditorToolCall({ 
+                            toolName: action, 
+                            args: params, 
+                            toolCallId: `gemini-${Date.now()}` 
+                        });
+                        setMobileVisiblePane('editor');
+                        toast.info("Switching to editor to apply changes...");
+                    } else {
+                        executeModifyTable(params);
+                    }
+                    break;
+                    
+                case 'createChecklist':
+                    if (isMobile && mobileVisiblePane !== 'editor') {
+                        setPendingMobileEditorToolCall({ 
+                            toolName: action, 
+                            args: params, 
+                            toolCallId: `gemini-${Date.now()}` 
+                        });
+                        setMobileVisiblePane('editor');
+                        toast.info("Switching to editor to apply changes...");
+                    } else {
+                        executeCreateChecklist(params);
+                    }
+                    break;
+                    
+                default:
+                    console.warn('[EditorPage] Unknown Gemini tool action:', action);
+                    toast.error(`Unknown tool action: ${action}`);
+            }
+        };
+        
+        // Add event listener
+        window.addEventListener('geminiToolExecution', handleGeminiToolExecution as EventListener);
+        
+        // Cleanup
+        return () => {
+            window.removeEventListener('geminiToolExecution', handleGeminiToolExecution as EventListener);
+        };
+    }, [
+        isMobile, 
+        mobileVisiblePane, 
+        executeAddContent, 
+        executeModifyContent, 
+        executeDeleteContent, 
+        executeModifyTable, 
+        executeCreateChecklist,
+        setMobileVisiblePane,
+        setPendingMobileEditorToolCall
+    ]);
 
     useEffect(() => { /* Effect for beforeunload */
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {

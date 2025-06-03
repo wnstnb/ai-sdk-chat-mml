@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { useFollowUpStore } from '@/lib/stores/followUpStore';
 import type { BlockNoteEditor, Block } from '@blocknote/core';
 import { getInlineContentText } from '@/lib/editorUtils';
+import { tool } from 'ai';
+import { z } from 'zod';
 
 // Define the shape of the processed block with structural information
 interface ProcessedBlock {
@@ -74,6 +76,65 @@ interface UseChatInteractionsReturn {
     setTaggedDocuments: React.Dispatch<React.SetStateAction<TaggedDocument[]>>;
     // --- END NEW TAGGED DOCUMENTS PROPS ---
 }
+
+// Define Zod schemas for the editor tools (matching backend)
+const addContentSchema = z.object({
+  markdownContent: z.string().describe("The Markdown content to be added to the editor."),
+  targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert relative to (e.g., insert 'after'). If null, append or use current selection."),
+});
+
+const modifyContentSchema = z.object({
+  targetBlockId: z.string().describe("The ID of the block to modify."),
+  targetText: z.string().nullable().describe("The specific text within the block to modify. If null, the modification applies to the entire block's content."),
+  newMarkdownContent: z.string().describe("The new Markdown content for the block."),
+});
+
+const deleteContentSchema = z.object({
+  targetBlockId: z.string().describe("The ID of the block to remove."),
+  targetText: z.string().nullable().describe("The specific text within the targetBlockId block to delete. If null, the entire block is deleted."),
+});
+
+const modifyTableSchema = z.object({
+    tableBlockId: z.string().describe("The ID of the table block to modify."),
+    newTableMarkdown: z.string().describe("The COMPLETE, final Markdown content for the entire table after the requested modifications have been applied by the AI."),
+});
+
+const createChecklistSchema = z.object({
+  items: z.array(z.string()).describe("An array of plain text strings, where each string is the content for a new checklist item. The tool will handle Markdown formatting (e.g., prepending '* [ ]'). Do NOT include Markdown like '*[ ]' in these strings."),
+  targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert the new checklist after. If null, the checklist is appended to the document or inserted at the current selection."),
+});
+
+const searchAndTagDocumentsSchema = z.object({
+  searchQuery: z.string().describe("The user's query to search for in the documents.")
+});
+
+// Define client-side tools (no execute functions)
+const clientTools = {
+  addContent: tool({
+    description: "Adds new general Markdown content (e.g., paragraphs, headings, simple bullet/numbered lists, or single list/checklist items). For multi-item checklists, use createChecklist.",
+    parameters: addContentSchema,
+  }),
+  modifyContent: tool({
+    description: "Modifies content within specific NON-TABLE editor blocks. Can target a single block (with optional specific text replacement) or multiple blocks (replacing entire content of each with corresponding new Markdown from an array). Main tool for altering existing lists/checklists.",
+    parameters: modifyContentSchema,
+  }),
+  deleteContent: tool({
+    description: "Deletes one or more NON-TABLE blocks, or specific text within a NON-TABLE block, from the editor.",
+    parameters: deleteContentSchema,
+  }),
+  modifyTable: tool({
+    description: "Modifies an existing TABLE block by providing the complete final Markdown. Reads original from context, applies changes, returns result.",
+    parameters: modifyTableSchema,
+  }),
+  createChecklist: tool({
+    description: "Creates a new checklist with multiple items. Provide an array of plain text strings for the items (e.g., ['Buy milk', 'Read book']). Tool handles Markdown formatting.",
+    parameters: createChecklistSchema,
+  }),
+  searchAndTagDocumentsTool: tool({
+    description: 'Searches documents by title and semantic content. Returns a list of relevant documents that the user can choose to tag for context.',
+    parameters: searchAndTagDocumentsSchema,
+  }),
+};
 
 // Recursive helper function to process blocks and their children
 const processBlocksRecursive = async (
@@ -229,6 +290,12 @@ export function useChatInteractions({
     const followUpContext = useFollowUpStore((state) => state.followUpContext);
     const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
 
+    // --- Determine if current model needs onToolCall callback (OpenAI models only) ---
+    const isOpenAIModel = model.toLowerCase().includes('gpt') || model.toLowerCase().includes('openai');
+    const needsOnToolCallCallback = isOpenAIModel;
+    
+    console.log('[useChatInteractions] Provider-specific tool config:', { model, isOpenAIModel, needsOnToolCallCallback });
+
     // --- Vercel AI useChat Hook ---
     const {
         messages,
@@ -245,25 +312,183 @@ export function useChatInteractions({
         api: apiEndpoint,
         id: documentId,
         // --- Pass initialMessages directly, fallback to empty array ---
-        initialMessages: initialMessages || [], 
+        initialMessages: initialMessages || [],
+        // --- Provider-specific onToolCall: Only for OpenAI models ---
+        ...(needsOnToolCallCallback && {
+            onToolCall: async ({ toolCall }) => {
+                console.log('[useChat onToolCall] OpenAI tool call detected:', toolCall.toolName);
+                
+                // For server-side tools, acknowledge execution
+                if (toolCall.toolName === 'webSearch' || toolCall.toolName === 'searchAndTagDocumentsTool') {
+                    return `Server-side tool '${toolCall.toolName}' executed successfully.`;
+                }
+                
+                // For client-side tools, acknowledge they will be handled by editor
+                return `Client-side tool '${toolCall.toolName}' will be executed by the editor component.`;
+            }
+        }),
         onResponse: (res) => {
             console.log('[useChat onResponse] Received response:', res);
+            console.log('[useChat onResponse] Response status:', res.status);
+            console.log('[useChat onResponse] Response headers:', res.headers);
+            console.log('[useChat onResponse] Current model:', model);
+            
             if (!res.ok) {
-                 console.error(`[useChat onResponse] Response not OK! Status: ${res.status}`);
-                 toast.error(`Chat Request Failed: ${res.statusText} (${res.status})`);
+                console.error(`[useChat onResponse] Response not OK! Status: ${res.status}`);
+                console.error(`[useChat onResponse] Response status text:`, res.statusText);
+                toast.error(`Chat Request Failed: ${res.statusText} (${res.status})`);
+            } else {
+                console.log(`[useChat onResponse] ✅ Response OK for model: ${model}`);
+                
+                // For Gemini models, try to preemptively mark as successful
+                if (!needsOnToolCallCallback) {
+                    console.log('[useChat onResponse] Gemini model detected - response appears successful');
+                }
             }
         },
         onError: (err) => {
+            console.error('[useChat onError] === DETAILED ERROR ANALYSIS ===');
+            console.error('[useChat onError] Current model:', model);
+            console.error('[useChat onError] Error type:', typeof err);
+            console.error('[useChat onError] Error constructor:', err?.constructor?.name);
             console.error('[useChat onError] Full error object:', err);
-            const errorMsg = `Chat Error: ${err.message || 'Unknown error'}`;
+            console.error('[useChat onError] Error message:', err?.message);
+            console.error('[useChat onError] Error stack:', err?.stack);
+            console.error('[useChat onError] Timestamp:', new Date().toISOString());
+            
+            // Check if this is a structured error response from our API
+            if (err.message) {
+                try {
+                    const parsedError = JSON.parse(err.message);
+                    if (parsedError.error) {
+                        const { code, message, details } = parsedError.error;
+                        console.error(`[useChat onError] Structured error - Code: ${code}, Message: ${message}`);
+                        
+                        switch (code) {
+                            case 'TOOL_VALIDATION_ERROR':
+                                toast.error('Configuration issue detected. Please refresh the page and try again.');
+                                break;
+                            case 'MODEL_ERROR':
+                                toast.error('AI service temporarily unavailable. Please try again in a moment.');
+                                break;
+                            case 'UNAUTHENTICATED':
+                                toast.error('Authentication expired. Please refresh the page and log in again.');
+                                break;
+                            default:
+                                toast.error(`Chat Error: ${message}`);
+                        }
+                        
+                        // Log details for debugging if available
+                        if (details && process.env.NODE_ENV === 'development') {
+                            console.error('[useChat onError] Error details:', details);
+                        }
+                        return;
+                    }
+                } catch (parseError) {
+                    // Not a JSON error, continue with generic handling
+                    console.log('[useChat onError] Error message is not JSON, treating as generic error');
+                }
+            }
+            
+            // Generic error handling for non-structured errors
+            let errorMsg = 'Chat Error: ';
+            if (err.message) {
+                // Handle specific known error patterns
+                if (err.message.includes('fetch')) {
+                    errorMsg += 'Network connection issue. Please check your internet and try again.';
+                } else if (err.message.includes('timeout')) {
+                    errorMsg += 'Request timed out. Please try again.';
+                } else if (err.message.includes('invalid_union')) {
+                    errorMsg += 'Configuration issue detected. Please refresh the page.';
+                } else {
+                    errorMsg += err.message;
+                }
+            } else {
+                errorMsg += 'Unknown error occurred. Please try again.';
+            }
+            
             toast.error(errorMsg);
         },
         onFinish: (message) => {
             console.log('[useChat onFinish] Stream finished. Final message:', message);
+            console.log('[useChat onFinish] Message role:', message?.role);
+            console.log('[useChat onFinish] Message content type:', typeof message?.content);
+            console.log('[useChat onFinish] Message content length:', Array.isArray(message?.content) ? message.content.length : 'N/A');
+            console.log('[useChat onFinish] Current model:', model);
+            console.log('[useChat onFinish] needsOnToolCallCallback:', needsOnToolCallCallback);
+            
+            // Add success confirmation for Gemini models
+            if (!needsOnToolCallCallback && message?.role === 'assistant') {
+                console.log('✅ [useChat onFinish] Gemini conversation completed successfully!');
+                
+                // Check if we have content
+                if (message.content) {
+                    console.log('✅ [useChat onFinish] Gemini response has content - conversation successful');
+                } else {
+                    console.warn('⚠️ [useChat onFinish] Gemini response has no content');
+                }
+            }
+            
+            // --- Handle Gemini's server-side tool execution results ---
+            if (!needsOnToolCallCallback) { // Only for Gemini models (no onToolCall callback)
+                console.log('[useChat onFinish] Processing potential Gemini tool execution results...');
+                
+                // Check if the message contains tool calls with results (Gemini server-side execution)
+                if (Array.isArray(message.content)) {
+                    console.log(`[useChat onFinish] Message content is array with ${message.content.length} parts`);
+                    
+                    message.content.forEach((part: any, index: number) => {
+                        console.log(`[useChat onFinish] Part ${index}:`, part);
+                        
+                        if (part.type === 'tool-result' && part.result) {
+                            console.log('[useChat onFinish] Found Gemini tool result:', part);
+                            
+                            // Check if this is a server-side editor tool result
+                            const result = part.result;
+                            if (result.action && result.success) {
+                                console.log(`[useChat onFinish] Processing Gemini ${result.action} tool result:`, result);
+                                
+                                // Trigger the appropriate client-side execution
+                                handleGeminiToolExecution(result);
+                            }
+                        }
+                    });
+                } else if (typeof message.content === 'string') {
+                    console.log('[useChat onFinish] Message content is string:', message.content.substring(0, 100) + '...');
+                } else {
+                    console.log('[useChat onFinish] Message content is neither array nor string:', message.content);
+                }
+            } else {
+                console.log('[useChat onFinish] OpenAI model - tool calls handled via onToolCall callback');
+            }
         },
     });
 
-    // console.log('[useChatInteractions] Messages state FROM useChat hook IMMEDIATELY AFTER init:', JSON.stringify(messages, null, 2));
+    // --- NEW: Handle Gemini tool execution results ---
+    const handleGeminiToolExecution = useCallback((result: any) => {
+        console.log('[handleGeminiToolExecution] Processing tool result:', result);
+        
+        // Create a custom event to notify the EditorPage component
+        const toolEvent = new CustomEvent('geminiToolExecution', {
+            detail: {
+                action: result.action,
+                params: {
+                    markdownContent: result.markdownContent,
+                    targetBlockId: result.targetBlockId,
+                    targetText: result.targetText,
+                    newMarkdownContent: result.newMarkdownContent,
+                    tableBlockId: result.tableBlockId,
+                    newTableMarkdown: result.newTableMarkdown,
+                    items: result.items,
+                }
+            }
+        });
+        
+        // Dispatch the event to the window
+        window.dispatchEvent(toolEvent);
+        
+        console.log('[handleGeminiToolExecution] Dispatched geminiToolExecution event for:', result.action);
+    }, []);
 
     // --- Editor Context Retrieval ---
     const getEditorContext = useCallback(async (): Promise<EditorContextData> => {
@@ -939,6 +1164,34 @@ export function useChatInteractions({
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // <<< EMPTY DEPENDENCY ARRAY - Runs cleanup only on unmount
+
+    // --- Safeguard for AI SDK Compatibility Issues ---
+    useEffect(() => {
+        // Monitor for potential streaming parsing issues with Gemini models
+        if (!needsOnToolCallCallback && isLoading) {
+            console.log('[AI SDK Safeguard] Monitoring Gemini streaming response...');
+            
+            const timeoutId = setTimeout(() => {
+                if (isLoading) {
+                    console.warn('[AI SDK Safeguard] ⚠️ Gemini streaming response taking unusually long');
+                    console.warn('[AI SDK Safeguard] This might indicate a parsing issue with AI SDK v4.3.15');
+                    
+                    // Note: We can't automatically recover here since the backend is working
+                    // The user will need to manually retry or check if the response was actually successful
+                }
+            }, 20000); // 20 second timeout
+            
+            return () => clearTimeout(timeoutId);
+        }
+    }, [isLoading, needsOnToolCallCallback]);
+
+    // --- Effect to monitor successful backend completion vs frontend processing ---
+    useEffect(() => {
+        // This effect helps detect when backend succeeds but frontend fails to process
+        if (!needsOnToolCallCallback && !isLoading) {
+            console.log('[AI SDK Monitor] Gemini request completed. Loading state changed to false.');
+        }
+    }, [isLoading, needsOnToolCallCallback]);
 
     // Return updated hook values
     return {

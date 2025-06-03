@@ -99,17 +99,76 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
         setExpandedToolCalls(prev => ({ ...prev, [toolCallId]: !prev[toolCallId] }));
     };
 
-    // --- REVISED: Extract raw text ONLY from message.content for button logic --- 
-    let rawTextContentForButton = '';
-    if (Array.isArray(message.content)) {
-        const textPart = message.content.find((part): part is TextPart => part.type === 'text');
-        rawTextContentForButton = textPart?.text || '';
-    } else if (typeof message.content === 'string') {
-        rawTextContentForButton = message.content;
-    }
-    const displayableRawText = extractUserDisplayContent(rawTextContentForButton, message.role);
-    const canSendToEditor = message.role === 'assistant' && displayableRawText.trim() !== '';
-    // --- END REVISED --- 
+    // Determine if the "Send to Editor" button can be shown
+    const displayableRawText = typeof message.content === 'string' 
+        ? extractUserDisplayContent(message.content, message.role) 
+        : Array.isArray(message.content) 
+          ? (message.content as ContentPart[]).filter((part: ContentPart) => part.type === 'text').map((part: any) => part.text).join('\n')
+          : '';
+    const canSendToEditor = displayableRawText.trim().length > 0;
+
+    /**
+     * Unified image rendering function that handles both message.content and message.parts
+     * @param imageSource - The image data (string URL or URL object)
+     * @param error - Optional error message
+     * @param keyPrefix - Unique key prefix for React rendering
+     * @param sourceType - Description of image source for mini mode
+     */
+    const renderImagePart = (
+        imageSource: string | URL | null | undefined,
+        error: string | undefined,
+        keyPrefix: string,
+        sourceType: 'content' | 'attachment' = 'content'
+    ) => {
+        // Handle error state
+        if (error) {
+            return (
+                <p key={`${keyPrefix}-error`} className={`text-red-500 ${isMiniMode ? 'text-xs' : 'text-sm'}`}>
+                    [Error: {error}]
+                </p>
+            );
+        }
+
+        // Extract image URL
+        const imageUrl = typeof imageSource === 'string' 
+            ? imageSource 
+            : imageSource instanceof URL 
+                ? imageSource.href 
+                : null;
+
+        // Handle missing/invalid image URL
+        if (!imageUrl) {
+            return (
+                <p key={`${keyPrefix}-fallback`} className={`text-gray-500 ${isMiniMode ? 'text-xs' : 'text-sm'}`}>
+                    [Image not available]
+                </p>
+            );
+        }
+
+        // Render mini mode indicator
+        if (isMiniMode) {
+            return (
+                <div key={`${keyPrefix}-mini`} className="flex items-center text-xs text-zinc-500 dark:text-zinc-400 my-1">
+                    <ImageIcon size={14} className="mr-1 flex-shrink-0" />
+                    <span>Image {sourceType}</span>
+                </div>
+            );
+        }
+
+        // Render full-size image
+        return (
+            <div key={keyPrefix} className={`relative w-full h-auto my-2 ${isMiniMode ? 'max-w-[150px]' : 'max-w-xs'}`}> 
+                <Image 
+                    src={imageUrl} 
+                    alt="User uploaded image" 
+                    width={isMiniMode ? 150 : 300} 
+                    height={isMiniMode ? 100 : 200} 
+                    className="rounded-md object-contain"
+                    unoptimized={true}
+                />
+            </div>
+        );
+    };
 
     const renderContent = () => {
         if (typeof message.content === 'string') {
@@ -141,34 +200,12 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                                 </div>
                             ) : null;
                         } else if (part.type === 'image') {
-                            const imageUrl = typeof part.image === 'string' ? part.image : part.image instanceof URL ? part.image.href : null;
-                            if (part.error) {
-                                return <p key={`${message.id}-part-${index}-image-error`} className={`text-red-500 ${isMiniMode ? 'text-xs' : 'text-sm'}`}>[Error: {part.error}]</p>;
-                            }
-                            if (imageUrl) {
-                                if (isMiniMode) {
-                                    return (
-                                        <div key={`${message.id}-part-${index}-image`} className="flex items-center text-xs text-zinc-500 dark:text-zinc-400 my-1">
-                                            <ImageIcon size={14} className="mr-1 flex-shrink-0" />
-                                            <span>Image content</span>
-                                        </div>
-                                    );
-                                }
-                                return (
-                                    <div key={`${message.id}-part-${index}-image`} className={`relative w-full h-auto my-2 ${isMiniMode ? 'max-w-[150px]' : 'max-w-xs'}`}> 
-                                        <Image 
-                                            src={imageUrl} 
-                                            alt="User uploaded image" 
-                                            width={isMiniMode ? 150 : 300} 
-                                            height={isMiniMode ? 100 : 200} 
-                                            className="rounded-md object-contain"
-                                            unoptimized={true}
-                                        />
-                                    </div>
-                                );
-                            } else {
-                                return <p key={`${message.id}-part-${index}-image-fallback`} className={`text-gray-500 ${isMiniMode ? 'text-xs' : 'text-sm'}`}>[Image not available]</p>;
-                            }
+                            return renderImagePart(
+                                part.image,
+                                part.error,
+                                `${message.id}-part-${index}-image`,
+                                'content'
+                            );
                         } else if (part.type === 'tool-call') {
                             const displayArgs = typeof part.args === 'string' ? JSON.parse(part.args) : part.args;
                             return (
@@ -354,35 +391,12 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                         }
                     } else if (contentPart.type === 'image') {
                         const imagePart = contentPart as ImagePart;
-                        const imageUrl = typeof imagePart.image === 'string' ? imagePart.image : imagePart.image instanceof URL ? imagePart.image.href : null;
-                        
-                        if (imagePart.error) {
-                            return <p key={`${message.id}-part-${index}-image-error`} className={`text-red-500 ${isMiniMode ? 'text-xs' : 'text-sm'}`}>[Error: {imagePart.error}]</p>;
-                        }
-                        if (imageUrl) {
-                            if (isMiniMode) {
-                                return (
-                                    <div key={`${message.id}-part-${index}-image-mini`} className="flex items-center text-xs text-zinc-500 dark:text-zinc-400 my-0.5">
-                                        <ImageIcon size={14} className="mr-1 flex-shrink-0" />
-                                        <span>Image attachment</span>
-                                    </div>
-                                );
-                            }
-                            return (
-                                <div key={`${message.id}-part-${index}-image`} className={`relative w-full h-auto my-2 ${isMiniMode ? 'max-w-[150px]' : 'max-w-xs'}`}> 
-                                    <Image 
-                                        src={imageUrl} 
-                                        alt="User uploaded image" 
-                                        width={isMiniMode ? 150 : 300} 
-                                        height={isMiniMode ? 100 : 200} 
-                                        className="rounded-md object-contain"
-                                        unoptimized={true}
-                                    />
-                                </div>
-                            );
-                        } else {
-                            return <p key={`${message.id}-part-${index}-image-fallback`} className={`text-gray-500 ${isMiniMode ? 'text-xs' : 'text-sm'}`}>[Image not available]</p>;
-                        }
+                        return renderImagePart(
+                            imagePart.image,
+                            imagePart.error,
+                            `${message.id}-part-${index}-image`,
+                            'attachment'
+                        );
                     } 
                     return null; 
                 })}
