@@ -1,0 +1,41 @@
+# app/page.tsx
+
+import { ChatWidget } from "@/components/chat-widget"
+
+export default function Home() {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center p-24">
+      <h1 className="text-4xl font-bold mb-8">Advanced Chat Widget Demo</h1>
+      <p className="text-center max-w-md mb-4">
+        This is a demo of the enhanced AI Chat Widget component. The widget is now resizable and draggable in both
+        collapsed and expanded states.
+      </p>
+      <p className="text-center max-w-md mb-8">
+        Try dragging the chat button, expanding it, then dragging the header or resizing from the bottom-right corner.
+      </p>
+
+      <div className="flex flex-col gap-4 p-6 bg-muted rounded-lg max-w-md">
+        <h2 className="text-xl font-semibold">Features:</h2>
+        <ul className="list-disc pl-5 space-y-2">
+          <li>Draggable floating button</li>
+          <li>Draggable chat window (drag from the header)</li>
+          <li>Resizable chat window (drag from the bottom-right corner)</li>
+          <li>Smooth expand/collapse animations</li>
+          <li>Stays within viewport boundaries</li>
+          <li>Works on both desktop and mobile</li>
+          <li>Preserves chat history, position, and size</li>
+        </ul>
+      </div>
+
+      {/* The chat widget will appear as a floating button */}
+      <ChatWidget
+        initialPrompt="Hello! I'm your AI assistant. You can drag this chat window by the header and resize it from the corner."
+        title="AI Chat Support"
+        initialPosition={{ x: 20, y: window.innerHeight - 80 }}
+        initialSize={{ width: 380, height: 500 }}
+        minSize={{ width: 300, height: 400 }}
+        maxSize={{ width: 600, height: 800 }}
+      />
+    </main>
+  )
+}

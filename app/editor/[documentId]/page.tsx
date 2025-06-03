@@ -78,6 +78,7 @@ import {
 // Zustand Store
 import { useFollowUpStore } from '@/lib/stores/followUpStore';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // Import preference store
+import { useModalStore } from '@/stores/useModalStore'; // Added for Live Summaries
 
 // --- NEW: Import the hooks ---
 import { useDocument } from '@/app/lib/hooks/editor/useDocument';
@@ -177,6 +178,8 @@ export default function EditorPage() {
     const isMobile = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
     // NEW: Add state for mobile pane visibility
     const [mobileVisiblePane, setMobileVisiblePane] = useState<'editor' | 'chat'>('chat'); // Default to chat
+    // Added for Live Summaries
+    const { openLiveSummariesModal } = useModalStore();
     const { currentTitle, isEditingTitle, newTitleValue, isInferringTitle, handleEditTitleClick, handleCancelEditTitle, handleSaveTitle, handleTitleInputKeyDown, handleInferTitle, setNewTitleValue } = useTitleManagement({
         documentId,
         initialName: documentData?.name || '',
@@ -1345,10 +1348,11 @@ export default function EditorPage() {
                                 autosaveStatus={autosaveStatus}
                                 handleSaveContent={handleSaveContent}
                                 isSaving={isSaving}
-                                onOpenHistory={handleOpenHistoryModal}
+                                onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
                                 isDocumentStarred={currentDocIsStarred}
                                 onToggleDocumentStar={handleToggleCurrentDocumentStar}
                                 handleNewDocument={handleNewDocument}
+                                onOpenLiveSummaries={openLiveSummariesModal}
                             />
                             {pageError && !pageError.startsWith("Chat Error:") && (
                                 <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -1472,10 +1476,11 @@ export default function EditorPage() {
                             autosaveStatus={autosaveStatus}
                             handleSaveContent={handleSaveContent}
                             isSaving={isSaving}
-                            onOpenHistory={handleOpenHistoryModal}
+                            onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
                             isDocumentStarred={currentDocIsStarred}
                             onToggleDocumentStar={handleToggleCurrentDocumentStar}
                             handleNewDocument={handleNewDocument}
+                            onOpenLiveSummaries={openLiveSummariesModal}
                          />
                         {pageError && !pageError.startsWith("Chat Error:") && (
                             <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>

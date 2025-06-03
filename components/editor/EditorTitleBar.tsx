@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, Star, ListTree } from 'lucide-react';
+import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, Star, ListTree, FileText } from 'lucide-react';
 import { DocumentPlusIcon } from '@heroicons/react/24/outline';
 import { AutosaveStatusIndicator } from '@/app/components/editor/AutosaveStatusIndicator';
 import { BlockNoteEditor } from '@blocknote/core'; // Added for editorRef type
@@ -37,6 +37,9 @@ interface EditorTitleBarProps {
     // ADDED for starring
     isDocumentStarred: boolean;
     onToggleDocumentStar: () => void;
+
+    // ADDED for Live Summaries
+    onOpenLiveSummaries: () => void;
 }
 
 export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
@@ -58,6 +61,8 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
     // ADDED for starring
     isDocumentStarred,
     onToggleDocumentStar,
+    // ADDED for Live Summaries
+    onOpenLiveSummaries,
 }) => {
     const { openNewDocumentModal } = useModalStore(); // Get the action from the store
     const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'error'>('idle');
@@ -190,6 +195,17 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
                     )}
                 </button>
                 {/* NEW "COPY CONTENT" BUTTON - END */}
+
+                {/* NEW "LIVE SUMMARIES" BUTTON - START */}
+                <button
+                    onClick={onOpenLiveSummaries}
+                    className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded"
+                    title="Open Live Summaries"
+                    aria-label="Open Live Summaries"
+                >
+                    <FileText size={20} />
+                </button>
+                {/* NEW "LIVE SUMMARIES" BUTTON - END */}
 
                 <button onClick={onOpenHistory} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded" title="Version History">
                     <Clock size={20} />

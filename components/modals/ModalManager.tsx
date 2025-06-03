@@ -6,6 +6,7 @@ import { FileBrowserModal } from '@/components/modals/FileBrowserModal';
 import { SearchModal } from '@/components/search/SearchModal';
 import NewDocumentModal from '@/components/modals/NewDocumentModal';
 import PreferencesModal from '@/components/modals/PreferencesModal';
+import { LiveSummariesModal } from '@/components/modals/LiveSummariesModal';
 
 interface ModalManagerProps {
   children: React.ReactNode;
@@ -23,6 +24,9 @@ const ModalManager: React.FC<ModalManagerProps> = ({ children }) => {
 
   const isPreferencesModalOpen = useModalStore((state) => state.isPreferencesModalOpen);
   const closePreferencesModal = useModalStore((state) => state.closePreferencesModal);
+
+  const isLiveSummariesModalOpen = useModalStore((state) => state.isLiveSummariesModalOpen);
+  const closeLiveSummariesModal = useModalStore((state) => state.closeLiveSummariesModal);
 
   return (
     <>
@@ -42,6 +46,10 @@ const ModalManager: React.FC<ModalManagerProps> = ({ children }) => {
       <PreferencesModal
         isOpen={isPreferencesModalOpen}
         onClose={closePreferencesModal}
+      />
+      <LiveSummariesModal
+        isOpen={isLiveSummariesModalOpen}
+        onClose={closeLiveSummariesModal}
       />
       {/* Other modals will be added here */}
     </>

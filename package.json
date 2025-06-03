@@ -52,6 +52,7 @@
     "re-resizable": "^6.11.2",
     "react": "^18",
     "react-dom": "^18",
+    "react-modal": "^3.16.1",
     "react-markdown": "^9.1.0",
     "react-resizable-panels": "^2.1.8",
     "react-voice-visualizer": "^2.0.8",
@@ -64,6 +65,7 @@
     "task-master-ai": "^0.16.0",
     "use-debounce": "^10.0.4",
     "uuid": "^11.1.0",
+    "web-audio-api": "^0.2.2",
     "zod": "^3.23.8",
     "zustand": "^5.0.3"
   },
