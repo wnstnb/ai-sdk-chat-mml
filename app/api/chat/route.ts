@@ -164,10 +164,11 @@ const serverSideEditorTools = {
 
 // Define the model configuration map
 const modelProviders: Record<string, () => LanguageModel> = {
+    "gpt-4.1": () => openai("gpt-4.1"),
   "gpt-4o": () => openai("gpt-4o"),
-  "gpt-4.1": () => openai("gpt-4.1"),
-  "gemini-2.5-flash-preview-05-20": () => google("gemini-2.5-flash-preview-05-20"),
-  "gemini-2.5-pro-preview-05-06": () => google("gemini-2.5-pro-preview-05-06"),
+  "o4-mini": () => openai("o4-mini"),
+//   "gemini-2.5-flash-preview-05-20": () => google("gemini-2.5-flash-preview-05-20"),
+//   "gemini-2.5-pro-preview-05-06": () => google("gemini-2.5-pro-preview-05-06"),
   "claude-3-7-sonnet-latest": () => anthropic("claude-3-7-sonnet-latest"),
   "claude-3-5-sonnet-latest": () => anthropic("claude-3-5-sonnet-latest"),
 //   "gemini-2.0-flash": () => google("gemini-2.0-flash"),
