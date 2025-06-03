@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^1.2.12
+        version: 1.2.12(zod@3.24.4)
       '@ai-sdk/google':
         specifier: ^1.2.18
         version: 1.2.18(zod@3.24.4)

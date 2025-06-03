@@ -290,6 +290,12 @@ export function useChatInteractions({
     const followUpContext = useFollowUpStore((state) => state.followUpContext);
     const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
 
+    // --- Determine if current model needs onToolCall callback (OpenAI models only) ---
+    const isOpenAIModel = model.toLowerCase().includes('gpt') || model.toLowerCase().includes('openai');
+    const needsOnToolCallCallback = isOpenAIModel;
+    
+    console.log('[useChatInteractions] Provider-specific tool config:', { model, isOpenAIModel, needsOnToolCallCallback });
+
     // --- Vercel AI useChat Hook ---
     const {
         messages,
@@ -307,15 +313,48 @@ export function useChatInteractions({
         id: documentId,
         // --- Pass initialMessages directly, fallback to empty array ---
         initialMessages: initialMessages || [],
+        // --- Provider-specific onToolCall: Only for OpenAI models ---
+        ...(needsOnToolCallCallback && {
+            onToolCall: async ({ toolCall }) => {
+                console.log('[useChat onToolCall] OpenAI tool call detected:', toolCall.toolName);
+                
+                // For server-side tools, acknowledge execution
+                if (toolCall.toolName === 'webSearch' || toolCall.toolName === 'searchAndTagDocumentsTool') {
+                    return `Server-side tool '${toolCall.toolName}' executed successfully.`;
+                }
+                
+                // For client-side tools, acknowledge they will be handled by editor
+                return `Client-side tool '${toolCall.toolName}' will be executed by the editor component.`;
+            }
+        }),
         onResponse: (res) => {
             console.log('[useChat onResponse] Received response:', res);
+            console.log('[useChat onResponse] Response status:', res.status);
+            console.log('[useChat onResponse] Response headers:', res.headers);
+            console.log('[useChat onResponse] Current model:', model);
+            
             if (!res.ok) {
-                 console.error(`[useChat onResponse] Response not OK! Status: ${res.status}`);
-                 toast.error(`Chat Request Failed: ${res.statusText} (${res.status})`);
+                console.error(`[useChat onResponse] Response not OK! Status: ${res.status}`);
+                console.error(`[useChat onResponse] Response status text:`, res.statusText);
+                toast.error(`Chat Request Failed: ${res.statusText} (${res.status})`);
+            } else {
+                console.log(`[useChat onResponse] ✅ Response OK for model: ${model}`);
+                
+                // For Gemini models, try to preemptively mark as successful
+                if (!needsOnToolCallCallback) {
+                    console.log('[useChat onResponse] Gemini model detected - response appears successful');
+                }
             }
         },
         onError: (err) => {
+            console.error('[useChat onError] === DETAILED ERROR ANALYSIS ===');
+            console.error('[useChat onError] Current model:', model);
+            console.error('[useChat onError] Error type:', typeof err);
+            console.error('[useChat onError] Error constructor:', err?.constructor?.name);
             console.error('[useChat onError] Full error object:', err);
+            console.error('[useChat onError] Error message:', err?.message);
+            console.error('[useChat onError] Error stack:', err?.stack);
+            console.error('[useChat onError] Timestamp:', new Date().toISOString());
             
             // Check if this is a structured error response from our API
             if (err.message) {
@@ -372,10 +411,84 @@ export function useChatInteractions({
         },
         onFinish: (message) => {
             console.log('[useChat onFinish] Stream finished. Final message:', message);
+            console.log('[useChat onFinish] Message role:', message?.role);
+            console.log('[useChat onFinish] Message content type:', typeof message?.content);
+            console.log('[useChat onFinish] Message content length:', Array.isArray(message?.content) ? message.content.length : 'N/A');
+            console.log('[useChat onFinish] Current model:', model);
+            console.log('[useChat onFinish] needsOnToolCallCallback:', needsOnToolCallCallback);
+            
+            // Add success confirmation for Gemini models
+            if (!needsOnToolCallCallback && message?.role === 'assistant') {
+                console.log('✅ [useChat onFinish] Gemini conversation completed successfully!');
+                
+                // Check if we have content
+                if (message.content) {
+                    console.log('✅ [useChat onFinish] Gemini response has content - conversation successful');
+                } else {
+                    console.warn('⚠️ [useChat onFinish] Gemini response has no content');
+                }
+            }
+            
+            // --- Handle Gemini's server-side tool execution results ---
+            if (!needsOnToolCallCallback) { // Only for Gemini models (no onToolCall callback)
+                console.log('[useChat onFinish] Processing potential Gemini tool execution results...');
+                
+                // Check if the message contains tool calls with results (Gemini server-side execution)
+                if (Array.isArray(message.content)) {
+                    console.log(`[useChat onFinish] Message content is array with ${message.content.length} parts`);
+                    
+                    message.content.forEach((part: any, index: number) => {
+                        console.log(`[useChat onFinish] Part ${index}:`, part);
+                        
+                        if (part.type === 'tool-result' && part.result) {
+                            console.log('[useChat onFinish] Found Gemini tool result:', part);
+                            
+                            // Check if this is a server-side editor tool result
+                            const result = part.result;
+                            if (result.action && result.success) {
+                                console.log(`[useChat onFinish] Processing Gemini ${result.action} tool result:`, result);
+                                
+                                // Trigger the appropriate client-side execution
+                                handleGeminiToolExecution(result);
+                            }
+                        }
+                    });
+                } else if (typeof message.content === 'string') {
+                    console.log('[useChat onFinish] Message content is string:', message.content.substring(0, 100) + '...');
+                } else {
+                    console.log('[useChat onFinish] Message content is neither array nor string:', message.content);
+                }
+            } else {
+                console.log('[useChat onFinish] OpenAI model - tool calls handled via onToolCall callback');
+            }
         },
     });
 
-    // console.log('[useChatInteractions] Messages state FROM useChat hook IMMEDIATELY AFTER init:', JSON.stringify(messages, null, 2));
+    // --- NEW: Handle Gemini tool execution results ---
+    const handleGeminiToolExecution = useCallback((result: any) => {
+        console.log('[handleGeminiToolExecution] Processing tool result:', result);
+        
+        // Create a custom event to notify the EditorPage component
+        const toolEvent = new CustomEvent('geminiToolExecution', {
+            detail: {
+                action: result.action,
+                params: {
+                    markdownContent: result.markdownContent,
+                    targetBlockId: result.targetBlockId,
+                    targetText: result.targetText,
+                    newMarkdownContent: result.newMarkdownContent,
+                    tableBlockId: result.tableBlockId,
+                    newTableMarkdown: result.newTableMarkdown,
+                    items: result.items,
+                }
+            }
+        });
+        
+        // Dispatch the event to the window
+        window.dispatchEvent(toolEvent);
+        
+        console.log('[handleGeminiToolExecution] Dispatched geminiToolExecution event for:', result.action);
+    }, []);
 
     // --- Editor Context Retrieval ---
     const getEditorContext = useCallback(async (): Promise<EditorContextData> => {
@@ -1051,6 +1164,34 @@ export function useChatInteractions({
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // <<< EMPTY DEPENDENCY ARRAY - Runs cleanup only on unmount
+
+    // --- Safeguard for AI SDK Compatibility Issues ---
+    useEffect(() => {
+        // Monitor for potential streaming parsing issues with Gemini models
+        if (!needsOnToolCallCallback && isLoading) {
+            console.log('[AI SDK Safeguard] Monitoring Gemini streaming response...');
+            
+            const timeoutId = setTimeout(() => {
+                if (isLoading) {
+                    console.warn('[AI SDK Safeguard] ⚠️ Gemini streaming response taking unusually long');
+                    console.warn('[AI SDK Safeguard] This might indicate a parsing issue with AI SDK v4.3.15');
+                    
+                    // Note: We can't automatically recover here since the backend is working
+                    // The user will need to manually retry or check if the response was actually successful
+                }
+            }, 20000); // 20 second timeout
+            
+            return () => clearTimeout(timeoutId);
+        }
+    }, [isLoading, needsOnToolCallCallback]);
+
+    // --- Effect to monitor successful backend completion vs frontend processing ---
+    useEffect(() => {
+        // This effect helps detect when backend succeeds but frontend fails to process
+        if (!needsOnToolCallCallback && !isLoading) {
+            console.log('[AI SDK Monitor] Gemini request completed. Loading state changed to false.');
+        }
+    }, [isLoading, needsOnToolCallCallback]);
 
     // Return updated hook values
     return {

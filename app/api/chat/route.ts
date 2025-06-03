@@ -1,16 +1,17 @@
 // app/api/chat/route.ts
 
-import { openai } from "@ai-sdk/openai";
-import { google } from "@ai-sdk/google";
-import { LanguageModel, streamText, CoreMessage, tool, ToolCallPart, ToolResultPart, TextPart, ImagePart, ToolCall, ToolResult, convertToCoreMessages } from "ai";
+import { NextRequest } from 'next/server';
+import { streamText, tool, CoreMessage, TextPart, ImagePart, ToolCallPart, ToolResultPart, convertToCoreMessages } from 'ai';
+import { openai } from '@ai-sdk/openai';
+import { google } from '@ai-sdk/google';
+import { anthropic } from '@ai-sdk/anthropic';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { webSearch } from "@/lib/tools/exa-search"; // Import the webSearch tool
-import { createSupabaseServerClient } from '@/lib/supabase/server'; // Supabase server client
-import { Message as SupabaseMessage, ToolCall as SupabaseToolCall } from '@/types/supabase'; // DB types
-import { createClient } from '@supabase/supabase-js'; // <-- ADDED for explicit client for signed URLs if needed
+import type { LanguageModel } from 'ai';
 import crypto from 'crypto'; // Import crypto for UUID generation
-import { searchByTitle, searchByEmbeddings, searchByContentBM25, combineAndRankResults } from '@/lib/ai/searchService'; // UPDATED: Import searchByContentBM25
 import { serverTools } from '@/lib/tools/server-tools';
+import { delay } from '@/lib/utils/delay'; // Import delay function
 
 // Define a type for messages coming from the client (e.g., from useChat)
 // This aligns with the expected structure for convertToCoreMessages
@@ -24,7 +25,8 @@ interface ClientMessage {
   [key: string]: any; // Allow other properties
 }
 
-// Define Zod schemas for the editor tools based on PRD
+// Define Zod schemas for the CLIENT-SIDE editor tools
+// These will be used for client-side tool dispatching
 const addContentSchema = z.object({
   markdownContent: z.string().describe("The Markdown content to be added to the editor."),
   targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert relative to (e.g., insert 'after'). If null, append or use current selection."),
@@ -41,57 +43,124 @@ const deleteContentSchema = z.object({
   targetText: z.string().nullable().describe("The specific text within the targetBlockId block to delete. If null, the entire block is deleted."),
 });
 
-// --- UPDATED: Schema for the unified modifyTable tool ---
 const modifyTableSchema = z.object({
     tableBlockId: z.string().describe("The ID of the table block to modify."),
     newTableMarkdown: z.string().describe("The COMPLETE, final Markdown content for the entire table after the requested modifications have been applied by the AI."),
 });
-// --- END UPDATED ---
 
-// --- NEW: Schema for creating checklists ---
 const createChecklistSchema = z.object({
   items: z.array(z.string()).describe("An array of plain text strings, where each string is the content for a new checklist item. The tool will handle Markdown formatting (e.g., prepending '* [ ]'). Do NOT include Markdown like '*[ ]' in these strings."),
   targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert the new checklist after. If null, the checklist is appended to the document or inserted at the current selection."),
 });
 
-// --- NEW: Search and Tag Documents Tool ---
-const searchAndTagDocumentsSchema = z.object({
-  searchQuery: z.string().describe("The user's query to search for in the documents.")
-});
+// CLIENT-SIDE TOOL DEFINITIONS (no execute functions - dispatched to client)
+const clientSideTools = {
+  addContent: tool({
+    description: "Adds new general Markdown content (e.g., paragraphs, headings, simple bullet/numbered lists, or single list/checklist items). For multi-item checklists, use createChecklist.",
+    parameters: addContentSchema,
+    // No execute function - handled client-side
+  }),
+  modifyContent: tool({
+    description: "Modifies content within specific NON-TABLE editor blocks. Can target a single block (with optional specific text replacement) or multiple blocks (replacing entire content of each with corresponding new Markdown from an array). Main tool for altering existing lists/checklists.",
+    parameters: modifyContentSchema,
+    // No execute function - handled client-side
+  }),
+  deleteContent: tool({
+    description: "Deletes one or more NON-TABLE blocks, or specific text within a NON-TABLE block, from the editor.",
+    parameters: deleteContentSchema,
+    // No execute function - handled client-side
+  }),
+  modifyTable: tool({
+    description: "Modifies an existing TABLE block by providing the complete final Markdown. Reads original from context, applies changes, returns result.",
+    parameters: modifyTableSchema,
+    // No execute function - handled client-side
+  }),
+  createChecklist: tool({
+    description: "Creates a new checklist with multiple items. Provide an array of plain text strings for the items (e.g., ['Buy milk', 'Read book']). Tool handles Markdown formatting.",
+    parameters: createChecklistSchema,
+    // No execute function - handled client-side
+  }),
+};
 
-const searchAndTagDocumentsTool = tool({
-  description: 'Searches documents by title and semantic content. Returns a list of relevant documents that the user can choose to tag for context.',
-  parameters: searchAndTagDocumentsSchema,
-  execute: async ({ searchQuery }) => {
-    // 1. Perform title-based, semantic, and content searches in parallel
-    const [titleMatches, semanticMatches, contentMatches] = await Promise.all([
-      searchByTitle(searchQuery),
-      searchByEmbeddings(searchQuery),
-      searchByContentBM25(searchQuery) // NEW: Add content search
-    ]);
-    
-    // 2. Combine and rank results
-    const combinedResults = combineAndRankResults(
-        titleMatches, 
-        semanticMatches, 
-        contentMatches // NEW: Pass content matches
-    );
-    
-    // 3. Format results for the AI to present
-    return {
-      documents: combinedResults.map(doc => ({
-        id: doc.id,
-        name: doc.name,
-        confidence: doc.finalScore,
-        summary: doc.summary || undefined // Only include if present
-      })),
-      searchPerformed: true,
-      queryUsed: searchQuery,
-      presentationStyle: 'listWithTagButtons'
-    };
-  }
-});
-// --- END NEW ---
+// SERVER-SIDE EDITOR TOOLS (for Gemini) - with execute functions
+const serverSideEditorTools = {
+  addContent: tool({
+    description: "Adds new general Markdown content (e.g., paragraphs, headings, simple bullet/numbered lists, or single list/checklist items). For multi-item checklists, use createChecklist.",
+    parameters: addContentSchema,
+    execute: async ({ markdownContent, targetBlockId }) => {
+      // Return structured instruction for frontend to execute
+      return {
+        action: 'addContent',
+        instruction: 'Add the following content to the editor',
+        markdownContent,
+        targetBlockId,
+        success: true,
+        message: `Added content: ${markdownContent.substring(0, 50)}...`
+      };
+    },
+  }),
+  modifyContent: tool({
+    description: "Modifies content within specific NON-TABLE editor blocks. Can target a single block (with optional specific text replacement) or multiple blocks (replacing entire content of each with corresponding new Markdown from an array). Main tool for altering existing lists/checklists.",
+    parameters: modifyContentSchema,
+    execute: async ({ targetBlockId, targetText, newMarkdownContent }) => {
+      // Return structured instruction for frontend to execute
+      return {
+        action: 'modifyContent',
+        instruction: 'Modify the specified block content',
+        targetBlockId,
+        targetText,
+        newMarkdownContent,
+        success: true,
+        message: `Modified block ${targetBlockId}`
+      };
+    },
+  }),
+  deleteContent: tool({
+    description: "Deletes one or more NON-TABLE blocks, or specific text within a NON-TABLE block, from the editor.",
+    parameters: deleteContentSchema,
+    execute: async ({ targetBlockId, targetText }) => {
+      // Return structured instruction for frontend to execute
+      return {
+        action: 'deleteContent',
+        instruction: 'Delete the specified content from editor',
+        targetBlockId,
+        targetText,
+        success: true,
+        message: `Deleted content from block ${targetBlockId}`
+      };
+    },
+  }),
+  modifyTable: tool({
+    description: "Modifies an existing TABLE block by providing the complete final Markdown. Reads original from context, applies changes, returns result.",
+    parameters: modifyTableSchema,
+    execute: async ({ tableBlockId, newTableMarkdown }) => {
+      // Return structured instruction for frontend to execute
+      return {
+        action: 'modifyTable',
+        instruction: 'Update the table with new markdown content',
+        tableBlockId,
+        newTableMarkdown,
+        success: true,
+        message: `Updated table ${tableBlockId}`
+      };
+    },
+  }),
+  createChecklist: tool({
+    description: "Creates a new checklist with multiple items. Provide an array of plain text strings for the items (e.g., ['Buy milk', 'Read book']). Tool handles Markdown formatting.",
+    parameters: createChecklistSchema,
+    execute: async ({ items, targetBlockId }) => {
+      // Return structured instruction for frontend to execute
+      return {
+        action: 'createChecklist',
+        instruction: 'Create a new checklist with the specified items',
+        items,
+        targetBlockId,
+        success: true,
+        message: `Created checklist with ${items.length} items`
+      };
+    },
+  }),
+};
 
 // Define the model configuration map
 const modelProviders: Record<string, () => LanguageModel> = {
@@ -99,11 +168,13 @@ const modelProviders: Record<string, () => LanguageModel> = {
   "gpt-4.1": () => openai("gpt-4.1"),
   "gemini-2.5-flash-preview-05-20": () => google("gemini-2.5-flash-preview-05-20"),
   "gemini-2.5-pro-preview-05-06": () => google("gemini-2.5-pro-preview-05-06"),
+  "claude-3-7-sonnet-latest": () => anthropic("claude-3-7-sonnet-latest"),
+  "claude-3-5-sonnet-latest": () => anthropic("claude-3-5-sonnet-latest"),
 //   "gemini-2.0-flash": () => google("gemini-2.0-flash"),
 };
 
 // Define the default model ID
-const defaultModelId = "gemini-2.5-flash-preview-05-20";
+const defaultModelId = "gpt-4.1";
 
 // System Prompt updated for Tool Calling, Web Search, and direct Table Markdown modification
 const systemPrompt = `# SYSTEM PROMPT: Collaborative Editor AI Assistant
@@ -304,9 +375,8 @@ const editorTools = {
 
 // Define the tools for the AI model, combining editor and web search
 const combinedTools = {
-  ...editorTools, // Includes updated modifyTable and new createChecklist
-  webSearch,
-  searchAndTagDocumentsTool: searchAndTagDocumentsTool,
+  ...clientSideTools, // Client-side editor tools (no execute functions)
+  ...serverTools, // Server-side tools (webSearch, searchAndTagDocumentsTool)
 };
 
 // Helper function to get Supabase URL and Key (replace with your actual env variables)
@@ -667,25 +737,23 @@ export async function POST(req: Request) {
     const getModelProvider = modelProviders[modelId];
     const aiModel = getModelProvider();
 
-    let webSearchCallCount = 0;
-    const WEB_SEARCH_RATE_LIMIT_MS = 2000;
+    // Rate limiting wrapper for the webSearch tool only (server tools need rate limiting)
     const rateLimitedWebSearch = tool({
-        description: webSearch.description,
-        parameters: webSearch.parameters,
-        execute: async (args, options) => {
-            if (taskHint === 'summarize_and_cite_outline') {
-                if (webSearchCallCount > 0) {
-                    await new Promise(resolve => setTimeout(resolve, WEB_SEARCH_RATE_LIMIT_MS));
-                }
-                webSearchCallCount++;
-            }
-            return webSearch.execute ? await webSearch.execute(args, options) : { error: 'Original execute function not found' };
-        }
+      description: 'Search the web for up-to-date information using Exa AI',
+      parameters: z.object({
+        query: z.string().min(1).max(100).describe('The search query'),
+      }),
+      execute: async (args, options) => {
+        await delay(1000); // 1 second delay between web searches
+        // Call the webSearchTool directly with both parameters
+        return await serverTools.webSearch.execute!(args, options);
+      }
     });
+
     const combinedToolsWithRateLimit = {
-        ...editorTools,
-        webSearch: rateLimitedWebSearch,
-        searchAndTagDocumentsTool: searchAndTagDocumentsTool,
+      ...clientSideTools,
+      webSearch: rateLimitedWebSearch,
+      searchAndTagDocumentsTool: serverTools.searchAndTagDocumentsTool,
     };
 
     // --- REFACTORED MESSAGE PREPARATION ---
@@ -905,7 +973,7 @@ export async function POST(req: Request) {
             
             if (Array.isArray(lastConvertedMsg.content)) {
                 console.log("  - Content parts count:", lastConvertedMsg.content.length);
-                lastConvertedMsg.content.forEach((part, idx) => {
+                lastConvertedMsg.content.forEach((part: any, idx: number) => {
                     console.log(`    Part ${idx}: type=${part.type}, hasImage=${!!(part as any).image}, hasText=${!!(part as any).text}`);
                     if (part.type === 'image' && (part as any).image) {
                         const imagePart = part as any;
@@ -1140,13 +1208,63 @@ export async function POST(req: Request) {
     }
 
     console.log("[API Chat] About to call streamText with model:", modelId);
-    console.log("[API Chat] Tool configuration:", { addContent: !!editorTools.addContent });
-    console.log("[API Chat] editorTools.addContent:", editorTools.addContent);
+    console.log("[API Chat] IMPLEMENTING: Provider-Specific Tool Architecture");
+    
+    // Provider-specific tool configuration
+    const isGeminiModel = modelId.toLowerCase().includes('gemini');
+    const isOpenAIModel = modelId.toLowerCase().includes('gpt') || modelId.toLowerCase().includes('openai');
+    const isClaudeModel = modelId.toLowerCase().includes('claude') || modelId.toLowerCase().includes('anthropic');
+    
+    console.log("[API Chat] Provider detection:", { modelId, isGeminiModel, isOpenAIModel, isClaudeModel });
+    
+    // Define server-side tools (all have execute functions)
+    const serverOnlyToolsForStream = {
+        webSearch: rateLimitedWebSearch,
+        searchAndTagDocumentsTool: serverTools.searchAndTagDocumentsTool,
+    };
+    
+    // Mixed tools for OpenAI (server tools + client tools for onToolCall)
+    const openaiMixedTools = {
+        ...serverOnlyToolsForStream,
+        ...clientSideTools,  // Client-side tools handled by onToolCall callback
+    };
+    
+    // Provider-specific tool selection
+    let toolsToUse;
+    
+    // ENABLE ALL TOOLS FOR ALL MODELS (per user request)
+    const allToolsEnabled = {
+        ...serverOnlyToolsForStream,
+        ...clientSideTools,  // All editor tools
+    };
+    
+    if (isGeminiModel) {
+        // Enable all tools for Gemini models (user requested all tools enabled)
+        toolsToUse = allToolsEnabled;
+        console.log("[API Chat] GEMINI: All tools ENABLED - per user request");
+    } else if (isOpenAIModel) {
+        toolsToUse = allToolsEnabled;
+        console.log("[API Chat] OPENAI: All tools ENABLED");
+    } else if (isClaudeModel) {
+        toolsToUse = allToolsEnabled;
+        console.log("[API Chat] CLAUDE: All tools ENABLED");
+    } else {
+        // Default fallback - enable all tools
+        toolsToUse = allToolsEnabled;
+        console.log("[API Chat] UNKNOWN MODEL: All tools ENABLED");
+    }
+    
+    console.log("[API Chat] Final tools configuration:", { 
+        provider: isGeminiModel ? 'Gemini' : isOpenAIModel ? 'OpenAI' : isClaudeModel ? 'Claude' : 'Unknown',
+        toolsEnabled: !!toolsToUse,
+        toolCount: toolsToUse ? Object.keys(toolsToUse).length : 0, 
+        tools: toolsToUse ? Object.keys(toolsToUse) : []
+    });
     
     const result = streamText({
         model: aiModel,
         messages: finalMessagesForStreamText,
-        // tools: combinedToolsWithRateLimit, // DISABLED: Remove tools for now
+        ...(toolsToUse && { tools: toolsToUse }), // Only include tools if toolsToUse is defined
         maxSteps: 10,
         ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
         
