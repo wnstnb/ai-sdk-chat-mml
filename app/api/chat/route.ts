@@ -731,6 +731,57 @@ export async function POST(req: Request) {
     }
     // --- END: Save User Message ---
 
+    // --- BEGIN: Handle Audio Transcription Tool Call Logging ---
+    if (inputMethod === 'audio' && whisperDetails) {
+        console.log('[API Chat Audio] Processing audio transcription tool call logging...');
+        console.log('[API Chat Audio] Audio metadata:', { inputMethod, whisperDetails });
+        
+        try {
+            // Create a tool call entry for the audio transcription
+            const audioToolCall = {
+                user_id: userId,
+                document_id: documentId,
+                tool_name: 'whisper_transcription',
+                arguments: JSON.stringify({
+                    model: 'whisper-1',
+                    input_method: 'audio',
+                    file_size_bytes: whisperDetails.file_size_bytes || 0,
+                    file_type: whisperDetails.file_type || 'audio/webm'
+                }),
+                result: JSON.stringify({
+                    transcription: lastClientMessageForSave?.content || '',
+                    cost_estimate: whisperDetails.cost_estimate || 0,
+                    file_size_bytes: whisperDetails.file_size_bytes || 0,
+                    processing_time_ms: whisperDetails.processing_time_ms || null
+                }),
+                cost: whisperDetails.cost_estimate || 0,
+                tokens_input: Math.ceil((whisperDetails.file_size_bytes || 0) / 1000), // Approximate input tokens based on file size
+                tokens_output: 0, // Audio transcription doesn't produce output tokens
+                created_at: new Date().toISOString()
+            };
+
+            console.log('[API Chat Audio] Inserting audio tool call:', audioToolCall);
+            const { data: toolCallData, error: toolCallError } = await supabase
+                .from('tool_calls')
+                .insert(audioToolCall)
+                .select()
+                .single();
+
+            if (toolCallError) {
+                console.error('[API Chat Audio] Error saving audio tool call:', toolCallError);
+                // Don't block the chat flow, just log the error
+            } else {
+                console.log('[API Chat Audio] Audio tool call saved successfully. ID:', toolCallData?.id);
+            }
+        } catch (audioError) {
+            console.error('[API Chat Audio] Unexpected error during audio tool call logging:', audioError);
+            // Don't block the chat flow, just log the error
+        }
+    } else if (inputMethod === 'audio') {
+        console.warn('[API Chat Audio] Audio input method detected but whisperDetails missing');
+    }
+    // --- END: Handle Audio Transcription Tool Call Logging ---
+
     const modelId = typeof modelIdFromData === 'string' && modelIdFromData in modelProviders
         ? modelIdFromData
         : defaultModelId;
