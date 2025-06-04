@@ -13,6 +13,8 @@ import {
 import { generateNotesFromTranscript } from '@/lib/ai/notesService';
 import { type BlockNoteEditor, type PartialBlock } from '@blocknote/core';
 import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface VoiceSummaryModalProps {
   isOpen: boolean;
@@ -639,14 +641,16 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
           <TabsContent 
             value="notes" 
             ref={notesTabContentRef}
-            className="flex-grow overflow-y-auto mt-2 border border-[--border-color] rounded p-3 bg-[--input-bg] min-h-[150px]"
+            className="flex-grow overflow-y-auto mt-2 border border-[--border-color] rounded p-3 bg-[--input-bg] min-h-[150px] max-w-full text-sm"
           >
             {isGeneratingNotes ? (
               <p className="text-sm text-[--muted-text-color] animate-pulse">Generating notes...</p>
             ) : notesError ? (
               <p className="text-sm text-red-500 whitespace-pre-wrap">Error: {notesError}</p>
             ) : generatedNotes ? (
-              <p className="text-sm whitespace-pre-wrap">{generatedNotes}</p>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {generatedNotes}
+              </ReactMarkdown>
             ) : (
               <p className="text-sm text-[--muted-text-color]">
                 Click &quot;Generate Notes&quot; to create an AI-generated summary of the transcription.
