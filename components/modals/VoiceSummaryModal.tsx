@@ -104,6 +104,7 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
   }, []);
 
   const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
+  const WEBSOCKET_AUTH_TOKEN = process.env.NEXT_PUBLIC_WEBSOCKET_AUTH_TOKEN;
 
   // Helper function to scroll an element to its bottom if overflowing
   const scrollToBottomIfOverflowing = (element: HTMLDivElement | null) => {
@@ -142,6 +143,14 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
       console.error('CRITICAL: NEXT_PUBLIC_WEBSOCKET_URL is not defined. Cannot connect to WebSocket.');
       return Promise.reject(new Error('WebSocket URL is not configured.'));
     }
+    if (!WEBSOCKET_AUTH_TOKEN) {
+      let messageToShow = finalizedTranscriptContent.current;
+      if (messageToShow && !/\s$/.test(messageToShow)) { messageToShow += ' '; }
+      messageToShow += '(Configuration error: WebSocket authentication token is not set. Please contact support.)';
+      setVoiceSummaryTranscription(messageToShow);
+      console.error('CRITICAL: NEXT_PUBLIC_WEBSOCKET_AUTH_TOKEN is not defined. Cannot connect to WebSocket.');
+      return Promise.reject(new Error('WebSocket authentication token is not configured.'));
+    }
     if (webSocketRef.current && webSocketRef.current.readyState !== WebSocket.CLOSED) {
       return Promise.resolve();
     }
@@ -155,7 +164,8 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
     setVoiceSummaryTranscription(messageToShowConnect);
 
     return new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(WEBSOCKET_URL);
+      const authenticatedWebSocketUrl = `${WEBSOCKET_URL}?auth_token=${WEBSOCKET_AUTH_TOKEN}`;
+      const ws = new WebSocket(authenticatedWebSocketUrl);
       webSocketRef.current = ws;
       ws.onopen = () => {
         reconnectionAttemptsRef.current = 0;
