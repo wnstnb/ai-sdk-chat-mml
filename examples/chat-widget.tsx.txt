@@ -1,0 +1,333 @@
+# components/chat-widget.tsx
+"use client"
+
+import type React from "react"
+
+import { useState, useRef, useEffect } from "react"
+import { useChat } from "ai/react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Loader2, Send, Minimize2, MessageCircle, GripHorizontal } from "lucide-react"
+import { cn } from "@/lib/utils"
+
+interface Position {
+  x: number
+  y: number
+}
+
+interface Size {
+  width: number
+  height: number
+}
+
+interface ChatWidgetProps {
+  initialPrompt?: string
+  title?: string
+  initialPosition?: Position
+  initialSize?: Size
+  minSize?: Size
+  maxSize?: Size
+  className?: string
+}
+
+export function ChatWidget({
+  initialPrompt = "How can I help you today?",
+  title = "AI Assistant",
+  initialPosition = { x: 20, y: 20 },
+  initialSize = { width: 380, height: 500 },
+  minSize = { width: 300, height: 400 },
+  maxSize = { width: 600, height: 800 },
+  className,
+}: ChatWidgetProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [position, setPosition] = useState<Position>(initialPosition)
+  const [size, setSize] = useState<Size>(initialSize)
+  const [isDragging, setIsDragging] = useState(false)
+  const [isResizing, setIsResizing] = useState(false)
+  const [dragOffset, setDragOffset] = useState<Position>({ x: 0, y: 0 })
+  const [resizeStart, setResizeStart] = useState<Position>({ x: 0, y: 0 })
+  const [resizeStartSize, setResizeStartSize] = useState<Size>({ width: 0, height: 0 })
+
+  const buttonRef = useRef<HTMLDivElement>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
+
+  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
+    initialMessages: initialPrompt ? [{ id: "1", role: "assistant", content: initialPrompt }] : [],
+  })
+
+  // Scroll to bottom when messages change
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" })
+    }
+  }, [messages])
+
+  // Handle button drag start
+  const handleButtonDragStart = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    if (!buttonRef.current || isExpanded) return
+
+    setIsDragging(true)
+    const rect = buttonRef.current.getBoundingClientRect()
+
+    if ("touches" in e) {
+      const touch = e.touches[0]
+      setDragOffset({
+        x: touch.clientX - rect.left,
+        y: touch.clientY - rect.top,
+      })
+    } else {
+      setDragOffset({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      })
+    }
+  }
+
+  // Handle card drag start
+  const handleCardDragStart = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    if (!cardRef.current || !isExpanded) return
+
+    // Only allow dragging from the header
+    if (e.target instanceof Node && !headerRef.current?.contains(e.target)) return
+
+    setIsDragging(true)
+    const rect = cardRef.current.getBoundingClientRect()
+
+    if ("touches" in e) {
+      const touch = e.touches[0]
+      setDragOffset({
+        x: touch.clientX - rect.left,
+        y: touch.clientY - rect.top,
+      })
+    } else {
+      setDragOffset({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      })
+    }
+
+    e.preventDefault()
+  }
+
+  // Handle resize start
+  const handleResizeStart = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    if (!cardRef.current || !isExpanded) return
+
+    setIsResizing(true)
+
+    if ("touches" in e) {
+      const touch = e.touches[0]
+      setResizeStart({
+        x: touch.clientX,
+        y: touch.clientY,
+      })
+    } else {
+      setResizeStart({
+        x: e.clientX,
+        y: e.clientY,
+      })
+    }
+
+    setResizeStartSize({
+      width: size.width,
+      height: size.height,
+    })
+
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  // Handle mouse/touch move
+  const handleMove = (clientX: number, clientY: number) => {
+    if (isDragging) {
+      // Calculate new position
+      const newX = clientX - dragOffset.x
+      const newY = clientY - dragOffset.y
+
+      // Get viewport dimensions
+      const viewportWidth = window.innerWidth
+      const viewportHeight = window.innerHeight
+
+      // Get element dimensions
+      const elementWidth = isExpanded ? size.width : buttonRef.current?.offsetWidth || 60
+      const elementHeight = isExpanded ? size.height : buttonRef.current?.offsetHeight || 60
+
+      // Constrain to viewport
+      const constrainedX = Math.max(0, Math.min(newX, viewportWidth - elementWidth))
+      const constrainedY = Math.max(0, Math.min(newY, viewportHeight - elementHeight))
+
+      setPosition({ x: constrainedX, y: constrainedY })
+    } else if (isResizing) {
+      // Calculate size delta
+      const deltaX = clientX - resizeStart.x
+      const deltaY = clientY - resizeStart.y
+
+      // Calculate new size
+      const newWidth = Math.max(minSize.width, Math.min(maxSize.width, resizeStartSize.width + deltaX))
+      const newHeight = Math.max(minSize.height, Math.min(maxSize.height, resizeStartSize.height + deltaY))
+
+      setSize({ width: newWidth, height: newHeight })
+    }
+  }
+
+  // Handle mouse move
+  const handleMouseMove = (e: MouseEvent) => {
+    handleMove(e.clientX, e.clientY)
+  }
+
+  // Handle touch move
+  const handleTouchMove = (e: TouchEvent) => {
+    const touch = e.touches[0]
+    handleMove(touch.clientX, touch.clientY)
+  }
+
+  // Handle drag/resize end
+  const handleEnd = () => {
+    setIsDragging(false)
+    setIsResizing(false)
+  }
+
+  // Add and remove event listeners
+  useEffect(() => {
+    if (isDragging || isResizing) {
+      window.addEventListener("mousemove", handleMouseMove)
+      window.addEventListener("mouseup", handleEnd)
+      window.addEventListener("touchmove", handleTouchMove, { passive: false })
+      window.addEventListener("touchend", handleEnd)
+    }
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove)
+      window.removeEventListener("mouseup", handleEnd)
+      window.removeEventListener("touchmove", handleTouchMove)
+      window.removeEventListener("touchend", handleEnd)
+    }
+  }, [isDragging, isResizing, dragOffset, resizeStart, resizeStartSize])
+
+  // Prevent default touch behavior to avoid scrolling while dragging/resizing
+  useEffect(() => {
+    const preventDefaultTouch = (e: TouchEvent) => {
+      if (isDragging || isResizing) {
+        e.preventDefault()
+      }
+    }
+
+    document.addEventListener("touchmove", preventDefaultTouch, { passive: false })
+
+    return () => {
+      document.removeEventListener("touchmove", preventDefaultTouch)
+    }
+  }, [isDragging, isResizing])
+
+  return (
+    <div
+      className="fixed z-50"
+      style={{
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+      }}
+    >
+      {/* Floating button when collapsed */}
+      <div
+        ref={buttonRef}
+        className={cn(
+          "rounded-full bg-primary text-primary-foreground shadow-lg cursor-move transition-all duration-300",
+          isExpanded ? "scale-0 opacity-0" : "scale-100 opacity-100",
+        )}
+        style={{ width: "60px", height: "60px" }}
+        onMouseDown={handleButtonDragStart}
+        onTouchStart={handleButtonDragStart}
+        onClick={() => setIsExpanded(true)}
+      >
+        <div className="flex items-center justify-center h-full">
+          <MessageCircle className="h-6 w-6" />
+        </div>
+      </div>
+
+      {/* Chat card */}
+      <div
+        ref={cardRef}
+        className={cn(
+          "absolute bottom-0 right-0 shadow-lg transition-all duration-300 ease-in-out",
+          isExpanded
+            ? "scale-100 opacity-100 translate-y-0 translate-x-0"
+            : "scale-0 opacity-0 translate-y-[50%] translate-x-[50%]",
+          className,
+        )}
+        style={{
+          transformOrigin: "bottom right",
+          width: isExpanded ? `${size.width}px` : "0",
+          height: isExpanded ? `${size.height}px` : "0",
+        }}
+      >
+        <Card className="w-full h-full flex flex-col overflow-hidden">
+          <CardHeader
+            ref={headerRef}
+            className="p-3 border-b flex flex-row items-center justify-between cursor-move"
+            onMouseDown={handleCardDragStart}
+            onTouchStart={handleCardDragStart}
+          >
+            <div className="flex items-center gap-2">
+              <GripHorizontal className="h-4 w-4 text-muted-foreground" />
+              <h3 className="font-medium text-sm">{title}</h3>
+            </div>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsExpanded(false)}>
+              <Minimize2 className="h-4 w-4" />
+            </Button>
+          </CardHeader>
+
+          <CardContent className="p-0 flex-grow overflow-hidden">
+            <ScrollArea className="h-full p-4">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={cn(
+                    "mb-3 max-w-[80%] rounded-lg p-3 text-sm",
+                    message.role === "user" ? "ml-auto bg-primary text-primary-foreground" : "bg-muted",
+                  )}
+                >
+                  {message.content}
+                </div>
+              ))}
+              {isLoading && (
+                <div className="flex items-center justify-center py-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </ScrollArea>
+          </CardContent>
+
+          <CardFooter className="p-3 pt-0">
+            <form onSubmit={handleSubmit} className="flex w-full items-center space-x-2">
+              <Input
+                value={input}
+                onChange={handleInputChange}
+                placeholder="Type your message..."
+                className="flex-1"
+                disabled={isLoading}
+              />
+              <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
+                <Send className="h-4 w-4" />
+              </Button>
+            </form>
+          </CardFooter>
+
+          {/* Resize handle */}
+          <div
+            className="absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize"
+            onMouseDown={handleResizeStart}
+            onTouchStart={handleResizeStart}
+          >
+            <div className="absolute bottom-1 right-1 w-3 h-3 border-b-2 border-r-2 border-foreground opacity-50" />
+          </div>
+        </Card>
+      </div>
+    </div>
+  )
+}

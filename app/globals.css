@@ -1337,3 +1337,50 @@ html {
     background-position: center;
   }
 }
+
+/* Basic Markdown Element Styling */
+/* Applied globally to ensure elements rendered by ReactMarkdown are styled */
+
+strong, b { /* For **bold** text */
+  font-weight: bold;
+}
+
+em, i { /* For *italic* text */
+  font-style: italic;
+}
+
+/* Unordered lists */
+ul {
+  list-style-type: disc;
+  margin-left: 1.5rem; /* Indentation for the list itself */
+  padding-left: 0.5rem; /* Inner padding for bullet alignment */
+  margin-bottom: 1rem; /* Consistent with <p> tags */
+}
+
+/* Ordered lists */
+ol {
+  list-style-type: decimal;
+  margin-left: 1.5rem; /* Indentation for the list itself */
+  padding-left: 0.5rem; /* Inner padding for number alignment */
+  margin-bottom: 1rem; /* Consistent with <p> tags */
+}
+
+/* Nested lists - provide some spacing */
+ul ul, ul ol, ol ol, ol ul {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* List items */
+li {
+  margin-bottom: 0.25rem; /* Spacing between list items */
+}
+
+/* Paragraphs within the markdown content (ReactMarkdown often wraps lines in <p>) */
+/* This ensures they also get consistent bottom margin if not already applied */
+.prose p, /* If we ever re-introduce prose, this helps */
+div > p, /* General paragraphs that might be output by ReactMarkdown */
+span > p { /* Or if wrapped in spans */
+  margin-bottom: 0.75rem; /* Slightly less than default p for tighter notes */
+}
+/* End Basic Markdown Element Styling */
