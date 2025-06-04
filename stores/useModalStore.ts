@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
-export interface LiveSummariesState {
+export interface VoiceSummaryState {
   transcription: string;
-  summary: string;
+  legacySummary: string;
   isRecording: boolean;
 }
 
@@ -13,8 +13,8 @@ export interface ModalState {
   isFileBrowserModalOpen: boolean;
   isNewDocumentModalOpen: boolean;
   isPreferencesModalOpen: boolean;
-  isLiveSummariesModalOpen: boolean;
-  liveSummaries: LiveSummariesState;
+  isVoiceSummaryModalOpen: boolean;
+  voiceSummary: VoiceSummaryState;
 
   openSearchModal: () => void;
   closeSearchModal: () => void;
@@ -26,18 +26,18 @@ export interface ModalState {
   closeNewDocumentModal: () => void;
   openPreferencesModal: () => void;
   closePreferencesModal: () => void;
-  openLiveSummariesModal: () => void;
-  closeLiveSummariesModal: () => void;
+  openVoiceSummaryModal: () => void;
+  closeVoiceSummaryModal: () => void;
 
-  setLiveSummariesTranscription: (transcription: string) => void;
-  setLiveSummariesSummary: (summary: string) => void;
-  toggleLiveSummariesRecording: () => void;
-  resetLiveSummaries: () => void;
+  setVoiceSummaryTranscription: (transcription: string) => void;
+  setVoiceSummaryLegacySummary: (summary: string) => void;
+  toggleVoiceSummaryRecording: () => void;
+  resetVoiceSummaryState: () => void;
 }
 
-const initialLiveSummariesState: LiveSummariesState = {
+const initialVoiceSummaryState: VoiceSummaryState = {
   transcription: '',
-  summary: '',
+  legacySummary: '',
   isRecording: false,
 };
 
@@ -49,8 +49,8 @@ export const useModalStore = create<ModalState>()(
       isFileBrowserModalOpen: false,
       isNewDocumentModalOpen: false,
       isPreferencesModalOpen: false,
-      isLiveSummariesModalOpen: false,
-      liveSummaries: initialLiveSummariesState,
+      isVoiceSummaryModalOpen: false,
+      voiceSummary: initialVoiceSummaryState,
 
       openSearchModal: () => set({ isSearchModalOpen: true }),
       closeSearchModal: () => set({ isSearchModalOpen: false }),
@@ -63,26 +63,26 @@ export const useModalStore = create<ModalState>()(
       closeNewDocumentModal: () => set({ isNewDocumentModalOpen: false }),
       openPreferencesModal: () => set({ isPreferencesModalOpen: true }),
       closePreferencesModal: () => set({ isPreferencesModalOpen: false }),
-      openLiveSummariesModal: () => set({ isLiveSummariesModalOpen: true }),
-      closeLiveSummariesModal: () => set({ isLiveSummariesModalOpen: false, liveSummaries: initialLiveSummariesState }),
+      openVoiceSummaryModal: () => set({ isVoiceSummaryModalOpen: true }),
+      closeVoiceSummaryModal: () => set({ isVoiceSummaryModalOpen: false, voiceSummary: initialVoiceSummaryState }),
 
-      setLiveSummariesTranscription: (transcription) =>
+      setVoiceSummaryTranscription: (transcription) =>
         set((state) => ({
-          liveSummaries: { ...state.liveSummaries, transcription },
+          voiceSummary: { ...state.voiceSummary, transcription },
         })),
-      setLiveSummariesSummary: (summary) =>
+      setVoiceSummaryLegacySummary: (summary) =>
         set((state) => ({
-          liveSummaries: { ...state.liveSummaries, summary },
+          voiceSummary: { ...state.voiceSummary, legacySummary: summary },
         })),
-      toggleLiveSummariesRecording: () =>
+      toggleVoiceSummaryRecording: () =>
         set((state) => ({
-          liveSummaries: {
-            ...state.liveSummaries,
-            isRecording: !state.liveSummaries.isRecording,
+          voiceSummary: {
+            ...state.voiceSummary,
+            isRecording: !state.voiceSummary.isRecording,
           },
         })),
-      resetLiveSummaries: () =>
-        set({ liveSummaries: initialLiveSummariesState }),
+      resetVoiceSummaryState: () =>
+        set({ voiceSummary: initialVoiceSummaryState }),
     }),
     {
       name: "modal-storage",

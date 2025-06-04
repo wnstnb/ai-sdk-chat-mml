@@ -6,7 +6,7 @@ import { FileBrowserModal } from '@/components/modals/FileBrowserModal';
 import { SearchModal } from '@/components/search/SearchModal';
 import NewDocumentModal from '@/components/modals/NewDocumentModal';
 import PreferencesModal from '@/components/modals/PreferencesModal';
-import { LiveSummariesModal } from '@/components/modals/LiveSummariesModal';
+import { VoiceSummaryModal } from '@/components/modals/VoiceSummaryModal';
 
 interface ModalManagerProps {
   children: React.ReactNode;
@@ -25,8 +25,8 @@ const ModalManager: React.FC<ModalManagerProps> = ({ children }) => {
   const isPreferencesModalOpen = useModalStore((state) => state.isPreferencesModalOpen);
   const closePreferencesModal = useModalStore((state) => state.closePreferencesModal);
 
-  const isLiveSummariesModalOpen = useModalStore((state) => state.isLiveSummariesModalOpen);
-  const closeLiveSummariesModal = useModalStore((state) => state.closeLiveSummariesModal);
+  const isVoiceSummaryModalOpen = useModalStore((state) => state.isVoiceSummaryModalOpen);
+  const closeVoiceSummaryModal = useModalStore((state) => state.closeVoiceSummaryModal);
 
   return (
     <>
@@ -47,9 +47,9 @@ const ModalManager: React.FC<ModalManagerProps> = ({ children }) => {
         isOpen={isPreferencesModalOpen}
         onClose={closePreferencesModal}
       />
-      <LiveSummariesModal
-        isOpen={isLiveSummariesModalOpen}
-        onClose={closeLiveSummariesModal}
+      <VoiceSummaryModal
+        isOpen={isVoiceSummaryModalOpen}
+        onClose={closeVoiceSummaryModal}
       />
       {/* Other modals will be added here */}
     </>

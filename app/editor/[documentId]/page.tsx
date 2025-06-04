@@ -179,7 +179,7 @@ export default function EditorPage() {
     // NEW: Add state for mobile pane visibility
     const [mobileVisiblePane, setMobileVisiblePane] = useState<'editor' | 'chat'>('chat'); // Default to chat
     // Added for Live Summaries
-    const { openLiveSummariesModal } = useModalStore();
+    const { openVoiceSummaryModal } = useModalStore();
     const { currentTitle, isEditingTitle, newTitleValue, isInferringTitle, handleEditTitleClick, handleCancelEditTitle, handleSaveTitle, handleTitleInputKeyDown, handleInferTitle, setNewTitleValue } = useTitleManagement({
         documentId,
         initialName: documentData?.name || '',
@@ -1352,7 +1352,7 @@ export default function EditorPage() {
                                 isDocumentStarred={currentDocIsStarred}
                                 onToggleDocumentStar={handleToggleCurrentDocumentStar}
                                 handleNewDocument={handleNewDocument}
-                                onOpenLiveSummaries={openLiveSummariesModal}
+                                onOpenVoiceSummary={openVoiceSummaryModal}
                             />
                             {pageError && !pageError.startsWith("Chat Error:") && (
                                 <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -1480,7 +1480,7 @@ export default function EditorPage() {
                             isDocumentStarred={currentDocIsStarred}
                             onToggleDocumentStar={handleToggleCurrentDocumentStar}
                             handleNewDocument={handleNewDocument}
-                            onOpenLiveSummaries={openLiveSummariesModal}
+                            onOpenVoiceSummary={openVoiceSummaryModal}
                          />
                         {pageError && !pageError.startsWith("Chat Error:") && (
                             <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>

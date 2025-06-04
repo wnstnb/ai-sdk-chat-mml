@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, Star, ListTree, FileText } from 'lucide-react';
+import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, Star, ListTree, FileText, Mic } from 'lucide-react';
 import { DocumentPlusIcon } from '@heroicons/react/24/outline';
 import { AutosaveStatusIndicator } from '@/app/components/editor/AutosaveStatusIndicator';
 import { BlockNoteEditor } from '@blocknote/core'; // Added for editorRef type
@@ -11,6 +11,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { QuickAccessDropdown } from '@/components/editor/QuickAccessDropdown'; // IMPORT ACTUAL COMPONENT
+import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 
 // Define the props for the EditorTitleBar component
 interface EditorTitleBarProps {
@@ -24,7 +25,7 @@ interface EditorTitleBarProps {
     handleCancelEditTitle: () => void;
     handleEditTitleClick: () => void;
     isInferringTitle: boolean;
-    handleInferTitle: () => void;
+    handleInferTitle: () => Promise<void>;
     editorRef: React.RefObject<BlockNoteEditor<any>>; // Need editorRef for disabling infer title button
 
     // From page.tsx state/handlers
@@ -39,7 +40,7 @@ interface EditorTitleBarProps {
     onToggleDocumentStar: () => void;
 
     // ADDED for Live Summaries
-    onOpenLiveSummaries: () => void;
+    onOpenVoiceSummary: () => void;
 }
 
 export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
@@ -62,10 +63,11 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
     isDocumentStarred,
     onToggleDocumentStar,
     // ADDED for Live Summaries
-    onOpenLiveSummaries,
+    onOpenVoiceSummary,
 }) => {
     const { openNewDocumentModal } = useModalStore(); // Get the action from the store
     const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'error'>('idle');
+    const isMobile = useMediaQuery('(max-width: 768px)'); // md breakpoint
 
     const handleCopyContent = async () => {
         if (!editorRef.current || editorRef.current.document.length === 0) {
@@ -198,12 +200,12 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
 
                 {/* NEW "LIVE SUMMARIES" BUTTON - START */}
                 <button
-                    onClick={onOpenLiveSummaries}
-                    className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded"
-                    title="Open Live Summaries"
-                    aria-label="Open Live Summaries"
+                    onClick={onOpenVoiceSummary}
+                    className="p-1.5 rounded hover:bg-[--hover-bg] text-[--text-color] transition-colors"
+                    title="Voice Summary"
+                    aria-label="Open voice summary modal"
                 >
-                    <FileText size={20} />
+                    <Mic size={18} />
                 </button>
                 {/* NEW "LIVE SUMMARIES" BUTTON - END */}
 
