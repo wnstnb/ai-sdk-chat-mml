@@ -1,6 +1,6 @@
 import React from 'react';
 import { useModalStore } from '@/stores/useModalStore';
-import { X, Mic, Square as StopIcon, FileText as NotesIcon, ChevronDown } from 'lucide-react';
+import { X, Mic, Square as StopIcon, FileText as NotesIcon, ChevronDown, Eraser, BotMessageSquare, FilePlus2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,7 +56,6 @@ registerProcessor('audio-processor', AudioProcessor);
 
 const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onClose }) => {
   const editorRef = useModalStore(state => state.editorRef);
-  console.log('[VoiceSummaryModal] editorRef from store:', editorRef);
 
   const isRecording = useModalStore(state => state.voiceSummary.isRecording);
   const transcription = useModalStore(state => state.voiceSummary.transcription);
@@ -84,6 +83,10 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
   const finalizedTranscriptContent = React.useRef<string>('');
   const currentUtteranceContent = React.useRef<string>('');
 
+  // Refs for scrollable tab content
+  const transcriptionTabContentRef = React.useRef<HTMLDivElement | null>(null);
+  const notesTabContentRef = React.useRef<HTMLDivElement | null>(null);
+
   const MAX_RECONNECTION_ATTEMPTS = 3;
   const RECONNECTION_DELAY_BASE = 2000;
   const AUDIO_BUFFER_SIZE = 4096;
@@ -100,16 +103,55 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
 
   const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
 
+  // Helper function to scroll an element to its bottom if overflowing
+  const scrollToBottomIfOverflowing = (element: HTMLDivElement | null) => {
+    if (element) {
+      // Using a small timeout to allow the DOM to update with the new content height
+      // before calculating scroll position.
+      setTimeout(() => {
+        if (element.scrollHeight > element.clientHeight) {
+          element.scrollTop = element.scrollHeight;
+        }
+      }, 0); 
+    }
+  };
+
+  // Autoscroll for Transcription Tab
+  React.useEffect(() => {
+    if (activeTab === 'transcription') {
+      scrollToBottomIfOverflowing(transcriptionTabContentRef.current);
+    }
+  }, [transcription, activeTab]);
+
+  // Autoscroll for Notes Tab
+  React.useEffect(() => {
+    if (activeTab === 'notes') {
+      scrollToBottomIfOverflowing(notesTabContentRef.current);
+    }
+  }, [generatedNotes, isGeneratingNotes, notesError, activeTab]);
+
   const connectWebSocket = () => {
     if (!WEBSOCKET_URL) {
-      setVoiceSummaryTranscription('Configuration error: WebSocket URL is not set. Please contact support.');
+      let messageToShow = finalizedTranscriptContent.current;
+      // No currentUtterance to add here as recording hasn't started/failed pre-stream
+      if (messageToShow && !/\s$/.test(messageToShow)) { messageToShow += ' '; }
+      messageToShow += '(Configuration error: WebSocket URL is not set. Please contact support.)';
+      setVoiceSummaryTranscription(messageToShow);
       console.error('CRITICAL: NEXT_PUBLIC_WEBSOCKET_URL is not defined. Cannot connect to WebSocket.');
       return Promise.reject(new Error('WebSocket URL is not configured.'));
     }
     if (webSocketRef.current && webSocketRef.current.readyState !== WebSocket.CLOSED) {
       return Promise.resolve();
     }
-    setVoiceSummaryTranscription('Connecting to transcription service...');
+
+    let messageToShowConnect = finalizedTranscriptContent.current;
+    if (isRecording && currentUtteranceContent.current) { // Check isRecording as this is for an active attempt
+      messageToShowConnect += currentUtteranceContent.current;
+    }
+    if (messageToShowConnect && !/\s$/.test(messageToShowConnect)) { messageToShowConnect += ' '; }
+    messageToShowConnect += '(Connecting to transcription service...)';
+    setVoiceSummaryTranscription(messageToShowConnect);
+
     return new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(WEBSOCKET_URL);
       webSocketRef.current = ws;
@@ -122,19 +164,53 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
           const message = JSON.parse(event.data as string);
           switch (message.type) {
             case 'session_begin':
-              finalizedTranscriptContent.current = 'Transcription session started...\n';
               currentUtteranceContent.current = '';
-              setVoiceSummaryTranscription(finalizedTranscriptContent.current);
+              setVoiceSummaryTranscription(finalizedTranscriptContent.current + "Listening...");
+              console.log('[WS] Session Begin. Display:', finalizedTranscriptContent.current + "Listening...");
               break;
             case 'transcript_update':
-              if (message.is_final) {
-                finalizedTranscriptContent.current += message.text + '\n';
-                currentUtteranceContent.current = '';
+              const sanitizedText = message.text.replace(/\0/g, '');
+              let isFinalMessage = message.is_final;
+
+              if (isFinalMessage) {
+                finalizedTranscriptContent.current += sanitizedText + '\n';
+                currentUtteranceContent.current = ''; 
+                console.log('[WS] Final transcript segment: "', sanitizedText, '" Added to finalized. Finalized content: "', finalizedTranscriptContent.current, '"');
               } else {
-                currentUtteranceContent.current = message.text;
+                currentUtteranceContent.current = sanitizedText;
               }
-              let displayText = finalizedTranscriptContent.current + currentUtteranceContent.current;
-              setVoiceSummaryTranscription(displayText.trim() ? displayText : (isRecording ? "Listening..." : initialTranscriptionPlaceholder));
+
+              let currentDisplay = finalizedTranscriptContent.current; // Start with finalized content
+
+              if (!isFinalMessage && currentUtteranceContent.current) {
+                // If it's an interim message AND there's current utterance content, append it
+                currentDisplay += currentUtteranceContent.current;
+              } else if (isRecording && !currentUtteranceContent.current && !isFinalMessage) {
+                // If still recording, no current utterance (e.g. server sends empty interim), and not a final message, show "Listening..."
+                // This covers the case where an interim message has empty text.
+                currentDisplay += "Listening...";
+              } else if (isRecording && finalizedTranscriptContent.current.endsWith('Listening...') && currentUtteranceContent.current) {
+                // If "Listening..." is already there from a previous empty interim, but now we have content, replace "Listening..."
+                 currentDisplay = finalizedTranscriptContent.current.replace(/Listening...$/, '') + currentUtteranceContent.current;
+              } else if (isRecording && !finalizedTranscriptContent.current.endsWith('Listening...') && !currentUtteranceContent.current && !isFinalMessage) {
+                // Similar to above, ensure "Listening..." is added if needed during active recording and no utterance.
+                currentDisplay += "Listening...";
+              }
+
+
+              // Handle display if not recording / or if it's a final message (currentUtteranceContent is already cleared)
+              if (!isRecording && !currentDisplay.trim()) {
+                currentDisplay = initialTranscriptionPlaceholder;
+              } else if (!isRecording && currentDisplay.trim() === finalizedTranscriptContent.current.trim() && !finalizedTranscriptContent.current.trim()) {
+                 // If not recording and finalized content is also empty (e.g. cleared), show placeholder
+                 currentDisplay = initialTranscriptionPlaceholder;
+              } else if (!isRecording) {
+                // If not recording, just show the accumulated content (which is now currentDisplay)
+                // or placeholder if it ended up empty.
+                currentDisplay = currentDisplay.trim() ? currentDisplay : initialTranscriptionPlaceholder;
+              }
+
+              setVoiceSummaryTranscription(currentDisplay);
               break;
             case 'session_terminated':
               if (currentUtteranceContent.current.trim()) {
@@ -145,28 +221,53 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
               setVoiceSummaryTranscription(finalizedTranscriptContent.current.trim());
               break;
             case 'error':
-              setVoiceSummaryTranscription(`Transcription service error: ${message.message}. Please try again.`);
+              let wsErrorMsg = finalizedTranscriptContent.current;
+              if (isRecording && currentUtteranceContent.current) { wsErrorMsg += currentUtteranceContent.current; }
+              if (wsErrorMsg && !/[\\s\\)]$/.test(wsErrorMsg)) { wsErrorMsg += ' '; } // Avoid double space if already ends with space or )
+              wsErrorMsg += `(Transcription service error: ${message.message}. Please try again.)`;
+              setVoiceSummaryTranscription(wsErrorMsg);
               break;
             default:
               console.warn('Received unknown message type from server:', message);
           }
         } catch (error) {
            if (typeof event.data === 'string') {
-             setVoiceSummaryTranscription(`Received unexpected data: ${event.data}`);
+             let parseErrorMsg = finalizedTranscriptContent.current;
+             if (isRecording && currentUtteranceContent.current) { parseErrorMsg += currentUtteranceContent.current; }
+             if (parseErrorMsg && !/[\\s\\)]$/.test(parseErrorMsg)) { parseErrorMsg += ' '; }
+             parseErrorMsg += `(Received unexpected data: ${event.data})`;
+             setVoiceSummaryTranscription(parseErrorMsg);
            }
         }
       };
       ws.onerror = (errorEvent) => {
-        setVoiceSummaryTranscription('Connection error. Please check your internet and try restarting the recording.');
+        let messageToShow = finalizedTranscriptContent.current;
+        if (isRecording && currentUtteranceContent.current) {
+          messageToShow += currentUtteranceContent.current;
+        }
+        // Add a space if there's content and it doesn't end with a space/newline
+        if (messageToShow && !messageToShow.endsWith('\n') && !messageToShow.endsWith(' ')) {
+          messageToShow += ' ';
+        }
+        messageToShow += '(Connection error. Please check your internet and try restarting the recording.)';
+        setVoiceSummaryTranscription(messageToShow);
         handleReconnection();
         reject(errorEvent);
       };
       ws.onclose = (event) => {
         if (isRecording && reconnectionAttemptsRef.current < MAX_RECONNECTION_ATTEMPTS && !event.wasClean) {
-          setVoiceSummaryTranscription('Connection lost unexpectedly. Attempting to reconnect...');
+          let msg1 = finalizedTranscriptContent.current;
+          if (currentUtteranceContent.current) { msg1 += currentUtteranceContent.current; }
+          if (msg1 && !/[\s\)]$/.test(msg1)) { msg1 += ' '; }
+          msg1 += '(Connection lost unexpectedly. Attempting to reconnect...)';
+          setVoiceSummaryTranscription(msg1);
           handleReconnection();
         } else if (isRecording && !event.wasClean) {
-          setVoiceSummaryTranscription('Connection lost. Max reconnection attempts reached. Please restart recording.');
+          let msg2 = finalizedTranscriptContent.current;
+          if (currentUtteranceContent.current) { msg2 += currentUtteranceContent.current; }
+          if (msg2 && !/[\s\)]$/.test(msg2)) { msg2 += ' '; }
+          msg2 += '(Connection lost. Max reconnection attempts reached. Please restart recording.)';
+          setVoiceSummaryTranscription(msg2);
         }
         webSocketRef.current = null;
         if (isRecording && reconnectionAttemptsRef.current >= MAX_RECONNECTION_ATTEMPTS) {
@@ -178,10 +279,20 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
 
   const startAudioCaptureAndStreaming = async () => {
     if (!webSocketRef.current || webSocketRef.current.readyState !== WebSocket.OPEN) {
-      setVoiceSummaryTranscription('Error: Connection not ready. Please try again.');
+      let msg = finalizedTranscriptContent.current;
+      if (isRecording && currentUtteranceContent.current) { msg += currentUtteranceContent.current; }
+      if (msg && !/\s$/.test(msg)) { msg += ' '; }
+      msg += '(Error: Connection not ready. Please try again.)';
+      setVoiceSummaryTranscription(msg);
       return;
     }
-    setVoiceSummaryTranscription('Initializing microphone...');
+
+    let initMsg = finalizedTranscriptContent.current;
+    if (isRecording && currentUtteranceContent.current) { initMsg += currentUtteranceContent.current; }
+    if (initMsg && !/\s$/.test(initMsg)) { initMsg += ' '; }
+    initMsg += '(Initializing microphone...)';
+    setVoiceSummaryTranscription(initMsg);
+
     try {
       localMediaStreamRef.current = await navigator.mediaDevices.getUserMedia({
         audio: { sampleRate: 16000, channelCount: 1 },
@@ -205,9 +316,20 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
       };
       microphoneSourceRef.current.connect(audioWorkletNodeRef.current);
       audioWorkletNodeRef.current.connect(audioContextRef.current.destination);
-      setVoiceSummaryTranscription('Microphone active. Streaming audio...');
+
+      let activeMsg = finalizedTranscriptContent.current;
+      if (isRecording && currentUtteranceContent.current) { activeMsg += currentUtteranceContent.current; }
+      if (activeMsg && !/\s$/.test(activeMsg)) { activeMsg += ' '; }
+      activeMsg += '(Microphone active. Streaming audio...)';
+      setVoiceSummaryTranscription(activeMsg);
+
     } catch (err) {
-      setVoiceSummaryTranscription('Microphone access denied or error. Please check permissions and try again.');
+      let errMsg = finalizedTranscriptContent.current;
+      if (isRecording && currentUtteranceContent.current) { errMsg += currentUtteranceContent.current; }
+      if (errMsg && !/\s$/.test(errMsg)) { errMsg += ' '; }
+      errMsg += '(Microphone access denied or error. Please check permissions and try again.)';
+      setVoiceSummaryTranscription(errMsg);
+
       if (isRecording) {
         toggleVoiceSummaryRecording();
       }
@@ -236,7 +358,11 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
     if (reconnectionAttemptsRef.current < MAX_RECONNECTION_ATTEMPTS) {
       reconnectionAttemptsRef.current++;
       const delay = RECONNECTION_DELAY_BASE * reconnectionAttemptsRef.current;
-      setVoiceSummaryTranscription(`Connection lost. Attempting to reconnect (${reconnectionAttemptsRef.current}/${MAX_RECONNECTION_ATTEMPTS})...`);
+      let reconMsg1 = finalizedTranscriptContent.current;
+      if (isRecording && currentUtteranceContent.current) { reconMsg1 += currentUtteranceContent.current; }
+      if (reconMsg1 && !/[\s\)]$/.test(reconMsg1)) { reconMsg1 += ' '; }
+      reconMsg1 += `(Connection lost. Attempting to reconnect (${reconnectionAttemptsRef.current}/${MAX_RECONNECTION_ATTEMPTS})...)`;
+      setVoiceSummaryTranscription(reconMsg1);
       setTimeout(() => {
         if (isRecording) {
           connectWebSocket();
@@ -245,7 +371,11 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
         }
       }, delay);
     } else {
-      setVoiceSummaryTranscription('Failed to reconnect after multiple attempts. Please restart recording.');
+      let reconMsg2 = finalizedTranscriptContent.current;
+      if (isRecording && currentUtteranceContent.current) { reconMsg2 += currentUtteranceContent.current; }
+      if (reconMsg2 && !/[\s\)]$/.test(reconMsg2)) { reconMsg2 += ' '; }
+      reconMsg2 += '(Failed to reconnect after multiple attempts. Please restart recording.)';
+      setVoiceSummaryTranscription(reconMsg2);
       if (isRecording) {
         toggleVoiceSummaryRecording();
       }
@@ -269,48 +399,94 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
   React.useEffect(() => {
     const statusDiv = document.getElementById('voice-summary-status');
     if (!statusDiv) return;
+
     if (isOpen) {
       if (isRecording) {
-        let newTranscription = transcription;
-        if (transcription === initialTranscriptionPlaceholder || transcription.trim() === '') { newTranscription = 'Recording in progress...'; }
-        else if (transcription.includes('(paused)')) { newTranscription = transcription.replace('(paused)', '(recording resumed)...'); }
-        else if (!transcription.includes('(recording resumed)...') && !transcription.includes('Recording in progress...')) { newTranscription = transcription + ' (recording resumed)...'; }
-        if (newTranscription !== transcription) { setVoiceSummaryTranscription(newTranscription); }
+        // When recording is active, the transcription display is managed by handleRecordToggle,
+        // connectWebSocket, startAudioCaptureAndStreaming, and the WebSocket message handlers.
+        // This effect should just handle other side-effects.
         if (legacySummary !== '') { setVoiceSummaryLegacySummary(''); }
-        statusDiv.textContent = 'Recording started.';
+        statusDiv.textContent = 'Recording active.'; // Changed from 'Recording started.' for clarity
       } else {
-        if (transcription.includes('Recording in progress...') || transcription.includes('(recording resumed)...')) {
-          const newTranscription = transcription.replace('Recording in progress...', 'Transcription captured (paused).').replace('(recording resumed)...', '(paused).');
-          if (newTranscription !== transcription) { setVoiceSummaryTranscription(newTranscription); }
-          if (legacySummary !== 'Summary of recorded content [placeholder].') { setVoiceSummaryLegacySummary('Summary of recorded content [placeholder].'); }
-          statusDiv.textContent = 'Recording stopped. Notes generated.';
+        // This block executes when isRecording transitions from true to false (i.e., recording stopped)
+        // or if the modal opens and isRecording is already false.
+
+        // Check if the transcription currently shows an active recording/connecting state.
+        const isActiveState = transcription.includes('Recording in progress...') ||
+                            transcription.includes('(recording resumed)...') || // Note: handleRecordToggle uses "Recording resumed..."
+                            transcription.includes('--- Recording Resumed ---') || // Marker from handleRecordToggle
+                            transcription.includes('Listening...') ||
+                            transcription.includes('Connecting to transcription service...') ||
+                            transcription.includes('Initializing microphone...') ||
+                            transcription.includes('Microphone active. Streaming audio...');
+
+        if (isActiveState) {
+          // If it was an active state, show the finalized content with a "(paused)" message.
+          const pausedMessage = finalizedTranscriptContent.current.trim()
+            ? finalizedTranscriptContent.current.trimEnd() + ' (paused).'
+            : 'Transcription captured (paused).'; // Fallback if finalized is somehow empty
+
+          if (pausedMessage !== transcription) { // Only update if different
+            setVoiceSummaryTranscription(pausedMessage);
+          }
+
+          if (legacySummary !== 'Summary of recorded content [placeholder].') {
+            setVoiceSummaryLegacySummary('Summary of recorded content [placeholder].');
+          }
+          statusDiv.textContent = 'Recording stopped. Content captured.'; // Changed for clarity
         } else {
-          if (statusDiv.textContent === 'Recording started.') { statusDiv.textContent = 'Ready to record.'; }
-          else if (statusDiv.textContent !== 'Recording stopped. Notes generated.') { statusDiv.textContent = 'Ready to record.'; }
+          // If not an active state (e.g., it shows an error, or already paused, or initial placeholder),
+          // ensure statusDiv is appropriate.
+          if (transcription === initialTranscriptionPlaceholder || statusDiv.textContent === 'Recording active.') {
+             statusDiv.textContent = 'Ready to record.';
+          }
+          // Don't change transcription if it's an error message or already correctly paused/initial.
         }
       }
-    } else { statusDiv.textContent = ''; }
+    } else { 
+      statusDiv.textContent = ''; 
+    }
   }, [isOpen, isRecording, transcription, legacySummary, setVoiceSummaryTranscription, setVoiceSummaryLegacySummary]);
 
   const handleRecordToggle = async () => {
     toggleVoiceSummaryRecording();
     const currentlyRecording = !isRecording;
     if (currentlyRecording) {
-      setVoiceSummaryTranscription(initialTranscriptionPlaceholder);
-      setGeneratedNotes(null); setNotesError(null);
-      finalizedTranscriptContent.current = '';
+      if (finalizedTranscriptContent.current.trim()) {
+        if (!finalizedTranscriptContent.current.endsWith('\n')) {
+          finalizedTranscriptContent.current += '\n';
+        }
+        finalizedTranscriptContent.current += '--- Recording Resumed ---\n';
+        setVoiceSummaryTranscription(finalizedTranscriptContent.current + "Listening...");
+      } else {
+        finalizedTranscriptContent.current = '--- Recording Started ---\n';
+        setVoiceSummaryTranscription(finalizedTranscriptContent.current + "Listening...");
+      }
       currentUtteranceContent.current = '';
+      setGeneratedNotes(null);
+      setNotesError(null);
+
       try {
         await connectWebSocket();
         if (webSocketRef.current && webSocketRef.current.readyState === WebSocket.OPEN) {
            await startAudioCaptureAndStreaming();
         } else {
-          setVoiceSummaryTranscription("Failed to connect. Please try again.");
-          toggleVoiceSummaryRecording();
+          let failConnectMsg = finalizedTranscriptContent.current;
+          if (isRecording && currentUtteranceContent.current) { failConnectMsg += currentUtteranceContent.current; }
+          if (failConnectMsg && !/\s$/.test(failConnectMsg)) { failConnectMsg += ' '; }
+          failConnectMsg += '(Failed to connect. Please try again.)';
+          setVoiceSummaryTranscription(failConnectMsg);
+          toggleVoiceSummaryRecording(); // Rollback recording state
         }
       } catch (error) {
-        setVoiceSummaryTranscription("Error initializing recording. Please try again.");
-        toggleVoiceSummaryRecording();
+        let initErrorMsg = finalizedTranscriptContent.current;
+        if (isRecording && currentUtteranceContent.current) { initErrorMsg += currentUtteranceContent.current; }
+        if (initErrorMsg && !/\s$/.test(initErrorMsg)) { initErrorMsg += ' '; }
+        initErrorMsg += '(Error initializing recording. Please try again.)';
+        setVoiceSummaryTranscription(initErrorMsg);
+        if (isRecording) { // Ensure we only toggle if it was set to recording
+            toggleVoiceSummaryRecording(); // Rollback recording state
+        }
       }
     } else {
       stopAudioCapture();
@@ -361,8 +537,6 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
   };
 
   const handleAddToEditor = async (content: string) => {
-    console.log('[handleAddToEditor] Called. editorRef object:', editorRef, 'editorRef.current:', editorRef?.current);
-
     if (!editorRef) {
       toast.error('Editor reference object is not available. Please ensure the editor page is fully loaded.');
       return;
@@ -453,12 +627,20 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
             <TabsTrigger value="transcription">Transcription</TabsTrigger>
             <TabsTrigger value="notes">Notes</TabsTrigger>
           </TabsList>
-          <TabsContent value="transcription" className="flex-grow overflow-y-auto mt-2 border border-[--border-color] rounded p-3 bg-[--input-bg] min-h-[150px]">
+          <TabsContent 
+            value="transcription" 
+            ref={transcriptionTabContentRef} 
+            className="flex-grow overflow-y-auto mt-2 border border-[--border-color] rounded p-3 bg-[--input-bg] min-h-[150px]"
+          >
             <p className="text-sm whitespace-pre-wrap">
               {transcription || initialTranscriptionPlaceholder}
             </p>
           </TabsContent>
-          <TabsContent value="notes" className="flex-grow overflow-y-auto mt-2 border border-[--border-color] rounded p-3 bg-[--input-bg] min-h-[150px]">
+          <TabsContent 
+            value="notes" 
+            ref={notesTabContentRef}
+            className="flex-grow overflow-y-auto mt-2 border border-[--border-color] rounded p-3 bg-[--input-bg] min-h-[150px]"
+          >
             {isGeneratingNotes ? (
               <p className="text-sm text-[--muted-text-color] animate-pulse">Generating notes...</p>
             ) : notesError ? (
@@ -474,84 +656,35 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
         </Tabs>
         <div className="mt-auto pt-4 border-t border-[--border-color]">
           <div className="flex justify-between items-center mb-3">
-            <button
+            <Button
               ref={micButtonRef}
               onClick={handleRecordToggle}
               aria-label={isRecording ? 'Stop recording' : 'Start recording'}
               className={`p-2 rounded-full ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-[--primary-btn-bg] text-[--primary-btn-text-color] hover:bg-[--primary-btn-hover-bg]'}`}
+              size="sm"
             >
-              {isRecording ? <StopIcon size={20} /> : <Mic size={20} />}
-            </button>
+              {isRecording ? <StopIcon size={18} className="mr-1" /> : <Mic size={18} className="mr-1" />}
+              {isRecording ? 'Recording' : 'Record'}
+            </Button>
 
-            <div className="flex items-center space-x-2">
-              <Select value={insertionType} onValueChange={(value: 'active' | 'transcription' | 'notes' | 'both') => setInsertionType(value)}>
-                <SelectTrigger className="w-[180px] h-9 text-xs">
-                  <SelectValue placeholder="Select content to add" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active Tab</SelectItem>
-                  <SelectItem value="transcription" disabled={!transcriptionAvailable}>Transcription Only</SelectItem>
-                  <SelectItem value="notes" disabled={!notesAvailable}>Notes Only</SelectItem>
-                  <SelectItem value="both" disabled={!transcriptionAvailable || !notesAvailable}>Both (Transcription & Notes)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="flex justify-end items-center space-x-2">
             <Button
               onClick={() => {
-                let contentToInsert = '';
-                let hasContent = false;
-
-                switch (insertionType) {
-                  case 'active':
-                    if (activeTab === 'transcription' && transcriptionAvailable) {
-                      contentToInsert = finalizedTranscriptContent.current.trim();
-                      hasContent = !!contentToInsert;
-                    } else if (activeTab === 'notes' && notesAvailable) {
-                      contentToInsert = generatedNotes as string; // Already checked notesAvailable
-                      hasContent = true;
-                    }
-                    break;
-                  case 'transcription':
-                    if (transcriptionAvailable) {
-                      contentToInsert = finalizedTranscriptContent.current.trim();
-                      hasContent = !!contentToInsert;
-                    }
-                    break;
-                  case 'notes':
-                    if (notesAvailable) {
-                      contentToInsert = generatedNotes as string;
-                      hasContent = true;
-                    }
-                    break;
-                  case 'both':
-                    if (transcriptionAvailable && notesAvailable) {
-                      contentToInsert = `## Transcription\n\n${finalizedTranscriptContent.current.trim()}\n\n## Notes\n\n${generatedNotes}`;
-                      hasContent = true;
-                    }
-                    break;
-                }
-
-                if (hasContent && contentToInsert.trim()) {
-                  handleAddToEditor(contentToInsert);
-                } else {
-                  toast.info("No content available for the selected option or content is empty.");
-                }
+                setVoiceSummaryTranscription(initialTranscriptionPlaceholder);
+                finalizedTranscriptContent.current = '';
+                currentUtteranceContent.current = '';
+                setGeneratedNotes(null);
+                setNotesError(null);
+                toast.info("Transcription and notes cleared.");
               }}
-              disabled={isGeneratingNotes || isRecording || !editorRef || !editorRef.current || 
-                (insertionType === 'active' && !((activeTab === 'transcription' && transcriptionAvailable) || (activeTab === 'notes' && notesAvailable))) ||
-                (insertionType === 'transcription' && !transcriptionAvailable) ||
-                (insertionType === 'notes' && !notesAvailable) ||
-                (insertionType === 'both' && (!transcriptionAvailable || !notesAvailable))
-              }
+              disabled={isRecording || (!transcriptionAvailable && !notesAvailable)}
               variant="outline"
               size="sm"
-              className="w-full sm:w-auto"
+              className="flex items-center"
             >
-              Add to Editor
+              <Eraser size={16} className="mr-2" />
+              Clear
             </Button>
+
             <Button
               onClick={handleGenerateNotes}
               disabled={isRecording || isGeneratingNotes || !transcriptionAvailable}
@@ -562,19 +695,106 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
               {isGeneratingNotes ? (
                 <span className="animate-spin mr-2">⏳</span>
               ) : (
-                <NotesIcon size={16} className="mr-2" />
+                <BotMessageSquare size={16} className="mr-2" />
               )}
-              {isGeneratingNotes ? "Generating..." : "Generate Notes"}
+              {isGeneratingNotes ? "Generating..." : "Notes"}
             </Button>
-            <Button
-              onClick={handleCancel}
-              disabled={isRecording}
+            
+            <div className="flex items-center">
+              <Button
+                onClick={() => {
+                  let contentToInsert = '';
+                  let hasContent = false;
+
+                  switch (insertionType) {
+                    case 'active':
+                      if (activeTab === 'transcription' && transcriptionAvailable) {
+                        contentToInsert = finalizedTranscriptContent.current.trim();
+                        hasContent = !!contentToInsert;
+                      } else if (activeTab === 'notes' && notesAvailable) {
+                        contentToInsert = generatedNotes as string;
+                        hasContent = true;
+                      }
+                      break;
+                    case 'transcription':
+                      if (transcriptionAvailable) {
+                        contentToInsert = finalizedTranscriptContent.current.trim();
+                        hasContent = !!contentToInsert;
+                      }
+                      break;
+                    case 'notes':
+                      if (notesAvailable) {
+                        contentToInsert = generatedNotes as string;
+                        hasContent = true;
+                      }
+                      break;
+                    case 'both':
+                      if (transcriptionAvailable && notesAvailable) {
+                        contentToInsert = `## Transcription\n\n${finalizedTranscriptContent.current.trim()}\n\n## Notes\n\n${generatedNotes}`;
+                        hasContent = true;
+                      }
+                      break;
+                  }
+
+                  if (hasContent && contentToInsert.trim()) {
+                    handleAddToEditor(contentToInsert);
+                  } else {
+                    toast.info("No content available for the selected option or content is empty.");
+                  }
+                }}
+                disabled={
+                  isGeneratingNotes || isRecording || !editorRef || !editorRef.current ||
+                  (insertionType === 'active' && !((activeTab === 'transcription' && transcriptionAvailable) || (activeTab === 'notes' && notesAvailable))) ||
+                  (insertionType === 'transcription' && !transcriptionAvailable) ||
+                  (insertionType === 'notes' && !notesAvailable) ||
+                  (insertionType === 'both' && (!transcriptionAvailable || !notesAvailable))
+                }
+                variant="outline"
+                size="sm"
+                className="flex items-center rounded-r-none"
+              >
+                <FilePlus2 size={16} className="mr-2" />
+                Editor
+              </Button>
+              <Select 
+                value={insertionType} 
+                onValueChange={(value: 'active' | 'transcription' | 'notes' | 'both') => setInsertionType(value)}
+                disabled={
+                  isGeneratingNotes || isRecording || !editorRef || !editorRef.current ||
+                  (insertionType === 'active' && !((activeTab === 'transcription' && transcriptionAvailable) || (activeTab === 'notes' && notesAvailable))) ||
+                  (insertionType === 'transcription' && !transcriptionAvailable) ||
+                  (insertionType === 'notes' && !notesAvailable) ||
+                  (insertionType === 'both' && (!transcriptionAvailable || !notesAvailable))
+                }
+              >
+                <SelectTrigger
+                  className="h-9 px-2 text-xs rounded-l-none border-l-0"
+                  aria-label="Select content type to add to editor"
+                >
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Insert Active Tab Content</SelectItem>
+                  <SelectItem value="transcription" disabled={!transcriptionAvailable}>Insert Transcription Only</SelectItem>
+                  <SelectItem value="notes" disabled={!notesAvailable}>Insert Notes Only</SelectItem>
+                  <SelectItem value="both" disabled={!transcriptionAvailable || !notesAvailable}>Insert Both (Transcription & Notes)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          
+          <div className="flex justify-end items-center space-x-2 mt-4">
+            {/* The "Add to Editor", "Generate Notes", and "Cancel & Clear" buttons from the original layout are now part of Row 1 or handled differently. */}
+            {/* Keeping Cancel button for modal dismissal, separate from Clear transcription */}
+            {/* <Button
+              onClick={handleCancel} // handleCancel should already exist and handle closing/stopping recording
+              // disabled={isRecording} // We might want to allow canceling even if recording, handleCancel should stop it.
               variant="ghost"
               size="sm"
             >
-              Cancel & Clear
-            </Button>
+              Close
+            </Button> */}
           </div>
+
         </div>
       </div>
     </div>
