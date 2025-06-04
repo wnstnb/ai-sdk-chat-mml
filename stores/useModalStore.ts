@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import type { BlockNoteEditor } from '@blocknote/core';
 
 export interface VoiceSummaryState {
   transcription: string;
@@ -15,6 +16,7 @@ export interface ModalState {
   isPreferencesModalOpen: boolean;
   isVoiceSummaryModalOpen: boolean;
   voiceSummary: VoiceSummaryState;
+  editorRef: React.RefObject<BlockNoteEditor<any> | null> | null;
 
   openSearchModal: () => void;
   closeSearchModal: () => void;
@@ -33,6 +35,7 @@ export interface ModalState {
   setVoiceSummaryLegacySummary: (summary: string) => void;
   toggleVoiceSummaryRecording: () => void;
   resetVoiceSummaryState: () => void;
+  setEditorRef: (editorRef: React.RefObject<BlockNoteEditor<any> | null> | null) => void;
 }
 
 const initialVoiceSummaryState: VoiceSummaryState = {
@@ -51,6 +54,7 @@ export const useModalStore = create<ModalState>()(
       isPreferencesModalOpen: false,
       isVoiceSummaryModalOpen: false,
       voiceSummary: initialVoiceSummaryState,
+      editorRef: null,
 
       openSearchModal: () => set({ isSearchModalOpen: true }),
       closeSearchModal: () => set({ isSearchModalOpen: false }),
@@ -83,6 +87,7 @@ export const useModalStore = create<ModalState>()(
         })),
       resetVoiceSummaryState: () =>
         set({ voiceSummary: initialVoiceSummaryState }),
+      setEditorRef: (editorRef) => set({ editorRef }),
     }),
     {
       name: "modal-storage",

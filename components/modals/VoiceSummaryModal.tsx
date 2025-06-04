@@ -1,9 +1,18 @@
 import React from 'react';
 import { useModalStore } from '@/stores/useModalStore';
-import { X, Mic, Square as StopIcon, FileText as NotesIcon } from 'lucide-react';
+import { X, Mic, Square as StopIcon, FileText as NotesIcon, ChevronDown } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { generateNotesFromTranscript } from '@/lib/ai/notesService';
+import { type BlockNoteEditor, type PartialBlock } from '@blocknote/core';
+import { toast } from 'sonner';
 
 interface VoiceSummaryModalProps {
   isOpen: boolean;
@@ -46,6 +55,9 @@ registerProcessor('audio-processor', AudioProcessor);
 `;
 
 const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onClose }) => {
+  const editorRef = useModalStore(state => state.editorRef);
+  console.log('[VoiceSummaryModal] editorRef from store:', editorRef);
+
   const isRecording = useModalStore(state => state.voiceSummary.isRecording);
   const transcription = useModalStore(state => state.voiceSummary.transcription);
   const legacySummary = useModalStore(state => state.voiceSummary.legacySummary);
@@ -54,6 +66,7 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
   const [isGeneratingNotes, setIsGeneratingNotes] = React.useState<boolean>(false);
   const [notesError, setNotesError] = React.useState<string | null>(null);
   const [activeTab, setActiveTab] = React.useState<string>("transcription");
+  const [insertionType, setInsertionType] = React.useState<'active' | 'transcription' | 'notes' | 'both'>('active');
 
   const toggleVoiceSummaryRecording = useModalStore(state => state.toggleVoiceSummaryRecording);
   const setVoiceSummaryTranscription = useModalStore(state => state.setVoiceSummaryTranscription);
@@ -85,9 +98,14 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
     };
   }, []);
 
-  const WEBSOCKET_URL = 'ws://localhost:8765';
+  const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
 
   const connectWebSocket = () => {
+    if (!WEBSOCKET_URL) {
+      setVoiceSummaryTranscription('Configuration error: WebSocket URL is not set. Please contact support.');
+      console.error('CRITICAL: NEXT_PUBLIC_WEBSOCKET_URL is not defined. Cannot connect to WebSocket.');
+      return Promise.reject(new Error('WebSocket URL is not configured.'));
+    }
     if (webSocketRef.current && webSocketRef.current.readyState !== WebSocket.CLOSED) {
       return Promise.resolve();
     }
@@ -301,37 +319,101 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
   };
 
   const handleGenerateNotes = async () => {
-    if (!finalizedTranscriptContent.current.trim()) {
-      setNotesError("There is no transcript content to generate notes from.");
-      setGeneratedNotes(null);
-      setActiveTab("notes");
+    const cleanedFinalizedContent = finalizedTranscriptContent.current
+      .replace(/Transcription session started...\n/gi, '')
+      .replace(/Session terminated...\n/gi, '')
+      .trim();
+
+    if (!cleanedFinalizedContent) {
+      setNotesError('No actual transcription content available to generate notes.');
+      toast.info('No transcription available to generate notes.');
       return;
     }
-    let transcriptToSummarize = finalizedTranscriptContent.current.replace(/Transcription session started...\n/gi, '').replace(/Session terminated.\n/gi, '').trim();
-    if (!transcriptToSummarize) {
-      setNotesError("Cleaned transcript is empty. Nothing to generate notes from.");
-      setGeneratedNotes(null);
-      setActiveTab("notes");
-      return;
-    }
+
     setIsGeneratingNotes(true);
-    setGeneratedNotes(null);
     setNotesError(null);
-    setActiveTab("notes");
-    const result = await generateNotesFromTranscript(transcriptToSummarize);
-    if (result.error) { setNotesError(result.error); }
-    else if (result.notes) { setGeneratedNotes(result.notes); }
-    setIsGeneratingNotes(false);
+    setGeneratedNotes(null);
+
+    try {
+      const result = await generateNotesFromTranscript(cleanedFinalizedContent);
+
+      if (result.error) {
+        setNotesError(result.error);
+        toast.error(`Failed to generate notes: ${result.error}`);
+        setGeneratedNotes(null); 
+      } else if (result.notes) {
+        setGeneratedNotes(result.notes);
+        toast.success('Notes generated successfully!');
+        setActiveTab('notes'); // Switch to notes tab after generation
+      } else {
+        setNotesError('Notes generation returned no content.');
+        toast.info('Notes generation returned no content.');
+        setGeneratedNotes(null);
+      }
+    } catch (error: any) {
+      console.error('Unexpected error generating notes:', error);
+      setNotesError(`An unexpected error occurred: ${error.message}`);
+      toast.error(`An unexpected error occurred while generating notes.`);
+      setGeneratedNotes(null);
+    } finally {
+      setIsGeneratingNotes(false);
+    }
   };
 
-  const handleAddToEditor = () => {
-    const contentToAdd = generatedNotes || (legacySummary && legacySummary !== 'Summary of recorded content [placeholder].' ? legacySummary : null);
-    if (contentToAdd) {
-      console.log('Adding to editor:', contentToAdd);
-    } else {
-      console.log('No content available to add to editor.');
+  const handleAddToEditor = async (content: string) => {
+    console.log('[handleAddToEditor] Called. editorRef object:', editorRef, 'editorRef.current:', editorRef?.current);
+
+    if (!editorRef) {
+      toast.error('Editor reference object is not available. Please ensure the editor page is fully loaded.');
+      return;
     }
-    onClose();
+
+    const editor = editorRef.current;
+    if (!editor) {
+      toast.error('Editor instance not available. Please ensure the editor has initialized.');
+      return;
+    }
+    if (!content || content.trim() === '') {
+      toast.info('No content to add to the editor.');
+      return;
+    }
+
+    try {
+      // Attempt to parse as Markdown first
+      let blocksToInsert: PartialBlock[] = await editor.tryParseMarkdownToBlocks(content);
+
+      // If Markdown parsing results in no blocks (e.g., plain text that isn't valid Markdown or empty),
+      // treat the content as a single paragraph.
+      if (blocksToInsert.length === 0 && content.trim() !== '') {
+        blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: content, styles: {} }] }];
+      }
+      
+      // If there are still no blocks to insert (e.g., content was only whitespace), do nothing.
+      if (blocksToInsert.length === 0) {
+          toast.info("No content to insert.");
+          return;
+      }
+
+      const { block: currentBlock } = editor.getTextCursorPosition();
+      let referenceBlockId: string | undefined = currentBlock?.id;
+
+      if (!referenceBlockId && editor.document.length > 0) {
+        referenceBlockId = editor.document[editor.document.length - 1]?.id;
+      }
+
+      if (referenceBlockId) {
+        editor.insertBlocks(blocksToInsert, referenceBlockId, 'after');
+      } else {
+        // If the document is empty or no reference block, replace everything (or insert at start)
+        editor.replaceBlocks(editor.document, blocksToInsert);
+      }
+      
+      toast.success('Content added to editor.');
+      onClose(); // Close modal after adding content
+    } catch (error: any) {
+      console.error('Error adding content to editor:', error);
+      toast.error(`Failed to add content to editor: ${error.message}`);
+    }
   };
 
   const handleCancel = () => {
@@ -340,6 +422,10 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
   };
 
   if (!isOpen) { return null; }
+
+  // Determine content availability for select options and button
+  const transcriptionAvailable = transcription && transcription !== initialTranscriptionPlaceholder && !!finalizedTranscriptContent.current.trim();
+  const notesAvailable = !!generatedNotes;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4" aria-hidden={!isOpen}>
@@ -381,32 +467,94 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
               <p className="text-sm whitespace-pre-wrap">{generatedNotes}</p>
             ) : (
               <p className="text-sm text-[--muted-text-color]">
-                Click "Generate Notes" to create an AI-generated summary of the transcription.
+                Click &quot;Generate Notes&quot; to create an AI-generated summary of the transcription.
               </p>
             )}
           </TabsContent>
         </Tabs>
-        <div className="mt-auto pt-4 border-t border-[--border-color] flex justify-between items-center">
-          <button
-            ref={micButtonRef}
-            onClick={handleRecordToggle}
-            aria-label={isRecording ? 'Stop recording' : 'Start recording'}
-            className={`p-2 rounded-full ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-[--primary-btn-bg] text-[--primary-btn-text-color] hover:bg-[--primary-btn-hover-bg]'}`}
-          >
-            {isRecording ? <StopIcon size={20} /> : <Mic size={20} />}
-          </button>
-          <div className="flex space-x-2">
+        <div className="mt-auto pt-4 border-t border-[--border-color]">
+          <div className="flex justify-between items-center mb-3">
+            <button
+              ref={micButtonRef}
+              onClick={handleRecordToggle}
+              aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+              className={`p-2 rounded-full ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-[--primary-btn-bg] text-[--primary-btn-text-color] hover:bg-[--primary-btn-hover-bg]'}`}
+            >
+              {isRecording ? <StopIcon size={20} /> : <Mic size={20} />}
+            </button>
+
+            <div className="flex items-center space-x-2">
+              <Select value={insertionType} onValueChange={(value: 'active' | 'transcription' | 'notes' | 'both') => setInsertionType(value)}>
+                <SelectTrigger className="w-[180px] h-9 text-xs">
+                  <SelectValue placeholder="Select content to add" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active Tab</SelectItem>
+                  <SelectItem value="transcription" disabled={!transcriptionAvailable}>Transcription Only</SelectItem>
+                  <SelectItem value="notes" disabled={!notesAvailable}>Notes Only</SelectItem>
+                  <SelectItem value="both" disabled={!transcriptionAvailable || !notesAvailable}>Both (Transcription & Notes)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex justify-end items-center space-x-2">
             <Button
-              onClick={handleAddToEditor}
-              disabled={isRecording || (!generatedNotes && (!legacySummary || legacySummary === 'Summary of recorded content [placeholder].'))}
-              variant="default"
+              onClick={() => {
+                let contentToInsert = '';
+                let hasContent = false;
+
+                switch (insertionType) {
+                  case 'active':
+                    if (activeTab === 'transcription' && transcriptionAvailable) {
+                      contentToInsert = finalizedTranscriptContent.current.trim();
+                      hasContent = !!contentToInsert;
+                    } else if (activeTab === 'notes' && notesAvailable) {
+                      contentToInsert = generatedNotes as string; // Already checked notesAvailable
+                      hasContent = true;
+                    }
+                    break;
+                  case 'transcription':
+                    if (transcriptionAvailable) {
+                      contentToInsert = finalizedTranscriptContent.current.trim();
+                      hasContent = !!contentToInsert;
+                    }
+                    break;
+                  case 'notes':
+                    if (notesAvailable) {
+                      contentToInsert = generatedNotes as string;
+                      hasContent = true;
+                    }
+                    break;
+                  case 'both':
+                    if (transcriptionAvailable && notesAvailable) {
+                      contentToInsert = `## Transcription\n\n${finalizedTranscriptContent.current.trim()}\n\n## Notes\n\n${generatedNotes}`;
+                      hasContent = true;
+                    }
+                    break;
+                }
+
+                if (hasContent && contentToInsert.trim()) {
+                  handleAddToEditor(contentToInsert);
+                } else {
+                  toast.info("No content available for the selected option or content is empty.");
+                }
+              }}
+              disabled={isGeneratingNotes || isRecording || !editorRef || !editorRef.current || 
+                (insertionType === 'active' && !((activeTab === 'transcription' && transcriptionAvailable) || (activeTab === 'notes' && notesAvailable))) ||
+                (insertionType === 'transcription' && !transcriptionAvailable) ||
+                (insertionType === 'notes' && !notesAvailable) ||
+                (insertionType === 'both' && (!transcriptionAvailable || !notesAvailable))
+              }
+              variant="outline"
               size="sm"
+              className="w-full sm:w-auto"
             >
               Add to Editor
             </Button>
             <Button
               onClick={handleGenerateNotes}
-              disabled={isRecording || isGeneratingNotes || !finalizedTranscriptContent.current.trim().replace(/Transcription session started...\n/gi, '').replace(/Session terminated.\n/gi, '').trim()}
+              disabled={isRecording || isGeneratingNotes || !transcriptionAvailable}
               variant="outline"
               size="sm"
               className="flex items-center"
@@ -434,10 +582,14 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
 }; 
 
 export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = (props) => {
+  const { isOpen, onClose } = props;
+
+  if (!isOpen) return null;
+
   return (
     <>
-      <ActualVoiceSummaryModal {...props} />
-      {props.isOpen && (
+      <ActualVoiceSummaryModal isOpen={isOpen} onClose={onClose} />
+      {isOpen && (
         <style jsx global>{`
           @keyframes modalFadeIn {
             from { opacity: 0; transform: scale(0.95); }

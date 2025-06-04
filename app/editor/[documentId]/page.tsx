@@ -179,7 +179,7 @@ export default function EditorPage() {
     // NEW: Add state for mobile pane visibility
     const [mobileVisiblePane, setMobileVisiblePane] = useState<'editor' | 'chat'>('chat'); // Default to chat
     // Added for Live Summaries
-    const { openVoiceSummaryModal } = useModalStore();
+    const { openVoiceSummaryModal, setEditorRef } = useModalStore(); // Get setEditorRef
     const { currentTitle, isEditingTitle, newTitleValue, isInferringTitle, handleEditTitleClick, handleCancelEditTitle, handleSaveTitle, handleTitleInputKeyDown, handleInferTitle, setNewTitleValue } = useTitleManagement({
         documentId,
         initialName: documentData?.name || '',
@@ -364,6 +364,8 @@ export default function EditorPage() {
     }, []);
 
     const handleEditorChange = useCallback((editor: BlockNoteEditorType) => {
+        setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
+
         const editorContent = editor.document;
         if (!isContentLoadedRef.current) {
             isContentLoadedRef.current = true;
@@ -438,7 +440,21 @@ export default function EditorPage() {
             }
         }, 3000);
         setAutosaveTimerId(newTimerId);
-    }, [documentId, autosaveTimerId, revertStatusTimerId]);
+    }, [documentId, autosaveTimerId, revertStatusTimerId, setEditorRef]); // Corrected dependencies
+
+    // Effect to set editorRef object in the global store - Reinstated and Corrected
+    useEffect(() => {
+        // editorRef is the object from useRef(), which is stable across renders.
+        // We set this object into the store so other components can access it.
+        console.log('[EditorPage useEffect] Setting editorRef in store. editorRef object:', editorRef);
+        setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
+        
+        // Cleanup to nullify the ref in store when EditorPage unmounts
+        return () => {
+            console.log('[EditorPage useEffect Cleanup] Setting editorRef in store to null.');
+            setEditorRef(null);
+        };
+    }, [setEditorRef]); // Dependency on setEditorRef ensures it runs if the store setter changes, editorRef object itself is stable.
 
     const handleRestoreEditorContent = useCallback((restoredBlocks: PartialBlock[]) => {
         const editor = editorRef.current;
@@ -1195,32 +1211,6 @@ export default function EditorPage() {
         };
     }, [documentId]);
 
-    // --- Early Return Checks ---
-    if (isLoadingDocument || isLoadingMessages) {
-        return <div className="flex justify-center items-center h-screen bg-[--bg-color] text-[--text-color]">Loading document...</div>;
-    }
-
-    // Error state if document fetch failed
-    // Check documentData directly now, error is handled via pageError state
-    if (!documentData && !isLoadingDocument) { // Check loading flag too to avoid flicker
-        return (
-            <div className="flex flex-col justify-center items-center h-screen text-center p-4 bg-[--bg-color]">
-                <p className="text-red-500 text-xl mb-2">Error Loading Document</p>
-                <p className="text-[--muted-text-color] mb-4">{pageError || 'Document not found or access denied.'}</p>
-             <button onClick={() => router.push('/launch')} className="mt-4 px-4 py-2 bg-[--editor-bg]-white rounded hover:bg-[--hover-bg]">Go to Launch Pad</button>
-            </div>
-        );
-    }
-    // If documentData is null but we are still loading, the loading screen above handles it.
-    // If we are not loading and documentData is null, the error screen above handles it.
-    // If documentData exists, proceed to render.
-    // So, add an explicit check for documentData before rendering the main content.
-    if (!documentData) {
-        // This case should theoretically be covered by loading/error states above,
-        // but acts as a safeguard.
-        return <div className="flex justify-center items-center h-screen bg-[--bg-color] text-[--text-color]">Preparing document...</div>;
-    }
-
     // --- Handler Definitions (Place standard handlers here) ---
     const handlePaste = (event: React.ClipboardEvent) => handleFilePasteEvent(event);
     const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
@@ -1293,6 +1283,25 @@ export default function EditorPage() {
         mobileVisiblePane, // Log visible pane on mobile
     });
 
+    // New handler to gate opening the modal
+    const handleOpenVoiceSummaryModal = () => {
+        if (editorRef.current) {
+            // Ensure the ref object is in the store if somehow it wasn't yet (defensive)
+            if (useModalStore.getState().editorRef !== editorRef) {
+                console.warn('[EditorPage] editorRef in store was not current. Re-setting before opening modal.');
+                setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
+            }
+            openVoiceSummaryModal();
+        } else {
+            toast.error("Editor is not fully initialized yet. Please wait a moment.");
+            console.warn('[EditorPage] Attempted to open voice summary modal, but editorRef.current is null.');
+            // Also try to set the ref object just in case it missed the useEffect run, though unlikely if .current is null.
+            if (useModalStore.getState().editorRef !== editorRef) {
+                 setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
+            }
+        }
+    };
+
     // Main Render
     return (
         <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden relative" 
@@ -1352,7 +1361,7 @@ export default function EditorPage() {
                                 isDocumentStarred={currentDocIsStarred}
                                 onToggleDocumentStar={handleToggleCurrentDocumentStar}
                                 handleNewDocument={handleNewDocument}
-                                onOpenVoiceSummary={openVoiceSummaryModal}
+                                onOpenVoiceSummary={handleOpenVoiceSummaryModal} // Use the new handler
                             />
                             {pageError && !pageError.startsWith("Chat Error:") && (
                                 <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -1480,7 +1489,7 @@ export default function EditorPage() {
                             isDocumentStarred={currentDocIsStarred}
                             onToggleDocumentStar={handleToggleCurrentDocumentStar}
                             handleNewDocument={handleNewDocument}
-                            onOpenVoiceSummary={openVoiceSummaryModal}
+                            onOpenVoiceSummary={handleOpenVoiceSummaryModal} // Use the new handler
                          />
                         {pageError && !pageError.startsWith("Chat Error:") && (
                             <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
