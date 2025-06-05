@@ -11,7 +11,7 @@ interface CustomAudioVisualizerProps {
   sensitivity?: number;
 }
 
-const CustomAudioVisualizer: React.FC<CustomAudioVisualizerProps> = ({
+const CustomAudioVisualizerComponent: React.FC<CustomAudioVisualizerProps> = ({
   audioTimeDomainData,
   barColor = '#FFFFFF', // Default white bars
   barWidth = 2, // Default bar width
@@ -24,7 +24,7 @@ const CustomAudioVisualizer: React.FC<CustomAudioVisualizerProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    console.log('[CustomAudioVisualizer] Effect running. Data:', audioTimeDomainData);
+    // console.log('[CustomAudioVisualizer] Effect running. Data:', audioTimeDomainData); // Kept for debugging
 
     const context = canvas.getContext('2d');
     if (!context) return;
@@ -45,7 +45,7 @@ const CustomAudioVisualizer: React.FC<CustomAudioVisualizerProps> = ({
     // Clear the canvas on each render
     context.clearRect(0, 0, width, height);
 
-    if (audioTimeDomainData) {
+    if (audioTimeDomainData && audioTimeDomainData.length > 0) { // Added audioTimeDomainData.length > 0 check
       // console.log('[CustomAudioVisualizer] Rendering data:', audioTimeDomainData); // Keep for debugging if needed
 
       context.fillStyle = barColor; // Use fillStyle for bars
@@ -102,5 +102,7 @@ const CustomAudioVisualizer: React.FC<CustomAudioVisualizerProps> = ({
     />
   );
 };
+
+const CustomAudioVisualizer = React.memo(CustomAudioVisualizerComponent);
 
 export default CustomAudioVisualizer; 

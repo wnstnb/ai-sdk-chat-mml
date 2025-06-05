@@ -6,6 +6,7 @@ import './globals.css';
 import { Toaster } from "sonner";
 import { AuthStateListener } from '@/components/AuthStateListener';
 import { Analytics } from '@vercel/analytics/next';
+import ErrorBoundary from '@/components/ui/ErrorBoundary';
 
 
 export const viewport: Viewport = {
@@ -105,7 +106,9 @@ export default function RootLayout({
         <AuthStateListener>
           <ThemeHandler>
             <AppInitializer>
-              {children}
+              <ErrorBoundary fallbackMessage="The application encountered an unexpected error. Please try refreshing the page.">
+                {children}
+              </ErrorBoundary>
             </AppInitializer>
           </ThemeHandler>
         </AuthStateListener>
