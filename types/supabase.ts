@@ -19,6 +19,7 @@ export interface Document {
   folder_id: string | null; // uuid, references public.folders.id
   name: string; // text, not null, default: 'Untitled Document'
   content: any | null; // jsonb or text
+  searchable_content: string | null; // text, for card snippets
   created_at: string; // timestamp with time zone
   updated_at: string; // timestamp with time zone
   is_starred: boolean; // Added for Quick Access feature

@@ -57,4 +57,91 @@ export async function POST(request: Request) {
     console.error('Folder POST Error:', error.message);
     return NextResponse.json({ error: { code: 'SERVER_ERROR', message: `An unexpected error occurred: ${error.message}` } }, { status: 500 });
   }
+}
+
+// GET handler for retrieving all user folders
+export async function GET(request: Request) {
+  const cookieStore = cookies();
+  const supabase = createSupabaseServerClient();
+  const { searchParams } = new URL(request.url);
+  const hierarchical = searchParams.get('hierarchical') === 'true';
+  const parentId = searchParams.get('parentId');
+
+  try {
+    // 1. Get User Session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      return NextResponse.json({ error: { code: sessionError ? 'SERVER_ERROR' : 'UNAUTHENTICATED', message: sessionError?.message || 'User not authenticated.' } }, { status: sessionError ? 500 : 401 });
+    }
+    const userId = session.user.id;
+
+    // 2. Build query based on parameters
+    let query = supabase
+      .from('folders')
+      .select('*')
+      .eq('user_id', userId);
+
+    // If parentId is specified, filter by parent
+    if (parentId !== null) {
+      if (parentId === 'root') {
+        query = query.is('parent_folder_id', null);
+      } else {
+        query = query.eq('parent_folder_id', parentId);
+      }
+    }
+
+    query = query.order('name', { ascending: true });
+
+    const { data: folders, error: foldersError } = await query;
+
+    if (foldersError) {
+      console.error('Folders Fetch Error:', foldersError.message);
+      return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch folders: ${foldersError.message}` } }, { status: 500 });
+    }
+
+    // 3. If hierarchical structure is requested, build tree
+    if (hierarchical && parentId === null) {
+      const folderTree = buildFolderTree(folders as Folder[]);
+      return NextResponse.json({ data: { folders: folderTree, hierarchical: true } }, { status: 200 });
+    }
+
+    // 4. Return flat list of folders
+    return NextResponse.json({ data: { folders: (folders as Folder[]) || [] } }, { status: 200 });
+
+  } catch (error: any) {
+    console.error('Folders GET Error:', error.message);
+    return NextResponse.json({ error: { code: 'SERVER_ERROR', message: `An unexpected error occurred: ${error.message}` } }, { status: 500 });
+  }
+}
+
+// Helper function to build hierarchical folder tree
+function buildFolderTree(folders: Folder[]): (Folder & { children: Folder[] })[] {
+  const folderMap = new Map<string, Folder & { children: Folder[] }>();
+  const rootFolders: (Folder & { children: Folder[] })[] = [];
+
+  // First pass: create map of all folders with children array
+  folders.forEach(folder => {
+    folderMap.set(folder.id, { ...folder, children: [] });
+  });
+
+  // Second pass: build tree structure
+  folders.forEach(folder => {
+    const folderWithChildren = folderMap.get(folder.id)!;
+    
+    if (folder.parent_folder_id === null) {
+      // Root level folder
+      rootFolders.push(folderWithChildren);
+    } else {
+      // Child folder - add to parent's children
+      const parent = folderMap.get(folder.parent_folder_id);
+      if (parent) {
+        parent.children.push(folderWithChildren);
+      } else {
+        // Parent not found (orphaned folder) - treat as root
+        rootFolders.push(folderWithChildren);
+      }
+    }
+  });
+
+  return rootFolders;
 } 

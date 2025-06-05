@@ -165,7 +165,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                                         <div className="flex-grow overflow-hidden">
                                             <span className="block font-medium truncate text-[--text-color]">{result.name || 'Untitled Document'}</span>
                                             {/* Add more details if available, e.g., path or snippet */}
-                                            {result.similarity && <span className="text-xs text-[--muted-text-color]">(Score: {result.similarity.toFixed(2)})</span>}
+                                            
                                         </div>
                                     </button>
                                 </li>

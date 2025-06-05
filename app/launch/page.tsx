@@ -21,6 +21,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Omnibar } from '@/components/search/Omnibar';
 // --- NEW: Import X icon for pills ---
 import { X } from 'lucide-react'; 
+// --- NEW: Import DocumentCardGrid component ---
+import DocumentCardGrid from '@/components/file-manager/DocumentCardGrid';
 
 // --- NEW: Import TaggedDocument type ---
 import type { TaggedDocument } from '@/lib/types';
@@ -146,6 +148,9 @@ export default function LaunchPage() {
   // Add below isRecordingRef
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
+  // --- NEW: Default active tab state ---
+  const [activeTab, setActiveTab] = useState("new-document"); // Default to "new-document"
+
   // ADDED: Effect to update local model state if preference loads *after* initial render
   useEffect(() => {
       if (isPreferencesInitialized && preferredModel && model !== preferredModel) {
@@ -232,10 +237,10 @@ export default function LaunchPage() {
 
   // Focus the chat input by default on mount 
   useEffect(() => {
-    if (inputRef.current) {
+    if (inputRef.current && activeTab === "new-document") { // Only focus if new-document tab is active
       inputRef.current.focus();
     }
-  }, []); // REMOVED: activeView dependency
+  }, [activeTab]); // Depend on activeTab
 
   // --- Handlers for Chat Input ---
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement> | React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -754,202 +759,160 @@ export default function LaunchPage() {
 
   // --- Return JSX ---
   return (
-    <div className="flex flex-col h-full bg-[--bg-secondary] text-[--text-color] p-4"> {/* Add padding back to main container */}
-      {/* Title Centered at the Top */}
-      <h2 className="text-xlg font-semibold mb-4 text-center font-uncut-sans h-8 flex-shrink-0"> 
-        {isSubmitting ? (
-          <span className="loading-text">
-            Loading
-            <span className="dot1">.</span>
-            <span className="dot2">.</span>
-            <span className="dot3">.</span>
-          </span>
-        ) : (
-          <>
-            What do you want to focus on?
-            <span className="cursor blinking"></span> 
-          </>
-        )}
-      </h2>
+    <div className="flex flex-col h-screen bg-[--bg-primary] text-[--text-color] overflow-hidden">
+      {/* Header Area - Kept minimal for now */}
+      <header className="p-4 border-b border-[--border-color] flex items-center justify-between print-hide">
+        <h1 className="text-xl font-semibold">Launch Pad</h1>
+        {/* Optional: User profile/settings icon could go here */}
+      </header>
 
-      {/* Row for the two cards below the title */}
-      <div className="flex flex-col flex-grow gap-4 overflow-hidden max-w-[1024px] mx-auto w-full"> {/* Changed max-width to 1200px */} 
-        
-        {/* Left Card: Chat Input */}
-        <div className="w-full flex flex-col items-center space-y-2"> {/* Removed hover/focus effects */} 
-           <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Start New</h2> {/* Added Title */} 
-           <Card className="flex flex-col bg-[--bg-primary] border-[--border-color] w-full 
-                         transition-all duration-200 ease-in-out 
-                         hover:shadow-lg 
-                         hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* Change border on hover */} 
-             {/* Optional Header */}
-             {/* 
-             <CardHeader className="flex-shrink-0"> 
-               <CardTitle>Start New Document</CardTitle> 
-             </CardHeader> 
-             */}
-             <CardContent className="p-4"> {/* Removed flex-grow, justify-center */} 
-               <form ref={formRef} onSubmit={handleLaunchSubmit} className="w-full"> {/* Make form take full width */}
-                 {/* --- NEW: Render Tagged Document Pills --- */}
-                 {taggedDocuments && taggedDocuments.length > 0 && (
-                     <div className="w-full mb-2 flex flex-wrap gap-2 px-3 py-2 border border-[--border-color] rounded-md bg-[--subtle-bg]">
-                         {taggedDocuments.map((doc) => (
-                             <div 
-                                 key={doc.id} 
-                                 className="flex items-center gap-1.5 bg-[--pill-bg] text-[--pill-text-color] px-2 py-0.5 rounded-full text-xs border border-[--pill-border-color] shadow-sm"
-                             >
-                                 <span>{doc.name}</span>
-                                 <button 
-                                     type="button"
-                                     onClick={() => {
-                                         setTaggedDocuments((prevDocs) => 
-                                             prevDocs.filter(d => d.id !== doc.id)
-                                         );
-                                     }}
-                                     className="text-[--pill-remove-icon-color] hover:text-[--pill-remove-icon-hover-color] rounded-full focus:outline-none focus:ring-1 focus:ring-[--accent-color]"
-                                     aria-label={`Remove ${doc.name}`}
-                                 >
-                                     <X size={12} />
-                                 </button>
-                             </div>
-                         ))}
-                     </div>
-                 )}
-                 {/* --- END NEW: Render Tagged Document Pills --- */}
-                 <ChatInputUI
-                   files={files} 
-                   fileInputRef={fileInputRef} 
-                   handleFileChange={handleFileChange} 
-                   inputRef={inputRef} 
-                   input={input} 
-                   handleInputChange={handleInputChange} 
-                   handleKeyDown={handleKeyDown} 
-                   handlePaste={handlePaste} 
-                   model={model} 
-                   setModel={setModel} 
-                   handleUploadClick={handleUploadClick} 
-                   isLoading={isSubmitting} 
-                   isUploading={isUploading} 
-                   uploadError={uploadError} 
-                   uploadedImagePath={uploadedImagePath} 
-                   isRecording={isRecording}
-                   isTranscribing={isTranscribing}
-                   micPermissionError={micPermissionError}
-                   startRecording={handleStartRecording}
-                   stopRecording={handleStopRecording}
-                   audioTimeDomainData={audioTimeDomainData}
-                   recordingDuration={recordingDuration}
-                   clearPreview={clearPreview}
-                   // --- NEW: Pass tagged documents props to ChatInputUI ---
-                   taggedDocuments={taggedDocuments}
-                   onAddTaggedDocument={(docToAdd) => {
-                       setTaggedDocuments((prevDocs) => {
-                           if (prevDocs.find(doc => doc.id === docToAdd.id)) {
-                               return prevDocs;
-                           }
-                           return [...prevDocs, docToAdd];
-                       });
-                   }}
-                   // --- END NEW ---
-                 />
-               </form>
-             </CardContent>
-           </Card>
-        </div>
+      {/* Main Content Area */}
+      <div className="flex-grow overflow-y-auto">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="pt-2 px-2 md:pt-4 md:px-4 h-full flex flex-col">
+          <TabsList className="mb-4 print-hide grid w-full grid-cols-2 md:grid-cols-4">
+            <TabsTrigger value="new-document">New Document</TabsTrigger>
+            <TabsTrigger value="recent-files">Recent Files</TabsTrigger>
+            <TabsTrigger value="file-manager">File Manager</TabsTrigger>
+            <TabsTrigger value="preview-cards">Preview Cards</TabsTrigger>
+          </TabsList>
 
-        {/* Right Card: Tabs (Recent/Browser) */}
-        <div className="w-full flex flex-col items-center space-y-2 min-h-0"> {/* Added min-h-0 */}
-          <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Continue Working</h2> {/* Added Title */}
-          <Tabs defaultValue="recent" className="flex flex-col w-full h-[calc(100vh-12rem)] max-h-[800px] min-h-0"> {/* Changed h-full to h-[calc(100vh-12rem)] */}
-            <TabsList className="grid w-full grid-cols-2 flex-shrink-0 bg-transparent p-1 h-10 rounded-lg"> {/* Make background transparent, adjust padding/height/rounding if needed */} 
-              <TabsTrigger 
-                value="recent" 
-                className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium 
-                           ring-offset-transparent 
-                           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[--card-bg] 
-                           disabled:pointer-events-none disabled:opacity-50 
-                           data-[state=active]:bg-[--tab-active-bg] data-[state=active]:text-[--text-color] data-[state=active]:shadow-sm 
-                           data-[state=active]:border-b-2 data-[state=active]:rounded-b-none /* Add bottom border for active state */
-                           hover:bg-[--hover-bg] hover:text-[--text-color] 
-                           text-[--muted-text-color]"> {/* Default state uses muted text */}
-                Recent Files
-              </TabsTrigger>
-              <TabsTrigger 
-                value="browser" 
-                className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium 
-                           ring-offset-transparent 
-                           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[--card-bg] 
-                           disabled:pointer-events-none disabled:opacity-50 
-                           data-[state=active]:bg-[--tab-active-bg] data-[state=active]:text-[--text-color] data-[state=active]:shadow-sm 
-                           data-[state=active]:border-b-2 data-[state=active]:rounded-b-none /* Add bottom border for active state */
-                           hover:bg-[--hover-bg] hover:text-[--text-color] 
-                           text-[--muted-text-color]"> {/* Default state uses muted text */}
-                File Browser
-              </TabsTrigger>
-            </TabsList>
+          {/* Tab Content for "New Document" */}
+          <TabsContent value="new-document" className="flex-grow flex flex-col outline-none ring-0 focus:ring-0 focus:outline-none" tabIndex={-1}>
+            <div className="flex flex-col h-full bg-[--bg-primary] text-[--text-color] p-4 items-center">
+              <h2 className="text-xlg font-semibold mb-4 text-center font-uncut-sans h-8 flex-shrink-0">
+                {isSubmitting ? (
+                  <span className="loading-text">Loading<span className="dot1">.</span><span className="dot2">.</span><span className="dot3">.</span></span>
+                ) : (
+                  <>What do you want to focus on?<span className="cursor blinking"></span></>
+                )}
+              </h2>
+              <div className="w-full max-w-[1024px] flex flex-col items-center space-y-2">
+                <Card className="flex flex-col bg-[--bg-secondary] border-[--border-color] w-full transition-all duration-200 ease-in-out hover:shadow-lg hover:border-2 hover:border-[--accent-color] rounded-lg">
+                  <CardContent className="p-4">
+                    <form ref={formRef} onSubmit={handleLaunchSubmit} className="w-full">
+                      {taggedDocuments && taggedDocuments.length > 0 && (
+                          <div className="w-full mb-2 flex flex-wrap gap-2 px-3 py-2 border border-[--border-color] rounded-md bg-[--subtle-bg]">
+                              {taggedDocuments.map((doc) => (
+                                  <div
+                                      key={doc.id}
+                                      className="flex items-center gap-1.5 bg-[--pill-bg] text-[--pill-text-color] px-2 py-0.5 rounded-full text-xs border border-[--pill-border-color] shadow-sm"
+                                  >
+                                      <span>{doc.name}</span>
+                                      <button
+                                          type="button"
+                                          onClick={() => {
+                                              setTaggedDocuments((prevDocs) =>
+                                                  prevDocs.filter(d => d.id !== doc.id)
+                                              );
+                                          }}
+                                          className="text-[--pill-remove-icon-color] hover:text-[--pill-remove-icon-hover-color] rounded-full focus:outline-none focus:ring-1 focus:ring-[--accent-color]"
+                                          aria-label={`Remove ${doc.name}`}
+                                      >
+                                          <X size={12} />
+                                      </button>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+                      <ChatInputUI
+                        files={files}
+                        fileInputRef={fileInputRef}
+                        handleFileChange={handleFileChange}
+                        inputRef={inputRef}
+                        input={input}
+                        handleInputChange={handleInputChange}
+                        handleKeyDown={handleKeyDown}
+                        handlePaste={handlePaste}
+                        model={model}
+                        setModel={setModel}
+                        handleUploadClick={handleUploadClick}
+                        isLoading={isSubmitting}
+                        isUploading={isUploading}
+                        uploadError={uploadError}
+                        uploadedImagePath={uploadedImagePath}
+                        isRecording={isRecording}
+                        isTranscribing={isTranscribing}
+                        micPermissionError={micPermissionError}
+                        startRecording={handleStartRecording}
+                        stopRecording={handleStopRecording}
+                        audioTimeDomainData={audioTimeDomainData}
+                        recordingDuration={recordingDuration}
+                        clearPreview={clearPreview}
+                        taggedDocuments={taggedDocuments}
+                        onAddTaggedDocument={(docToAdd) => {
+                            setTaggedDocuments((prevDocs) => {
+                                if (prevDocs.find(doc => doc.id === docToAdd.id)) {
+                                    return prevDocs;
+                                }
+                                return [...prevDocs, docToAdd];
+                            });
+                        }}
+                      />
+                    </form>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
 
-            {/* Recent Files Tab Content */}
-            <TabsContent value="recent" className="flex-1 min-h-0"> {/* Added flex-1 and min-h-0 */} 
-              <Card className="flex flex-col h-full bg-[--bg-primary] border-[--border-color] 
-                           transition-all duration-200 ease-in-out 
-                           hover:shadow-lg 
-                           hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* Change border on hover */} 
-                <CardHeader className="flex-shrink-0"> 
-                  <CardTitle className="text-[--text-color]">Recent Documents</CardTitle>
-                  {/* <CardDescription className="text-[--text-muted]">Quickly jump back into your work.</CardDescription> */}
-                </CardHeader>
-                <CardContent className="flex-1 overflow-y-auto min-h-0"> {/* Added flex-1 and min-h-0 */} 
-                  {isLoading ? (
-                      <p className="text-center text-[--text-muted]">Loading recent documents...</p>
-                  ) : error ? ( 
-                     <p className="text-center text-red-500">{error}</p> 
-                  ) : (
-                     (() => { 
-                        const recentDocs = cuboneFiles
-                          .filter(file => !file.isDirectory && file.updatedAt) 
-                          .sort((a, b) => new Date(b.updatedAt!).getTime() - new Date(a.updatedAt!).getTime()) 
-                          .slice(0, 10); 
-
-                        return recentDocs.length > 0 ? (
-                            <ul className="space-y-2">
-                                {recentDocs.map((doc) => (
-                                    <li key={doc.id || doc.path}> 
-                                        <Link href={`/editor/${doc.id}`} className="block p-2 rounded hover:bg-[--bg-hover] transition-colors text-[--link-color] hover:text-[--link-hover]">
-                                            {doc.name || 'Untitled Document'}
-                                            {doc.updatedAt && <span className="text-xs text-[--text-muted] block">Updated: {new Date(doc.updatedAt).toLocaleString()}</span>}
-                                        </Link>
-                                    </li>
-                                ))}
-                            </ul>
+          {/* Tab Content for "Recent Files" */}
+          <TabsContent value="recent-files" className="flex-grow outline-none ring-0 focus:ring-0 focus:outline-none" tabIndex={-1}>
+             <div className="p-4">
+                <Card className="bg-[--bg-secondary] border-[--border-color]">
+                    <CardHeader>
+                        <CardTitle className="text-[--text-color]">Recent Documents</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {isLoading ? (
+                            <p className="text-center text-[--text-muted]">Loading recent documents...</p>
+                        ) : error ? (
+                            <p className="text-center text-red-500">{error}</p>
                         ) : (
-                            <p className="text-center text-[--text-muted]">No recent documents found.</p>
-                        );
-                     })()
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
+                            (() => {
+                                const recentDocs = cuboneFiles
+                                    .filter(file => !file.isDirectory && file.updatedAt)
+                                    .sort((a, b) => new Date(b.updatedAt!).getTime() - new Date(a.updatedAt!).getTime())
+                                    .slice(0, 10);
 
-            {/* File Browser Tab Content */}
-            <TabsContent value="browser" className="flex-1 min-h-0"> {/* Added flex-1 and min-h-0 */}
-               <Card className="flex flex-col h-full bg-[--bg-primary] border-[--border-color] 
-                            transition-all duration-200 ease-in-out 
-                            hover:shadow-lg 
-                            hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* MODIFIED: Added flex-grow */} 
-                 <CardContent className="flex flex-col flex-1 p-4 min-h-0"> {/* Added min-h-0 */} 
-                   {/* Omnibar */}
-                   <div className="mb-4 flex-shrink-0"> 
-                      <Omnibar />
-                   </div>
-                   {/* Render the actual NewFileManager component */}
-                   <div className="flex-1 border border-[--border-color] rounded-md shadow-sm overflow-hidden min-h-0"> {/* Added min-h-0 */}
-                       <NewFileManager />
-                   </div>
-                 </CardContent>
-               </Card>
-            </TabsContent>
-          </Tabs>
-        </div>
+                                return recentDocs.length > 0 ? (
+                                    <ul className="space-y-2">
+                                        {recentDocs.map((doc) => (
+                                            <li key={doc.id || doc.path}>
+                                                <Link href={`/editor/${doc.id}`} className="block p-2 rounded hover:bg-[--hover-bg] transition-colors text-[--link-color] hover:text-[--link-hover]">
+                                                    {doc.name || 'Untitled Document'}
+                                                    {doc.updatedAt && <span className="text-xs text-[--text-muted] block">Updated: {new Date(doc.updatedAt).toLocaleString()}</span>}
+                                                </Link>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className="text-center text-[--text-muted]">No recent documents found.</p>
+                                );
+                            })()
+                        )}
+                    </CardContent>
+                </Card>
+             </div>
+          </TabsContent>
+
+          {/* Tab Content for "File Manager" */}
+          <TabsContent value="file-manager" className="flex-grow h-full outline-none ring-0 focus:ring-0 focus:outline-none" tabIndex={-1}>
+            <div className="p-4 flex flex-col h-full">
+              <div className="mb-4 flex-shrink-0">
+                <Omnibar />
+              </div>
+              <div className="flex-1 border border-[--border-color] rounded-md shadow-sm overflow-hidden min-h-0">
+                <NewFileManager />
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ADDED: Tab Content for "Card Preview" */}
+          <TabsContent value="preview-cards" className="flex-grow h-full outline-none ring-0 focus:ring-0 focus:outline-none" tabIndex={-1}>
+            <DocumentCardGrid />
+          </TabsContent>
+
+        </Tabs>
       </div>
     </div>
   );

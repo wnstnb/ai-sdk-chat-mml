@@ -195,7 +195,7 @@ export function Omnibar({ displayResultsInline = false, searchType = 'default', 
                                         <span className="block font-medium truncate">{result.name || 'Untitled Document'}</span>
                                         {/* Optionally add folder info or other context */}
                                         {/* {result.folder_id && <span className="text-xs text-muted-foreground">In Folder ...</span>} */}
-                                        {result.similarity && <span className="text-xs text-muted-foreground ml-2">(Score: {result.similarity.toFixed(2)})</span>}
+                                        
                                         
                                     </button>
                                 </li>
