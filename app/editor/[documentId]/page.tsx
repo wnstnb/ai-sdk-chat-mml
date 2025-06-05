@@ -1250,9 +1250,12 @@ export default function EditorPage() {
             if (!referenceBlockId) { referenceBlockId = editor.document[editor.document.length - 1]?.id; }
             if (referenceBlockId) { editor.insertBlocks(blocksToInsert, referenceBlockId, 'after'); }
             else { editor.replaceBlocks(editor.document, blocksToInsert); } 
-            toast.success('Content sent to editor.');
+            toast.success('Content successfully added to editor.');
             handleEditorChange(editor);
-        } catch (error: any) { console.error('Send to editor error:', error); toast.error(`Send to editor error: ${error.message}`); }
+        } catch (error: any) { 
+            console.error('Failed to add content to editor:', error); 
+            toast.error(`Could not add content to the editor. Please try again. (Error: ${error.message})`); 
+        }
     };
     // UPDATED: Toggle handler to check for mobile
     const handleToggleChat = () => {
