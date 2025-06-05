@@ -1,17 +1,34 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createSupabaseServiceRoleClient } from '../../../../lib/supabase/server'; // Corrected path
+import { z } from 'zod'; // Added import
+
+// Define Zod schema for signup input
+const signUpSchema = z.object({
+  email: z.string().email({ message: "Invalid email address" }),
+  password: z.string().min(8, { message: "Password must be at least 8 characters long" }),
+  billingCycle: z.enum(['monthly', 'annual'], { message: "Billing cycle must be 'monthly' or 'annual'" }),
+});
 
 export async function POST(request: NextRequest) {
-  const { email, password, billingCycle } = await request.json();
-
-  if (!email || !password || !billingCycle) {
-    return NextResponse.json({ error: 'Email, password, and billing cycle are required.' }, { status: 400 });
+  let rawBody;
+  try {
+    rawBody = await request.json();
+  } catch (error) {
+    return NextResponse.json({ error: 'Invalid JSON input.' }, { status: 400 });
   }
 
-  if (billingCycle !== 'monthly' && billingCycle !== 'annual') {
-    return NextResponse.json({ error: 'Invalid billing cycle.' }, { status: 400 });
+  const validationResult = signUpSchema.safeParse(rawBody);
+
+  if (!validationResult.success) {
+    return NextResponse.json({ 
+      error: "Input validation failed",
+      issues: validationResult.error.flatten().fieldErrors 
+    }, { status: 400 });
   }
+
+  // Use validated data
+  const { email, password, billingCycle } = validationResult.data;
 
   // Use the service role client for elevated privileges needed for sign-up and profile update
   const supabase = createSupabaseServiceRoleClient();

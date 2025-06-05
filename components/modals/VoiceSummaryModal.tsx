@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { generateNotesFromTranscript } from '@/lib/ai/notesService';
+import { generateNotesFromTranscript, prettifyTranscript } from '@/lib/ai/notesService';
 import { type BlockNoteEditor, type PartialBlock } from '@blocknote/core';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
@@ -71,6 +71,7 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
   const [notesError, setNotesError] = React.useState<string | null>(null);
   const [activeTab, setActiveTab] = React.useState<string>("transcription");
   const [insertionType, setInsertionType] = React.useState<'active' | 'transcription' | 'notes' | 'both'>('active');
+  const [notesAction, setNotesAction] = React.useState<'summary' | 'prettify'>('summary');
 
   // --- NEW: State for WebSocket configuration ---
   const [websocketUrl, setWebsocketUrl] = React.useState<string | null>(null);
@@ -810,8 +811,8 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
       .trim();
 
     if (!cleanedFinalizedContent) {
-      setNotesError('No actual transcription content available to generate notes.');
-      toast.info('No transcription available to generate notes.');
+      setNotesError('No actual transcription content available to process.');
+      toast.info('No transcription available to process.');
       return;
     }
 
@@ -819,26 +820,47 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
     setNotesError(null);
     setGeneratedNotes(null);
 
-    try {
-      const result = await generateNotesFromTranscript(cleanedFinalizedContent);
+    const currentAction = notesAction; // Capture current action for consistent use in async/toast
+    const actionVerb = currentAction === 'summary' ? 'summarize' : 'prettify';
+    const actionNoun = currentAction === 'summary' ? 'summary' : 'prettified transcript';
+    const actionInProgress = currentAction === 'summary' ? 'Generating summary...' : 'Prettifying transcript...';
 
-      if (result.error) {
-        setNotesError(result.error);
-        toast.error(`Failed to generate notes: ${result.error}`);
-        setGeneratedNotes(null); 
-      } else if (result.notes) {
-        setGeneratedNotes(result.notes);
-        toast.success('Notes generated successfully!');
-        setActiveTab('notes'); // Switch to notes tab after generation
-      } else {
-        setNotesError('Notes generation returned no content.');
-        toast.info('Notes generation returned no content.');
-        setGeneratedNotes(null);
-      }
-    } catch (error: any) {
-      console.error('Unexpected error generating notes:', error);
+    try {
+      await toast.promise(
+        async () => {
+          let result: { notes?: string | null; error?: string | null; } = { error: "Unknown action" };
+          if (currentAction === 'summary') {
+            result = await generateNotesFromTranscript(cleanedFinalizedContent);
+          } else if (currentAction === 'prettify') {
+            result = await prettifyTranscript(cleanedFinalizedContent);
+          }
+
+          if (result.error) {
+            throw new Error(result.error);
+          } else if (result.notes) {
+            setGeneratedNotes(result.notes);
+            setActiveTab('notes');
+            return `${actionNoun} generated successfully!`;
+          } else {
+            throw new Error(`${actionNoun} generation returned no content.`);
+          }
+        },
+        {
+          loading: actionInProgress,
+          success: (message) => message,
+          error: (err) => {
+            setNotesError(err.message);
+            setGeneratedNotes(null);
+            // actionVerb and actionNoun are available here from the outer scope
+            return `Failed to ${actionVerb} transcript: ${err.message}`;
+          },
+        }
+      );
+    } catch (error: any) { // Catch errors from the promise setup itself or unhandled rejections
+      console.error(`Unexpected error during ${currentAction} process:`, error);
       setNotesError(`An unexpected error occurred: ${error.message}`);
-      toast.error(`An unexpected error occurred while generating notes.`);
+      // actionVerb is available here
+      toast.error(`An unexpected error occurred while trying to ${actionVerb} the transcript.`);
       setGeneratedNotes(null);
     } finally {
       setIsGeneratingNotes(false);
@@ -955,8 +977,10 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
             ref={notesTabContentRef}
             className="flex-grow overflow-y-auto mt-2 border border-[--border-color] rounded p-3 bg-[--input-bg] min-h-[150px] max-w-full text-sm"
           >
-            {isGeneratingNotes ? (
-              <p className="text-sm text-[--muted-text-color] animate-pulse">Generating notes...</p>
+            {isGeneratingNotes && !toast.loading ? ( // Show placeholder only if not handled by toast
+              <p className="text-sm text-[--muted-text-color] animate-pulse">
+                {notesAction === 'summary' ? 'Generating summary...' : 'Prettifying transcript...'}
+              </p>
             ) : notesError ? (
               <p className="text-sm text-red-500 whitespace-pre-wrap">Error: {notesError}</p>
             ) : generatedNotes ? (
@@ -965,7 +989,11 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
               </ReactMarkdown>
             ) : (
               <p className="text-sm text-[--muted-text-color]">
-                Click &quot;Generate Notes&quot; to create an AI-generated summary of the transcription.
+                {transcriptionAvailable
+                  ? (notesAction === 'summary'
+                    ? "Select 'Generate Summary' to create an AI-generated summary."
+                    : "Select 'Prettify Transcript' to clean up and format the transcription.")
+                  : "Record or ensure transcription is available to process."}
               </p>
             )}
           </TabsContent>
@@ -991,21 +1019,43 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
               Clear
             </Button>
 
-            <Button
-              onClick={handleGenerateNotes}
-              disabled={isRecordingRef.current || isGeneratingNotes || !transcriptionAvailable}
-              variant="outline"
-              size="sm"
-              className="flex items-center text-xs"
-            >
-              {isGeneratingNotes ? (
-                <span className="animate-spin mr-1.5">⏳</span>
-              ) : (
-                <BotMessageSquare size={14} className="mr-1.5" />
-              )}
-              {isGeneratingNotes ? "Generating..." : "Notes"}
-            </Button>
-            
+            {/* Notes Generation Split Button */}
+            <div className="flex items-center">
+              <Button
+                onClick={handleGenerateNotes}
+                disabled={isRecordingRef.current || isGeneratingNotes || !transcriptionAvailable}
+                variant="outline"
+                size="sm"
+                className="flex items-center text-xs rounded-r-none"
+              >
+                {isGeneratingNotes ? (
+                  <span className="animate-spin mr-1.5">⏳</span>
+                ) : (
+                  <BotMessageSquare size={14} className="mr-1.5" />
+                )}
+                {isGeneratingNotes
+                  ? (notesAction === 'summary' ? "Summarizing..." : "Prettifying...")
+                  : (notesAction === 'summary' ? "Summary" : "Prettify")}
+              </Button>
+              <Select
+                value={notesAction}
+                onValueChange={(value: 'summary' | 'prettify') => setNotesAction(value)}
+                disabled={isGeneratingNotes || isRecordingRef.current || !transcriptionAvailable}
+              >
+                <SelectTrigger
+                  className="h-9 px-2 text-xs rounded-l-none border-l-0"
+                  aria-label="Select notes action type"
+                >
+                  {/* ChevronDown icon is typically part of SelectTrigger by default */}
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="summary" className="text-xs">Generate Summary</SelectItem>
+                  <SelectItem value="prettify" className="text-xs">Prettify Transcript</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Add to Editor Split Button */}
             <div className="flex items-center">
               <Button
                 onClick={() => {
@@ -1098,25 +1148,11 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
             </Button>
 
           </div>
-          
-          <div className="flex justify-end items-center space-x-2 mt-4">
-            {/* The "Add to Editor", "Generate Notes", and "Cancel & Clear" buttons from the original layout are now part of Row 1 or handled differently. */}
-            {/* Keeping Cancel button for modal dismissal, separate from Clear transcription */}
-            {/* <Button
-              onClick={handleCancel} // handleCancel should already exist and handle closing/stopping recording
-              // disabled={isRecording} // We might want to allow canceling even if recording, handleCancel should stop it.
-              variant="ghost"
-              size="sm"
-            >
-              Close
-            </Button> */}
-          </div>
-
         </div>
       </div>
     </div>
   );
-}; 
+};
 
 export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = (props) => {
   const { isOpen, onClose } = props;
@@ -1139,4 +1175,4 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = (props) => {
       )}
     </>
   );
-}; 
+};
