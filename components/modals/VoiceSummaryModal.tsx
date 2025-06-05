@@ -481,9 +481,9 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
           } else {
             const prefixPattern = /^---\s(Recording Started|Recording Resumed)\s---$/; // Check if it's ONLY the prefix
             if (prefixPattern.test(messageOnClose)) {
-              setVoiceSummaryTranscription(messageOnClose + " (No speech detected. WebSocket connection closed.)");
+              setVoiceSummaryTranscription(messageOnClose + " (No speech detected.)");
             } else {
-              setVoiceSummaryTranscription(messageOnClose + " (WebSocket connection closed.)");
+              setVoiceSummaryTranscription(messageOnClose + " (Connection closed.)");
             }
           }
           resolve(false); 
