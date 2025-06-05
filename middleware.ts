@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { hasSubscriptionAccess } from './lib/subscription-utils'
+import { getRateLimiter, getIP } from './lib/rate-limit'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -20,6 +21,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
   
+  // Enforce HTTPS and add HSTS header in production
+  if (process.env.NODE_ENV === 'production') {
+    const requestHeaders = new Headers(request.headers)
+    const xForwardedProto = requestHeaders.get('x-forwarded-proto')
+
+    // Redirect HTTP to HTTPS
+    if (xForwardedProto === 'http') {
+      const httpsUrl = new URL(request.url)
+      httpsUrl.protocol = 'https:'
+      return NextResponse.redirect(httpsUrl.toString(), 301) // 301 Permanent Redirect
+    }
+  }
+
   // Create a response object to modify headers if needed
   let response = NextResponse.next({
     request: {
@@ -96,10 +110,52 @@ export async function middleware(request: NextRequest) {
 
   // For API routes, check authentication (subscription checking can be done per endpoint as needed)
   if (pathname.startsWith('/api/')) {
+    // Apply rate limiting first for API routes
+    const ip = getIP(request)
+    if (ip) {
+      const limiter = getRateLimiter()
+      if (limiter) {
+        const { success, limit, remaining, reset } = await limiter.limit(ip)
+        if (!success) {
+          return new NextResponse('Too Many Requests', {
+            status: 429,
+            headers: {
+              'X-RateLimit-Limit': limit.toString(),
+              'X-RateLimit-Remaining': remaining.toString(),
+              'X-RateLimit-Reset': reset.toString(),
+            },
+          })
+        }
+      } else if (process.env.NODE_ENV === 'production') {
+        // If limiter is null in production, it means Upstash is not configured.
+        // Log an error, as rate limiting is critical.
+        console.error('CRITICAL: API Rate Limiter not configured in production. Requests are not being rate-limited.');
+      }
+    } else {
+      // If IP cannot be determined, log a warning. 
+      // You might want to block these requests in production if IP is essential for rate limiting.
+      console.warn('RateLimit: Could not determine IP for an API request. This request will not be rate-limited.');
+    }
+
     if (!user || error) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    // Add HSTS header in production for API responses as well if not already set
+    if (process.env.NODE_ENV === 'production' && !response.headers.has('Strict-Transport-Security')) {
+      response.headers.set(
+        'Strict-Transport-Security',
+        'max-age=31536000; includeSubDomains; preload'
+      )
+    }
     return response
+  }
+
+  // Add HSTS header for non-API responses in production
+  if (process.env.NODE_ENV === 'production') {
+    response.headers.set(
+      'Strict-Transport-Security',
+      'max-age=31536000; includeSubDomains; preload'
+    )
   }
 
   return response
