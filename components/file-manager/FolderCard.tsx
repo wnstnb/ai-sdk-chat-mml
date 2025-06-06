@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Folder, FolderOpen, MoreVertical, CheckSquare, Square } from 'lucide-react';
+import { Folder, FolderOpen, MoreVertical, CheckSquare, Square, ChevronDown, ChevronRight, Loader2, ChevronUp } from 'lucide-react';
+import { formatRelativeDate } from '@/lib/utils/dateUtils';
 
 import { useDroppable } from '@dnd-kit/core';
 import DocumentCard from './DocumentCard';
@@ -15,9 +16,12 @@ interface FolderCardProps {
   onFolderAction?: (action: 'rename' | 'delete') => void;
   isSelected?: boolean;
   onToggleSelect?: (id: string) => void;
+  loadFolderSpecificContents?: (folderId: string) => Promise<void>;
+  isLoadingContents?: boolean;
+  isLoadingChildren?: boolean;
 }
 
-const FolderCard: React.FC<FolderCardProps> = ({
+const FolderCard: React.FC<FolderCardProps> = React.memo(({
   id,
   title,
   documentCount,
@@ -27,12 +31,16 @@ const FolderCard: React.FC<FolderCardProps> = ({
   onFolderAction,
   isSelected = false,
   onToggleSelect,
+  loadFolderSpecificContents,
+  isLoadingContents = false,
+  isLoadingChildren,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const displayTitle = title || "(Untitled Folder)";
 
-  // Droppable for document dropping (no longer sortable to prevent displacement)
+  const [isInternalPreviewExpanded, setIsInternalPreviewExpanded] = useState(false);
+
   const { setNodeRef, isOver } = useDroppable({
     id: `folder-${id}`,
     data: {
@@ -41,25 +49,23 @@ const FolderCard: React.FC<FolderCardProps> = ({
     },
   });
 
-  // No transform styles since folders are no longer sortable
   const style = {};
 
-  // Height is now controlled by aspect-ratio in className
-  // const headerHeight = 80; // Height for folder header
-  // const documentListHeight = Math.min(
-  //   containedDocuments.length * 44 + 16, // Each doc item ~44px + padding
-  //   200 // Max height to prevent cards from being too tall
-  // );
-  // const emptyStateHeight = 80; // Height for empty state
-  // const totalHeight = headerHeight + (containedDocuments.length > 0 ? documentListHeight : emptyStateHeight);
-
   const handleFolderClick = (e: React.MouseEvent) => {
-    // Prevent folder toggle when clicking on menu or other interactive elements
-    if (e.target instanceof Element && e.target.closest('[data-menu]')) {
+    if (e.target instanceof Element && (e.target.closest('[data-menu]') || e.target.closest('[data-preview-toggle]'))) {
       return;
     }
-    console.log('Folder click detected for folder:', id, 'isExpanded:', isExpanded);
+    console.log('Folder navigation click detected for folder:', id);
     onToggleExpanded?.();
+  };
+
+  const handleToggleInternalPreview = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newPreviewState = !isInternalPreviewExpanded;
+    setIsInternalPreviewExpanded(newPreviewState);
+    if (newPreviewState && containedDocuments.length === 0 && documentCount > 0 && loadFolderSpecificContents) {
+      await loadFolderSpecificContents(id);
+    }
   };
 
   const handleMenuAction = (action: 'rename' | 'delete') => {
@@ -67,7 +73,6 @@ const FolderCard: React.FC<FolderCardProps> = ({
     onFolderAction?.(action);
   };
 
-  // Click outside to close menu
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -91,26 +96,29 @@ const FolderCard: React.FC<FolderCardProps> = ({
     }
   }, [isMenuOpen]);
 
+  const cardHeightClass = isInternalPreviewExpanded 
+    ? 'aspect-[3/4]'
+    : 'h-48';
+
   return (
     <article
       ref={setNodeRef}
       style={{
         ...style,
-        // height: totalHeight, // Removed explicit height
-        // minHeight: totalHeight, // Removed explicit minHeight
       }}
 
       className={`
         group relative flex flex-col rounded-lg 
         transition-all duration-300 ease-in-out motion-reduce:transition-none 
-        ${isMenuOpen ? 'overflow-visible' : 'overflow-hidden'} w-full max-w-[256px] aspect-[3/4] touch-manipulation 
+        ${isMenuOpen ? 'overflow-visible' : 'overflow-hidden'} w-full max-w-[256px] ${cardHeightClass} touch-manipulation 
         focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 
-        ${isSelected ? 'ring-2 ring-[--accent-color] shadow-md' : 'focus:ring-[--accent-color]'}
+        ${isSelected ? 'ring-2 ring-[var(--accent-color)] shadow-md' : 'focus:ring-[var(--accent-color)]'}
         ${isOver ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}
-        ${!isSelected && (isExpanded ? 'hover:shadow-xl' : 'hover:shadow-lg hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none')}
+        ${!isSelected && 'hover:shadow-lg motion-reduce:hover:transform-none'}
+        ${!isSelected && !isInternalPreviewExpanded && 'hover:-translate-y-1 hover:scale-[1.02]'}
       `}
       aria-labelledby={`folder-title-${id}`}
-      aria-describedby={`folder-count-${id}`}
+      aria-describedby={`folder-count-${id} folder-preview-status-${id}`}
       role="button"
       tabIndex={0}
       aria-label={`Folder: ${displayTitle}. Contains ${documentCount} documents. ${isExpanded ? 'Expanded' : 'Collapsed'}. Click to ${isExpanded ? 'collapse' : 'expand'}.`}
@@ -122,19 +130,16 @@ const FolderCard: React.FC<FolderCardProps> = ({
         }
       }}
     >
-      {/* Screen reader only text for drag and drop context */}
       <div className="sr-only">
         Folder card. Drop documents here to add them to this folder.
       </div>
 
-      {/* Full Glass Effect Container */}
       <div className="h-full flex flex-col bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md border border-gray-200/50 dark:border-gray-600/50 rounded-lg">
         
-        {/* Checkbox for selection - positioned absolutely */}
         {onToggleSelect && (
           <button 
             onClick={(e) => {
-              e.stopPropagation(); // Prevent card click/drag
+              e.stopPropagation();
               onToggleSelect(id);
             }}
             className="absolute top-2 left-2 z-20 p-1 rounded hover:bg-gray-300/70 dark:hover:bg-gray-600/70 transition-colors"
@@ -145,12 +150,9 @@ const FolderCard: React.FC<FolderCardProps> = ({
           </button>
         )}
         
-        {/* Folder Header */}
         <div className="p-4 flex items-center justify-between border-b border-gray-200/30 dark:border-gray-600/30">
           <div className="flex items-center space-x-3 flex-1 min-w-0">
-            {/* Drag Handle - Removed since folders are no longer draggable */}
             
-            {/* Folder Icon */}
             <div className="flex-shrink-0">
               {isExpanded ? (
                 <FolderOpen 
@@ -165,7 +167,6 @@ const FolderCard: React.FC<FolderCardProps> = ({
               )}
             </div>
             
-            {/* Folder Title and Count */}
             <div className="flex-1 min-w-0">
               <h3 
                 id={`folder-title-${id}`}
@@ -184,7 +185,6 @@ const FolderCard: React.FC<FolderCardProps> = ({
             </div>
           </div>
 
-          {/* Folder Actions Menu */}
           <div className="relative" data-menu>
             <button
               onClick={(e) => {
@@ -221,71 +221,71 @@ const FolderCard: React.FC<FolderCardProps> = ({
           </div>
         </div>
 
-        {/* Folder Content Preview (always visible) */}
-        <div className="p-3 pt-2 flex-1 min-h-0">
-          {containedDocuments.length > 0 ? (
-            <div className="h-full flex flex-col">
-              {/* Document List */}
-              <div className="flex-1 overflow-y-auto space-y-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
-                {containedDocuments.map((doc, index) => (
-                  <div 
-                    key={doc.id} 
-                    className="p-2 bg-white/50 dark:bg-gray-800/50 rounded-md border border-gray-200/30 dark:border-gray-600/30 hover:bg-white/70 dark:hover:bg-gray-800/70 transition-colors cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // Navigate to document
-                      window.location.href = `/editor/${doc.id}`;
-                    }}
-                    title={`${doc.title} - Click to open`}
-                  >
-                    <div className="flex items-start space-x-2">
-                      {/* Document icon or star */}
-                      <div className="flex-shrink-0 mt-0.5">
-                        {doc.is_starred ? (
-                          <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
-                        ) : (
-                          <div className="w-3 h-3 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
-                        )}
-                      </div>
-                      
-                      {/* Document info */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate">
-                          {doc.title}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                          {new Date(doc.lastUpdated).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              
-              {/* Scroll indicator for overflow */}
-              {containedDocuments.length > 3 && (
-                <div className="text-center pt-2 border-t border-gray-200/30 dark:border-gray-600/30 mt-2">
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    Scroll to see all {containedDocuments.length} documents
-                  </div>
+        <div className="flex-grow flex flex-col min-h-0 p-3 pt-1">
+          <div 
+            data-preview-toggle
+            onClick={handleToggleInternalPreview}
+            className="flex items-center justify-between w-full py-2 px-3 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-200/50 dark:hover:bg-gray-600/50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+            aria-expanded={isInternalPreviewExpanded}
+            aria-controls={`folder-preview-${id}`}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { 
+              if (e.key === 'Enter' || e.key === ' ') { 
+                e.preventDefault(); 
+                handleToggleInternalPreview(e as any); 
+              }
+            }}
+          >
+            <span>{isInternalPreviewExpanded ? 'Hide' : 'Show'} Files ({documentCount})</span>
+            {isLoadingChildren ? (
+              <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+            ) : isLoadingContents ? (
+              <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+            ) : (
+              <span className="p-1" aria-hidden="true">
+                {isInternalPreviewExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </span>
+            )}
+          </div>
+          <div id={`folder-preview-status-${id}`} className="sr-only">
+            {isInternalPreviewExpanded ? 'File preview is expanded.' : 'File preview is collapsed.'}
+          </div>
+
+          {isInternalPreviewExpanded && (
+            <div id={`folder-preview-${id}`} className="flex-grow overflow-y-auto space-y-1 pr-1 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
+              {isLoadingContents && (
+                <div className="flex items-center justify-center h-full text-xs text-gray-500 dark:text-gray-400">
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                  Loading files...
                 </div>
               )}
-            </div>
-          ) : (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center">
-                <p className="text-xs text-gray-500 dark:text-gray-400 italic mb-1">
-                  Empty folder
-                </p>
-                <p className="text-xs text-gray-400 dark:text-gray-500">
-                  Drop documents here
-                </p>
-              </div>
+              {!isLoadingContents && containedDocuments.length === 0 && documentCount > 0 && (
+                 <p className="text-xs text-center text-gray-400 dark:text-gray-500 py-2">No files loaded yet. Click &quot;Show Files&quot; again or ensure files exist.</p>
+              )}
+              {!isLoadingContents && containedDocuments.length === 0 && documentCount === 0 && (
+                <p className="text-xs text-center text-gray-400 dark:text-gray-500 py-2">This folder is empty.</p>
+              )}
+              {!isLoadingContents && containedDocuments.map((doc) => (
+                <a 
+                  key={doc.id} 
+                  href={`/editor/${doc.id}`}
+                  onClick={(e) => {
+                    if (e.target instanceof Element && e.target.closest('[draggable="true"]')) {
+                      e.stopPropagation(); 
+                    }
+                  }}
+                  className="block p-1.5 rounded hover:bg-gray-200/70 dark:hover:bg-gray-600/70 text-xs transition-colors"
+                  title={`Open document: ${doc.title}`}
+                >
+                  <p className="text-gray-700 dark:text-gray-200 truncate">{doc.title}</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xxs">{formatRelativeDate(doc.lastUpdated)}</p>
+                </a>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Drop overlay when dragging over */}
         {isOver && (
           <div className="absolute inset-0 bg-blue-500/20 border-2 border-blue-500 border-dashed rounded-lg flex items-center justify-center">
             <p className="text-blue-700 dark:text-blue-300 font-medium">
@@ -296,6 +296,15 @@ const FolderCard: React.FC<FolderCardProps> = ({
       </div>
     </article>
   );
-};
+});
 
+// ADD: Set display name for the memoized FolderCard component
+FolderCard.displayName = 'FolderCard';
+
+// REMOVE the incorrect MemoizedFolderCard wrapper and its export
+// const MemoizedFolderCard = React.memo(FolderCard);
+// MemoizedFolderCard.displayName = 'FolderCard';
+// export default MemoizedFolderCard;
+
+// RESTORE: Export the original FolderCard
 export default FolderCard; 

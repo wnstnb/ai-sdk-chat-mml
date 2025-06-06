@@ -46,7 +46,7 @@ const FolderNode: React.FC<FolderNodeProps> = ({
   const mappedDocuments = mapDocumentsToMappedCardData(folderDocuments);
   
   // Calculate total items (direct children only for display)
-  const directChildrenCount = folder.children.length + folderDocuments.length;
+  const directChildrenCount = (folder.children?.length || 0) + folderDocuments.length;
 
   const handleToggleExpanded = useCallback(() => {
     onToggleFolder(folder.id);
@@ -81,7 +81,7 @@ const FolderNode: React.FC<FolderNodeProps> = ({
           >
             <div className={`mt-4 ml-6 space-y-4 ${level < maxLevel ? 'border-l-2 border-gray-200/50 dark:border-gray-600/50 pl-4' : ''}`}>
               {/* Render child folders recursively */}
-              {folder.children.length > 0 && (
+              {folder.children && folder.children.length > 0 && (
                 <FolderHierarchy
                   folders={folder.children}
                   documents={documents}
@@ -119,7 +119,7 @@ const FolderNode: React.FC<FolderNodeProps> = ({
               )}
 
               {/* Empty folder state */}
-              {folder.children.length === 0 && folderDocuments.length === 0 && (
+              {(!folder.children || folder.children.length === 0) && folderDocuments.length === 0 && (
                 <div className="text-center py-8">
                   <p className="text-sm text-gray-500 dark:text-gray-400 italic">
                     This folder is empty

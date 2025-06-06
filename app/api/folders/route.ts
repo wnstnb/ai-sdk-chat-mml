@@ -102,7 +102,7 @@ export async function GET(request: Request) {
     // 2. Build query based on parameters
     let query = supabase
       .from('folders')
-      .select('*')
+      .select('*, documents(count)')
       .eq('user_id', userId);
 
     // If parentId is specified, filter by parent
@@ -116,12 +116,24 @@ export async function GET(request: Request) {
 
     query = query.order('name', { ascending: true });
 
-    const { data: folders, error: foldersError } = await query;
+    const { data: rawFolders, error: foldersError } = await query;
 
     if (foldersError) {
       console.error('Folders Fetch Error:', foldersError.message);
       return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch folders: ${foldersError.message}` } }, { status: 500 });
     }
+
+    // ADDED: Transform rawFolders to include document_count
+    const folders = (rawFolders || []).map(folder => {
+      const count = folder.documents && Array.isArray(folder.documents) && folder.documents.length > 0 && typeof folder.documents[0].count === 'number'
+        ? folder.documents[0].count
+        : 0;
+      const { documents, ...restOfFolder } = folder; // Exclude the 'documents' array used for counting
+      return {
+        ...restOfFolder,
+        document_count: count,
+      };
+    });
 
     // 3. If hierarchical structure is requested, build tree
     if (hierarchical && parentId === null) {

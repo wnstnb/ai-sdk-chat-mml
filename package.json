@@ -34,6 +34,7 @@
     "@supabase/auth-ui-shared": "^0.1.8",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.4",
+    "@tanstack/react-virtual": "^3.13.9",
     "@types/multer": "^1.4.12",
     "@types/pdf-parse": "^1.1.5",
     "@upstash/ratelimit": "^2.0.5",

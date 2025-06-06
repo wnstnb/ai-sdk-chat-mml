@@ -34,10 +34,30 @@ import {
 } from '@dnd-kit/sortable';
 import type { MappedDocumentCardData } from '@/lib/mappers/documentMappers';
 import { toast } from 'sonner';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import type { Folder } from '@/types/supabase';
 
 // Define types for sorting
 type SortKey = 'lastUpdated' | 'title' | 'is_starred';
 type SortDirection = 'asc' | 'desc';
+
+// Define breakpoints and corresponding column counts
+const BREAKPOINTS = {
+  sm: 640,
+  md: 768,
+  lg: 1024,
+  xl: 1280,
+  '2xl': 1536, // Assuming you might have 2xl for 5 columns
+};
+
+const getNumberOfColumns = (width: number): number => {
+  if (width >= BREAKPOINTS['2xl']) return 5;
+  if (width >= BREAKPOINTS.xl) return 5; // Tailwind's xl:grid-cols-5
+  if (width >= BREAKPOINTS.lg) return 4; // Tailwind's lg:grid-cols-4
+  if (width >= BREAKPOINTS.md) return 3; // Tailwind's md:grid-cols-3
+  if (width >= BREAKPOINTS.sm) return 2; // Tailwind's sm:grid-cols-2
+  return 1; // Default to 1 column
+};
 
 const DocumentCardGrid: React.FC = () => {
   const { mappedDocuments: fetchedDocs, isLoading, error, fetchDocuments } = useAllDocuments();
@@ -64,10 +84,33 @@ const DocumentCardGrid: React.FC = () => {
     moveDocument,
     getFolderContents,
     deleteDocument,
+    loadSubFolders,
+    loadingSubFolders,
   } = useFolders();
   const { currentFolderId, breadcrumbPath, isInFolderView, navigateToFolder, navigateToRoot } = useFolderNavigation();
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
   const [folderContents, setFolderContents] = useState<Record<string, MappedDocumentCardData[]>>({});
+
+  // ADD: State for tracking which folder previews are loading
+  const [loadingPreviewFolderIds, setLoadingPreviewFolderIds] = useState<Set<string>>(new Set());
+
+  // ADD: Ref for the scrollable element
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  // ADD: State for number of columns
+  const [numberOfColumns, setNumberOfColumns] = useState(1);
+
+  // ADD: Effect to update number of columns on resize
+  useEffect(() => {
+    const updateCols = () => {
+      if (typeof window !== 'undefined') {
+        setNumberOfColumns(getNumberOfColumns(window.innerWidth));
+      }
+    };
+    updateCols(); // Initial check
+    window.addEventListener('resize', updateCols);
+    return () => window.removeEventListener('resize', updateCols);
+  }, []);
 
   // Helper function to sort documents
   const sortDocuments = useCallback((items: MappedDocumentCardData[], key: SortKey, direction: SortDirection): MappedDocumentCardData[] => {
@@ -117,7 +160,22 @@ const DocumentCardGrid: React.FC = () => {
     }
   }, [getFolderContents]);
 
-  // This will be called after displayItems is available
+  // ADD: Function to handle loading of specific folder preview contents
+  const handleLoadFolderPreview = useCallback(async (folderId: string) => {
+    setLoadingPreviewFolderIds(prev => new Set(prev).add(folderId));
+    try {
+      await loadFolderContents(folderId); // This already updates folderContents state
+    } catch (error) {
+      console.error(`Error loading preview for folder ${folderId}:`, error);
+      // Optionally, show a toast or specific error message for this folder
+    } finally {
+      setLoadingPreviewFolderIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(folderId);
+        return newSet;
+      });
+    }
+  }, [loadFolderContents]);
 
   // Load contents when navigating to a folder
   useEffect(() => {
@@ -340,7 +398,6 @@ const DocumentCardGrid: React.FC = () => {
         if (itemsSuccessfullyMovedIds.size > 0) {
           toast.success(`${itemsSuccessfullyMovedIds.size} item(s) moved successfully.`);
           fetchDocuments();
-          loadAllFolderContents();
           if (currentFolderId) loadFolderContents(currentFolderId); // Refresh current folder if in one
           // Optionally, clear selection of moved items or all selection
           // clearSelection(); 
@@ -450,37 +507,59 @@ const DocumentCardGrid: React.FC = () => {
   }, []);
 
   // Handle folder navigation
-  const handleFolderNavigate = useCallback((folderId: string, folderName: string) => {
-    console.log('Navigating to folder:', folderId, folderName);
+  const handleFolderNavigate = useCallback(async (folderId: string, folderName: string) => {
+    // Find the folder in the current display to check its status
+    // The folderTree from useFolders is the source of truth for childrenLoaded
+    const findInTree = (nodes: any[], id: string): any | null => {
+      for (const node of nodes) {
+        if (node.id === id) return node;
+        if (node.children) {
+          const found = findInTree(node.children, id);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+
+    const folderToNavigate = findInTree(folderTree, folderId);
+
+    if (folderToNavigate && !folderToNavigate.childrenLoaded && !loadingSubFolders.has(folderId)) {
+      try {
+        await loadSubFolders(folderId); // Load children before navigating
+      } catch (err) {
+        console.error(`Failed to load subfolders for ${folderId} before navigation:`, err);
+        // Optionally, toast an error and don't navigate, or navigate anyway if preferred
+        // For now, we'll proceed to navigate even if subfolder loading fails, 
+        // as the folder itself exists.
+      }
+    }
     navigateToFolder(folderId, folderName);
-  }, [navigateToFolder]);
+  }, [navigateToFolder, loadSubFolders, loadingSubFolders, folderTree]);
 
   // Get current display items
   const currentDisplayItems = getCurrentDisplayItems();
 
-  // Load all folder contents for preview cards - sequentially to avoid rate limits
-  const loadAllFolderContents = useCallback(async () => {
-    const allFolderIds = getAllDisplayFolderIds(currentDisplayItems.folders).map(id => id.replace('folder-', ''));
-    console.log('[loadAllFolderContents] Fetching contents for folders:', allFolderIds);
-    for (const folderId of allFolderIds) {
-      // Check if contents are already loaded or being loaded to prevent redundant fetches
-      // This simple check might need to be more robust if component re-renders frequently
-      if (!folderContents[folderId]) {
-        console.log(`[loadAllFolderContents] Fetching for ${folderId}`);
-        await loadFolderContents(folderId); 
-        // Optional: Add a small delay between requests if rate limiting is still an issue
-        // await new Promise(resolve => setTimeout(resolve, 100)); 
-      }
-    }
-    console.log('[loadAllFolderContents] Finished fetching all folder contents.');
-  }, [loadFolderContents, currentDisplayItems.folders, folderContents]);
+  // ADD: Combine folders and documents for virtualization
+  const allItems = useMemo(() => {
+    const items: Array<(MappedDocumentCardData & { itemType: 'document' }) | (Folder & { itemType: 'folder' }) > = [];
+    currentDisplayItems.folders.forEach(folder => {
+      items.push({ ...folder, id: `folder-${folder.id}`, itemType: 'folder' });
+    });
+    currentDisplayItems.documents.forEach(doc => {
+      items.push({ ...doc, itemType: 'document' });
+    });
+    return items;
+  }, [currentDisplayItems.folders, currentDisplayItems.documents]);
 
-  // Load folder contents when folders array changes or component mounts with folders
-  useEffect(() => {
-    if (currentDisplayItems.folders.length > 0) {
-      loadAllFolderContents();
-    }
-  }, [currentDisplayItems.folders, loadAllFolderContents]);
+  const rowVirtualizer = useVirtualizer({
+    // UPDATE: count based on rows
+    count: Math.ceil(allItems.length / numberOfColumns),
+    getScrollElement: () => parentRef.current,
+    // Estimate: approx height of a card (341px for 256px width, 3/4 aspect) + gap (24px for gap-6)
+    estimateSize: () => 365,
+    getItemKey: useCallback((index: number) => `row-${index}`, []), // Key for rows
+    overscan: 1, // Render 1 extra row out of view
+  });
 
   // Selection Handlers
   const toggleSelectItem = useCallback((id: string) => {
@@ -544,8 +623,6 @@ const DocumentCardGrid: React.FC = () => {
 
     // Refresh data and clear selection
     fetchDocuments();
-    loadAllFolderContents(); 
-    if (currentFolderId) loadFolderContents(currentFolderId);
     clearSelection();
   };
 
@@ -671,54 +748,88 @@ const DocumentCardGrid: React.FC = () => {
         </div>
         <SortableContext
           items={[
-            // Exclude folders from sortable context to prevent displacement when dragged over
-            // Folders will only act as drop targets, not sortable items
-            ...displayItems.documents.map(item => item.id)
+            ...allItems.filter(item => item.itemType === 'document').map(item => item.id)
           ]}
           strategy={rectSortingStrategy}
         >
-          <main>
+          <main ref={parentRef} className="overflow-auto" style={{ height: 'calc(100vh - 200px)' /* Approximate height, adjust as needed */ }}>
             <h1 className="sr-only">Document Library</h1>
             <motion.div 
-              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4"
+              style={{
+                height: `${rowVirtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
               role="grid"
-              aria-label={`Document grid with ${displayItems.documents.length} documents and ${displayItems.folders.length} folders. Sorted by ${sortKey} in ${sortDirection === 'asc' ? 'ascending' : 'descending'} order. Use arrow keys to navigate between items.`}
+              // UPDATE: Aria label reflects item count, not just document/folder counts separately
+              aria-label={`Document grid with ${allItems.length} items. Sorted by ${sortKey} in ${sortDirection === 'asc' ? 'ascending' : 'descending'} order. Use arrow keys to navigate between items.`}
               aria-live="polite"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3 }}
             >
-              {/* Render folders first */}
-              {displayItems.folders.map((folder) => (
-                <div key={folder.id} className="flex items-start space-x-1 p-0.5">
-                  <FolderCard
-                    id={folder.id}
-                    title={folder.name}
-                    documentCount={folderContents[folder.id]?.length || 0}
-                    isExpanded={false} // Navigation mode doesn't use inline expansion for height calc
-                    containedDocuments={folderContents[folder.id] || []}
-                    onToggleExpanded={() => handleFolderNavigate(folder.id, folder.name)}
-                    onFolderAction={(action: 'rename' | 'delete') => handleFolderAction(folder.id, action)}
-                    isSelected={selectedItemIds.has(folder.id)}
-                    onToggleSelect={toggleSelectItem}
-                  />
-                </div>
-              ))}
-              
-              {/* Render documents */}
-              {displayItems.documents.map((doc) => (
-                <div key={doc.id} className="flex items-start space-x-1 p-0.5">
-                  <DocumentCard
-                    id={doc.id}
-                    title={doc.title}
-                    lastUpdated={doc.lastUpdated}
-                    snippet={doc.snippet}
-                    is_starred={doc.is_starred}
-                    isSelected={selectedItemIds.has(doc.id)}
-                    onToggleSelect={toggleSelectItem}
-                  />
-                </div>
-              ))}
+              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                // Determine the items for the current row
+                const startIndex = virtualRow.index * numberOfColumns;
+                const endIndex = Math.min(startIndex + numberOfColumns, allItems.length);
+                const itemsInRow = allItems.slice(startIndex, endIndex);
+
+                if (itemsInRow.length === 0) return null; // Should not happen if count is correct
+
+                return (
+                  <div
+                    key={`row-${virtualRow.index}`}
+                    data-index={virtualRow.index}
+                    // UPDATE: measureElement should be on the row div for row virtualization
+                    ref={rowVirtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%', 
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    {/* This div applies the Tailwind grid classes */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4">
+                      {itemsInRow.map((item) => {
+                        const originalFolderId = item.itemType === 'folder' ? (item as Folder & { itemType: 'folder' }).id.replace('folder-', '') : null;
+                        return (
+                        // Each item needs its own key
+                        <div key={item.id} className="flex items-start">
+                          {item.itemType === 'folder' ? (
+                            <FolderCard
+                              id={originalFolderId!}
+                              title={(item as Folder & { itemType: 'folder' }).name}
+                              documentCount={(item as any).document_count || 0}
+                              isExpanded={false} // This is for main navigation state, not internal preview
+                              containedDocuments={folderContents[originalFolderId!] || []}
+                              onToggleExpanded={() => handleFolderNavigate(originalFolderId!, (item as Folder & { itemType: 'folder' }).name)}
+                              onFolderAction={(action: 'rename' | 'delete') => handleFolderAction(originalFolderId!, action)}
+                              isSelected={selectedItemIds.has((item as Folder & { itemType: 'folder' }).id)} // Use prefixed ID for selection state
+                              onToggleSelect={() => toggleSelectItem((item as Folder & { itemType: 'folder' }).id)} // Use prefixed ID for selection toggle
+                              loadFolderSpecificContents={handleLoadFolderPreview} // Pass the new handler
+                              isLoadingContents={loadingPreviewFolderIds.has(originalFolderId!)} // Pass loading state
+                              isLoadingChildren={loadingSubFolders.has(originalFolderId!)} // ADD: Pass loading state for children hierarchy
+                            />
+                          ) : (
+                            <DocumentCard
+                              id={(item as MappedDocumentCardData & { itemType: 'document' }).id}
+                              title={(item as MappedDocumentCardData & { itemType: 'document' }).title}
+                              lastUpdated={(item as MappedDocumentCardData & { itemType: 'document' }).lastUpdated}
+                              snippet={(item as MappedDocumentCardData & { itemType: 'document' }).snippet}
+                              is_starred={(item as MappedDocumentCardData & { itemType: 'document' }).is_starred}
+                              isSelected={selectedItemIds.has((item as MappedDocumentCardData & { itemType: 'document' }).id)}
+                              onToggleSelect={() => toggleSelectItem((item as MappedDocumentCardData & { itemType: 'document' }).id)}
+                            />
+                          )}
+                        </div>
+                      );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </motion.div>
           </main>
         </SortableContext>

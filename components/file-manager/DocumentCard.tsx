@@ -175,4 +175,4 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
   );
 };
 
-export default DocumentCard; 
+export default React.memo(DocumentCard); 
