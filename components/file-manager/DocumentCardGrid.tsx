@@ -265,16 +265,36 @@ const DocumentCardGrid: React.FC = () => {
       // Determine target folder ID from various drop target types
       let targetFolderId: string | null = null;
       
+      console.log('[DEBUG] Processing drop target:', {
+        overIdStr,
+        overData: over.data?.current,
+        overType: over.data?.current?.type
+      });
+      
       if (overIdStr.startsWith('folder-')) {
         // Dropped on a folder card
         targetFolderId = overIdStr.replace('folder-', '');
+        console.log('[DEBUG] Folder card drop target detected:', targetFolderId);
       } else if (overIdStr.startsWith('breadcrumb-')) {
         // Dropped on a breadcrumb button - check data for folder ID
         const overData = over.data?.current;
+        console.log('[DEBUG] Breadcrumb drop detected:', {
+          overIdStr,
+          overData,
+          isValidBreadcrumb: overData && (overData.type === 'breadcrumb-root' || overData.type === 'breadcrumb-folder')
+        });
+        
         if (overData && (overData.type === 'breadcrumb-root' || overData.type === 'breadcrumb-folder')) {
           targetFolderId = overData.folderId; // null for root, string for folders
+          console.log('[DEBUG] Breadcrumb target folder ID:', targetFolderId);
         }
       }
+
+      console.log('[DEBUG] Final drop target decision:', {
+        targetFolderId,
+        isBreadcrumb: overIdStr.startsWith('breadcrumb-'),
+        hasValidTarget: targetFolderId !== null || overIdStr.startsWith('breadcrumb-')
+      });
 
       if (targetFolderId !== null || overIdStr.startsWith('breadcrumb-')) { // We have a valid drop target
         for (const itemToMove of localDraggedItems) {
@@ -626,22 +646,29 @@ const DocumentCardGrid: React.FC = () => {
         </div>
       </div>
 
-      {/* Breadcrumb Navigation */}
-      <div className="px-4">
-        <FolderBreadcrumbs
-          currentPath={breadcrumbPath}
-          onNavigate={navigateToFolder}
-        />
-      </div>
-
       <DndContext
         sensors={sensors}
-        collisionDetection={pointerWithin}
+        collisionDetection={(args) => {
+          const collision = pointerWithin(args);
+          console.log('[DEBUG] Collision detection result:', {
+            droppableEntries: args.droppableContainers.map(c => ({ id: c.id, rect: c.rect.current })),
+            pointerCoordinates: args.pointerCoordinates,
+            collisionResult: collision?.map(c => ({ id: c.id, data: c.data?.current })) || null
+          });
+          return collision;
+        }}
         onDragStart={handleDragStart}
         onDragOver={() => setHasActuallyDragged(true)}
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
+        {/* Breadcrumb Navigation - moved inside DndContext */}
+        <div className="px-4">
+          <FolderBreadcrumbs
+            currentPath={breadcrumbPath}
+            onNavigate={navigateToFolder}
+          />
+        </div>
         <SortableContext
           items={[
             // Exclude folders from sortable context to prevent displacement when dragged over

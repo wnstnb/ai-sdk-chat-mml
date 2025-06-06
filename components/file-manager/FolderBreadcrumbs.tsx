@@ -23,10 +23,13 @@ const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
   // Track when drag starts/ends to prevent click navigation during drops
   useEffect(() => {
     if (active) {
+      console.log('[DEBUG] Drag detected in breadcrumbs - setting drag active flag');
       isDragActiveRef.current = true;
     } else {
+      console.log('[DEBUG] Drag ended in breadcrumbs - scheduling drag flag reset');
       // Reset drag flag after a short delay to allow drop to complete
       const timer = setTimeout(() => {
+        console.log('[DEBUG] Resetting drag active flag in breadcrumbs');
         isDragActiveRef.current = false;
       }, 150);
       return () => clearTimeout(timer);
@@ -39,11 +42,13 @@ const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
       folderId,
       isDragActive: isDragActiveRef.current,
       hasActiveElement: !!active,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      eventType: e.type,
+      target: e.target
     });
     
-    // Prevent navigation if a drag operation was recently active
-    if (isDragActiveRef.current) {
+    // Prevent navigation if a drag operation was recently active OR if we have an active drag
+    if (isDragActiveRef.current || active) {
       console.log('[DEBUG] Preventing breadcrumb navigation due to active drag');
       e.preventDefault();
       e.stopPropagation();
@@ -63,6 +68,17 @@ const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
       accepts: ['document', 'folder'] 
     },
   });
+
+  // Debug: Log when root breadcrumb is being hovered over during drag
+  useEffect(() => {
+    if (isOverRoot && active) {
+      console.log('[DEBUG] Root breadcrumb is being hovered during drag:', {
+        isOverRoot,
+        activeItem: active.id,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, [isOverRoot, active]);
 
   // Create breadcrumb folders array (excluding root)
   const breadcrumbFolders = useMemo(() => currentPath.slice(1), [currentPath]);
@@ -143,7 +159,16 @@ const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
     >
       {/* Root/Home button - droppable */}
       <button
-        ref={setRootDropRef}
+        ref={(node) => {
+          setRootDropRef(node);
+          if (node) {
+            console.log('[DEBUG] Root breadcrumb drop ref set:', {
+              nodeType: node.tagName,
+              id: 'breadcrumb-root',
+              hasActiveItem: !!active
+            });
+          }
+        }}
         onClick={(e) => handleBreadcrumbClick(null, e)}
         className={`
           flex items-center space-x-1 px-3 py-2 rounded-md transition-all duration-200
