@@ -6,12 +6,13 @@ import { useAllDocuments } from '@/hooks/useDocumentLists';
 import DocumentCard from './DocumentCard';
 import CardSkeleton from './CardSkeleton';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, RotateCw, FileText, FolderPlus, CheckSquare, Square, FileText as FileTextIcon, Folder as FolderIcon } from 'lucide-react';
+import { AlertTriangle, RotateCw, FileText, FolderPlus, CheckSquare, Square, FileText as FileTextIcon, Folder as FolderIcon, Search, X } from 'lucide-react';
 import CreateFolderModal from './CreateFolderModal';
 import { useFolders } from '@/hooks/useFolders';
 import { useFolderNavigation } from '@/hooks/useFolderNavigation';
 import FolderCard from './FolderCard';
 import FolderBreadcrumbs from './FolderBreadcrumbs';
+import { Input } from '@/components/ui/input';
 import {
   DndContext,
   closestCenter,
@@ -91,6 +92,14 @@ const DocumentCardGrid: React.FC = () => {
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
   const [folderContents, setFolderContents] = useState<Record<string, MappedDocumentCardData[]>>({});
 
+  // ADD: State for search query
+  const [searchQuery, setSearchQuery] = useState('');
+  // ADD: State for search loading and error
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  // ADD: State for search results
+  const [searchResults, setSearchResults] = useState<MappedDocumentCardData[]>([]);
+
   // ADD: State for tracking which folder previews are loading
   const [loadingPreviewFolderIds, setLoadingPreviewFolderIds] = useState<Set<string>>(new Set());
 
@@ -111,6 +120,58 @@ const DocumentCardGrid: React.FC = () => {
     window.addEventListener('resize', updateCols);
     return () => window.removeEventListener('resize', updateCols);
   }, []);
+
+  // Effect to handle search
+  useEffect(() => {
+    if (!searchQuery) {
+      setSearchResults([]);
+      setIsSearching(false);
+      setSearchError(null);
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchError(null);
+
+    const handler = setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/search-documents`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ query: searchQuery }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to fetch search results');
+        }
+        const data = await response.json(); // This will be an array of search results
+        
+        // Map results from POST response to MappedDocumentCardData
+        const mappedResults: MappedDocumentCardData[] = (data || []).map((doc: any) => ({
+          id: doc.id,
+          title: doc.name, // POST route returns 'name'
+          snippet: doc.summary || 'No summary available.', // POST route may return 'summary'
+          lastUpdated: doc.lastUpdated || new Date().toISOString(), // Default if not present
+          is_starred: doc.is_starred || false, // Default if not present
+          folder_id: doc.folder_id || null, // Include if available
+          // Add any other fields required by MappedDocumentCardData with defaults
+        }));
+        setSearchResults(mappedResults);
+      } catch (err: any) {
+        setSearchError(err.message || 'An unexpected error occurred');
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 500); // 500ms debounce
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery]);
 
   const currentPathString = useMemo(() => {
     if (!isInFolderView || !breadcrumbPath || breadcrumbPath.length === 0) {
@@ -489,6 +550,14 @@ const DocumentCardGrid: React.FC = () => {
 
   // Get folders and documents to display based on current navigation
   const getCurrentDisplayItems = useCallback(() => {
+    if (searchQuery) {
+      // If a search query is active, display search results (documents only)
+      return {
+        folders: [], // No folders in search results view
+        documents: searchResults,
+      };
+    }
+
     if (isInFolderView && currentFolderId) {
       // Show documents in current folder + subfolders of current folder
       const currentFolderDocs = folderContents[currentFolderId] || [];
@@ -506,7 +575,18 @@ const DocumentCardGrid: React.FC = () => {
         documents: sortDocuments(rootLevelDocs, sortKey, sortDirection)
       };
     }
-  }, [isInFolderView, currentFolderId, folderContents, folderTree, fetchedDocs, sortKey, sortDirection, sortDocuments]);
+  }, [
+    isInFolderView, 
+    currentFolderId, 
+    folderContents, 
+    folderTree, 
+    fetchedDocs, 
+    sortKey, 
+    sortDirection, 
+    sortDocuments,
+    searchQuery, // Added dependency
+    searchResults, // Added dependency
+  ]);
 
   // Get all folder IDs for drag and drop context
   const getAllDisplayFolderIds = useCallback((folders: any[]): string[] => {
@@ -549,10 +629,11 @@ const DocumentCardGrid: React.FC = () => {
   // ADD: Combine folders and documents for virtualization
   const allItems = useMemo(() => {
     const items: Array<(MappedDocumentCardData & { itemType: 'document' }) | (Folder & { itemType: 'folder' }) > = [];
-    currentDisplayItems.folders.forEach(folder => {
+    // Ensure currentDisplayItems.folders and currentDisplayItems.documents are always arrays
+    (currentDisplayItems.folders || []).forEach(folder => {
       items.push({ ...folder, id: `folder-${folder.id}`, itemType: 'folder' });
     });
-    currentDisplayItems.documents.forEach(doc => {
+    (currentDisplayItems.documents || []).forEach(doc => {
       items.push({ ...doc, itemType: 'document' });
     });
     return items;
@@ -633,47 +714,228 @@ const DocumentCardGrid: React.FC = () => {
     clearSelection();
   };
 
-  if (isLoading && (!fetchedDocs || fetchedDocs.length === 0)) {
-    return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4">
-        {Array.from({ length: 10 }).map((_, index) => (
-          <CardSkeleton key={index} />
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-        <AlertTriangle className="w-16 h-16 text-red-500 mb-4" aria-hidden="true" />
-        <h2 className="text-xl font-semibold text-red-600 dark:text-red-400 mb-2">Error Loading Documents</h2>
-        <p className="text-gray-700 dark:text-gray-300 mb-6" role="alert" aria-live="polite">{error}</p>
-        <Button onClick={handleRetry} variant="outline" aria-describedby="retry-description">
-          <RotateCw className="mr-2 h-4 w-4" aria-hidden="true" /> Retry
-        </Button>
-        <div id="retry-description" className="sr-only">
-          Click to retry loading the documents
-        </div>
-      </div>
-    );
-  }
-
-  if (!isLoading && (!fetchedDocs || fetchedDocs.length === 0) && !isInFolderView) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-        <FileText className="w-16 h-16 text-gray-400 dark:text-gray-500 mb-4" aria-hidden="true" />
-        <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">No Documents Found</h2>
-        <p className="text-gray-500 dark:text-gray-400">There are no documents to display in this view.</p>
-      </div>
-    );
-  }
-
   const displayItems = currentDisplayItems;
+
+  // Function to render the main content of the grid (items, loading, errors, empty states)
+  const renderGridContent = () => {
+    // Initial loading (only if not searching)
+    if (isLoading && (!fetchedDocs || fetchedDocs.length === 0) && !searchQuery) {
+      return (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4">
+          {Array.from({ length: numberOfColumns * 3 }).map((_, index) => ( // Show a few rows of skeletons
+            <CardSkeleton key={`initial-skeleton-${index}`} />
+          ))}
+        </div>
+      );
+    }
+
+    // Initial error (only if not searching)
+    if (error && !searchQuery) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+          <AlertTriangle className="w-16 h-16 text-red-500 mb-4" aria-hidden="true" />
+          <h2 className="text-xl font-semibold text-red-600 dark:text-red-400 mb-2">Error Loading Documents</h2>
+          <p className="text-gray-700 dark:text-gray-300 mb-6" role="alert" aria-live="polite">{error}</p>
+          <Button onClick={handleRetry} variant="outline" aria-describedby="retry-description">
+            <RotateCw className="mr-2 h-4 w-4" aria-hidden="true" /> Retry
+          </Button>
+          <div id="retry-description" className="sr-only">
+            Click to retry loading the documents
+          </div>
+        </div>
+      );
+    }
+
+    // Search specific states
+    if (searchQuery) {
+      if (isSearching) {
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4">
+            {Array.from({ length: numberOfColumns * 3 }).map((_, index) => (
+              <CardSkeleton key={`search-skeleton-${index}`} />
+            ))}
+          </div>
+        );
+      }
+      if (searchError) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+            <AlertTriangle className="w-16 h-16 text-red-500 mb-4" aria-hidden="true" />
+            <h2 className="text-xl font-semibold text-red-600 dark:text-red-400 mb-2">Search Error</h2>
+            <p className="text-gray-700 dark:text-gray-300 mb-6" role="alert" aria-live="polite">
+              {searchError}
+            </p>
+            <Button onClick={() => { setSearchQuery(''); setSearchError(null); setIsSearching(false); setSearchResults([]); }} variant="outline">
+              Clear Search
+            </Button>
+          </div>
+        );
+      }
+      if (!isSearching && searchResults.length === 0) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+            <FileTextIcon className="w-16 h-16 text-gray-400 mb-4" aria-hidden="true" />
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">No Results Found</h2>
+            <p className="text-gray-500 dark:text-gray-400 mb-6">
+              No documents matched your search for "<strong>{searchQuery}</strong>".
+            </p>
+            <Button onClick={() => setSearchQuery('')} variant="outline">
+              Clear Search
+            </Button>
+          </div>
+        );
+      }
+    }
+
+    // Generic empty states (if not searching and no items in current view)
+    if (!searchQuery && !isLoading && !error && allItems.length === 0) {
+      if (isInFolderView) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+            <FolderIcon className="w-16 h-16 text-gray-400 dark:text-gray-500 mb-4" aria-hidden="true" />
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">This Folder is Empty</h2>
+            <p className="text-gray-500 dark:text-gray-400">There are no documents or subfolders here.</p>
+            {/* Optionally, add a button to go up or create content */}
+          </div>
+        );
+      } else { // Root view is empty
+        return (
+          <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+            <FileTextIcon className="w-16 h-16 text-gray-400 dark:text-gray-500 mb-4" aria-hidden="true" />
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">No Items Found</h2>
+            <p className="text-gray-500 dark:text-gray-400">There are no documents or folders to display.</p>
+            {/* Optionally, add a button to create a document or folder */}
+          </div>
+        );
+      }
+    }
+
+    // Actual grid of items
+    return (
+      <SortableContext
+        items={[
+          ...allItems.filter(item => item.itemType === 'document').map(item => item.id)
+          // Note: Folders are not sortable in this example, but their drop zone is part of DndContext
+        ]}
+        strategy={rectSortingStrategy}
+      >
+        <main ref={parentRef} className="overflow-auto flex-grow" style={{ height: 'calc(100vh - 250px)' /* Approximate height, adjust based on controls height */ }}>
+          <h1 className="sr-only">Document Library</h1>
+          <motion.div 
+            style={{
+              height: `${rowVirtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+            role="grid"
+            aria-label={`Document grid with ${allItems.length} items. Sorted by ${sortKey} in ${sortDirection === 'asc' ? 'ascending' : 'descending'} order. Use arrow keys to navigate between items.`}
+            aria-live="polite"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const startIndex = virtualRow.index * numberOfColumns;
+              const endIndex = Math.min(startIndex + numberOfColumns, allItems.length);
+              const itemsInRow = allItems.slice(startIndex, endIndex);
+
+              if (itemsInRow.length === 0 && allItems.length > 0) { 
+                // This might happen if virtualizer count is off or items filtered out post-virtualization logic
+                // For robust rendering, ensure this case is handled or prevented.
+                // console.warn('Empty itemsInRow but allItems has content. Check virtualizer count and filtering.');
+                return null;
+              }
+              if (itemsInRow.length === 0 && allItems.length === 0 && !searchQuery && !isLoading && !error) {
+                  // This case is now handled by the main empty states above.
+                  // However, if it were still possible to reach here with no items,
+                  // ensure it doesn't cause an error.
+                  return null; 
+              }
+
+
+              return (
+                <div
+                  key={`row-${virtualRow.index}`}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%', 
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4">
+                    {itemsInRow.map((item) => {
+                      const originalFolderId = item.itemType === 'folder' ? (item as Folder & { itemType: 'folder' }).id.replace('folder-', '') : null;
+                      return (
+                      <div key={item.id} className="flex items-start">
+                        {item.itemType === 'folder' ? (
+                          <FolderCard
+                            id={originalFolderId!}
+                            title={(item as Folder & { itemType: 'folder' }).name}
+                            documentCount={(item as any).document_count || 0}
+                            isExpanded={false}
+                            containedDocuments={folderContents[originalFolderId!] || []}
+                            onToggleExpanded={() => handleFolderNavigate(originalFolderId!, (item as Folder & { itemType: 'folder' }).name)}
+                            onFolderAction={(action: 'rename' | 'delete') => handleFolderAction(originalFolderId!, action)}
+                            isSelected={selectedItemIds.has((item as Folder & { itemType: 'folder' }).id)}
+                            onToggleSelect={() => toggleSelectItem((item as Folder & { itemType: 'folder' }).id)}
+                            loadFolderSpecificContents={handleLoadFolderPreview}
+                            isLoadingContents={loadingPreviewFolderIds.has(originalFolderId!)}
+                            isLoadingChildren={loadingSubFolders.has(originalFolderId!)}
+                          />
+                        ) : (
+                          <DocumentCard
+                            key={item.id} // DocumentCard already has a key, but outer div needs one too
+                            id={item.id}
+                            title={(item as MappedDocumentCardData).title}
+                            lastUpdated={(item as MappedDocumentCardData).lastUpdated}
+                            snippet={(item as MappedDocumentCardData).snippet}
+                            is_starred={(item as MappedDocumentCardData).is_starred}
+                            isSelected={selectedItemIds.has(item.id)}
+                          />
+                        )}
+                      </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </motion.div>
+        </main>
+      </SortableContext>
+    );
+  };
+  
 
   return (
     <>
-      {/* Sorting Controls */}
+      {/* Search Bar */}
+      <div className="mb-4 relative px-4 pt-4"> {/* Added padding to match grid */}
+        <Search className="absolute left-7 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" /> {/* Adjusted left for padding */}
+        <Input
+          type="text"
+          placeholder="Search documents..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-10 pr-10 w-full"
+        />
+        {searchQuery && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="absolute right-5 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0" /* Adjusted right for padding */
+            onClick={() => { setSearchQuery(''); setSearchError(null); setIsSearching(false); setSearchResults([]); }}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+
+      {/* Sorting Controls & New Folder Button */}
       <div className="p-4 flex flex-wrap items-center gap-2 border-b border-[--border-color]" role="toolbar" aria-label="Document sorting controls">
         <span className="text-sm font-medium mr-2" id="sort-label">Sort by:</span>
         <div className="flex gap-2" role="group" aria-labelledby="sort-label">
@@ -709,18 +971,17 @@ const DocumentCardGrid: React.FC = () => {
           variant="outline"
           size="sm"
           onClick={handleSortDirectionToggle}
-          className="ml-auto"
+          className="ml-auto" /* Pushes this group to the right */
           aria-label={`Sort direction: ${sortDirection === 'asc' ? 'Ascending' : 'Descending'}. Click to change to ${sortDirection === 'asc' ? 'descending' : 'ascending'}.`}
         >
           {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
         </Button>
         
-        {/* New Folder Button */}
         <Button 
           variant="default"
           size="sm"
           onClick={handleCreateFolder}
-          className="flex items-center gap-2"
+          className="flex items-center gap-2" // Removed ml-2, relies on gap-2 from parent
         >
           <FolderPlus className="w-4 h-4" />
           New Folder
@@ -734,11 +995,11 @@ const DocumentCardGrid: React.FC = () => {
         sensors={sensors}
         collisionDetection={(args) => {
           const collision = pointerWithin(args);
-          console.log('[DEBUG] Collision detection result:', {
-            droppableEntries: args.droppableContainers.map(c => ({ id: c.id, rect: c.rect.current })),
-            pointerCoordinates: args.pointerCoordinates,
-            collisionResult: collision?.map(c => ({ id: c.id, data: c.data?.current })) || null
-          });
+          // console.log('[DEBUG] Collision detection result:', {
+          //   droppableEntries: args.droppableContainers.map(c => ({ id: c.id, rect: c.rect.current })),
+          //   pointerCoordinates: args.pointerCoordinates,
+          //   collisionResult: collision?.map(c => ({ id: c.id, data: c.data?.current })) || null
+          // });
           return collision;
         }}
         onDragStart={handleDragStart}
@@ -746,124 +1007,33 @@ const DocumentCardGrid: React.FC = () => {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        {/* Breadcrumb Navigation - moved inside DndContext */}
-        <div className="px-4">
+        {/* Breadcrumb Navigation - moved inside DndContext for potential drop targets */}
+        <div className="px-4 pt-2 pb-2"> {/* Added some padding around breadcrumbs */}
           <FolderBreadcrumbs
             currentPath={breadcrumbPath}
-            onNavigate={navigateToFolder}
+            onNavigate={navigateToFolder} // Changed from handleFolderNavigate as it includes subfolder loading
           />
         </div>
-        <SortableContext
-          items={[
-            ...allItems.filter(item => item.itemType === 'document').map(item => item.id)
-          ]}
-          strategy={rectSortingStrategy}
-        >
-          <main ref={parentRef} className="overflow-auto" style={{ height: 'calc(100vh - 200px)' /* Approximate height, adjust as needed */ }}>
-            <h1 className="sr-only">Document Library</h1>
-            <motion.div 
-              style={{
-                height: `${rowVirtualizer.getTotalSize()}px`,
-                width: '100%',
-                position: 'relative',
-              }}
-              role="grid"
-              // UPDATE: Aria label reflects item count, not just document/folder counts separately
-              aria-label={`Document grid with ${allItems.length} items. Sorted by ${sortKey} in ${sortDirection === 'asc' ? 'ascending' : 'descending'} order. Use arrow keys to navigate between items.`}
-              aria-live="polite"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
-            >
-              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                // Determine the items for the current row
-                const startIndex = virtualRow.index * numberOfColumns;
-                const endIndex = Math.min(startIndex + numberOfColumns, allItems.length);
-                const itemsInRow = allItems.slice(startIndex, endIndex);
+        
+        {/* Call the function to render the main grid content */}
+        {renderGridContent()}
 
-                if (itemsInRow.length === 0) return null; // Should not happen if count is correct
-
-                return (
-                  <div
-                    key={`row-${virtualRow.index}`}
-                    data-index={virtualRow.index}
-                    // UPDATE: measureElement should be on the row div for row virtualization
-                    ref={rowVirtualizer.measureElement}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%', 
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    {/* This div applies the Tailwind grid classes */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4">
-                      {itemsInRow.map((item) => {
-                        const originalFolderId = item.itemType === 'folder' ? (item as Folder & { itemType: 'folder' }).id.replace('folder-', '') : null;
-                        return (
-                        // Each item needs its own key
-                        <div key={item.id} className="flex items-start">
-                          {item.itemType === 'folder' ? (
-                            <FolderCard
-                              id={originalFolderId!}
-                              title={(item as Folder & { itemType: 'folder' }).name}
-                              documentCount={(item as any).document_count || 0}
-                              isExpanded={false} // This is for main navigation state, not internal preview
-                              containedDocuments={folderContents[originalFolderId!] || []}
-                              onToggleExpanded={() => handleFolderNavigate(originalFolderId!, (item as Folder & { itemType: 'folder' }).name)}
-                              onFolderAction={(action: 'rename' | 'delete') => handleFolderAction(originalFolderId!, action)}
-                              isSelected={selectedItemIds.has((item as Folder & { itemType: 'folder' }).id)} // Use prefixed ID for selection state
-                              onToggleSelect={() => toggleSelectItem((item as Folder & { itemType: 'folder' }).id)} // Use prefixed ID for selection toggle
-                              loadFolderSpecificContents={handleLoadFolderPreview} // Pass the new handler
-                              isLoadingContents={loadingPreviewFolderIds.has(originalFolderId!)} // Pass loading state
-                              isLoadingChildren={loadingSubFolders.has(originalFolderId!)} // ADD: Pass loading state for children hierarchy
-                            />
-                          ) : (
-                            <DocumentCard
-                              key={item.id}
-                              id={item.id}
-                              title={item.title}
-                              lastUpdated={item.lastUpdated}
-                              snippet={item.snippet}
-                              is_starred={item.is_starred}
-                              isSelected={selectedItemIds.has(item.id)}
-                              onToggleSelect={() => toggleSelectItem(item.id)}
-                              folderPath={currentPathString || undefined} // Pass the path string here
-                            />
-                          )}
-                        </div>
-                      );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </motion.div>
-          </main>
-        </SortableContext>
-        <DragOverlay dropAnimation={null}>
-          {draggedItems ? (
-            <div className="pointer-events-none rounded bg-blue-500/10 dark:bg-blue-400/20 px-3 py-2 text-sm text-blue-700 dark:text-blue-300 shadow-lg ring-1 ring-blue-500/30 dark:ring-blue-400/40 flex items-center space-x-2">
-              {draggedItems.length === 1 ? (
-                <>
-                  {draggedItems[0].type === 'folder' ? 
-                    <FolderIcon className="w-4 h-4 flex-shrink-0" /> : 
-                    <FileTextIcon className="w-4 h-4 flex-shrink-0" />
-                  }
-                  <span className="truncate max-w-[200px]">{draggedItems[0].name}</span>
-                </>
-              ) : (
-                <>
-                  <FolderIcon className="w-4 h-4 flex-shrink-0" /> 
-                  <FileTextIcon className="w-4 h-4 flex-shrink-0 -ml-2" /> 
-                  <span>Moving {draggedItems.length} items</span>
-                </>
-              )}
-            </div>
-          ) : null}
-        </DragOverlay>
       </DndContext>
+      
+      {draggedItems && draggedItems.length > 0 && (
+        <DragOverlay dropAnimation={null}>
+          {draggedItems.map((item) => (
+            <div key={item.id} className="pointer-events-none rounded bg-blue-500/10 dark:bg-blue-400/20 px-3 py-2 text-sm text-blue-700 dark:text-blue-300 shadow-lg ring-1 ring-blue-500/30 dark:ring-blue-400/40 flex items-center space-x-2">
+              {item.type === 'folder' ? (
+                <FolderIcon className="w-4 h-4 flex-shrink-0" />
+              ) : (
+                <FileTextIcon className="w-4 h-4 flex-shrink-0" />
+              )}
+              <span className="truncate max-w-[200px]">{item.name}</span>
+            </div>
+          ))}
+        </DragOverlay>
+      )}
 
       {/* Create Folder Modal */}
       <CreateFolderModal

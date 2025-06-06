@@ -160,7 +160,8 @@ export async function POST(request: NextRequest) {
             name: doc.name,
             similarity: doc.finalScore, // Use finalScore as similarity for Omnibar
             folder_id: null, // Placeholder for folder_id
-            summary: doc.summary // Pass summary if available
+            summary: doc.summary, // Pass summary if available
+            lastUpdated: doc.updated_at // Added lastUpdated for the frontend
         }));
 
         return NextResponse.json(formattedResults);
