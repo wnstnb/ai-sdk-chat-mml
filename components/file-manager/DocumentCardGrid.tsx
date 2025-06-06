@@ -37,6 +37,7 @@ import type { MappedDocumentCardData } from '@/lib/mappers/documentMappers';
 import { toast } from 'sonner';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Folder } from '@/types/supabase';
+import { useFileMediaStore } from '@/stores/fileMediaStore';
 
 // Define types for sorting
 type SortKey = 'lastUpdated' | 'title' | 'is_starred';
@@ -60,8 +61,80 @@ const getNumberOfColumns = (width: number): number => {
   return 1; // Default to 1 column
 };
 
+// ADD: Performance monitoring hook
+const usePerformanceMonitoring = (itemCount: number, isVirtualized: boolean = true) => {
+  const [performanceMetrics, setPerformanceMetrics] = useState({
+    renderTime: 0,
+    scrollFPS: 0,
+    memoryUsage: 0,
+    lastMeasurement: Date.now(),
+  });
+  
+  const frameCountRef = useRef(0);
+  const lastFPSMeasurement = useRef(Date.now());
+  const renderStartTime = useRef(0);
+
+  // Track render performance
+  const trackRenderStart = useCallback(() => {
+    renderStartTime.current = performance.now();
+  }, []);
+
+  const trackRenderEnd = useCallback(() => {
+    const renderTime = performance.now() - renderStartTime.current;
+    setPerformanceMetrics(prev => ({
+      ...prev,
+      renderTime,
+      lastMeasurement: Date.now(),
+    }));
+  }, []);
+
+  // Track scroll FPS
+  const trackScrollFPS = useCallback(() => {
+    frameCountRef.current++;
+    const now = Date.now();
+    if (now - lastFPSMeasurement.current >= 1000) { // Measure every second
+      const fps = frameCountRef.current;
+      frameCountRef.current = 0;
+      lastFPSMeasurement.current = now;
+      setPerformanceMetrics(prev => ({
+        ...prev,
+        scrollFPS: fps,
+      }));
+    }
+    requestAnimationFrame(trackScrollFPS);
+  }, []);
+
+  // Track memory usage (approximate)
+  const trackMemoryUsage = useCallback(() => {
+    if ('memory' in performance) {
+      const memory = (performance as any).memory;
+      const memoryUsage = memory.usedJSHeapSize / 1024 / 1024; // Convert to MB
+      setPerformanceMetrics(prev => ({
+        ...prev,
+        memoryUsage,
+      }));
+    }
+  }, []);
+
+  // Log performance metrics for large datasets
+  useEffect(() => {
+    if (itemCount > 100) {
+      console.log(`[Performance] Grid with ${itemCount} items - Render: ${performanceMetrics.renderTime.toFixed(2)}ms, FPS: ${performanceMetrics.scrollFPS}, Memory: ${performanceMetrics.memoryUsage.toFixed(2)}MB`);
+    }
+  }, [itemCount, performanceMetrics]);
+
+  return {
+    performanceMetrics,
+    trackRenderStart,
+    trackRenderEnd,
+    trackScrollFPS,
+    trackMemoryUsage,
+  };
+};
+
 const DocumentCardGrid: React.FC = () => {
   const { mappedDocuments: fetchedDocs, isLoading, error, fetchDocuments } = useAllDocuments();
+  const { updateDocumentInStore, allDocuments: storeDocuments } = useFileMediaStore();
   
   // State for sorting
   const [sortKey, setSortKey] = useState<SortKey>('lastUpdated');
@@ -118,6 +191,8 @@ const DocumentCardGrid: React.FC = () => {
   // ADD: State for number of columns
   const [numberOfColumns, setNumberOfColumns] = useState(1);
 
+
+
   // ADD: Effect to update number of columns on resize
   useEffect(() => {
     const updateCols = () => {
@@ -156,18 +231,25 @@ const DocumentCardGrid: React.FC = () => {
           const errorData = await response.json();
           throw new Error(errorData.message || 'Failed to fetch search results');
         }
-        const data = await response.json(); // This will be an array of search results
+        const data = await response.json();
         
-        // Map results from POST response to MappedDocumentCardData
-        const mappedResults: MappedDocumentCardData[] = (data || []).map((doc: any) => ({
-          id: doc.id,
-          title: doc.name, // POST route returns 'name'
-          snippet: doc.summary || 'No summary available.', // POST route may return 'summary'
-          lastUpdated: doc.lastUpdated || new Date().toISOString(), // Default if not present
-          is_starred: doc.is_starred || false, // Default if not present
-          folder_id: doc.folder_id || null, // Include if available
-          // Add any other fields required by MappedDocumentCardData with defaults
-        }));
+        const mappedResults: MappedDocumentCardData[] = (data || []).map((doc: any) => {
+          const rawSummary = doc.summary;
+          const snippet = rawSummary || 'No summary available.';
+          
+          // Prioritize is_starred from the global store if available for search results
+          const storeDoc = storeDocuments.find(sDoc => sDoc.id === doc.id);
+          const currentIsStarred = storeDoc ? storeDoc.is_starred : (doc.is_starred || false);
+
+          return {
+            id: doc.id,
+            title: doc.name,
+            snippet: snippet,
+            lastUpdated: doc.lastUpdated || new Date().toISOString(),
+            is_starred: currentIsStarred, // Use potentially updated value from store
+            folder_id: doc.folder_id || null,
+          };
+        });
         setSearchResults(mappedResults);
       } catch (err: any) {
         setSearchError(err.message || 'An unexpected error occurred');
@@ -175,12 +257,78 @@ const DocumentCardGrid: React.FC = () => {
       } finally {
         setIsSearching(false);
       }
-    }, 500); // 500ms debounce
+    }, 500);
 
     return () => {
       clearTimeout(handler);
     };
-  }, [searchQuery]);
+  }, [searchQuery, storeDocuments]);
+
+  // ADD: Handler for toggling star status in the grid
+  const handleToggleStarGridItem = useCallback(async (documentId: string) => {
+    console.log('[DEBUG] Star toggle started for document:', documentId);
+    
+    // Prioritize finding the document in storeDocuments for the most up-to-date is_starred
+    let originalDocument = storeDocuments.find(doc => doc.id === documentId);
+    let currentIsStarred = false;
+
+    if (originalDocument) {
+      currentIsStarred = originalDocument.is_starred || false;
+      console.log('[DEBUG] Found document in store. Current starred status:', currentIsStarred);
+    } else {
+      // Fallback to other sources if not in storeDocuments (though ideally it should be)
+      const fetchedDoc = (fetchedDocs || []).find(doc => doc.id === documentId);
+      const searchDoc = searchResults.find(doc => doc.id === documentId);
+      const fallbackDoc = fetchedDoc || searchDoc;
+      
+      if (!fallbackDoc) {
+        toast.error("Document not found to toggle star.");
+        return;
+      }
+      currentIsStarred = fallbackDoc.is_starred || false;
+      console.log('[DEBUG] Document not in store, using fallback. Current starred status:', currentIsStarred);
+    }
+
+    const newStarredStatus = !currentIsStarred;
+    console.log('[DEBUG] Toggling star status from', currentIsStarred, 'to', newStarredStatus);
+    
+    // Optimistic update
+    updateDocumentInStore(documentId, { is_starred: newStarredStatus });
+    console.log('[DEBUG] Store updated optimistically with new starred status:', newStarredStatus);
+
+    try {
+      const response = await fetch(`/api/documents/${documentId}/star`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        // The body might not be strictly necessary if the backend toggles, 
+        // but sending the new state is explicit.
+        // body: JSON.stringify({ is_starred: newStarredStatus }), 
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to toggle star status.' }));
+        throw new Error(errorData.message || 'Failed to toggle star status.');
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        // Confirm update with server response (already optimistically updated)
+        // Ensure the store reflects the true server state if different, though it should match.
+        updateDocumentInStore(documentId, { is_starred: result.is_starred }); 
+        console.log('[DEBUG] Server confirmed star status:', result.is_starred);
+        toast.success(`Document ${result.is_starred ? 'starred' : 'unstarred'}.`);
+      } else {
+        throw new Error(result.message || 'Failed to toggle star status on server.');
+      }
+    } catch (error: any) {
+      console.log('[DEBUG] Error occurred, reverting optimistic update');
+      toast.error(error.message || "An error occurred while toggling star status.");
+      // Revert optimistic update on error
+      updateDocumentInStore(documentId, { is_starred: currentIsStarred });
+    }
+  }, [storeDocuments, fetchedDocs, searchResults, updateDocumentInStore]);
 
   const currentPathString = useMemo(() => {
     if (!isInFolderView || !breadcrumbPath || breadcrumbPath.length === 0) {
@@ -219,13 +367,18 @@ const DocumentCardGrid: React.FC = () => {
       const folderData = await getFolderContents(folderId);
       if (folderData && folderData.documents) {
         // Map folder documents to the same format as document cards
-        const mappedDocs = folderData.documents.map(doc => ({
-          id: doc.id,
-          title: doc.name || 'Untitled Document',
-          lastUpdated: doc.updated_at || doc.created_at,
-          snippet: doc.searchable_content?.substring(0, 150) + '...' || 'No preview available.',
-          is_starred: doc.is_starred || false,
-        }));
+        const mappedDocs = folderData.documents.map(doc => {
+          const rawSearchableContent = doc.searchable_content;
+          let snippet = rawSearchableContent?.substring(0, 150) + '...' || 'No preview available.';
+          // console.log(`[DEBUG_SNIPPET_FOLDER_LOAD] ID: ${doc.id}, Raw searchable_content: "${rawSearchableContent}", Final snippet: "${snippet}"`);
+          return {
+            id: doc.id,
+            title: doc.name || 'Untitled Document',
+            lastUpdated: doc.updated_at || doc.created_at,
+            snippet: snippet,
+            is_starred: doc.is_starred || false,
+          };
+        });
         
         setFolderContents(prev => ({
           ...prev,
@@ -564,13 +717,42 @@ const DocumentCardGrid: React.FC = () => {
     // Could navigate to the new folder or expand it
   }, []);
 
+  // Helper function to enhance documents with store data
+  const enhanceDocumentsWithStore = useCallback((docs: MappedDocumentCardData[]): MappedDocumentCardData[] => {
+    console.log('[DEBUG] enhanceDocumentsWithStore called with', docs.length, 'documents. Store has', storeDocuments.length, 'documents');
+    
+    return docs.map(doc => {
+      // Find the corresponding document in the store (allDocuments contains Document type)
+      const storeDoc = storeDocuments.find(sDoc => sDoc.id === doc.id);
+      const enhanced = { ...doc, is_starred: storeDoc ? (storeDoc.is_starred || false) : doc.is_starred };
+      
+      // Debug logging for any document star changes
+      if (doc.is_starred !== enhanced.is_starred) {
+        console.log('[DEBUG] Document', doc.id, 'star status changed from', doc.is_starred, 'to', enhanced.is_starred, 'via store');
+      }
+      
+      // Debug logging for specific document we're tracking
+      if (doc.id === '36ee2abe-ef85-4225-bfa7-68d8b1ce0408') {
+        console.log('[DEBUG] Enhancing document in getCurrentDisplayItems:', {
+          originalIsStarred: doc.is_starred,
+          storeDocExists: !!storeDoc,
+          storeDocIsStarred: storeDoc?.is_starred,
+          finalIsStarred: enhanced.is_starred,
+          storeDocumentsLength: storeDocuments.length
+        });
+      }
+      
+      return enhanced;
+    });
+  }, [storeDocuments]);
+
   // Get folders and documents to display based on current navigation
   const getCurrentDisplayItems = useCallback(() => {
     if (searchQuery) {
       // If a search query is active, display search results (documents only)
       return {
         folders: [], // No folders in search results view
-        documents: searchResults,
+        documents: enhanceDocumentsWithStore(searchResults),
       };
     }
 
@@ -581,14 +763,14 @@ const DocumentCardGrid: React.FC = () => {
       
       return {
         folders: currentFolderSubfolders,
-        documents: currentFolderDocs
+        documents: enhanceDocumentsWithStore(currentFolderDocs)
       };
     } else {
       // Show root level folders and documents
       const rootLevelDocs = fetchedDocs ? fetchedDocs.filter(doc => !doc.folder_id) : [];
       return {
         folders: folderTree,
-        documents: sortDocuments(rootLevelDocs, sortKey, sortDirection)
+        documents: sortDocuments(enhanceDocumentsWithStore(rootLevelDocs), sortKey, sortDirection)
       };
     }
   }, [
@@ -602,6 +784,7 @@ const DocumentCardGrid: React.FC = () => {
     sortDocuments,
     searchQuery, // Added dependency
     searchResults, // Added dependency
+    enhanceDocumentsWithStore, // Critical dependency for store enhancement
   ]);
 
   // Get all folder IDs for drag and drop context
@@ -640,7 +823,19 @@ const DocumentCardGrid: React.FC = () => {
   }, [navigateToFolder, loadSubFolders, loadingSubFolders, folderTree]);
 
   // Get current display items
-  const currentDisplayItems = getCurrentDisplayItems();
+  const currentDisplayItems = useMemo(() => getCurrentDisplayItems(), [
+    isInFolderView, 
+    currentFolderId, 
+    folderContents, 
+    folderTree, 
+    fetchedDocs, 
+    sortKey, 
+    sortDirection, 
+    sortDocuments,
+    searchQuery,
+    searchResults, 
+    enhanceDocumentsWithStore,
+  ]);
 
   // ADD: Combine folders and documents for virtualization
   const allItems = useMemo(() => {
@@ -655,14 +850,49 @@ const DocumentCardGrid: React.FC = () => {
     return items;
   }, [currentDisplayItems.folders, currentDisplayItems.documents]);
 
+  // ADD: Update performance monitoring with actual item count
+  const itemCountForPerformance = allItems.length;
+  const performanceHook = usePerformanceMonitoring(itemCountForPerformance);
+
+  // ADD: Dynamic overscan calculation based on dataset size
+  const dynamicOverscan = useMemo(() => {
+    const itemCount = allItems.length;
+    if (itemCount > 1000) return 3; // Large datasets need more overscan
+    if (itemCount > 500) return 2;
+    return 1; // Default for smaller datasets
+  }, [allItems.length]);
+
+  // ADD: Implement pagination for very large datasets
+  const [currentPage, setCurrentPage] = useState(0);
+  const ITEMS_PER_PAGE = 1000; // Pagination threshold
+  const shouldPaginate = allItems.length > ITEMS_PER_PAGE;
+
+  const paginatedItems = useMemo(() => {
+    if (!shouldPaginate) return allItems;
+    
+    const startIndex = currentPage * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    return allItems.slice(startIndex, endIndex);
+  }, [allItems, currentPage, shouldPaginate]);
+
+  const totalPages = shouldPaginate ? Math.ceil(allItems.length / ITEMS_PER_PAGE) : 1;
+
+  // ADD: Memoize row items calculation for better performance
+  const getRowItems = useCallback((rowIndex: number) => {
+    const itemsToUse = shouldPaginate ? paginatedItems : allItems;
+    const startIndex = rowIndex * numberOfColumns;
+    const endIndex = Math.min(startIndex + numberOfColumns, itemsToUse.length);
+    return itemsToUse.slice(startIndex, endIndex);
+  }, [allItems, paginatedItems, numberOfColumns, shouldPaginate]);
+
   const rowVirtualizer = useVirtualizer({
-    // UPDATE: count based on rows
-    count: Math.ceil(allItems.length / numberOfColumns),
+    // UPDATE: count based on rows (use paginated items for large datasets)
+    count: Math.ceil((shouldPaginate ? paginatedItems.length : allItems.length) / numberOfColumns),
     getScrollElement: () => parentRef.current,
     // Estimate: approx height of a card (341px for 256px width, 3/4 aspect) + gap (24px for gap-6)
     estimateSize: () => 365,
     getItemKey: useCallback((index: number) => `row-${index}`, []), // Key for rows
-    overscan: 1, // Render 1 extra row out of view
+    overscan: dynamicOverscan, // Use dynamic overscan for better performance
   });
 
   // Selection Handlers
@@ -804,7 +1034,8 @@ const DocumentCardGrid: React.FC = () => {
     }
 
     // Generic empty states (if not searching and no items in current view)
-    if (!searchQuery && !isLoading && !error && allItems.length === 0) {
+    const currentItems = shouldPaginate ? paginatedItems : allItems;
+    if (!searchQuery && !isLoading && !error && currentItems.length === 0) {
       if (isInFolderView) {
         return (
           <div className="flex flex-col items-center justify-center h-full p-8 text-center">
@@ -844,30 +1075,38 @@ const DocumentCardGrid: React.FC = () => {
               position: 'relative',
             }}
             role="grid"
-            aria-label={`Document grid with ${allItems.length} items. Sorted by ${sortKey} in ${sortDirection === 'asc' ? 'ascending' : 'descending'} order. Use arrow keys to navigate between items.`}
+            aria-label={`Document grid with ${currentItems.length} items${shouldPaginate ? ` (page ${currentPage + 1} of ${totalPages})` : ''}. Sorted by ${sortKey} in ${sortDirection === 'asc' ? 'ascending' : 'descending'} order. Use arrow keys to navigate between items.`}
             aria-live="polite"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
           >
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const startIndex = virtualRow.index * numberOfColumns;
-              const endIndex = Math.min(startIndex + numberOfColumns, allItems.length);
-              const itemsInRow = allItems.slice(startIndex, endIndex);
+              // Track render performance for large datasets
+              if (itemCountForPerformance > 100) {
+                performanceHook.trackRenderStart();
+              }
+              
+              const itemsInRow = getRowItems(virtualRow.index);
 
-              if (itemsInRow.length === 0 && allItems.length > 0) { 
+              if (itemsInRow.length === 0 && currentItems.length > 0) { 
                 // This might happen if virtualizer count is off or items filtered out post-virtualization logic
                 // For robust rendering, ensure this case is handled or prevented.
-                // console.warn('Empty itemsInRow but allItems has content. Check virtualizer count and filtering.');
+                // console.warn('Empty itemsInRow but currentItems has content. Check virtualizer count and filtering.');
                 return null;
               }
-              if (itemsInRow.length === 0 && allItems.length === 0 && !searchQuery && !isLoading && !error) {
+              if (itemsInRow.length === 0 && currentItems.length === 0 && !searchQuery && !isLoading && !error) {
                   // This case is now handled by the main empty states above.
                   // However, if it were still possible to reach here with no items,
                   // ensure it doesn't cause an error.
                   return null; 
               }
 
+
+              // Track render end for performance monitoring
+              if (itemCountForPerformance > 100) {
+                performanceHook.trackRenderEnd();
+              }
 
               return (
                 <div
@@ -912,6 +1151,7 @@ const DocumentCardGrid: React.FC = () => {
                             is_starred={(item as MappedDocumentCardData).is_starred}
                             isSelected={selectedItemIds.has(item.id)}
                             onToggleSelect={() => toggleSelectItem(item.id)}
+                            onToggleStar={handleToggleStarGridItem}
                           />
                         )}
                       </div>
@@ -988,25 +1228,27 @@ const DocumentCardGrid: React.FC = () => {
   return (
     <>
       {/* Search Bar */}
-      <div className="mb-4 relative px-4 pt-4"> {/* Added padding to match grid */}
-        <Search className="absolute left-7 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" /> {/* Adjusted left for padding */}
-        <Input
-          type="text"
-          placeholder="Search documents..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10 pr-10 w-full"
-        />
-        {searchQuery && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="absolute right-5 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0" /* Adjusted right for padding */
-            onClick={() => { setSearchQuery(''); setSearchError(null); setIsSearching(false); setSearchResults([]); }}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        )}
+      <div className="mb-4 px-4 pt-4 flex items-center justify-center">
+        <div className="relative w-3/4">
+          <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground z-10 pointer-events-none" />
+          <Input
+            type="text"
+            placeholder="Search documents..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-12 pr-12 w-full text-base h-11 rounded-md"
+          />
+          {searchQuery && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0 z-10 rounded-full"
+              onClick={() => { setSearchQuery(''); setSearchError(null); setIsSearching(false); setSearchResults([]); }}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Sorting Controls & New Folder Button */}
@@ -1064,6 +1306,38 @@ const DocumentCardGrid: React.FC = () => {
           Choose how to sort the document list. Current sort: {sortKey} in {sortDirection === 'asc' ? 'ascending' : 'descending'} order.
         </div>
       </div>
+
+      {/* Pagination Controls for Large Datasets */}
+      {shouldPaginate && (
+        <div className="p-4 flex items-center justify-between border-b border-[--border-color]" role="navigation" aria-label="Pagination">
+          <div className="text-sm text-gray-600 dark:text-gray-300">
+            Showing {currentPage * ITEMS_PER_PAGE + 1}-{Math.min((currentPage + 1) * ITEMS_PER_PAGE, allItems.length)} of {allItems.length} items
+          </div>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
+              disabled={currentPage === 0}
+              aria-label="Previous page"
+            >
+              Previous
+            </Button>
+            <span className="flex items-center px-3 text-sm">
+              Page {currentPage + 1} of {totalPages}
+            </span>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setCurrentPage(prev => Math.min(totalPages - 1, prev + 1))}
+              disabled={currentPage === totalPages - 1}
+              aria-label="Next page"
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
 
       <DndContext
         sensors={sensors}

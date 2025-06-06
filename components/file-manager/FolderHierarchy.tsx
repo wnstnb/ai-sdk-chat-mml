@@ -112,6 +112,9 @@ const FolderNode: React.FC<FolderNodeProps> = ({
                         lastUpdated={doc.lastUpdated}
                         snippet={doc.snippet}
                         is_starred={doc.is_starred}
+                        isSelected={false} // No selection in folder hierarchy preview
+                        onToggleSelect={() => {}} // No-op for folder preview
+                        onToggleStar={(documentId) => console.log(`[FolderHierarchy] Would toggle star for document: ${documentId}`)}
                       />
                     </motion.div>
                   ))}

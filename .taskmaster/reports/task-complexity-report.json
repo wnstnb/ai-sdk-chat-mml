@@ -1,8 +1,8 @@
 {
   "meta": {
-    "generatedAt": "2025-06-05T16:13:25.477Z",
+    "generatedAt": "2025-06-06T17:31:51.012Z",
     "tasksAnalyzed": 1,
-    "totalTasks": 15,
+    "totalTasks": 16,
     "analysisCount": 15,
     "thresholdScore": 5,
     "projectName": "Taskmaster",
@@ -114,20 +114,20 @@
       "reasoning": "Documentation requires understanding the entire system and creating clear explanations for different audiences. The complexity is moderate as it involves comprehensive knowledge of the system but follows established documentation patterns."
     },
     {
-      "taskId": 13,
-      "taskTitle": "Implement Star/Favorite Toggle Functionality for Document Cards",
-      "complexityScore": 7,
-      "recommendedSubtasks": 8,
-      "expansionPrompt": "Break down the implementation of the star/favorite toggle for document cards into granular subtasks, covering UI component integration, state management, API communication, optimistic updates, error handling, offline support, accessibility, and testing.",
-      "reasoning": "This task involves multiple layers of complexity: UI component design, real-time state management, asynchronous API integration, optimistic UI updates, error and loading state handling, offline queuing, and accessibility considerations. Each of these areas introduces decision points and increases cyclomatic complexity, as well as the cognitive load for maintainability and testing. The need for robust error handling, offline support, and comprehensive testing further elevates the complexity. Expanding into at least 8 subtasks will ensure each concern is addressed in isolation, reducing risk and improving code quality."
-    },
-    {
       "taskId": 15,
       "taskTitle": "Implement Folder Support in Card-Based View",
       "complexityScore": 8,
       "recommendedSubtasks": 12,
       "expansionPrompt": "Break down the implementation into distinct technical and UX components, including component creation, database and API updates, hierarchy management, UI/UX features, accessibility, performance optimization, and edge case handling.",
       "reasoning": "This task involves multiple technical domains (frontend, backend, database, UX, accessibility, performance, edge cases) and requires careful coordination between them. The detailed description already outlines 12 major subtasks, each addressing a critical aspect of the feature. The high complexity is due to the need for recursive rendering, state management, drag-and-drop, accessibility, and performance optimizations, all of which are non-trivial and require thorough testing and integration[4][5]."
+    },
+    {
+      "taskId": 13,
+      "taskTitle": "Implement Star/Favorite Toggle Functionality for Document Cards",
+      "complexityScore": 7,
+      "recommendedSubtasks": 8,
+      "expansionPrompt": "Break down the implementation of the star/favorite toggle for document cards into subtasks covering UI component integration, state management, API communication, optimistic updates, error handling, offline support, accessibility, and testing.",
+      "reasoning": "This task involves multiple layers of complexity: UI/UX design, real-time state management, backend API integration, optimistic UI updates, error handling, offline queuing, and comprehensive testing (unit, integration, end-to-end, and manual). The need to handle asynchronous operations, maintain responsive feedback, and ensure accessibility and offline support increases both cyclomatic and structural complexity. Given these factors, the task is moderately complex and should be split into at least 8 subtasks to ensure clarity and maintainability."
     }
   ]
 }

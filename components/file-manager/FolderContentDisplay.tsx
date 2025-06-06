@@ -14,6 +14,7 @@ interface FolderContentDisplayProps {
   onCreateSubfolder?: () => void;
   onCreateDocument?: () => void;
   onFolderAction?: (action: 'rename' | 'delete') => void;
+  onToggleStar?: (documentId: string) => void;
   level?: number;
   showControls?: boolean;
 }
@@ -25,6 +26,7 @@ const FolderContentDisplay: React.FC<FolderContentDisplayProps> = ({
   onCreateSubfolder,
   onCreateDocument,
   onFolderAction,
+  onToggleStar,
   level = 0,
   showControls = true,
 }) => {
@@ -210,6 +212,9 @@ const FolderContentDisplay: React.FC<FolderContentDisplayProps> = ({
                           lastUpdated={doc.lastUpdated}
                           snippet={doc.snippet}
                           is_starred={doc.is_starred}
+                          isSelected={false} // No selection in folder preview
+                          onToggleSelect={() => {}} // No-op for folder preview
+                          onToggleStar={onToggleStar || (() => console.log('No onToggleStar handler provided for folder preview'))}
                         />
                       </motion.div>
                     ))}

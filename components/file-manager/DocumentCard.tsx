@@ -11,15 +11,16 @@ interface DocumentCardProps {
   title: string;
   lastUpdated: string | Date | number; // Allow various date input types
   snippet: string;
-  is_starred: boolean; // Added for star icon
+  is_starred: boolean; // Will be passed as a prop from parent
   isSelected?: boolean; // Added
   onToggleSelect?: (id: string) => void; // Added
+  onToggleStar: (documentId: string) => void; // Prop for handling star toggle
   folderPath?: string; // Path of the folder containing the document
   // Potentially an onClick handler, href, etc. later
 }
 
 const DocumentCard: React.FC<DocumentCardProps> = (props) => {
-  const { title, lastUpdated, snippet, id, is_starred, isSelected = false, onToggleSelect, folderPath } = props;
+  const { title, lastUpdated, snippet, id, is_starred, isSelected = false, onToggleSelect, folderPath, onToggleStar } = props;
   const displayTitle = title || "(Untitled)";
   const formattedDate = formatRelativeDate(lastUpdated);
   const isDragStartedRef = useRef(false);
@@ -123,19 +124,30 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
         data-drag-handle="true" // Add data attribute to identify the drag handle
         className="h-[20%] bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md p-3 flex items-center justify-end border-b border-gray-200/50 dark:border-gray-600/50 cursor-grab active:cursor-grabbing"
       >
-        {/* Icons container pushed to the right */}
-        <div className="flex items-center space-x-2" role="img" aria-label={`Document indicators${is_starred ? ': starred document' : ': regular document'}`}>
-          {is_starred && (
+        {/* Icons container pushed to the right, now includes Star button and FileText */}
+        <div className="flex items-center space-x-2" role="group" aria-label={`Document actions and indicators${is_starred ? ': starred document' : ''}`}>
+          <button
+            data-interactive-element="true"
+            onClick={(e) => {
+              e.stopPropagation(); // Prevent card navigation
+              onToggleStar(id); // Call the passed prop
+              console.log(`[DEBUG] Star toggled for ${id} via onToggleStar prop.`);
+            }}
+            className="p-1.5 rounded-full hover:bg-gray-500/20 dark:hover:bg-gray-300/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-[--accent-color] focus-visible:ring-offset-1 dark:focus-visible:ring-offset-gray-700/50 transition-colors"
+            aria-pressed={is_starred}
+            aria-label={is_starred ? `Unstar document ${displayTitle}` : `Star document ${displayTitle}`}
+            title={is_starred ? `Unstar document ${displayTitle}` : `Star document ${displayTitle}`}
+          >
             <Star 
-              className="w-5 h-5 text-yellow-400 fill-yellow-400" 
-              aria-label="Starred document"
-              role="img"
+              className={`w-5 h-5 transition-colors ${is_starred ? 'text-yellow-400 fill-yellow-400' : 'text-gray-500 dark:text-gray-400 hover:text-yellow-500 dark:hover:text-yellow-300'}`}
+              aria-hidden="true" // Decorative, button has aria-label
             />
-          )}
+          </button>
+          
           <FileText 
             className="w-5 h-5 text-gray-600 dark:text-gray-400" 
-            aria-label="Document file"
-            role="img"
+            aria-label="Document file type"
+            role="img" // role can be img if it's purely decorative in this context, or button if it becomes interactive
           />
         </div>
       </div>
@@ -185,4 +197,38 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
   );
 };
 
-export default React.memo(DocumentCard); 
+// Custom comparison function for React.memo
+const areDocumentCardPropsEqual = (prevProps: DocumentCardProps, nextProps: DocumentCardProps) => {
+  const areEqual = 
+    prevProps.id === nextProps.id &&
+    prevProps.title === nextProps.title &&
+    prevProps.lastUpdated === nextProps.lastUpdated &&
+    prevProps.snippet === nextProps.snippet &&
+    prevProps.is_starred === nextProps.is_starred &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.folderPath === nextProps.folderPath;
+    // Removed function comparisons as they prevent proper optimistic updates
+
+  if (!areEqual) {
+    console.log('[DEBUG] DocumentCard re-rendering. Props changed:', {
+      prev: {
+        id: prevProps.id,
+        title: prevProps.title,
+        is_starred: prevProps.is_starred,
+        isSelected: prevProps.isSelected,
+      },
+      next: {
+        id: nextProps.id,
+        title: nextProps.title,
+        is_starred: nextProps.is_starred,
+        isSelected: nextProps.isSelected,
+      }
+    });
+  }
+  // else {
+  //   console.log(`[DEBUG] DocumentCard NOT re-rendering for ID: ${nextProps.id}, is_starred: ${nextProps.is_starred}`);
+  // }
+  return areEqual;
+};
+
+export default React.memo(DocumentCard, areDocumentCardPropsEqual); 

@@ -11,6 +11,7 @@ export interface TitleSearchResult {
   name: string;
   updated_at: string;
   searchable_content?: string | null;
+  is_starred?: boolean;
   titleMatchScore: number;
 }
 
@@ -19,6 +20,7 @@ export interface SemanticSearchResult {
   name: string;
   updated_at: string;
   searchable_content?: string | null;
+  is_starred?: boolean;
   semanticScore: number;
 }
 
@@ -28,6 +30,7 @@ export interface ContentBM25SearchResult {
   name: string;
   updated_at: string;
   searchable_content?: string | null;
+  is_starred?: boolean;
   contentScore: number; // Score from BM25-like text search
 }
 
@@ -37,6 +40,7 @@ export interface CombinedSearchResult {
   finalScore: number;
   summary?: string;
   updated_at?: string;
+  is_starred?: boolean;
 }
 
 // Interface for the match_documents RPC function result
@@ -53,7 +57,7 @@ export async function searchByTitle(query: string): Promise<TitleSearchResult[]>
   // Perform case-insensitive partial match on document names
   const { data: documents, error } = await supabase
     .from('documents')
-    .select('id, name, updated_at, searchable_content')
+    .select('id, name, updated_at, searchable_content, is_starred')
     .ilike('name', `%${query}%`);
 
   if (error) {
@@ -69,6 +73,7 @@ export async function searchByTitle(query: string): Promise<TitleSearchResult[]>
     name: doc.name,
     updated_at: doc.updated_at,
     searchable_content: doc.searchable_content,
+    is_starred: doc.is_starred,
     titleMatchScore: doc.name.toLowerCase() === query.toLowerCase() ? 1.0 : 0.8
   }));
 }
@@ -107,7 +112,7 @@ export async function searchByContentBM25(query: string): Promise<ContentBM25Sea
   const docIds = rpcResults.map((doc: { id: string }) => doc.id);
   const { data: fullDocs, error: docsError } = await supabase
     .from('documents')
-    .select('id, name, updated_at, searchable_content')
+    .select('id, name, updated_at, searchable_content, is_starred')
     .in('id', docIds)
     .eq('user_id', userId); // Ensure we only fetch user's documents
 
@@ -117,9 +122,10 @@ export async function searchByContentBM25(query: string): Promise<ContentBM25Sea
     return rpcResults.map((doc: { id: string, name: string, score: number }) => ({
     id: doc.id,
     name: doc.name,
-      contentScore: doc.score,
-      updated_at: new Date().toISOString(), // Fallback
-      searchable_content: null, // Fallback
+    contentScore: doc.score,
+    updated_at: new Date().toISOString(), // Fallback
+    searchable_content: null, // Fallback
+    is_starred: false, // Fallback
     }));
   }
   
@@ -133,6 +139,7 @@ export async function searchByContentBM25(query: string): Promise<ContentBM25Sea
       contentScore: doc.score,
       updated_at: fullDoc?.updated_at || new Date().toISOString(),
       searchable_content: fullDoc?.searchable_content || null,
+      is_starred: fullDoc?.is_starred || false,
     };
   });
 }
@@ -198,7 +205,7 @@ export async function searchByEmbeddings(query: string): Promise<SemanticSearchR
     const docIds = rpcMatches.map((match: MatchDocumentsResult) => match.id);
     const { data: fullDocs, error: docsError } = await supabase
       .from('documents')
-      .select('id, name, updated_at, searchable_content')
+      .select('id, name, updated_at, searchable_content, is_starred')
       .in('id', docIds)
       .eq('user_id', userId); // Ensure we only fetch user's documents
 
@@ -211,6 +218,7 @@ export async function searchByEmbeddings(query: string): Promise<SemanticSearchR
         semanticScore: match.similarity,
         updated_at: new Date().toISOString(), // Fallback
         searchable_content: null, // Fallback
+        is_starred: false, // Fallback
       }));
     }
 
@@ -225,6 +233,7 @@ export async function searchByEmbeddings(query: string): Promise<SemanticSearchR
         semanticScore: match.similarity,
         updated_at: fullDoc?.updated_at || new Date().toISOString(),
         searchable_content: fullDoc?.searchable_content || null,
+        is_starred: fullDoc?.is_starred || false,
       };
     });
 
@@ -243,111 +252,87 @@ export function combineAndRankResults(
 ): CombinedSearchResult[] {
   // Helper function to get ranks from a list of search results
   const getRanks = (
-    results: Array<{ id: string; name: string; score: number; updated_at?: string; searchable_content?: string | null; }>,
-  ): Map<string, { rank: number; name: string; updated_at?: string; searchable_content?: string | null; }> => {
+    results: Array<{ id: string; name: string; score: number; updated_at?: string; searchable_content?: string | null; is_starred?: boolean; }>
+  ): Map<string, { rank: number; name: string; updated_at?: string; searchable_content?: string | null; is_starred?: boolean; }> => {
     // Sort by score descending to assign ranks
     const sortedResults = [...results].sort((a, b) => b.score - a.score);
-    const ranks = new Map<string, { rank: number; name: string; updated_at?: string; searchable_content?: string | null; }>();
+    const ranks = new Map<string, { rank: number; name: string; updated_at?: string; searchable_content?: string | null; is_starred?: boolean; }>();
     sortedResults.forEach((result, index) => {
       ranks.set(result.id, { 
         rank: index + 1, 
         name: result.name, 
-        updated_at: result.updated_at, 
-        searchable_content: result.searchable_content 
+        updated_at: result.updated_at,
+        searchable_content: result.searchable_content,
+        is_starred: result.is_starred
       });
     });
     return ranks;
   };
 
-  // Generate ranks for each type of search result
-  // Ensure the 'score' property is consistent for the getRanks helper
-  const titleRanks = getRanks(
-    titleMatches.map(m => ({ 
-      id: m.id, 
-      name: m.name, 
-      score: m.titleMatchScore, 
-      updated_at: m.updated_at, 
-      searchable_content: m.searchable_content 
-    }))
-  );
-  const semanticRanks = getRanks(
-    semanticMatches.map(m => ({ 
-      id: m.id, 
-      name: m.name, 
-      score: m.semanticScore,
-      updated_at: m.updated_at,
-      searchable_content: m.searchable_content
-    }))
-  );
-  const contentRanks = getRanks(
-    contentMatches.map(m => ({ 
-      id: m.id, 
-      name: m.name, 
-      score: m.contentScore,
-      updated_at: m.updated_at,
-      searchable_content: m.searchable_content
-    }))
-  );
+  const titleRanks = getRanks(titleMatches.map(tm => ({ ...tm, score: tm.titleMatchScore })));
+  const semanticRanks = getRanks(semanticMatches.map(sm => ({ ...sm, score: sm.semanticScore })));
+  const contentRanks = getRanks(contentMatches.map(cm => ({ ...cm, score: cm.contentScore })));
 
-  // Collect all unique document IDs
-  const allDocIds = new Set<string>();
-  titleMatches.forEach(m => allDocIds.add(m.id));
-  semanticMatches.forEach(m => allDocIds.add(m.id));
-  contentMatches.forEach(m => allDocIds.add(m.id));
+  const allDocIds = new Set<string>([
+    ...titleMatches.map(doc => doc.id),
+    ...semanticMatches.map(doc => doc.id),
+    ...contentMatches.map(doc => doc.id)
+  ]);
 
-  const rrfResults: Array<{ id: string; name: string; finalScore: number; summary?: string; updated_at?: string; }> = [];
+  const combinedScores = new Map<string, { score: number; name?: string; updated_at?: string; searchable_content?: string | null; is_starred?: boolean; }>();
 
-  // Calculate RRF score for each document
   allDocIds.forEach(id => {
     let rrfScore = 0;
-    let docName = ""; // To store the document name
-    let docUpdatedAt: string | undefined = undefined;
-    let docSummary: string | undefined = undefined;
+    let name: string | undefined;
+    let updated_at: string | undefined;
+    let searchable_content: string | null | undefined;
+    let is_starred: boolean | undefined;
 
-    const titleInfo = titleRanks.get(id);
-    if (titleInfo) {
-      rrfScore += 1 / (rrfK + titleInfo.rank);
-      docName = titleInfo.name;
-      docUpdatedAt = titleInfo.updated_at;
-      if (titleInfo.searchable_content) {
-        docSummary = titleInfo.searchable_content.substring(0, 150) + (titleInfo.searchable_content.length > 150 ? '...' : '');
-      }
+    const titleRankInfo = titleRanks.get(id);
+    if (titleRankInfo) {
+      rrfScore += 1 / (rrfK + titleRankInfo.rank);
+      name = titleRankInfo.name;
+      updated_at = titleRankInfo.updated_at;
+      searchable_content = titleRankInfo.searchable_content;
+      is_starred = titleRankInfo.is_starred;
     }
 
-    const semanticInfo = semanticRanks.get(id);
-    if (semanticInfo) {
-      rrfScore += 1 / (rrfK + semanticInfo.rank);
-      if (!docName) docName = semanticInfo.name;
-      if (!docUpdatedAt) docUpdatedAt = semanticInfo.updated_at;
-      if (!docSummary && semanticInfo.searchable_content) {
-        docSummary = semanticInfo.searchable_content.substring(0, 150) + (semanticInfo.searchable_content.length > 150 ? '...' : '');
-      }
+    const semanticRankInfo = semanticRanks.get(id);
+    if (semanticRankInfo) {
+      rrfScore += 1 / (rrfK + semanticRankInfo.rank);
+      if (!name) name = semanticRankInfo.name;
+      if (!updated_at) updated_at = semanticRankInfo.updated_at;
+      if (searchable_content === undefined) searchable_content = semanticRankInfo.searchable_content;
+      if (is_starred === undefined) is_starred = semanticRankInfo.is_starred;
+    }
+    
+    const contentRankInfo = contentRanks.get(id);
+    if (contentRankInfo) {
+      rrfScore += 1 / (rrfK + contentRankInfo.rank);
+      if (!name) name = contentRankInfo.name;
+      if (!updated_at) updated_at = contentRankInfo.updated_at;
+      if (searchable_content === undefined) searchable_content = contentRankInfo.searchable_content;
+      if (is_starred === undefined) is_starred = contentRankInfo.is_starred;
     }
 
-    const contentInfo = contentRanks.get(id);
-    if (contentInfo) {
-      rrfScore += 1 / (rrfK + contentInfo.rank);
-      if (!docName) docName = contentInfo.name;
-      if (!docUpdatedAt) docUpdatedAt = contentInfo.updated_at;
-      if (!docSummary && contentInfo.searchable_content) {
-        docSummary = contentInfo.searchable_content.substring(0, 150) + (contentInfo.searchable_content.length > 150 ? '...' : '');
-      }
-    }
-
-    if (rrfScore > 0) {
-      rrfResults.push({
-        id,
-        name: docName || "Unnamed Document", // Fallback name if somehow missed
-        finalScore: rrfScore,
-        summary: docSummary,
-        updated_at: docUpdatedAt
-      });
+    if (name) {
+      combinedScores.set(id, { score: rrfScore, name, updated_at, searchable_content, is_starred });
     }
   });
 
-  // Sort results by RRF score in descending order
-  rrfResults.sort((a, b) => b.finalScore - a.finalScore);
+  const rankedResults = Array.from(combinedScores.entries()).map(([id, data]) => ({
+    id,
+    data
+  }));
 
-  // Limit to top 10 results
-  return rrfResults.slice(0, 10);
+  rankedResults.sort((a, b) => b.data.score - a.data.score);
+
+  return rankedResults.slice(0, 10).map(doc => ({
+    id: doc.id,
+    name: doc.data.name!,
+    finalScore: doc.data.score,
+    summary: doc.data.searchable_content ? doc.data.searchable_content.substring(0, 150) + '...' : 'No preview available.',
+    updated_at: doc.data.updated_at,
+    is_starred: doc.data.is_starred,
+  }));
 } 

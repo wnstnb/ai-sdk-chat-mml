@@ -120,6 +120,15 @@ const sampleRawDocs: Document[] = [
 const CardPreview: React.FC = () => {
   const mappedDocs: MappedDocumentCardData[] = mapDocumentsToMappedCardData(sampleRawDocs);
 
+  // Handler functions for the preview (no-op implementations for demo)
+  const handleToggleStar = (documentId: string) => {
+    console.log(`[CardPreview] Would toggle star for document: ${documentId}`);
+  };
+
+  const handleToggleSelect = (documentId: string) => {
+    console.log(`[CardPreview] Would toggle selection for document: ${documentId}`);
+  };
+
   return (
     <div className="p-4 bg-[var(--editor-bg)] min-h-screen">
       <h2 className="text-2xl font-semibold mb-6 text-gray-800 dark:text-gray-200">Document Card Preview (with Mapper)</h2>
@@ -132,6 +141,9 @@ const CardPreview: React.FC = () => {
             lastUpdated={doc.lastUpdated}
             snippet={doc.snippet}
             is_starred={doc.is_starred}
+            isSelected={false} // No selection in preview
+            onToggleSelect={handleToggleSelect}
+            onToggleStar={handleToggleStar}
           />
         ))}
       </div>

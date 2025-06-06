@@ -26,9 +26,15 @@ const DEFAULT_SNIPPET = "No preview available.";
 export function mapDocumentToMappedCardData(document: Document): MappedDocumentCardData {
   let displaySnippet = document.searchable_content || DEFAULT_SNIPPET;
 
+  // Log raw content
+  // console.log(`[DEBUG_SNIPPET_MAPPER] ID: ${document.id}, Raw searchable_content: "${document.searchable_content}"`);
+
   if (document.searchable_content && document.searchable_content.length > MAX_SNIPPET_LENGTH) {
     displaySnippet = document.searchable_content.substring(0, MAX_SNIPPET_LENGTH) + "...";
   }
+
+  // Log final snippet
+  // console.log(`[DEBUG_SNIPPET_MAPPER] ID: ${document.id}, Final snippet: "${displaySnippet}"`);
 
   return {
     id: document.id,
