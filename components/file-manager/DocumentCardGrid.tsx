@@ -112,6 +112,13 @@ const DocumentCardGrid: React.FC = () => {
     return () => window.removeEventListener('resize', updateCols);
   }, []);
 
+  const currentPathString = useMemo(() => {
+    if (!isInFolderView || !breadcrumbPath || breadcrumbPath.length === 0) {
+      return "";
+    }
+    return breadcrumbPath.map(folder => folder.name).join(' / ');
+  }, [isInFolderView, breadcrumbPath]);
+
   // Helper function to sort documents
   const sortDocuments = useCallback((items: MappedDocumentCardData[], key: SortKey, direction: SortDirection): MappedDocumentCardData[] => {
     const sortedItems = [...items]; // Create a shallow copy to avoid mutating the original array
@@ -814,13 +821,15 @@ const DocumentCardGrid: React.FC = () => {
                             />
                           ) : (
                             <DocumentCard
-                              id={(item as MappedDocumentCardData & { itemType: 'document' }).id}
-                              title={(item as MappedDocumentCardData & { itemType: 'document' }).title}
-                              lastUpdated={(item as MappedDocumentCardData & { itemType: 'document' }).lastUpdated}
-                              snippet={(item as MappedDocumentCardData & { itemType: 'document' }).snippet}
-                              is_starred={(item as MappedDocumentCardData & { itemType: 'document' }).is_starred}
-                              isSelected={selectedItemIds.has((item as MappedDocumentCardData & { itemType: 'document' }).id)}
-                              onToggleSelect={() => toggleSelectItem((item as MappedDocumentCardData & { itemType: 'document' }).id)}
+                              key={item.id}
+                              id={item.id}
+                              title={item.title}
+                              lastUpdated={item.lastUpdated}
+                              snippet={item.snippet}
+                              is_starred={item.is_starred}
+                              isSelected={selectedItemIds.has(item.id)}
+                              onToggleSelect={() => toggleSelectItem(item.id)}
+                              folderPath={currentPathString || undefined} // Pass the path string here
                             />
                           )}
                         </div>

@@ -14,11 +14,12 @@ interface DocumentCardProps {
   is_starred: boolean; // Added for star icon
   isSelected?: boolean; // Added
   onToggleSelect?: (id: string) => void; // Added
+  folderPath?: string; // Path of the folder containing the document
   // Potentially an onClick handler, href, etc. later
 }
 
 const DocumentCard: React.FC<DocumentCardProps> = (props) => {
-  const { title, lastUpdated, snippet, id, is_starred, isSelected = false, onToggleSelect } = props;
+  const { title, lastUpdated, snippet, id, is_starred, isSelected = false, onToggleSelect, folderPath } = props;
   const displayTitle = title || "(Untitled)";
   const formattedDate = formatRelativeDate(lastUpdated);
   const isDragStartedRef = useRef(false);
@@ -112,7 +113,7 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
           aria-label={isSelected ? `Deselect document ${displayTitle}` : `Select document ${displayTitle}`}
           title={isSelected ? `Deselect document ${displayTitle}` : `Select document ${displayTitle}`}
         >
-          {isSelected ? <CheckSquare size={18} className="text-blue-600 dark:text-blue-500" /> : <Square size={18} className="text-gray-500 dark:text-gray-400" />}
+          {isSelected ? <CheckSquare size={18} className="text-[var(--title-hover-color)]" /> : <Square size={18} className="text-gray-500 dark:text-gray-400" />}
         </button>
       )}
 
@@ -142,6 +143,15 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
       {/* Solid Body Section (approx 80%) */}
       {/* Using the same background as the card container for the body, or a slightly off shade like dark:bg-gray-750 if needed */}
       <div className="h-[80%] bg-white dark:bg-gray-800 px-4 py-3 flex flex-col space-y-1">
+        {folderPath && (
+          <p 
+            className="text-xs text-gray-500 dark:text-gray-400 truncate"
+            title={folderPath} // Show full path on hover
+            aria-label={`Location: ${folderPath}`}
+          >
+            {folderPath}
+          </p>
+        )}
         <h3 
           id={`title-${id}`}
           title={displayTitle} // Show full title on hover

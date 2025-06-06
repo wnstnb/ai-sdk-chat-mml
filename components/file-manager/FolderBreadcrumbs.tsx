@@ -173,8 +173,8 @@ const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
         className={`
           flex items-center space-x-1 px-3 py-2 rounded-md transition-all duration-200
           hover:bg-gray-200/50 dark:hover:bg-gray-700/50
-          ${currentPath.length === 1 ? 'text-blue-600 dark:text-blue-400 font-medium' : 'hover:text-gray-900 dark:hover:text-gray-100'}
-          ${isOverRoot ? 'ring-2 ring-blue-500 dark:ring-blue-400 bg-blue-100/70 dark:bg-blue-900/30 scale-105' : ''}
+          ${currentPath.length === 1 ? 'text-[var(--title-hover-color)] font-medium' : 'hover:text-gray-900 dark:hover:text-gray-100'}
+          ${isOverRoot ? 'ring-2 ring-[var(--title-hover-color)] bg-[#C79553]/20 scale-105' : ''}
         `}
         aria-label="Navigate to root folder or drop items to move to root"
       >
@@ -197,10 +197,9 @@ const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
                 px-3 py-2 rounded-md transition-all duration-200 truncate max-w-[120px]
                 hover:bg-gray-200/50 dark:hover:bg-gray-700/50
                 ${index === breadcrumbFolders.length - 1 
-                  ? 'text-blue-600 dark:text-blue-400 font-medium' 
-                  : 'hover:text-gray-900 dark:hover:text-gray-100'
-                }
-                ${isOver ? 'ring-2 ring-blue-500 dark:ring-blue-400 bg-blue-100/70 dark:bg-blue-900/30 scale-105' : ''}
+                  ? 'text-[var(--title-hover-color)] font-medium' 
+                  : 'hover:text-gray-900 dark:hover:text-gray-100'}
+                ${isOver ? 'ring-2 ring-[var(--title-hover-color)] bg-[#C79553]/20 scale-105' : ''}
               `}
               title={item.name}
               aria-label={`Navigate to ${item.name} folder or drop items to move to this folder`}

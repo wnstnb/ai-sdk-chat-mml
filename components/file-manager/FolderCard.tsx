@@ -5,6 +5,7 @@ import { formatRelativeDate } from '@/lib/utils/dateUtils';
 import { useDroppable } from '@dnd-kit/core';
 import DocumentCard from './DocumentCard';
 import type { MappedDocumentCardData } from '@/lib/mappers/documentMappers';
+import DocumentCardMini from './DocumentCardMini';
 
 interface FolderCardProps {
   id: string;
@@ -106,14 +107,13 @@ const FolderCard: React.FC<FolderCardProps> = React.memo(({
       style={{
         ...style,
       }}
-
       className={`
-        group relative flex flex-col rounded-lg 
+        group relative flex flex-col rounded-lg bg-white dark:bg-gray-800
         transition-all duration-300 ease-in-out motion-reduce:transition-none 
         ${isMenuOpen ? 'overflow-visible' : 'overflow-hidden'} w-full max-w-[256px] ${cardHeightClass} touch-manipulation 
         focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 
         ${isSelected ? 'ring-2 ring-[var(--accent-color)] shadow-md' : 'focus:ring-[var(--accent-color)]'}
-        ${isOver ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}
+        ${isOver ? 'ring-2 ring-[var(--title-hover-color)] ring-opacity-50' : ''}
         ${!isSelected && 'hover:shadow-lg motion-reduce:hover:transform-none'}
         ${!isSelected && !isInternalPreviewExpanded && 'hover:-translate-y-1 hover:scale-[1.02]'}
       `}
@@ -134,34 +134,36 @@ const FolderCard: React.FC<FolderCardProps> = React.memo(({
         Folder card. Drop documents here to add them to this folder.
       </div>
 
-      <div className="h-full flex flex-col bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md border border-gray-200/50 dark:border-gray-600/50 rounded-lg">
+      <div className="h-full flex flex-col rounded-lg">
         
-        {onToggleSelect && (
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleSelect(id);
-            }}
-            className="absolute top-2 left-2 z-20 p-1 rounded hover:bg-gray-300/70 dark:hover:bg-gray-600/70 transition-colors"
-            aria-label={isSelected ? `Deselect folder ${title}` : `Select folder ${title}`}
-            title={isSelected ? `Deselect folder ${title}` : `Select folder ${title}`}
-          >
-            {isSelected ? <CheckSquare size={18} className="text-blue-600 dark:text-blue-500" /> : <Square size={18} className="text-gray-500 dark:text-gray-400" />}
-          </button>
-        )}
-        
-        <div className="p-4 flex items-center justify-between border-b border-gray-200/30 dark:border-gray-600/30">
-          <div className="flex items-center space-x-3 flex-1 min-w-0">
+        <div className="p-4 flex items-start justify-between border-b border-gray-200/50 dark:border-gray-600/50 bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md rounded-t-lg">
+          <div className="flex items-start space-x-3 flex-1 min-w-0">
+            {onToggleSelect && (
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect(id);
+                }}
+                className="flex-shrink-0 p-1 rounded hover:bg-gray-300/70 dark:hover:bg-gray-600/70 transition-colors mt-1"
+                aria-label={isSelected ? `Deselect folder ${title}` : `Select folder ${title}`}
+                title={isSelected ? `Deselect folder ${title}` : `Select folder ${title}`}
+              >
+                {isSelected ? 
+                  <CheckSquare size={18} className="text-[var(--title-hover-color)]" /> : 
+                  <Square size={18} className="text-gray-500 dark:text-gray-400" />
+                }
+              </button>
+            )}
             
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 mt-0.5">
               {isExpanded ? (
                 <FolderOpen 
-                  className="w-6 h-6 text-blue-500 dark:text-blue-400" 
+                  className="w-6 h-6 text-[var(--title-hover-color)] transition-colors"
                   aria-hidden="true"
                 />
               ) : (
                 <Folder 
-                  className="w-6 h-6 text-blue-500 dark:text-blue-400" 
+                  className="w-6 h-6 text-[var(--title-hover-color)] transition-colors"
                   aria-hidden="true"
                 />
               )}
@@ -171,7 +173,7 @@ const FolderCard: React.FC<FolderCardProps> = React.memo(({
               <h3 
                 id={`folder-title-${id}`}
                 title={displayTitle}
-                className="text-lg font-semibold leading-normal text-gray-900 dark:text-gray-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors"
+                className="text-lg font-semibold leading-normal text-gray-900 dark:text-gray-100 truncate group-hover:text-[var(--title-hover-color)] transition-colors"
               >
                 {displayTitle}
               </h3>
@@ -185,7 +187,7 @@ const FolderCard: React.FC<FolderCardProps> = React.memo(({
             </div>
           </div>
 
-          <div className="relative" data-menu>
+          <div className="relative flex-shrink-0" data-menu>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -221,7 +223,7 @@ const FolderCard: React.FC<FolderCardProps> = React.memo(({
           </div>
         </div>
 
-        <div className="flex-grow flex flex-col min-h-0 p-3 pt-1">
+        <div className="flex-grow flex flex-col min-h-0 p-3 pt-1 bg-white dark:bg-gray-800 rounded-b-lg">
           <div 
             data-preview-toggle
             onClick={handleToggleInternalPreview}
@@ -267,28 +269,21 @@ const FolderCard: React.FC<FolderCardProps> = React.memo(({
                 <p className="text-xs text-center text-gray-400 dark:text-gray-500 py-2">This folder is empty.</p>
               )}
               {!isLoadingContents && containedDocuments.map((doc) => (
-                <a 
+                <DocumentCardMini 
                   key={doc.id} 
-                  href={`/editor/${doc.id}`}
-                  onClick={(e) => {
-                    if (e.target instanceof Element && e.target.closest('[draggable="true"]')) {
-                      e.stopPropagation(); 
-                    }
-                  }}
-                  className="block p-1.5 rounded hover:bg-gray-200/70 dark:hover:bg-gray-600/70 text-xs transition-colors"
-                  title={`Open document: ${doc.title}`}
-                >
-                  <p className="text-gray-700 dark:text-gray-200 truncate">{doc.title}</p>
-                  <p className="text-gray-500 dark:text-gray-400 text-xxs">{formatRelativeDate(doc.lastUpdated)}</p>
-                </a>
+                  id={doc.id}
+                  title={doc.title}
+                  lastUpdated={doc.lastUpdated}
+                  is_starred={doc.is_starred}
+                />
               ))}
             </div>
           )}
         </div>
 
         {isOver && (
-          <div className="absolute inset-0 bg-blue-500/20 border-2 border-blue-500 border-dashed rounded-lg flex items-center justify-center">
-            <p className="text-blue-700 dark:text-blue-300 font-medium">
+          <div className="absolute inset-0 bg-[#C79553]/20 border-2 border-[var(--title-hover-color)] border-dashed rounded-lg flex items-center justify-center">
+            <p className="text-[var(--title-hover-color)] font-medium">
               Drop here to add to folder
             </p>
           </div>
