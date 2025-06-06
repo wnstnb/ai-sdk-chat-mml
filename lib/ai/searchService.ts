@@ -88,7 +88,6 @@ export async function searchByContentBM25(query: string): Promise<ContentBM25Sea
   // --- END Get user ID ---
 
   // Call the RPC function search_documents_bm25
-  // Assumes the SQL function now returns id, name, updated_at, searchable_content, score
   const { data: rpcResults, error: rpcError } = await supabase
     .rpc('search_documents_bm25', {
       p_query_text: query,
@@ -105,35 +104,35 @@ export async function searchByContentBM25(query: string): Promise<ContentBM25Sea
     return [];
   }
 
-  // No longer need to fetch fullDocs separately if RPC returns all necessary fields
-  // const docIds = rpcResults.map((doc: { id: string }) => doc.id);
-  // const { data: fullDocs, error: docsError } = await supabase
-  //   .from('documents')
-  //   .select('id, name, updated_at, searchable_content')
-  //   .in('id', docIds)
-  //   .eq('user_id', userId);
+  const docIds = rpcResults.map((doc: { id: string }) => doc.id);
+  const { data: fullDocs, error: docsError } = await supabase
+    .from('documents')
+    .select('id, name, updated_at, searchable_content')
+    .in('id', docIds)
+    .eq('user_id', userId); // Ensure we only fetch user's documents
 
-  // if (docsError) {
-  //   console.error('Error fetching full document details for BM25 results:', docsError.message);
-  //   return rpcResults.map((doc: { id: string, name: string, score: number }) => ({
-  //     id: doc.id,
-  //     name: doc.name,
-  //     contentScore: doc.score,
-  //     updated_at: new Date().toISOString(), // Fallback
-  //     searchable_content: null, // Fallback
-  //   }));
-  // }
+  if (docsError) {
+    console.error('Error fetching full document details for BM25 results:', docsError.message);
+    // Return results from RPC with missing fields, or throw error
+    return rpcResults.map((doc: { id: string, name: string, score: number }) => ({
+    id: doc.id,
+    name: doc.name,
+      contentScore: doc.score,
+      updated_at: new Date().toISOString(), // Fallback
+      searchable_content: null, // Fallback
+    }));
+  }
   
-  // const fullDocsMap = new Map(fullDocs.map(fd => [fd.id, fd]));
+  const fullDocsMap = new Map(fullDocs.map(fd => [fd.id, fd]));
 
-  return rpcResults.map((doc: { id: string, name: string, score: number, updated_at: string, searchable_content: string | null }) => {
-    // const fullDoc = fullDocsMap.get(doc.id);
+  return rpcResults.map((doc: { id: string, name: string, score: number }) => {
+    const fullDoc = fullDocsMap.get(doc.id);
     return {
       id: doc.id,
       name: doc.name,
       contentScore: doc.score,
-      updated_at: doc.updated_at || new Date().toISOString(), // Use directly from RPC
-      searchable_content: doc.searchable_content || null, // Use directly from RPC
+      updated_at: fullDoc?.updated_at || new Date().toISOString(),
+      searchable_content: fullDoc?.searchable_content || null,
     };
   });
 }
@@ -179,7 +178,6 @@ export async function searchByEmbeddings(query: string): Promise<SemanticSearchR
     const queryEmbedding = embedApiData.embedding.values;
 
     // 2. Search for similar documents using the match_documents RPC function
-    // Assumes the SQL function now returns id, name, updated_at, searchable_content, similarity, folder_id
     const { data: rpcMatches, error: searchError } = await supabase
       .rpc('match_documents', {
         query_embedding: queryEmbedding,
@@ -197,37 +195,36 @@ export async function searchByEmbeddings(query: string): Promise<SemanticSearchR
       return [];
     }
 
-    // No longer need to fetch fullDocs separately if RPC returns all necessary fields
-    // const docIds = rpcMatches.map((match: MatchDocumentsResult) => match.id);
-    // const { data: fullDocs, error: docsError } = await supabase
-    //   .from('documents')
-    //   .select('id, name, updated_at, searchable_content')
-    //   .in('id', docIds)
-    //   .eq('user_id', userId);
+    const docIds = rpcMatches.map((match: MatchDocumentsResult) => match.id);
+    const { data: fullDocs, error: docsError } = await supabase
+      .from('documents')
+      .select('id, name, updated_at, searchable_content')
+      .in('id', docIds)
+      .eq('user_id', userId); // Ensure we only fetch user's documents
 
-    // if (docsError) {
-    //   console.error('Error fetching full document details for semantic results:', docsError.message);
-    //   return rpcMatches.map((match: MatchDocumentsResult) => ({
-    //     id: match.id,
-    //     name: match.name,
-    //     semanticScore: match.similarity,
-    //     updated_at: new Date().toISOString(), // Fallback
-    //     searchable_content: null, // Fallback
-    //   }));
-    // }
-
-    // const fullDocsMap = new Map(fullDocs.map(fd => [fd.id, fd]));
-
-    // 3. Map results to our interface
-    return rpcMatches.map((match: { id: string, name: string, similarity: number, updated_at: string, searchable_content: string | null, folder_id: string | null }) => {
-      // const fullDoc = fullDocsMap.get(match.id);
-      return {
+    if (docsError) {
+      console.error('Error fetching full document details for semantic results:', docsError.message);
+      // Return results from RPC with missing fields, or throw error
+      return rpcMatches.map((match: MatchDocumentsResult) => ({
         id: match.id,
         name: match.name,
         semanticScore: match.similarity,
-        updated_at: match.updated_at || new Date().toISOString(), // Use directly from RPC
-        searchable_content: match.searchable_content || null, // Use directly from RPC
-        // folder_id is also available from match_documents if needed later: match.folder_id
+        updated_at: new Date().toISOString(), // Fallback
+        searchable_content: null, // Fallback
+      }));
+    }
+
+    const fullDocsMap = new Map(fullDocs.map(fd => [fd.id, fd]));
+
+    // 3. Map results to our interface
+    return rpcMatches.map((match: MatchDocumentsResult) => {
+      const fullDoc = fullDocsMap.get(match.id);
+      return {
+      id: match.id,
+      name: match.name,
+        semanticScore: match.similarity,
+        updated_at: fullDoc?.updated_at || new Date().toISOString(),
+        searchable_content: fullDoc?.searchable_content || null,
       };
     });
 

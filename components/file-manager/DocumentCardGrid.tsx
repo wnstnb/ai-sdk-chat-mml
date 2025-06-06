@@ -100,6 +100,15 @@ const DocumentCardGrid: React.FC = () => {
   // ADD: State for search results
   const [searchResults, setSearchResults] = useState<MappedDocumentCardData[]>([]);
 
+  // ADD: useEffect for logging draggedItems when it changes
+  useEffect(() => {
+    if (draggedItems) {
+      console.log('[DEBUG] draggedItems changed:', JSON.stringify(draggedItems));
+    } else {
+      console.log('[DEBUG] draggedItems changed: null');
+    }
+  }, [draggedItems]);
+
   // ADD: State for tracking which folder previews are loading
   const [loadingPreviewFolderIds, setLoadingPreviewFolderIds] = useState<Set<string>>(new Set());
 
@@ -257,9 +266,10 @@ const DocumentCardGrid: React.FC = () => {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8, // Reduced distance for more responsive drag
-        delay: 250,  // Increased delay to prevent accidental drags
-        tolerance: 10, // More tolerance for movement
+        // Require a 5px drag to start, and a 250ms delay for touch
+        distance: 5,
+        delay: 250, // For touch
+        tolerance: 0, // No tolerance for pointer movement
       },
     }),
     useSensor(KeyboardSensor, {
@@ -267,55 +277,61 @@ const DocumentCardGrid: React.FC = () => {
     })
   );
 
+  // Helper to find document or folder details
+  const getItemDetails = (id: string): { id: string; type: 'document' | 'folder'; name: string } | null => {
+    const doc = getCurrentDisplayItems().documents.find(d => d.id === id);
+    if (doc) return { id: doc.id, type: 'document', name: doc.title };
+    
+    // Handle potential "folder-" prefix for selectedItemIds if they are stored that way
+    const cleanId = id.startsWith('folder-') ? id.replace('folder-', '') : id;
+    const folder = getCurrentDisplayItems().folders.find(f => f.id === cleanId);
+    if (folder) return { id: folder.id, type: 'folder', name: folder.name };
+    
+    return null;
+  };
+
   const handleRetry = () => {
     fetchDocuments();
   };
 
   const handleDragStart = (event: DragStartEvent) => {
-    document.body.style.cursor = 'grabbing';
-    
-    // Reset drag tracking
-    setHasActuallyDragged(false);
-    dragStartTimeRef.current = Date.now();
-    
     const { active } = event;
-    const activeId = String(active.id);
-    // Ensure active.data.current exists and has properties before trying to access them
-    const activeType = active.data?.current?.type as 'document' | 'folder' | undefined;
-    const activeName = active.data?.current?.name || active.data?.current?.title || 'Item';
+    const activeId = active.id as string;
+    dragStartTimeRef.current = Date.now();
+    setHasActuallyDragged(false);
 
-    if (!activeType) {
-      // console.warn('[handleDragStart] Active item has no type. This might indicate an issue with item data setup.');
-      // Potentially set draggedItems to a default or skip setting it if type is crucial
-      // For now, proceed cautiously, an item without a type may not be draggable correctly.
+    let itemsToDrag: Array<{id: string, type: 'document' | 'folder', name: string}> = [];
+
+    if (selectedItemIds.has(activeId) && selectedItemIds.size > 1) {
+      // Multiple items selected and one of them is being dragged
+      itemsToDrag = Array.from(selectedItemIds)
+        .map(itemId => {
+          const details = getItemDetails(itemId);
+          // Temporary: Log if details are not found, but don't filter out yet
+          if (!details) {
+            console.warn(`[DEBUG] Drag Start: No details found for selected item ID: ${itemId}`);
+            // Return a placeholder if you want to see it in the draggedItems array for debugging
+            // return { id: itemId, type: 'unknown', name: 'Unknown Item' }; 
+          }
+          return details;
+        })
+        .filter(item => item !== null) as Array<{id: string, type: 'document' | 'folder', name: string}>;
+    } else {
+      // Single item drag (or first item of a potential multi-selection if only one is selected)
+      const details = getItemDetails(activeId);
+      if (details) {
+        itemsToDrag = [details];
+      }
     }
-
-    const currentSelection = new Set(selectedItemIds); // Capture current selection
-
-    if (currentSelection.has(activeId)) {
-      const itemsToDrag = Array.from(currentSelection).map(id => {
-        // Prioritize finding in current view first for efficiency, then fallback to all items
-        const currentViewFolder = currentDisplayItems.folders.find(f => f.id === id);
-        if (currentViewFolder) return { id, type: 'folder' as 'folder', name: currentViewFolder.name };
-
-        const currentViewDoc = currentDisplayItems.documents.find(d => d.id === id);
-        if (currentViewDoc) return { id, type: 'document' as 'document', name: currentViewDoc.title };
-
-        // Fallback to all folders and documents in the store
-        const folder = folders.find(f => f.id === id);
-        if (folder) return { id, type: 'folder' as 'folder', name: folder.name };
-        
-        const doc = fetchedDocs.find(d => d.id === id);
-        if (doc) return { id, type: 'document' as 'document', name: doc.title };
-        
-        return { id, type: (activeType || 'document'), name: 'Selected Item' }; // Generic fallback
-      }).filter(item => item.name !== 'Selected Item'); // Filter out unresolved items if necessary
+    
+    // Only set draggedItems if we have items resolved, otherwise, it can lead to issues
+    if (itemsToDrag.length > 0) {
       setDraggedItems(itemsToDrag);
     } else {
-      clearSelection(); 
-      toggleSelectItem(activeId);
-      // If activeType wasn't resolved, default to document for single drag for now
-      setDraggedItems([{ id: activeId, type: (activeType || 'document'), name: activeName }]); 
+      // It's possible if the activeId couldn't be resolved, we might not want to start a drag
+      // or handle it as a cancellation. For now, set to null to avoid errors.
+      setDraggedItems(null); 
+      console.warn(`[DEBUG] Drag Start: No items resolved for activeId: ${activeId}. Drag may not show overlay.`);
     }
   };
 
@@ -522,7 +538,7 @@ const DocumentCardGrid: React.FC = () => {
   };
 
   const handleSortDirectionToggle = () => {
-    setSortDirection((prevDirection) => (prevDirection === 'asc' ? 'desc' : 'asc'));
+    setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
   };
 
   // Folder handlers
@@ -777,7 +793,7 @@ const DocumentCardGrid: React.FC = () => {
             <FileTextIcon className="w-16 h-16 text-gray-400 mb-4" aria-hidden="true" />
             <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">No Results Found</h2>
             <p className="text-gray-500 dark:text-gray-400 mb-6">
-              No documents matched your search for "<strong>{searchQuery}</strong>".
+              No documents matched your search for &quot;<strong>{searchQuery}</strong>&quot;.
             </p>
             <Button onClick={() => setSearchQuery('')} variant="outline">
               Clear Search
@@ -895,6 +911,7 @@ const DocumentCardGrid: React.FC = () => {
                             snippet={(item as MappedDocumentCardData).snippet}
                             is_starred={(item as MappedDocumentCardData).is_starred}
                             isSelected={selectedItemIds.has(item.id)}
+                            onToggleSelect={() => toggleSelectItem(item.id)}
                           />
                         )}
                       </div>
@@ -910,6 +927,63 @@ const DocumentCardGrid: React.FC = () => {
     );
   };
   
+  const renderDragOverlay = () => {
+    console.log('[DEBUG] renderDragOverlay called. draggedItems:', draggedItems);
+
+    if (!draggedItems || !draggedItems.length) return null;
+
+    if (draggedItems.length > 1) {
+      return (
+        <div 
+          className="p-4 rounded-lg flex items-center gap-2 backdrop-blur-sm font-medium"
+          style={{
+            backgroundColor: 'rgba(var(--background-rgb), 0.9)',
+            color: 'var(--text-color)',
+            border: '2px solid var(--border-color)',
+            boxShadow: 'var(--shadow-lg)',
+          }}
+        >
+          <FileText 
+            className="w-5 h-5" 
+            style={{ color: 'var(--primary-color)' }}
+          />
+          <span>Moving {draggedItems.length} items</span>
+        </div>
+      );
+    }
+
+    // Single item preview
+    const item = draggedItems[0];
+    if (!item || !item.name) { // Ensure item and item.name are defined
+        // Fallback or error display if item or item.name is undefined
+        return (
+            <div className="p-2 bg-white rounded shadow-lg opacity-75 flex items-center space-x-2">
+                <AlertTriangle className="w-5 h-5 text-red-500" />
+                <span>Invalid item data</span>
+            </div>
+        );
+    }
+
+    const IconComponent = item.type === 'folder' ? FolderIcon : FileTextIcon;
+
+    return (
+      <div 
+        className="p-3 rounded-lg flex items-center gap-2 backdrop-blur-sm font-medium"
+        style={{
+          backgroundColor: 'rgba(var(--background-rgb), 0.9)',
+          color: 'var(--text-color)',
+          border: '1px solid var(--border-color)',
+          boxShadow: 'var(--shadow-lg)',
+        }}
+      >
+        <IconComponent 
+          className="w-4 h-4" 
+          style={{ color: 'var(--primary-color)' }}
+        />
+        <span className="truncate max-w-[200px]">{item.name}</span>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -1018,22 +1092,17 @@ const DocumentCardGrid: React.FC = () => {
         {/* Call the function to render the main grid content */}
         {renderGridContent()}
 
+        {/* DragOverlay should be inside DndContext */}
+        {draggedItems && draggedItems.length > 0 && (
+           <DragOverlay dropAnimation={null}>
+            {(() => { // IIFE for logging within JSX
+              console.log('[DEBUG] DragOverlay rendering. draggedItems:', JSON.stringify(draggedItems));
+              return renderDragOverlay();
+            })()}
+          </DragOverlay>
+        )}
+
       </DndContext>
-      
-      {draggedItems && draggedItems.length > 0 && (
-        <DragOverlay dropAnimation={null}>
-          {draggedItems.map((item) => (
-            <div key={item.id} className="pointer-events-none rounded bg-blue-500/10 dark:bg-blue-400/20 px-3 py-2 text-sm text-blue-700 dark:text-blue-300 shadow-lg ring-1 ring-blue-500/30 dark:ring-blue-400/40 flex items-center space-x-2">
-              {item.type === 'folder' ? (
-                <FolderIcon className="w-4 h-4 flex-shrink-0" />
-              ) : (
-                <FileTextIcon className="w-4 h-4 flex-shrink-0" />
-              )}
-              <span className="truncate max-w-[200px]">{item.name}</span>
-            </div>
-          ))}
-        </DragOverlay>
-      )}
 
       {/* Create Folder Modal */}
       <CreateFolderModal
