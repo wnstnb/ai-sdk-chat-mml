@@ -3,36 +3,102 @@ import { Folder, Document } from '@/types/supabase';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 
-// Extended folder type with children for hierarchical rendering
+/**
+ * Represents a folder with its children (for hierarchical tree structures).
+ * Extends the base Folder type.
+ */
 export interface FolderWithChildren extends Folder {
-  children: FolderWithChildren[] | null; // Can be null if not loaded
+  /** Array of child folders, or null if children haven't been loaded yet. */
+  children: FolderWithChildren[] | null;
+  /** Boolean indicating if the children of this folder have been loaded. */
   childrenLoaded: boolean;
+  /** The number of documents directly within this folder. Often provided by API. */
   document_count: number;
 }
 
-// Folder with contents (documents and subfolders)
+/**
+ * Represents a folder along with its direct contents (subfolders and documents).
+ * Typically used when fetching details for a specific folder.
+ */
 export interface FolderWithContents extends Folder {
+  /** Array of direct subfolders. */
   subfolders: Folder[];
+  /** Array of documents directly within this folder. */
   documents: Document[];
+  /** Total number of items (subfolders + documents) within this folder. */
   totalItems: number;
 }
 
+/**
+ * Defines the state and actions provided by the useFolders hook.
+ */
 interface UseFoldersReturn {
-  folders: Folder[];
+  /** A flat array of all fetched folders, typed as FolderWithChildren for consistency in tree building. */
+  folders: Folder[]; // Should ideally be FolderWithChildren[] if that's what it holds
+  /** A hierarchical tree structure of folders, where each node is FolderWithChildren. */
   folderTree: FolderWithChildren[];
+  /** Boolean indicating if the initial set of folders is currently loading. */
   isLoading: boolean;
+  /** Error message string if an error occurred during folder operations, otherwise null. */
   error: string | null;
+  /**
+   * Creates a new folder.
+   * @param {string} name - The name for the new folder.
+   * @param {string | null} [parentId] - Optional ID of the parent folder. Null or undefined for a root folder.
+   * @returns {Promise<Folder | null>} A promise that resolves to the created Folder object, or null on failure.
+   */
   createFolder: (name: string, parentId?: string | null) => Promise<Folder | null>;
+  /**
+   * Updates an existing folder (e.g., rename or move).
+   * @param {string} id - The ID of the folder to update.
+   * @param {{ name?: string; parentFolderId?: string | null }} updates - An object containing the updates.
+   * @returns {Promise<Folder | null>} A promise that resolves to the updated Folder object, or null on failure.
+   */
   updateFolder: (id: string, updates: { name?: string; parentFolderId?: string | null }) => Promise<Folder | null>;
+  /**
+   * Deletes a folder.
+   * @param {string} id - The ID of the folder to delete.
+   * @returns {Promise<boolean>} A promise that resolves to true if deletion was successful, false otherwise.
+   */
   deleteFolder: (id: string) => Promise<boolean>;
+  /** Fetches the initial (root-level) folders and populates the folder tree. */
   fetchFolders: () => Promise<void>;
+  /**
+   * Fetches the contents (subfolders and documents) of a specific folder.
+   * @param {string} folderId - The ID of the folder whose contents are to be fetched.
+   * @returns {Promise<FolderWithContents | null>} A promise that resolves to the folder with its contents, or null on failure.
+   */
   getFolderContents: (folderId: string) => Promise<FolderWithContents | null>;
+  /**
+   * Moves a document to a specified folder (or to the root).
+   * @param {string} documentId - The ID of the document to move.
+   * @param {string | null} folderId - The ID of the target folder, or null to move to the root.
+   * @returns {Promise<boolean>} A promise that resolves to true if successful, false otherwise.
+   */
   moveDocument: (documentId: string, folderId: string | null) => Promise<boolean>;
+  /**
+   * Deletes a document.
+   * @param {string} id - The ID of the document to delete.
+   * @returns {Promise<boolean>} A promise that resolves to true if successful, false otherwise.
+   */
   deleteDocument: (id: string) => Promise<boolean>;
+  /**
+   * Loads the direct subfolders for a given parent folder ID and updates the folder tree.
+   * @param {string} parentId - The ID of the parent folder for which to load subfolders.
+   * @returns {Promise<void>}
+   */
   loadSubFolders: (parentId: string) => Promise<void>;
+  /** A Set containing the IDs of parent folders whose subfolders are currently being loaded. */
   loadingSubFolders: Set<string>;
 }
 
+/**
+ * Custom hook for managing all folder-related operations and state.
+ * This includes fetching, creating, updating, deleting folders, managing the folder tree structure,
+ * loading subfolders on demand, and moving/deleting documents in relation to folders.
+ * It interacts with backend APIs for persistence and provides optimistic updates for a better UX.
+ * @returns {UseFoldersReturn} An object containing folder data, loading/error states, and action functions.
+ */
 export function useFolders(): UseFoldersReturn {
   const [folders, setFolders] = useState<FolderWithChildren[]>([]);
   const [folderTree, setFolderTree] = useState<FolderWithChildren[]>([]);
@@ -40,7 +106,10 @@ export function useFolders(): UseFoldersReturn {
   const [error, setError] = useState<string | null>(null);
   const [loadingSubFolders, setLoadingSubFolders] = useState<Set<string>>(new Set());
 
-  // Fetch initial (root-level) folders
+  /**
+   * Fetches the initial set of root-level folders from the API.
+   * Populates the flat `folders` list and the hierarchical `folderTree`.
+   */
   const fetchFolders = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -78,7 +147,12 @@ export function useFolders(): UseFoldersReturn {
     }
   }, []);
 
-  // New function to load subfolders for a given parent
+  /**
+   * Loads the direct subfolders for a given parent folder ID.
+   * Fetches subfolders from the API and updates both the flat `folders` list
+   * and the `folderTree` by appending children to the specified parent node.
+   * Manages a loading state for the parent ID during the fetch.
+   */
   const loadSubFolders = useCallback(async (parentId: string) => {
     if (loadingSubFolders.has(parentId)) return; // Already loading
 
@@ -150,7 +224,11 @@ export function useFolders(): UseFoldersReturn {
     }
   }, [loadingSubFolders]);
 
-  // Create new folder
+  /**
+   * Creates a new folder via an API call.
+   * On success, updates the local `folders` list and `folderTree` optimistically.
+   * Shows toast notifications for success or failure.
+   */
   const createFolder = useCallback(async (name: string, parentId?: string | null): Promise<Folder | null> => {
     try {
       const response = await fetch('/api/folders', {
@@ -217,7 +295,12 @@ export function useFolders(): UseFoldersReturn {
     }
   }, []);
 
-  // Update folder
+  /**
+   * Updates an existing folder (name or parent) via an API call.
+   * Implements optimistic updates for the folder tree for name changes and moves.
+   * Handles potential rollbacks if the API call fails.
+   * Shows toast notifications for success or failure.
+   */
   const updateFolder = useCallback(async (
     id: string, 
     updates: { name?: string; parentFolderId?: string | null }
@@ -384,7 +467,12 @@ export function useFolders(): UseFoldersReturn {
     }
   }, [fetchFolders]);
 
-  // Delete folder
+  /**
+   * Deletes a folder via an API call.
+   * Optimistically removes the folder from the local `folders` list and `folderTree`.
+   * Handles rollbacks if the API call fails. Recursively deletes children in the optimistic update.
+   * Shows toast notifications for success or failure.
+   */
   const deleteFolder = useCallback(async (id: string): Promise<boolean> => {
     try {
       const response = await fetch(`/api/folders/${id}`, {
@@ -423,7 +511,10 @@ export function useFolders(): UseFoldersReturn {
     }
   }, []);
 
-  // Get folder contents (subfolders and documents)
+  /**
+   * Fetches the detailed contents (subfolders and documents) of a specific folder by its ID.
+   * This is typically used when a user navigates into a folder that doesn't just show a preview.
+   */
   const getFolderContents = useCallback(async (folderId: string): Promise<FolderWithContents | null> => {
     try {
       // This might now primarily be used for fetching documents if subfolders are handled by loadSubFolders
@@ -448,7 +539,11 @@ export function useFolders(): UseFoldersReturn {
     }
   }, []);
 
-  // Move document to folder
+  /**
+   * Moves a document to a different folder (or to the root) via an API call.
+   * Shows toast notifications for success or failure. This function primarily handles the API call;
+   * UI updates related to document lists are expected to be managed by other state/hooks.
+   */
   const moveDocument = useCallback(async (documentId: string, folderId: string | null): Promise<boolean> => {
     try {
       const response = await fetch(`/api/documents/${documentId}/move`, {
@@ -476,7 +571,11 @@ export function useFolders(): UseFoldersReturn {
     }
   }, []);
 
-  // Delete document (New function)
+  /**
+   * Deletes a document by its ID via an API call.
+   * Shows toast notifications for success or failure. Similar to `moveDocument`,
+   * this primarily handles the API interaction for document deletion.
+   */
   const deleteDocument = useCallback(async (id: string): Promise<boolean> => {
     try {
       const response = await fetch(`/api/documents/${id}`, {

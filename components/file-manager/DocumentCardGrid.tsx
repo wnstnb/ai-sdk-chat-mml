@@ -40,7 +40,13 @@ import type { Folder } from '@/types/supabase';
 import { useFileMediaStore } from '@/stores/fileMediaStore';
 
 // Define types for sorting
+/**
+ * The available keys to sort documents by.
+ */
 type SortKey = 'lastUpdated' | 'title' | 'is_starred';
+/**
+ * The available directions for sorting.
+ */
 type SortDirection = 'asc' | 'desc';
 
 // Define breakpoints and corresponding column counts
@@ -52,6 +58,11 @@ const BREAKPOINTS = {
   '2xl': 1536, // Assuming you might have 2xl for 5 columns
 };
 
+/**
+ * Determines the number of columns for the grid based on the window width.
+ * @param {number} width - The current window width.
+ * @returns {number} The number of columns to display.
+ */
 const getNumberOfColumns = (width: number): number => {
   if (width >= BREAKPOINTS['2xl']) return 5;
   if (width >= BREAKPOINTS.xl) return 5; // Tailwind's xl:grid-cols-5
@@ -61,6 +72,51 @@ const getNumberOfColumns = (width: number): number => {
   return 1; // Default to 1 column
 };
 
+/**
+ * Custom hook to track and log component re-renders and changed props.
+ * Useful for performance debugging.
+ * @param {string} componentName - The name of the component being tracked.
+ * @param {any} [props] - The props of the component to track changes.
+ * @returns {number} The current render count.
+ */
+// ADD: Component re-render tracking hook
+const useRenderTracker = (componentName: string, props?: any) => {
+  const renderCount = useRef(0);
+  const prevProps = useRef(props);
+  
+  useEffect(() => {
+    renderCount.current += 1;
+    
+    if (renderCount.current > 1 && props) {
+      const changedProps = Object.keys(props).filter(key => 
+        prevProps.current?.[key] !== props[key]
+      );
+      
+      if (changedProps.length > 0) {
+        console.log(`[RENDER TRACKER] ${componentName} re-rendered (${renderCount.current}). Changed props:`, changedProps);
+      }
+    }
+    
+    prevProps.current = props;
+  });
+  
+  return renderCount.current;
+};
+
+/**
+ * Custom hook for monitoring various performance metrics of a component,
+ * especially useful for lists or grids.
+ * @param {number} itemCount - The number of items being rendered, used to conditionally log metrics.
+ * @param {boolean} [isVirtualized=true] - Indicates if virtualization is active.
+ * @returns {{
+ *   performanceMetrics: { renderTime: number, scrollFPS: number, memoryUsage: number, lastMeasurement: number },
+ *   trackRenderStart: () => void,
+ *   trackRenderEnd: () => void,
+ *   trackScrollFPS: () => () => void, // Returns a cleanup function
+ *   trackMemoryUsage: () => void
+ * }}
+ * An object containing performance metrics and functions to trigger tracking.
+ */
 // ADD: Performance monitoring hook
 const usePerformanceMonitoring = (itemCount: number, isVirtualized: boolean = true) => {
   const [performanceMetrics, setPerformanceMetrics] = useState({
@@ -81,7 +137,7 @@ const usePerformanceMonitoring = (itemCount: number, isVirtualized: boolean = tr
 
   const trackRenderEnd = useCallback(() => {
     const renderTime = performance.now() - renderStartTime.current;
-    setPerformanceMetrics(prev => ({
+    setPerformanceMetrics((prev: { renderTime: number; scrollFPS: number; memoryUsage: number; lastMeasurement: number }) => ({
       ...prev,
       renderTime,
       lastMeasurement: Date.now(),
@@ -90,18 +146,27 @@ const usePerformanceMonitoring = (itemCount: number, isVirtualized: boolean = tr
 
   // Track scroll FPS
   const trackScrollFPS = useCallback(() => {
-    frameCountRef.current++;
-    const now = Date.now();
-    if (now - lastFPSMeasurement.current >= 1000) { // Measure every second
-      const fps = frameCountRef.current;
-      frameCountRef.current = 0;
-      lastFPSMeasurement.current = now;
-      setPerformanceMetrics(prev => ({
-        ...prev,
-        scrollFPS: fps,
-      }));
-    }
-    requestAnimationFrame(trackScrollFPS);
+    let animationFrameId: number;
+    const measure = () => {
+      frameCountRef.current++;
+      const now = Date.now();
+      if (now - lastFPSMeasurement.current >= 1000) { // Measure every second
+        const fps = frameCountRef.current;
+        frameCountRef.current = 0;
+        lastFPSMeasurement.current = now;
+        setPerformanceMetrics((prev: { renderTime: number; scrollFPS: number; memoryUsage: number; lastMeasurement: number }) => ({
+          ...prev,
+          scrollFPS: fps,
+        }));
+      }
+      animationFrameId = requestAnimationFrame(measure);
+    };
+    animationFrameId = requestAnimationFrame(measure);
+
+    // Return a cleanup function
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
   }, []);
 
   // Track memory usage (approximate)
@@ -109,7 +174,7 @@ const usePerformanceMonitoring = (itemCount: number, isVirtualized: boolean = tr
     if ('memory' in performance) {
       const memory = (performance as any).memory;
       const memoryUsage = memory.usedJSHeapSize / 1024 / 1024; // Convert to MB
-      setPerformanceMetrics(prev => ({
+      setPerformanceMetrics((prev: { renderTime: number; scrollFPS: number; memoryUsage: number; lastMeasurement: number }) => ({
         ...prev,
         memoryUsage,
       }));
@@ -132,6 +197,13 @@ const usePerformanceMonitoring = (itemCount: number, isVirtualized: boolean = tr
   };
 };
 
+/**
+ * DocumentCardGrid component.
+ * Renders a grid of document and folder cards with support for folder navigation,
+ * drag & drop, search, sorting, selection, and virtualization.
+ * It manages state for these features and interacts with various custom hooks and services.
+ * @returns {React.ReactElement} The rendered DocumentCardGrid component.
+ */
 const DocumentCardGrid: React.FC = () => {
   const { mappedDocuments: fetchedDocs, isLoading, error, fetchDocuments } = useAllDocuments();
   const { updateDocumentInStore, allDocuments: storeDocuments } = useFileMediaStore();
@@ -175,11 +247,11 @@ const DocumentCardGrid: React.FC = () => {
 
   // ADD: useEffect for logging draggedItems when it changes
   useEffect(() => {
-    if (draggedItems) {
-      console.log('[DEBUG] draggedItems changed:', JSON.stringify(draggedItems));
-    } else {
-      console.log('[DEBUG] draggedItems changed: null');
-    }
+    // if (draggedItems) {
+    //   console.log('[DEBUG] draggedItems changed:', JSON.stringify(draggedItems));
+    // } else {
+    //   console.log('[DEBUG] draggedItems changed: null');
+    // }
   }, [draggedItems]);
 
   // ADD: State for tracking which folder previews are loading
@@ -191,7 +263,19 @@ const DocumentCardGrid: React.FC = () => {
   // ADD: State for number of columns
   const [numberOfColumns, setNumberOfColumns] = useState(1);
 
-
+  // ADD: Track component re-renders for performance monitoring
+  const renderCount = useRenderTracker('DocumentCardGrid', {
+    isLoading,
+    error,
+    searchQuery,
+    searchResults: searchResults.length,
+    fetchedDocs: fetchedDocs?.length,
+    folderTree: folderTree.length,
+    isInFolderView,
+    currentFolderId,
+    sortKey,
+    sortDirection,
+  });
 
   // ADD: Effect to update number of columns on resize
   useEffect(() => {
@@ -430,7 +514,11 @@ const DocumentCardGrid: React.FC = () => {
     })
   );
 
-  // Helper to find document or folder details
+  /**
+   * Retrieves details for a given item ID (document or folder).
+   * @param {string} id - The ID of the item.
+   * @returns {{ id: string; type: 'document' | 'folder'; name: string } | null} Item details or null if not found.
+   */
   const getItemDetails = (id: string): { id: string; type: 'document' | 'folder'; name: string } | null => {
     const doc = getCurrentDisplayItems().documents.find(d => d.id === id);
     if (doc) return { id: doc.id, type: 'document', name: doc.title };
@@ -443,10 +531,18 @@ const DocumentCardGrid: React.FC = () => {
     return null;
   };
 
+  /**
+   * Handles retrying a failed operation, typically fetching documents.
+   */
   const handleRetry = () => {
     fetchDocuments();
   };
 
+  /**
+   * Handles the start of a drag operation.
+   * Sets up dragged item state and visual feedback.
+   * @param {DragStartEvent} event - The drag start event from @dnd-kit.
+   */
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     const activeId = active.id as string;
@@ -488,6 +584,11 @@ const DocumentCardGrid: React.FC = () => {
     }
   };
 
+  /**
+   * Handles the end of a drag operation.
+   * Determines the drop target and performs actions like moving files/folders.
+   * @param {DragEndEvent} event - The drag end event from @dnd-kit.
+   */
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     document.body.style.cursor = '';
@@ -676,14 +777,23 @@ const DocumentCardGrid: React.FC = () => {
     clearSelection(); // Clear selection after drag operation attempt
   };
 
+  /**
+   * Handles the cancellation of a drag operation.
+   * Resets any drag-related state.
+   * @param {DragCancelEvent} event - The drag cancel event from @dnd-kit.
+   */
   const handleDragCancel = (event: DragCancelEvent) => {
     document.body.style.cursor = '';
+    // console.log('[DEBUG] Drag cancelled - no navigation');
     setDraggedItems(null);
     setHasActuallyDragged(false);
-    console.log('[DEBUG] Drag cancelled - no navigation');
   };
 
   // Handlers for sorting UI
+  /**
+   * Handles changing the sort key for documents.
+   * @param {SortKey} key - The new sort key.
+   */
   const handleSortKeyChange = (key: SortKey) => {
     setSortKey(key);
     // Optional: Reset to default direction when key changes, or keep current direction
@@ -719,30 +829,23 @@ const DocumentCardGrid: React.FC = () => {
 
   // Helper function to enhance documents with store data
   const enhanceDocumentsWithStore = useCallback((docs: MappedDocumentCardData[]): MappedDocumentCardData[] => {
-    console.log('[DEBUG] enhanceDocumentsWithStore called with', docs.length, 'documents. Store has', storeDocuments.length, 'documents');
-    
+    if (!storeDocuments || storeDocuments.length === 0) return docs;
+    // console.log('[DEBUG] enhanceDocumentsWithStore called with', docs.length, 'documents. Store has', storeDocuments.length, 'documents');
     return docs.map(doc => {
-      // Find the corresponding document in the store (allDocuments contains Document type)
-      const storeDoc = storeDocuments.find(sDoc => sDoc.id === doc.id);
-      const enhanced = { ...doc, is_starred: storeDoc ? (storeDoc.is_starred || false) : doc.is_starred };
-      
-      // Debug logging for any document star changes
-      if (doc.is_starred !== enhanced.is_starred) {
-        console.log('[DEBUG] Document', doc.id, 'star status changed from', doc.is_starred, 'to', enhanced.is_starred, 'via store');
+      const storeDoc = storeDocuments.find(sd => sd.id === doc.id);
+      if (storeDoc && storeDoc.is_starred !== doc.is_starred) {
+        const enhanced = { ...doc, is_starred: storeDoc.is_starred };
+        // console.log('[DEBUG] Document', doc.id, 'star status changed from', doc.is_starred, 'to', enhanced.is_starred, 'via store');
+        return enhanced;
       }
-      
-      // Debug logging for specific document we're tracking
-      if (doc.id === '36ee2abe-ef85-4225-bfa7-68d8b1ce0408') {
-        console.log('[DEBUG] Enhancing document in getCurrentDisplayItems:', {
-          originalIsStarred: doc.is_starred,
-          storeDocExists: !!storeDoc,
-          storeDocIsStarred: storeDoc?.is_starred,
-          finalIsStarred: enhanced.is_starred,
-          storeDocumentsLength: storeDocuments.length
-        });
-      }
-      
-      return enhanced;
+      // console.log('[DEBUG] Enhancing document in getCurrentDisplayItems:', {
+      //   docId: doc.id,
+      //   docName: doc.name,
+      //   originalStarred: doc.is_starred,
+      //   storeDocFound: !!storeDoc,
+      //   storeDocStarred: storeDoc?.is_starred
+      // });
+      return doc;
     });
   }, [storeDocuments]);
 
@@ -822,19 +925,59 @@ const DocumentCardGrid: React.FC = () => {
     navigateToFolder(folderId, folderName);
   }, [navigateToFolder, loadSubFolders, loadingSubFolders, folderTree]);
 
+  // ADD: Memoize search result processing
+  const processedSearchResults = useMemo(() => {
+    if (!searchQuery || searchResults.length === 0) return [];
+    return enhanceDocumentsWithStore(searchResults);
+  }, [searchQuery, searchResults, enhanceDocumentsWithStore]);
+
+  // ADD: Memoize folder content processing
+  const processedFolderContents = useMemo(() => {
+    if (!isInFolderView || !currentFolderId) return [];
+    const currentFolderDocs = folderContents[currentFolderId] || [];
+    return enhanceDocumentsWithStore(currentFolderDocs);
+  }, [isInFolderView, currentFolderId, folderContents, enhanceDocumentsWithStore]);
+
+  // ADD: Memoize root level documents processing
+  const processedRootDocuments = useMemo(() => {
+    if (isInFolderView || searchQuery) return [];
+    const rootLevelDocs = fetchedDocs ? fetchedDocs.filter(doc => !doc.folder_id) : [];
+    return sortDocuments(enhanceDocumentsWithStore(rootLevelDocs), sortKey, sortDirection);
+  }, [isInFolderView, searchQuery, fetchedDocs, enhanceDocumentsWithStore, sortDocuments, sortKey, sortDirection]);
+
   // Get current display items
-  const currentDisplayItems = useMemo(() => getCurrentDisplayItems(), [
+  const currentDisplayItems = useMemo(() => {
+    if (searchQuery) {
+      // If a search query is active, display search results (documents only)
+      return {
+        folders: [], // No folders in search results view
+        documents: processedSearchResults,
+      };
+    }
+
+    if (isInFolderView && currentFolderId) {
+      // Show documents in current folder + subfolders of current folder
+      const currentFolderSubfolders = folderTree.find(f => f.id === currentFolderId)?.children || [];
+      
+      return {
+        folders: currentFolderSubfolders,
+        documents: processedFolderContents
+      };
+    } else {
+      // Show root level folders and documents
+      return {
+        folders: folderTree,
+        documents: processedRootDocuments
+      };
+    }
+  }, [
+    searchQuery,
+    processedSearchResults,
     isInFolderView, 
     currentFolderId, 
-    folderContents, 
-    folderTree, 
-    fetchedDocs, 
-    sortKey, 
-    sortDirection, 
-    sortDocuments,
-    searchQuery,
-    searchResults, 
-    enhanceDocumentsWithStore,
+    folderTree,
+    processedFolderContents,
+    processedRootDocuments,
   ]);
 
   // ADD: Combine folders and documents for virtualization
@@ -853,6 +996,23 @@ const DocumentCardGrid: React.FC = () => {
   // ADD: Update performance monitoring with actual item count
   const itemCountForPerformance = allItems.length;
   const performanceHook = usePerformanceMonitoring(itemCountForPerformance);
+
+  // ADD: Start FPS tracking when component mounts and scroll element is available
+  useEffect(() => {
+    if (parentRef.current) {
+      // performanceHook.trackScrollFPS(); // Start FPS tracking
+      // const scrollUnsubscribe = performanceHook.trackScrollFPS; // Get the function to call on scroll
+      // const currentParentRef = parentRef.current;
+      // currentParentRef.addEventListener('scroll', scrollUnsubscribe);
+      // return () => {
+      //   currentParentRef.removeEventListener('scroll', scrollUnsubscribe);
+      //   // Potentially add a cleanup for requestAnimationFrame if trackScrollFPS returns one
+      // };
+      // Simpler: If trackScrollFPS itself sets up and cleans up its own loop:
+      const cleanupFPS = performanceHook.trackScrollFPS(); // Assuming it returns a cleanup function
+      return cleanupFPS;
+    }
+  }, [performanceHook.trackScrollFPS, parentRef.current]); // Added parentRef.current as dependency
 
   // ADD: Dynamic overscan calculation based on dataset size
   const dynamicOverscan = useMemo(() => {
@@ -912,6 +1072,9 @@ const DocumentCardGrid: React.FC = () => {
     setSelectedItemIds(new Set());
   }, []);
 
+  /**
+   * Handles deleting all currently selected items.
+   */
   const handleDeleteSelected = async () => {
     const itemsToDelete = Array.from(selectedItemIds);
     if (itemsToDelete.length === 0) {
@@ -1073,6 +1236,7 @@ const DocumentCardGrid: React.FC = () => {
               height: `${rowVirtualizer.getTotalSize()}px`,
               width: '100%',
               position: 'relative',
+              willChange: 'opacity',
             }}
             role="grid"
             aria-label={`Document grid with ${currentItems.length} items${shouldPaginate ? ` (page ${currentPage + 1} of ${totalPages})` : ''}. Sorted by ${sortKey} in ${sortDirection === 'asc' ? 'ascending' : 'descending'} order. Use arrow keys to navigate between items.`}
@@ -1168,60 +1332,68 @@ const DocumentCardGrid: React.FC = () => {
   };
   
   const renderDragOverlay = () => {
-    console.log('[DEBUG] renderDragOverlay called. draggedItems:', draggedItems);
+    // console.log('[DEBUG] renderDragOverlay called. draggedItems:', draggedItems);
+    if (!draggedItems || draggedItems.length === 0) return null;
 
-    if (!draggedItems || !draggedItems.length) return null;
+    const itemCount = draggedItems.length;
 
-    if (draggedItems.length > 1) {
-      return (
-        <div 
-          className="p-4 rounded-lg flex items-center gap-2 backdrop-blur-sm font-medium"
-          style={{
-            backgroundColor: 'rgba(var(--background-rgb), 0.9)',
-            color: 'var(--text-color)',
-            border: '2px solid var(--border-color)',
-            boxShadow: 'var(--shadow-lg)',
-          }}
-        >
-          <FileText 
-            className="w-5 h-5" 
-            style={{ color: 'var(--primary-color)' }}
-          />
-          <span>Moving {draggedItems.length} items</span>
-        </div>
-      );
-    }
+    // return (
+    //   <DragOverlay dropAnimation={null}>
+    //     <div 
+    //       className="rounded-lg shadow-2xl p-4 bg-[var(--accent-color)] text-white dark:bg-opacity-90 flex flex-col items-center justify-center space-y-2"
+    //       style={{ minWidth: '180px', minHeight: '100px' }}
+    //     >
+    //       {draggedItems.length === 1 && draggedItems[0].type === 'document' && (
+    //         <FileTextIcon size={28} className="mb-1" />
+    //       )}
+    //       {draggedItems.length === 1 && draggedItems[0].type === 'folder' && (
+    //         <FolderIcon size={28} className="mb-1" />
+    //       )}
+    //       {draggedItems.length > 1 && (
+    //         <div className="relative mb-1">
+    //           <FileTextIcon size={28} className="opacity-70 transform -translate-x-1 -translate-y-1" />
+    //           <FolderIcon size={28} className="absolute top-0 left-0 opacity-70 transform translate-x-1 translate-y-1" />
+    //           <CheckSquare size={28} className="absolute top-0 left-0" />
+    //         </div>
+    //       )}
+          
+    //       <p className="font-semibold text-sm text-center">
+    //         {draggedItems.length === 1 
+    //           ? truncateText(draggedItems[0].name, 25) 
+    //           : `${draggedItems.length} items`
+    //         }
+    //       </p>
+    //       {/* <p className="text-xs">Moving...</p> */}
+    //     </div>
+    //   </DragOverlay>
+    // );
 
-    // Single item preview
-    const item = draggedItems[0];
-    if (!item || !item.name) { // Ensure item and item.name are defined
-        // Fallback or error display if item or item.name is undefined
-        return (
-            <div className="p-2 bg-white rounded shadow-lg opacity-75 flex items-center space-x-2">
-                <AlertTriangle className="w-5 h-5 text-red-500" />
-                <span>Invalid item data</span>
-            </div>
-        );
-    }
-
-    const IconComponent = item.type === 'folder' ? FolderIcon : FileTextIcon;
+    // // console.log('[DEBUG] DragOverlay rendering. draggedItems:', JSON.stringify(draggedItems)); // This was the one added previously by mistake
 
     return (
-      <div 
-        className="p-3 rounded-lg flex items-center gap-2 backdrop-blur-sm font-medium"
-        style={{
-          backgroundColor: 'rgba(var(--background-rgb), 0.9)',
-          color: 'var(--text-color)',
-          border: '1px solid var(--border-color)',
-          boxShadow: 'var(--shadow-lg)',
-        }}
-      >
-        <IconComponent 
-          className="w-4 h-4" 
-          style={{ color: 'var(--primary-color)' }}
-        />
-        <span className="truncate max-w-[200px]">{item.name}</span>
-      </div>
+      <DragOverlay dropAnimation={null}>
+        {/* Breadcrumb Navigation - moved inside DndContext for potential drop targets */}
+        <div className="px-4 pt-2 pb-2"> {/* Added some padding around breadcrumbs */}
+          <FolderBreadcrumbs
+            currentPath={breadcrumbPath}
+            onNavigate={navigateToFolder} // Changed from handleFolderNavigate as it includes subfolder loading
+          />
+        </div>
+        
+        {/* Call the function to render the main grid content */}
+        {renderGridContent()}
+
+        {/* DragOverlay should be inside DndContext */}
+        {draggedItems && draggedItems.length > 0 && (
+           <DragOverlay dropAnimation={null}>
+            {(() => { // IIFE for logging within JSX
+              // console.log('[DEBUG] DragOverlay rendering. draggedItems:', JSON.stringify(draggedItems)); // REMOVE THIS LINE
+              return renderDragOverlay(); // Corrected function name
+            })()}
+          </DragOverlay>
+        )}
+
+      </DragOverlay>
     );
   };
 
@@ -1370,8 +1542,8 @@ const DocumentCardGrid: React.FC = () => {
         {draggedItems && draggedItems.length > 0 && (
            <DragOverlay dropAnimation={null}>
             {(() => { // IIFE for logging within JSX
-              console.log('[DEBUG] DragOverlay rendering. draggedItems:', JSON.stringify(draggedItems));
-              return renderDragOverlay();
+              // console.log('[DEBUG] DragOverlay rendering. draggedItems:', JSON.stringify(draggedItems)); // REMOVE THIS LINE
+              return renderDragOverlay(); // Corrected function name
             })()}
           </DragOverlay>
         )}

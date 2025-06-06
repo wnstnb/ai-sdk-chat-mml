@@ -7,22 +7,69 @@ import DocumentCard from './DocumentCard';
 import type { MappedDocumentCardData } from '@/lib/mappers/documentMappers';
 import DocumentCardMini from './DocumentCardMini';
 
+/**
+ * Props for the FolderCard component.
+ */
 interface FolderCardProps {
+  /** Unique identifier for the folder. */
   id: string;
+  /** The title or name of the folder. */
   title: string;
+  /** The number of documents directly contained within this folder. */
   documentCount: number;
+  /** Optional boolean indicating if the folder card is currently expanded (e.g., in a tree view or showing preview). Defaults to false. */
   isExpanded?: boolean;
+  /** Optional array of document data for previewing contents when expanded. */
   containedDocuments?: MappedDocumentCardData[];
+  /** Optional callback invoked when the folder's expanded state is toggled (e.g., by clicking the card). */
   onToggleExpanded?: () => void;
+  /** Optional callback invoked when a folder action (rename, delete) is selected from the menu. */
   onFolderAction?: (action: 'rename' | 'delete') => void;
+  /** Optional boolean indicating if the card is currently selected. Defaults to false. */
   isSelected?: boolean;
+  /** Optional callback function to toggle the selection state of the card. */
   onToggleSelect?: (id: string) => void;
+  /** Optional async function to load specific contents (documents) for the folder preview. */
   loadFolderSpecificContents?: (folderId: string) => Promise<void>;
+  /** Optional boolean indicating if the folder-specific contents (for preview) are currently loading. */
   isLoadingContents?: boolean;
+  /** Optional boolean indicating if child items (subfolders/documents) are loading, typically for tree view expansion. */
   isLoadingChildren?: boolean;
 }
 
-const FolderCard: React.FC<FolderCardProps> = React.memo(({
+// ADD: Custom comparison function for React.memo
+const areFolderCardPropsEqual = (prevProps: FolderCardProps, nextProps: FolderCardProps): boolean => {
+  // Compare contained documents by length and IDs (shallow comparison)
+  const documentsEqual = prevProps.containedDocuments?.length === nextProps.containedDocuments?.length &&
+    (prevProps.containedDocuments?.every((doc, index) => 
+      doc.id === nextProps.containedDocuments?.[index]?.id &&
+      doc.title === nextProps.containedDocuments?.[index]?.title &&
+      doc.is_starred === nextProps.containedDocuments?.[index]?.is_starred
+    ) ?? true);
+
+  const areEqual = 
+    prevProps.id === nextProps.id &&
+    prevProps.title === nextProps.title &&
+    prevProps.documentCount === nextProps.documentCount &&
+    prevProps.isExpanded === nextProps.isExpanded &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.isLoadingContents === nextProps.isLoadingContents &&
+    prevProps.isLoadingChildren === nextProps.isLoadingChildren &&
+    documentsEqual;
+    // Exclude function props from comparison as they can change reference
+
+  return areEqual;
+};
+
+/**
+ * FolderCard component.
+ * Displays a folder as a card, showing its name, document count, and an optional preview of contained documents.
+ * Supports selection, expansion to show previews, drag-and-drop (as a droppable target),
+ * and a context menu for actions like rename and delete.
+ * @param {FolderCardProps} props - The props for the component.
+ * @returns {React.ReactElement} The rendered FolderCard.
+ */
+const FolderCard: React.FC<FolderCardProps> = ({
   id,
   title,
   documentCount,
@@ -38,6 +85,7 @@ const FolderCard: React.FC<FolderCardProps> = React.memo(({
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  /** Memoized display title for the folder, defaults to "(Untitled Folder)". */
   const displayTitle = title || "(Untitled Folder)";
 
   const [isInternalPreviewExpanded, setIsInternalPreviewExpanded] = useState(false);
@@ -52,6 +100,12 @@ const FolderCard: React.FC<FolderCardProps> = React.memo(({
 
   const style = {};
 
+  /** 
+   * Handles clicks on the main folder card area.
+   * Triggers folder expansion/collapse if `onToggleExpanded` is provided.
+   * Prevents action if the click originated from the context menu or preview toggle.
+   * @param {React.MouseEvent} e - The mouse event.
+   */
   const handleFolderClick = (e: React.MouseEvent) => {
     if (e.target instanceof Element && (e.target.closest('[data-menu]') || e.target.closest('[data-preview-toggle]'))) {
       return;
@@ -60,6 +114,11 @@ const FolderCard: React.FC<FolderCardProps> = React.memo(({
     onToggleExpanded?.();
   };
 
+  /**
+   * Toggles the internal preview section of the folder card (showing contained documents).
+   * Loads folder contents via `loadFolderSpecificContents` if expanding and contents are not already loaded.
+   * @param {React.MouseEvent} e - The mouse event.
+   */
   const handleToggleInternalPreview = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const newPreviewState = !isInternalPreviewExpanded;
@@ -69,6 +128,11 @@ const FolderCard: React.FC<FolderCardProps> = React.memo(({
     }
   };
 
+  /**
+   * Handles actions selected from the folder's context menu (e.g., rename, delete).
+   * Closes the menu and calls the `onFolderAction` prop.
+   * @param {'rename' | 'delete'} action - The action selected from the menu.
+   */
   const handleMenuAction = (action: 'rename' | 'delete') => {
     setIsMenuOpen(false);
     onFolderAction?.(action);
@@ -291,15 +355,9 @@ const FolderCard: React.FC<FolderCardProps> = React.memo(({
       </div>
     </article>
   );
-});
+};
 
 // ADD: Set display name for the memoized FolderCard component
 FolderCard.displayName = 'FolderCard';
 
-// REMOVE the incorrect MemoizedFolderCard wrapper and its export
-// const MemoizedFolderCard = React.memo(FolderCard);
-// MemoizedFolderCard.displayName = 'FolderCard';
-// export default MemoizedFolderCard;
-
-// RESTORE: Export the original FolderCard
-export default FolderCard; 
+export default React.memo(FolderCard, areFolderCardPropsEqual); 

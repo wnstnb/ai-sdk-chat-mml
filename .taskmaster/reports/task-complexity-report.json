@@ -1,9 +1,9 @@
 {
   "meta": {
-    "generatedAt": "2025-06-06T17:31:51.012Z",
-    "tasksAnalyzed": 1,
-    "totalTasks": 16,
-    "analysisCount": 15,
+    "generatedAt": "2025-06-06T21:52:38.230Z",
+    "tasksAnalyzed": 5,
+    "totalTasks": 21,
+    "analysisCount": 20,
     "thresholdScore": 5,
     "projectName": "Taskmaster",
     "usedResearch": true
@@ -128,6 +128,46 @@
       "recommendedSubtasks": 8,
       "expansionPrompt": "Break down the implementation of the star/favorite toggle for document cards into subtasks covering UI component integration, state management, API communication, optimistic updates, error handling, offline support, accessibility, and testing.",
       "reasoning": "This task involves multiple layers of complexity: UI/UX design, real-time state management, backend API integration, optimistic UI updates, error handling, offline queuing, and comprehensive testing (unit, integration, end-to-end, and manual). The need to handle asynchronous operations, maintain responsive feedback, and ensure accessibility and offline support increases both cyclomatic and structural complexity. Given these factors, the task is moderately complex and should be split into at least 8 subtasks to ensure clarity and maintainability."
+    },
+    {
+      "taskId": 17,
+      "taskTitle": "Implement Audio Recording Custom Hook",
+      "complexityScore": 8,
+      "recommendedSubtasks": 7,
+      "reasoning": "This task involves creating a complex custom React hook that handles audio recording, state management, and transcription. It requires deep understanding of browser APIs, React hooks patterns, and proper abstraction design. The existing subtasks already cover the main aspects, but the complexity comes from handling browser permissions, audio processing, and ensuring proper cleanup to prevent memory leaks.",
+      "expansionPrompt": "Break down the implementation of the useAudioRecorder custom hook into detailed subtasks, focusing on the core functionality modules: permission handling, recording state management, audio processing, transcription integration, and optimization. Include specific implementation details for each React hook (useState, useEffect, useCallback) and error handling strategies."
+    },
+    {
+      "taskId": 18,
+      "taskTitle": "Integrate Reusable Audio Logic into NewDocumentModal.tsx",
+      "complexityScore": 6,
+      "recommendedSubtasks": 5,
+      "reasoning": "This task involves integrating the custom hook created in Task 17 into a specific component. While less complex than creating the hook itself, it still requires careful implementation of UI elements, proper state management, and handling of the recording lifecycle within the modal context. The task requires understanding how to properly connect the hook's outputs to the modal's input fields and UI elements.",
+      "expansionPrompt": "Break down the integration of the useAudioRecorder hook into NewDocumentModal.tsx into subtasks covering: UI implementation for recording controls, state connection between hook and modal, transcription text handling, error state management, and cleanup logic to ensure proper resource management when the modal closes."
+    },
+    {
+      "taskId": 19,
+      "taskTitle": "Adapt ChatInputUI for Modal's Audio Integration",
+      "complexityScore": 5,
+      "recommendedSubtasks": 4,
+      "reasoning": "This task focuses on adapting an existing UI component to work with the audio recording functionality. It requires understanding the current implementation, modifying the props interface, and ensuring proper connection between the hook's state and the UI elements. The complexity is moderate as it involves working with existing code rather than creating new functionality from scratch.",
+      "expansionPrompt": "Break down the adaptation of ChatInputUI for audio recording into subtasks covering: props interface extension, UI element modifications for recording states, connection with the useAudioRecorder hook's state and handlers, and accessibility improvements for audio recording states."
+    },
+    {
+      "taskId": 20,
+      "taskTitle": "Implement Transcribed Audio Population in Modal Input",
+      "complexityScore": 4,
+      "recommendedSubtasks": 3,
+      "reasoning": "This task is focused on a specific functionality - ensuring transcribed text correctly updates the modal's input state. It's relatively straightforward but requires careful handling of state updates, potential race conditions, and user experience considerations. The main complexity comes from ensuring proper text formatting and handling edge cases.",
+      "expansionPrompt": "Break down the implementation of transcribed text population into subtasks covering: state connection between transcription results and input fields, text formatting and cursor positioning logic, and user experience enhancements like visual feedback for newly added transcribed text."
+    },
+    {
+      "taskId": 21,
+      "taskTitle": "Test and Debug Audio Integration in NewDocumentModal",
+      "complexityScore": 7,
+      "recommendedSubtasks": 6,
+      "reasoning": "Testing and debugging audio functionality is complex due to the variety of environments, browser implementations, and potential permission issues. This task requires comprehensive testing across different browsers, microphone configurations, and user scenarios. It also involves comparing behavior with the original implementation and fixing any discrepancies.",
+      "expansionPrompt": "Break down the testing and debugging process into subtasks covering: cross-browser compatibility testing, permission handling verification, transcription accuracy testing, error state handling, performance optimization, and accessibility validation. Include specific test cases and debugging strategies for each area."
     }
   ]
 }

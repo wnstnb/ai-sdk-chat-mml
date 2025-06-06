@@ -2,16 +2,35 @@ import React, { useMemo, useRef, useEffect } from 'react';
 import { ChevronRight, Home } from 'lucide-react';
 import { useDroppable, useDndContext } from '@dnd-kit/core';
 
+/**
+ * Represents a single item in the breadcrumb path.
+ */
 interface BreadcrumbItem {
-  id: string | null; // null for root
+  /** The ID of the folder, or null if it represents the root. */
+  id: string | null;
+  /** The display name of the folder or root. */
   name: string;
 }
 
+/**
+ * Props for the FolderBreadcrumbs component.
+ */
 interface FolderBreadcrumbsProps {
+  /** An array of BreadcrumbItem objects representing the current navigation path. */
   currentPath: BreadcrumbItem[];
+  /** Callback function invoked when a breadcrumb item is clicked to navigate to that folder. */
   onNavigate: (folderId: string | null) => void;
 }
 
+/**
+ * FolderBreadcrumbs component.
+ * Displays the current folder navigation path (e.g., "All Files > Folder A > Subfolder B").
+ * Each breadcrumb segment is clickable to navigate to that folder and also acts as a droppable target
+ * for moving documents or folders into it.
+ * A fixed number of droppable hooks (max 10) are initialized to maintain hook call consistency.
+ * @param {FolderBreadcrumbsProps} props - The props for the component.
+ * @returns {React.ReactElement} The rendered FolderBreadcrumbs component.
+ */
 const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
   currentPath,
   onNavigate,
@@ -23,39 +42,45 @@ const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
   // Track when drag starts/ends to prevent click navigation during drops
   useEffect(() => {
     if (active) {
-      console.log('[DEBUG] Drag detected in breadcrumbs - setting drag active flag');
+      // console.log('[DEBUG] Drag detected in breadcrumbs - setting drag active flag');
       isDragActiveRef.current = true;
     } else {
-      console.log('[DEBUG] Drag ended in breadcrumbs - scheduling drag flag reset');
+      // console.log('[DEBUG] Drag ended in breadcrumbs - scheduling drag flag reset');
       // Reset drag flag after a short delay to allow drop to complete
       const timer = setTimeout(() => {
-        console.log('[DEBUG] Resetting drag active flag in breadcrumbs');
+        // console.log('[DEBUG] Resetting drag active flag in breadcrumbs');
         isDragActiveRef.current = false;
       }, 150);
       return () => clearTimeout(timer);
     }
   }, [active]);
 
-  // Handle breadcrumb navigation with drag conflict prevention
+  /**
+   * Handles clicks on a breadcrumb item.
+   * Navigates to the corresponding folder ID if no drag operation is currently active.
+   * This prevents accidental navigation when dropping an item onto a breadcrumb.
+   * @param {string | null} folderId - The ID of the folder to navigate to (null for root).
+   * @param {React.MouseEvent} e - The mouse event.
+   */
   const handleBreadcrumbClick = (folderId: string | null, e: React.MouseEvent) => {
-    console.log('[DEBUG] Breadcrumb click triggered:', {
-      folderId,
-      isDragActive: isDragActiveRef.current,
-      hasActiveElement: !!active,
-      timestamp: new Date().toISOString(),
-      eventType: e.type,
-      target: e.target
-    });
+    // console.log('[DEBUG] Breadcrumb click triggered:', {
+    //   folderId,
+    //   isDragActive: isDragActiveRef.current,
+    //   hasActiveElement: !!active,
+    //   timestamp: new Date().toISOString(),
+    //   eventType: e.type,
+    //   target: e.target
+    // });
     
     // Prevent navigation if a drag operation was recently active OR if we have an active drag
     if (isDragActiveRef.current || active) {
-      console.log('[DEBUG] Preventing breadcrumb navigation due to active drag');
+      // console.log('[DEBUG] Preventing breadcrumb navigation due to active drag');
       e.preventDefault();
       e.stopPropagation();
       return;
     }
     
-    console.log('[DEBUG] Allowing breadcrumb navigation to:', folderId);
+    // console.log('[DEBUG] Allowing breadcrumb navigation to:', folderId);
     onNavigate(folderId);
   };
 
@@ -72,11 +97,11 @@ const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
   // Debug: Log when root breadcrumb is being hovered over during drag
   useEffect(() => {
     if (isOverRoot && active) {
-      console.log('[DEBUG] Root breadcrumb is being hovered during drag:', {
-        isOverRoot,
-        activeItem: active.id,
-        timestamp: new Date().toISOString()
-      });
+      // console.log('[DEBUG] Root breadcrumb is being hovered during drag:', {
+      //   isOverRoot,
+      //   activeItem: active.id,
+      //   timestamp: new Date().toISOString()
+      // });
     }
   }, [isOverRoot, active]);
 
@@ -161,13 +186,13 @@ const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
       <button
         ref={(node) => {
           setRootDropRef(node);
-          if (node) {
-            console.log('[DEBUG] Root breadcrumb drop ref set:', {
-              nodeType: node.tagName,
-              id: 'breadcrumb-root',
-              hasActiveItem: !!active
-            });
-          }
+          // if (node) {
+          //   console.log('[DEBUG] Root breadcrumb drop ref set:', {
+          //     nodeType: node.tagName,
+          //     id: 'breadcrumb-root',
+          //     hasActiveItem: !!active
+          //   });
+          // }
         }}
         onClick={(e) => handleBreadcrumbClick(null, e)}
         className={`
