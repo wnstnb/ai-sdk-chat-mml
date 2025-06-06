@@ -127,9 +127,11 @@ const CardPreview: React.FC = () => {
         {mappedDocs.map((doc) => (
           <DocumentCard
             key={doc.id}
+            id={doc.id}
             title={doc.title}
             lastUpdated={doc.lastUpdated}
             snippet={doc.snippet}
+            is_starred={doc.is_starred}
           />
         ))}
       </div>

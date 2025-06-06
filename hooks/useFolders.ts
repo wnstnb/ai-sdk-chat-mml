@@ -26,6 +26,7 @@ interface UseFoldersReturn {
   fetchFolders: () => Promise<void>;
   getFolderContents: (folderId: string) => Promise<FolderWithContents | null>;
   moveDocument: (documentId: string, folderId: string | null) => Promise<boolean>;
+  deleteDocument: (id: string) => Promise<boolean>;
 }
 
 export function useFolders(): UseFoldersReturn {
@@ -207,6 +208,31 @@ export function useFolders(): UseFoldersReturn {
     }
   }, []);
 
+  // Delete document (New function)
+  const deleteDocument = useCallback(async (id: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`/api/documents/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `Failed to delete document (${response.status})`);
+      }
+
+      // No specific data returned on 204 No Content for DELETE usually
+      toast.success('Document deleted successfully.');
+      // Refresh relevant data - fetchFolders also indirectly causes document lists to refresh if dependent
+      await fetchFolders(); 
+      // Consider if a direct document list refresh is needed or if useAllDocuments handles this via its own mechanisms
+      return true;
+    } catch (err: any) {
+      console.error('[useFolders] Error deleting document:', err);
+      toast.error(`Failed to delete document: ${err.message}`);
+      return false;
+    }
+  }, [fetchFolders]);
+
   // Initial fetch
   useEffect(() => {
     fetchFolders();
@@ -250,5 +276,6 @@ export function useFolders(): UseFoldersReturn {
     fetchFolders,
     getFolderContents,
     moveDocument,
+    deleteDocument,
   };
 } 

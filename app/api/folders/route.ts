@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { Folder } from '@/types/supabase';
+import { getFileBrowserRateLimiter, getIP } from '@/lib/rate-limit'; // Import rate limiting utilities
 
 export async function POST(request: Request) {
   const cookieStore = cookies();
@@ -61,6 +62,29 @@ export async function POST(request: Request) {
 
 // GET handler for retrieving all user folders
 export async function GET(request: Request) {
+  const ip = getIP(request);
+  if (ip) {
+    const limiter = getFileBrowserRateLimiter();
+    if (limiter) { // Check if limiter is available (Redis configured)
+      const { success, limit, remaining, reset } = await limiter.limit(ip);
+      if (!success) {
+        return NextResponse.json(
+          { error: { code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again later.' } }, 
+          { 
+            status: 429, 
+            headers: {
+              'X-RateLimit-Limit': limit.toString(),
+              'X-RateLimit-Remaining': remaining.toString(),
+              'X-RateLimit-Reset': new Date(reset).toISOString(),
+            }
+          }
+        );
+      }
+    }
+  } else {
+    // console.warn('Could not determine IP for rate limiting. Proceeding without rate limit check for this request.');
+  }
+
   const cookieStore = cookies();
   const supabase = createSupabaseServerClient();
   const { searchParams } = new URL(request.url);

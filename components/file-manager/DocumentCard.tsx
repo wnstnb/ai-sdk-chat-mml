@@ -1,5 +1,5 @@
-import React from 'react';
-import { FileText, Star } from 'lucide-react'; // Import FileText and Star icons
+import React, { useRef, useEffect } from 'react';
+import { FileText, Star, CheckSquare, Square } from 'lucide-react'; // Added CheckSquare, Square
 import { formatRelativeDate } from '@/lib/utils/dateUtils'; // Import the new date utility
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -12,13 +12,16 @@ interface DocumentCardProps {
   lastUpdated: string | Date | number; // Allow various date input types
   snippet: string;
   is_starred: boolean; // Added for star icon
+  isSelected?: boolean; // Added
+  onToggleSelect?: (id: string) => void; // Added
   // Potentially an onClick handler, href, etc. later
 }
 
 const DocumentCard: React.FC<DocumentCardProps> = (props) => {
-  const { title, lastUpdated, snippet, id, is_starred } = props;
+  const { title, lastUpdated, snippet, id, is_starred, isSelected = false, onToggleSelect } = props;
   const displayTitle = title || "(Untitled)";
   const formattedDate = formatRelativeDate(lastUpdated);
+  const isDragStartedRef = useRef(false);
 
   const {
     attributes,
@@ -27,7 +30,7 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
     transform,
     transition,
     isDragging, // Optional: use if you want to change style while dragging
-  } = useSortable({ id });
+  } = useSortable({ id, data: { type: 'document', id, title: displayTitle } });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -35,6 +38,19 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
     opacity: isDragging ? 0.7 : 1, // Example: reduce opacity when dragging
     zIndex: isDragging ? 10 : 'auto', // Ensure dragging item is on top
   };
+
+  // Track drag state changes
+  useEffect(() => {
+    if (isDragging) {
+      isDragStartedRef.current = true;
+    } else {
+      // Reset drag flag after a short delay to allow for click prevention
+      const timer = setTimeout(() => {
+        isDragStartedRef.current = false;
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isDragging]);
 
   // Generate unique IDs for aria-describedby relationships
   const dateId = `date-${id}`;
@@ -45,21 +61,67 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
       ref={setNodeRef}
       style={style}
       {...attributes}
-      {...listeners}
-      className="group relative flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none transition-all duration-300 ease-in-out motion-reduce:transition-none overflow-hidden w-full max-w-[256px] aspect-[3/4] touch-manipulation focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[--accent-color] dark:focus:ring-offset-gray-800"
+      className={`group relative flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-md 
+        transition-all duration-300 ease-in-out motion-reduce:transition-none overflow-hidden 
+        w-full max-w-[256px] aspect-[3/4] touch-manipulation 
+        focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 
+        ${isSelected ? 'ring-2 ring-[--accent-color] shadow-lg' : 'focus:ring-[--accent-color]'}
+        ${!isSelected ? 'hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none' : ''}
+      `}
       aria-labelledby={`title-${id}`}
       aria-describedby={`${dateId} ${contentId}`}
       role="button"
       tabIndex={0}
       aria-label={`Document: ${displayTitle}${is_starred ? ' (starred)' : ''}. Last updated ${formattedDate}. Click to open or use arrow keys to reorder.`}
+      onClick={(e: React.MouseEvent<HTMLElement>) => {
+        const targetElement = e.target as HTMLElement;
+        
+        console.log('[DEBUG] DocumentCard click triggered:', {
+          documentId: id,
+          isDragStarted: isDragStartedRef.current,
+          isDragging: isDragging,
+          targetElement: targetElement.tagName,
+          isFromDragHandle: !!targetElement.closest('[data-drag-handle="true"]'),
+          isFromInteractiveElement: !!targetElement.closest('[data-interactive-element="true"]'),
+          timestamp: new Date().toISOString()
+        });
+        
+        // Check if drag was started recently or if click originated from drag handle/interactive elements
+        if (isDragStartedRef.current || 
+            targetElement.closest('[data-drag-handle="true"]') || 
+            targetElement.closest('[data-interactive-element="true"]')) {
+          console.log('[DEBUG] Preventing DocumentCard navigation due to drag/interactive element');
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        
+        console.log('[DEBUG] Allowing DocumentCard navigation to:', `/editor/${id}`);
+        window.location.href = `/editor/${id}`;
+      }}
     >
-      {/* Screen reader only text for drag and drop context */}
-      <div className="sr-only">
-        Draggable document card. Use arrow keys to reorder, or press space to start dragging and arrow keys to move.
-      </div>
+      {/* Checkbox for selection - positioned absolutely */}
+      {onToggleSelect && (
+        <button 
+          data-interactive-element="true" // Mark this button
+          onClick={(e) => {
+            e.stopPropagation(); // ESSENTIAL: Prevent event from bubbling
+            onToggleSelect(id);
+          }}
+          className="absolute top-2 left-2 z-20 p-1 rounded hover:bg-gray-200/70 dark:hover:bg-gray-700/70 transition-colors"
+          aria-label={isSelected ? `Deselect document ${displayTitle}` : `Select document ${displayTitle}`}
+          title={isSelected ? `Deselect document ${displayTitle}` : `Select document ${displayTitle}`}
+        >
+          {isSelected ? <CheckSquare size={18} className="text-blue-600 dark:text-blue-500" /> : <Square size={18} className="text-gray-500 dark:text-gray-400" />}
+        </button>
+      )}
 
-      {/* Glass-like Top Section (approx 20%) */}
-      <div className="h-[20%] bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md p-3 flex items-center justify-end border-b border-gray-200/50 dark:border-gray-600/50">
+      {/* Glass-like Top Section (Drag Handle) */}
+      <div 
+        {...listeners} // <-- APPLY listeners ONLY to this drag handle element
+        data-drag-handle="true" // Add data attribute to identify the drag handle
+        className="h-[20%] bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md p-3 flex items-center justify-end border-b border-gray-200/50 dark:border-gray-600/50 cursor-grab active:cursor-grabbing"
+      >
         {/* Icons container pushed to the right */}
         <div className="flex items-center space-x-2" role="img" aria-label={`Document indicators${is_starred ? ': starred document' : ': regular document'}`}>
           {is_starred && (

@@ -47,7 +47,7 @@ const CreateFolderModal: React.FC<CreateFolderModalProps> = ({
     try {
       const newFolder = await createFolder(folderName.trim(), selectedParentId);
       if (newFolder) {
-        toast.success(`Folder "${folderName}" created successfully!`);
+        toast.success(`Folder &quot;${folderName}&quot; created successfully!`);
         onFolderCreated?.(newFolder.id);
         onClose();
       }
@@ -185,7 +185,7 @@ const CreateFolderModal: React.FC<CreateFolderModalProps> = ({
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  Choose where to create the new folder. Leave as "Root Folder" to create at the top level.
+                  Choose where to create the new folder. Leave as &quot;Root Folder&quot; to create at the top level.
                 </p>
               </div>
 

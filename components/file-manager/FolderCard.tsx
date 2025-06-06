@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Folder, FolderOpen, MoreVertical } from 'lucide-react';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { Folder, FolderOpen, MoreVertical, CheckSquare, Square } from 'lucide-react';
+
 import { useDroppable } from '@dnd-kit/core';
 import DocumentCard from './DocumentCard';
 import type { MappedDocumentCardData } from '@/lib/mappers/documentMappers';
@@ -14,6 +13,8 @@ interface FolderCardProps {
   containedDocuments?: MappedDocumentCardData[];
   onToggleExpanded?: () => void;
   onFolderAction?: (action: 'rename' | 'delete') => void;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
 const FolderCard: React.FC<FolderCardProps> = ({
@@ -24,28 +25,15 @@ const FolderCard: React.FC<FolderCardProps> = ({
   containedDocuments = [],
   onToggleExpanded,
   onFolderAction,
+  isSelected = false,
+  onToggleSelect,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const displayTitle = title || "(Untitled Folder)";
 
-  // Sortable for folder reordering
-  const {
-    attributes,
-    listeners,
-    setNodeRef: setSortableNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ 
-    id: `folder-${id}`,
-    data: {
-      type: 'folder',
-    }
-  });
-
-  // Droppable for document dropping
-  const { setNodeRef: setDroppableNodeRef, isOver } = useDroppable({
+  // Droppable for document dropping (no longer sortable to prevent displacement)
+  const { setNodeRef, isOver } = useDroppable({
     id: `folder-${id}`,
     data: {
       type: 'folder',
@@ -53,18 +41,8 @@ const FolderCard: React.FC<FolderCardProps> = ({
     },
   });
 
-  // Combine refs
-  const setNodeRef = (node: HTMLElement | null) => {
-    setSortableNodeRef(node);
-    setDroppableNodeRef(node);
-  };
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.7 : 1,
-    zIndex: isDragging ? 10 : 'auto',
-  };
+  // No transform styles since folders are no longer sortable
+  const style = {};
 
   // Height is now controlled by aspect-ratio in className
   // const headerHeight = 80; // Height for folder header
@@ -121,15 +99,15 @@ const FolderCard: React.FC<FolderCardProps> = ({
         // height: totalHeight, // Removed explicit height
         // minHeight: totalHeight, // Removed explicit minHeight
       }}
-      {...attributes}
+
       className={`
         group relative flex flex-col rounded-lg 
         transition-all duration-300 ease-in-out motion-reduce:transition-none 
         ${isMenuOpen ? 'overflow-visible' : 'overflow-hidden'} w-full max-w-[256px] aspect-[3/4] touch-manipulation 
-        focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[--accent-color] 
-        dark:focus:ring-offset-gray-800 cursor-pointer
+        focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 
+        ${isSelected ? 'ring-2 ring-[--accent-color] shadow-md' : 'focus:ring-[--accent-color]'}
         ${isOver ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}
-        ${isExpanded ? 'hover:shadow-xl' : 'hover:shadow-lg hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none'}
+        ${!isSelected && (isExpanded ? 'hover:shadow-xl' : 'hover:shadow-lg hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none')}
       `}
       aria-labelledby={`folder-title-${id}`}
       aria-describedby={`folder-count-${id}`}
@@ -146,27 +124,31 @@ const FolderCard: React.FC<FolderCardProps> = ({
     >
       {/* Screen reader only text for drag and drop context */}
       <div className="sr-only">
-        Draggable folder card. Use arrow keys to reorder, or press space to start dragging and arrow keys to move. Drop documents here to add them to this folder.
+        Folder card. Drop documents here to add them to this folder.
       </div>
 
       {/* Full Glass Effect Container */}
-      <div className="h-full bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md border border-gray-200/50 dark:border-gray-600/50 rounded-lg">
+      <div className="h-full flex flex-col bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md border border-gray-200/50 dark:border-gray-600/50 rounded-lg">
+        
+        {/* Checkbox for selection - positioned absolutely */}
+        {onToggleSelect && (
+          <button 
+            onClick={(e) => {
+              e.stopPropagation(); // Prevent card click/drag
+              onToggleSelect(id);
+            }}
+            className="absolute top-2 left-2 z-20 p-1 rounded hover:bg-gray-300/70 dark:hover:bg-gray-600/70 transition-colors"
+            aria-label={isSelected ? `Deselect folder ${title}` : `Select folder ${title}`}
+            title={isSelected ? `Deselect folder ${title}` : `Select folder ${title}`}
+          >
+            {isSelected ? <CheckSquare size={18} className="text-blue-600 dark:text-blue-500" /> : <Square size={18} className="text-gray-500 dark:text-gray-400" />}
+          </button>
+        )}
         
         {/* Folder Header */}
         <div className="p-4 flex items-center justify-between border-b border-gray-200/30 dark:border-gray-600/30">
           <div className="flex items-center space-x-3 flex-1 min-w-0">
-            {/* Drag Handle */}
-            <div 
-              {...listeners}
-              className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 -m-1 rounded hover:bg-gray-200/50 dark:hover:bg-gray-600/50 transition-colors"
-              aria-label="Drag handle for folder reordering"
-            >
-              <div className="w-2 h-4 flex flex-col justify-center space-y-1">
-                <div className="w-full h-0.5 bg-gray-400 dark:bg-gray-500 rounded"></div>
-                <div className="w-full h-0.5 bg-gray-400 dark:bg-gray-500 rounded"></div>
-                <div className="w-full h-0.5 bg-gray-400 dark:bg-gray-500 rounded"></div>
-              </div>
-            </div>
+            {/* Drag Handle - Removed since folders are no longer draggable */}
             
             {/* Folder Icon */}
             <div className="flex-shrink-0">
@@ -303,8 +285,6 @@ const FolderCard: React.FC<FolderCardProps> = ({
           )}
         </div>
 
-
-
         {/* Drop overlay when dragging over */}
         {isOver && (
           <div className="absolute inset-0 bg-blue-500/20 border-2 border-blue-500 border-dashed rounded-lg flex items-center justify-center">
@@ -314,8 +294,6 @@ const FolderCard: React.FC<FolderCardProps> = ({
           </div>
         )}
       </div>
-
-
     </article>
   );
 };

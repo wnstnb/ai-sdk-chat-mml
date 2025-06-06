@@ -230,7 +230,7 @@ const FolderContentDisplay: React.FC<FolderContentDisplayProps> = ({
                         Empty Folder
                       </h4>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                        This folder doesn't contain any documents or subfolders yet.
+                        This folder doesn&apos;t contain any documents or subfolders yet.
                       </p>
                       <div className="flex justify-center space-x-2">
                         {onCreateSubfolder && (
