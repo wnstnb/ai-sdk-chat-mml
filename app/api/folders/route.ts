@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { Folder } from '@/types/supabase';
+import { getFileBrowserRateLimiter, getIP } from '@/lib/rate-limit'; // Import rate limiting utilities
 
 export async function POST(request: Request) {
   const cookieStore = cookies();
@@ -57,4 +58,126 @@ export async function POST(request: Request) {
     console.error('Folder POST Error:', error.message);
     return NextResponse.json({ error: { code: 'SERVER_ERROR', message: `An unexpected error occurred: ${error.message}` } }, { status: 500 });
   }
+}
+
+// GET handler for retrieving all user folders
+export async function GET(request: Request) {
+  const ip = getIP(request);
+  if (ip) {
+    const limiter = getFileBrowserRateLimiter();
+    if (limiter) { // Check if limiter is available (Redis configured)
+      const { success, limit, remaining, reset } = await limiter.limit(ip);
+      if (!success) {
+        return NextResponse.json(
+          { error: { code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again later.' } }, 
+          { 
+            status: 429, 
+            headers: {
+              'X-RateLimit-Limit': limit.toString(),
+              'X-RateLimit-Remaining': remaining.toString(),
+              'X-RateLimit-Reset': new Date(reset).toISOString(),
+            }
+          }
+        );
+      }
+    }
+  } else {
+    // console.warn('Could not determine IP for rate limiting. Proceeding without rate limit check for this request.');
+  }
+
+  const cookieStore = cookies();
+  const supabase = createSupabaseServerClient();
+  const { searchParams } = new URL(request.url);
+  const hierarchical = searchParams.get('hierarchical') === 'true';
+  const parentId = searchParams.get('parentId');
+
+  try {
+    // 1. Get User Session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      return NextResponse.json({ error: { code: sessionError ? 'SERVER_ERROR' : 'UNAUTHENTICATED', message: sessionError?.message || 'User not authenticated.' } }, { status: sessionError ? 500 : 401 });
+    }
+    const userId = session.user.id;
+
+    // 2. Build query based on parameters
+    let query = supabase
+      .from('folders')
+      .select('*, documents(count)')
+      .eq('user_id', userId);
+
+    // If parentId is specified, filter by parent
+    if (parentId !== null) {
+      if (parentId === 'root') {
+        query = query.is('parent_folder_id', null);
+      } else {
+        query = query.eq('parent_folder_id', parentId);
+      }
+    }
+
+    query = query.order('name', { ascending: true });
+
+    const { data: rawFolders, error: foldersError } = await query;
+
+    if (foldersError) {
+      console.error('Folders Fetch Error:', foldersError.message);
+      return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch folders: ${foldersError.message}` } }, { status: 500 });
+    }
+
+    // ADDED: Transform rawFolders to include document_count
+    const folders = (rawFolders || []).map(folder => {
+      const count = folder.documents && Array.isArray(folder.documents) && folder.documents.length > 0 && typeof folder.documents[0].count === 'number'
+        ? folder.documents[0].count
+        : 0;
+      const { documents, ...restOfFolder } = folder; // Exclude the 'documents' array used for counting
+      return {
+        ...restOfFolder,
+        document_count: count,
+      };
+    });
+
+    // 3. If hierarchical structure is requested, build tree
+    if (hierarchical && parentId === null) {
+      const folderTree = buildFolderTree(folders as Folder[]);
+      return NextResponse.json({ data: { folders: folderTree, hierarchical: true } }, { status: 200 });
+    }
+
+    // 4. Return flat list of folders
+    return NextResponse.json({ data: { folders: (folders as Folder[]) || [] } }, { status: 200 });
+
+  } catch (error: any) {
+    console.error('Folders GET Error:', error.message);
+    return NextResponse.json({ error: { code: 'SERVER_ERROR', message: `An unexpected error occurred: ${error.message}` } }, { status: 500 });
+  }
+}
+
+// Helper function to build hierarchical folder tree
+function buildFolderTree(folders: Folder[]): (Folder & { children: Folder[] })[] {
+  const folderMap = new Map<string, Folder & { children: Folder[] }>();
+  const rootFolders: (Folder & { children: Folder[] })[] = [];
+
+  // First pass: create map of all folders with children array
+  folders.forEach(folder => {
+    folderMap.set(folder.id, { ...folder, children: [] });
+  });
+
+  // Second pass: build tree structure
+  folders.forEach(folder => {
+    const folderWithChildren = folderMap.get(folder.id)!;
+    
+    if (folder.parent_folder_id === null) {
+      // Root level folder
+      rootFolders.push(folderWithChildren);
+    } else {
+      // Child folder - add to parent's children
+      const parent = folderMap.get(folder.parent_folder_id);
+      if (parent) {
+        parent.children.push(folderWithChildren);
+      } else {
+        // Parent not found (orphaned folder) - treat as root
+        rootFolders.push(folderWithChildren);
+      }
+    }
+  });
+
+  return rootFolders;
 } 

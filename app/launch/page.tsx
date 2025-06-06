@@ -16,11 +16,18 @@ import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // ADDED: Imp
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"; // Add Card imports
 import Link from 'next/link'; // Import Link for navigation
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Add Tabs imports
+import { Button } from "@/components/ui/button"; // ADDED: Import Button component
+// ADDED: Import Lucide icons
+import { FilePlus, AudioWaveform, Shovel, BookOpenText } from 'lucide-react';
+// ADDED: Import useModalStore
+import { useModalStore } from '@/stores/useModalStore';
 
 // --- NEW: Import Omnibar ---
 import { Omnibar } from '@/components/search/Omnibar';
 // --- NEW: Import X icon for pills ---
 import { X } from 'lucide-react'; 
+// --- NEW: Import DocumentCardGrid component ---
+import DocumentCardGrid from '@/components/file-manager/DocumentCardGrid';
 
 // --- NEW: Import TaggedDocument type ---
 import type { TaggedDocument } from '@/lib/types';
@@ -73,6 +80,9 @@ const defaultModelFallback = 'gemini-1.5-flash';
 
 export default function LaunchPage() {
   const router = useRouter();
+  // ADDED: Get openNewDocumentModal from the store
+  const { openNewDocumentModal } = useModalStore();
+
   // --- Preference Store --- ADDED
   const {
       default_model: preferredModel,
@@ -145,6 +155,9 @@ export default function LaunchPage() {
 
   // Add below isRecordingRef
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+
+  // --- NEW: Default active tab state ---
+  const [activeTab, setActiveTab] = useState("preview-cards"); // Default to "preview-cards"
 
   // ADDED: Effect to update local model state if preference loads *after* initial render
   useEffect(() => {
@@ -232,10 +245,10 @@ export default function LaunchPage() {
 
   // Focus the chat input by default on mount 
   useEffect(() => {
-    if (inputRef.current) {
+    if (inputRef.current && activeTab === "new-document") { // Only focus if new-document tab is active
       inputRef.current.focus();
     }
-  }, []); // REMOVED: activeView dependency
+  }, [activeTab]); // Depend on activeTab
 
   // --- Handlers for Chat Input ---
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement> | React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -754,201 +767,75 @@ export default function LaunchPage() {
 
   // --- Return JSX ---
   return (
-    <div className="flex flex-col h-full bg-[--bg-secondary] text-[--text-color] p-4"> {/* Add padding back to main container */}
-      {/* Title Centered at the Top */}
-      <h2 className="text-xlg font-semibold mb-4 text-center font-uncut-sans h-8 flex-shrink-0"> 
-        {isSubmitting ? (
-          <span className="loading-text">
-            Loading
-            <span className="dot1">.</span>
-            <span className="dot2">.</span>
-            <span className="dot3">.</span>
-          </span>
-        ) : (
-          <>
-            What do you want to focus on?
-            <span className="cursor blinking"></span> 
-          </>
-        )}
-      </h2>
+    <div className="flex flex-col h-screen bg-[--bg-primary] text-[--text-color] overflow-hidden">
+      {/* Header Area - Kept minimal for now - REMOVED
+      <header className="p-4 border-b border-[--border-color] flex items-center justify-between print-hide">
+        <h1 className="text-xl font-semibold">Launch Pad</h1>
+      </header>
+      */}
 
-      {/* Row for the two cards below the title */}
-      <div className="flex flex-col flex-grow gap-4 overflow-hidden max-w-[1024px] mx-auto w-full"> {/* Changed max-width to 1200px */} 
-        
-        {/* Left Card: Chat Input */}
-        <div className="w-full flex flex-col items-center space-y-2"> {/* Removed hover/focus effects */} 
-           <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Start New</h2> {/* Added Title */} 
-           <Card className="flex flex-col bg-[--bg-primary] border-[--border-color] w-full 
-                         transition-all duration-200 ease-in-out 
-                         hover:shadow-lg 
-                         hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* Change border on hover */} 
-             {/* Optional Header */}
-             {/* 
-             <CardHeader className="flex-shrink-0"> 
-               <CardTitle>Start New Document</CardTitle> 
-             </CardHeader> 
-             */}
-             <CardContent className="p-4"> {/* Removed flex-grow, justify-center */} 
-               <form ref={formRef} onSubmit={handleLaunchSubmit} className="w-full"> {/* Make form take full width */}
-                 {/* --- NEW: Render Tagged Document Pills --- */}
-                 {taggedDocuments && taggedDocuments.length > 0 && (
-                     <div className="w-full mb-2 flex flex-wrap gap-2 px-3 py-2 border border-[--border-color] rounded-md bg-[--subtle-bg]">
-                         {taggedDocuments.map((doc) => (
-                             <div 
-                                 key={doc.id} 
-                                 className="flex items-center gap-1.5 bg-[--pill-bg] text-[--pill-text-color] px-2 py-0.5 rounded-full text-xs border border-[--pill-border-color] shadow-sm"
-                             >
-                                 <span>{doc.name}</span>
-                                 <button 
-                                     type="button"
-                                     onClick={() => {
-                                         setTaggedDocuments((prevDocs) => 
-                                             prevDocs.filter(d => d.id !== doc.id)
-                                         );
-                                     }}
-                                     className="text-[--pill-remove-icon-color] hover:text-[--pill-remove-icon-hover-color] rounded-full focus:outline-none focus:ring-1 focus:ring-[--accent-color]"
-                                     aria-label={`Remove ${doc.name}`}
-                                 >
-                                     <X size={12} />
-                                 </button>
-                             </div>
-                         ))}
-                     </div>
-                 )}
-                 {/* --- END NEW: Render Tagged Document Pills --- */}
-                 <ChatInputUI
-                   files={files} 
-                   fileInputRef={fileInputRef} 
-                   handleFileChange={handleFileChange} 
-                   inputRef={inputRef} 
-                   input={input} 
-                   handleInputChange={handleInputChange} 
-                   handleKeyDown={handleKeyDown} 
-                   handlePaste={handlePaste} 
-                   model={model} 
-                   setModel={setModel} 
-                   handleUploadClick={handleUploadClick} 
-                   isLoading={isSubmitting} 
-                   isUploading={isUploading} 
-                   uploadError={uploadError} 
-                   uploadedImagePath={uploadedImagePath} 
-                   isRecording={isRecording}
-                   isTranscribing={isTranscribing}
-                   micPermissionError={micPermissionError}
-                   startRecording={handleStartRecording}
-                   stopRecording={handleStopRecording}
-                   audioTimeDomainData={audioTimeDomainData}
-                   recordingDuration={recordingDuration}
-                   clearPreview={clearPreview}
-                   // --- NEW: Pass tagged documents props to ChatInputUI ---
-                   taggedDocuments={taggedDocuments}
-                   onAddTaggedDocument={(docToAdd) => {
-                       setTaggedDocuments((prevDocs) => {
-                           if (prevDocs.find(doc => doc.id === docToAdd.id)) {
-                               return prevDocs;
-                           }
-                           return [...prevDocs, docToAdd];
-                       });
-                   }}
-                   // --- END NEW ---
-                 />
-               </form>
-             </CardContent>
-           </Card>
-        </div>
+      {/* Main Content Area */}
+      <div className="flex-grow overflow-y-auto">
+        {/* Tabs component's value and onValueChange are no longer needed if only one content is shown */}
+        {/* Also, TabsList is removed */}
+        <div className="pt-2 px-2 md:pt-4 md:px-4 h-full flex flex-col">
+          {/* <TabsList className="mb-4 print-hide grid w-full grid-cols-2 md:grid-cols-4">
+            <TabsTrigger value="preview-cards">Preview Cards</TabsTrigger>
+            <TabsTrigger value="new-document">New Document</TabsTrigger>
+            <TabsTrigger value="recent-files">Recent Files</TabsTrigger>
+            <TabsTrigger value="file-manager">File Manager</TabsTrigger>
+          </TabsList> */}
 
-        {/* Right Card: Tabs (Recent/Browser) */}
-        <div className="w-full flex flex-col items-center space-y-2 min-h-0"> {/* Added min-h-0 */}
-          <h2 className="text-xlg font-semibold text-[--text-color] pl-1">Continue Working</h2> {/* Added Title */}
-          <Tabs defaultValue="recent" className="flex flex-col w-full h-[calc(100vh-12rem)] max-h-[800px] min-h-0"> {/* Changed h-full to h-[calc(100vh-12rem)] */}
-            <TabsList className="grid w-full grid-cols-2 flex-shrink-0 bg-transparent p-1 h-10 rounded-lg"> {/* Make background transparent, adjust padding/height/rounding if needed */} 
-              <TabsTrigger 
-                value="recent" 
-                className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium 
-                           ring-offset-transparent 
-                           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[--card-bg] 
-                           disabled:pointer-events-none disabled:opacity-50 
-                           data-[state=active]:bg-[--tab-active-bg] data-[state=active]:text-[--text-color] data-[state=active]:shadow-sm 
-                           data-[state=active]:border-b-2 data-[state=active]:rounded-b-none /* Add bottom border for active state */
-                           hover:bg-[--hover-bg] hover:text-[--text-color] 
-                           text-[--muted-text-color]"> {/* Default state uses muted text */}
-                Recent Files
-              </TabsTrigger>
-              <TabsTrigger 
-                value="browser" 
-                className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium 
-                           ring-offset-transparent 
-                           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[--card-bg] 
-                           disabled:pointer-events-none disabled:opacity-50 
-                           data-[state=active]:bg-[--tab-active-bg] data-[state=active]:text-[--text-color] data-[state=active]:shadow-sm 
-                           data-[state=active]:border-b-2 data-[state=active]:rounded-b-none /* Add bottom border for active state */
-                           hover:bg-[--hover-bg] hover:text-[--text-color] 
-                           text-[--muted-text-color]"> {/* Default state uses muted text */}
-                File Browser
-              </TabsTrigger>
-            </TabsList>
+          {/* REMOVED Tab Content for "New Document" */}
+          {/* <TabsContent value="new-document" className="flex-grow flex flex-col outline-none ring-0 focus:ring-0 focus:outline-none" tabIndex={-1}> ... </TabsContent> */}
 
-            {/* Recent Files Tab Content */}
-            <TabsContent value="recent" className="flex-1 min-h-0"> {/* Added flex-1 and min-h-0 */} 
-              <Card className="flex flex-col h-full bg-[--bg-primary] border-[--border-color] 
-                           transition-all duration-200 ease-in-out 
-                           hover:shadow-lg 
-                           hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* Change border on hover */} 
-                <CardHeader className="flex-shrink-0"> 
-                  <CardTitle className="text-[--text-color]">Recent Documents</CardTitle>
-                  {/* <CardDescription className="text-[--text-muted]">Quickly jump back into your work.</CardDescription> */}
-                </CardHeader>
-                <CardContent className="flex-1 overflow-y-auto min-h-0"> {/* Added flex-1 and min-h-0 */} 
-                  {isLoading ? (
-                      <p className="text-center text-[--text-muted]">Loading recent documents...</p>
-                  ) : error ? ( 
-                     <p className="text-center text-red-500">{error}</p> 
-                  ) : (
-                     (() => { 
-                        const recentDocs = cuboneFiles
-                          .filter(file => !file.isDirectory && file.updatedAt) 
-                          .sort((a, b) => new Date(b.updatedAt!).getTime() - new Date(a.updatedAt!).getTime()) 
-                          .slice(0, 10); 
+          {/* REMOVED Tab Content for "Recent Files" */}
+          {/* <TabsContent value="recent-files" className="flex-grow outline-none ring-0 focus:ring-0 focus:outline-none" tabIndex={-1}> ... </TabsContent> */}
 
-                        return recentDocs.length > 0 ? (
-                            <ul className="space-y-2">
-                                {recentDocs.map((doc) => (
-                                    <li key={doc.id || doc.path}> 
-                                        <Link href={`/editor/${doc.id}`} className="block p-2 rounded hover:bg-[--bg-hover] transition-colors text-[--link-color] hover:text-[--link-hover]">
-                                            {doc.name || 'Untitled Document'}
-                                            {doc.updatedAt && <span className="text-xs text-[--text-muted] block">Updated: {new Date(doc.updatedAt).toLocaleString()}</span>}
-                                        </Link>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="text-center text-[--text-muted]">No recent documents found.</p>
-                        );
-                     })()
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
+          {/* REMOVED Tab Content for "File Manager" */}
+          {/* <TabsContent value="file-manager" className="flex-grow h-full outline-none ring-0 focus:ring-0 focus:outline-none" tabIndex={-1}> ... </TabsContent> */}
 
-            {/* File Browser Tab Content */}
-            <TabsContent value="browser" className="flex-1 min-h-0"> {/* Added flex-1 and min-h-0 */}
-               <Card className="flex flex-col h-full bg-[--bg-primary] border-[--border-color] 
-                            transition-all duration-200 ease-in-out 
-                            hover:shadow-lg 
-                            hover:border-2 hover:border-[--accent-color] rounded-lg"> {/* MODIFIED: Added flex-grow */} 
-                 <CardContent className="flex flex-col flex-1 p-4 min-h-0"> {/* Added min-h-0 */} 
-                   {/* Omnibar */}
-                   <div className="mb-4 flex-shrink-0"> 
-                      <Omnibar />
-                   </div>
-                   {/* Render the actual NewFileManager component */}
-                   <div className="flex-1 border border-[--border-color] rounded-md shadow-sm overflow-hidden min-h-0"> {/* Added min-h-0 */}
-                       <NewFileManager />
-                   </div>
-                 </CardContent>
-               </Card>
-            </TabsContent>
-          </Tabs>
+          {/* Tab: Preview Cards - Existing File Browser / Document Grid */}
+          {/* The TabsContent wrapper might be removable if it's the only content */}
+          <div className="mt-0 border-0 p-0 flex-grow">
+            {/* UPDATED BUTTONS CONTAINER - Min 2x2 grid, 1x4 on lg, with glass effect, rounded-lg, shadow-md, and hover effects */}
+            <div className="py-6 grid grid-cols-2 gap-3 max-w-xs mx-auto lg:flex lg:flex-row lg:justify-around lg:w-full lg:max-w-2xl lg:mx-auto lg:space-y-0">
+              <Button 
+                variant="secondary"
+                className="flex flex-col items-center justify-center p-3 w-32 h-32 lg:w-36 lg:h-36 bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md border border-gray-200/50 dark:border-gray-600/50 rounded-lg shadow-md transition-all duration-300 ease-in-out motion-reduce:transition-none hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none will-change-[transform,box-shadow,opacity]"
+                onClick={openNewDocumentModal} 
+              >
+                <FilePlus className="mb-1.5 h-9 w-9 lg:h-10 lg:w-10 lg:mb-2 text-gray-700 dark:text-gray-300" />
+                <span className="text-center text-sm lg:text-base text-gray-700 dark:text-gray-300 w-full">New Note</span>
+              </Button>
+              <Button 
+                variant="secondary" 
+                className="flex flex-col items-center justify-center p-3 w-32 h-32 lg:w-36 lg:h-36 bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md border border-gray-200/50 dark:border-gray-600/50 rounded-lg shadow-md transition-all duration-300 ease-in-out motion-reduce:transition-none hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none will-change-[transform,box-shadow,opacity]"
+              >
+                <AudioWaveform className="mb-1.5 h-9 w-9 lg:h-10 lg:w-10 lg:mb-2 text-gray-700 dark:text-gray-300" />
+                <span className="text-center text-sm lg:text-base text-gray-700 dark:text-gray-300 w-full">Voice Summary<br />(WIP)</span>
+              </Button>
+              <Button 
+                variant="secondary" 
+                className="flex flex-col items-center justify-center p-3 w-32 h-32 lg:w-36 lg:h-36 bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md border border-gray-200/50 dark:border-gray-600/50 rounded-lg shadow-md transition-all duration-300 ease-in-out motion-reduce:transition-none hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none will-change-[transform,box-shadow,opacity]"
+              >
+                <Shovel className="mb-1.5 h-9 w-9 lg:h-10 lg:w-10 lg:mb-2 text-gray-700 dark:text-gray-300" />
+                <span className="text-center text-sm lg:text-base text-gray-700 dark:text-gray-300 w-full">Web Scrape<br />(WIP)</span>
+              </Button>
+              <Button 
+                variant="secondary" 
+                className="flex flex-col items-center justify-center p-3 w-32 h-32 lg:w-36 lg:h-36 bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md border border-gray-200/50 dark:border-gray-600/50 rounded-lg shadow-md transition-all duration-300 ease-in-out motion-reduce:transition-none hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none will-change-[transform,box-shadow,opacity]"
+              >
+                <BookOpenText className="mb-1.5 h-9 w-9 lg:h-10 lg:w-10 lg:mb-2 text-gray-700 dark:text-gray-300" />
+                <span className="text-center text-sm lg:text-base text-gray-700 dark:text-gray-300 w-full">PDF Summary<br />(WIP)</span>
+              </Button>
+            </div>
+            {/* END UPDATED BUTTONS CONTAINER */}
+            
+            {/* Existing Document Card Grid - Placeholder */}
+            <DocumentCardGrid />
+          </div>
+
         </div>
       </div>
     </div>

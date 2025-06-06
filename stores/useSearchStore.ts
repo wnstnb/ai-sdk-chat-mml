@@ -5,6 +5,7 @@ export interface SearchResult {
     name: string;
     folder_id: string | null;
     similarity?: number;
+    is_starred?: boolean;
 }
 
 interface SearchState {

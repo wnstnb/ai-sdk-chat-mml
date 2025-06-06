@@ -9,12 +9,18 @@ const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/${GEMIN
 export interface TitleSearchResult {
   id: string;
   name: string;
+  updated_at: string;
+  searchable_content?: string | null;
+  is_starred?: boolean;
   titleMatchScore: number;
 }
 
 export interface SemanticSearchResult {
   id: string;
   name: string;
+  updated_at: string;
+  searchable_content?: string | null;
+  is_starred?: boolean;
   semanticScore: number;
 }
 
@@ -22,6 +28,9 @@ export interface SemanticSearchResult {
 export interface ContentBM25SearchResult {
   id: string;
   name: string;
+  updated_at: string;
+  searchable_content?: string | null;
+  is_starred?: boolean;
   contentScore: number; // Score from BM25-like text search
 }
 
@@ -30,6 +39,8 @@ export interface CombinedSearchResult {
   name: string;
   finalScore: number;
   summary?: string;
+  updated_at?: string;
+  is_starred?: boolean;
 }
 
 // Interface for the match_documents RPC function result
@@ -46,7 +57,7 @@ export async function searchByTitle(query: string): Promise<TitleSearchResult[]>
   // Perform case-insensitive partial match on document names
   const { data: documents, error } = await supabase
     .from('documents')
-    .select('id, name')
+    .select('id, name, updated_at, searchable_content, is_starred')
     .ilike('name', `%${query}%`);
 
   if (error) {
@@ -60,6 +71,9 @@ export async function searchByTitle(query: string): Promise<TitleSearchResult[]>
   return (documents || []).map(doc => ({
     id: doc.id,
     name: doc.name,
+    updated_at: doc.updated_at,
+    searchable_content: doc.searchable_content,
+    is_starred: doc.is_starred,
     titleMatchScore: doc.name.toLowerCase() === query.toLowerCase() ? 1.0 : 0.8
   }));
 }
@@ -69,25 +83,21 @@ export async function searchByContentBM25(query: string): Promise<ContentBM25Sea
   const supabase = createSupabaseServerClient();
 
   // --- Get user ID ---
-  // Similar to semantic search, BM25 search should be user-specific.
   const { data: { user }, error: userError } = await supabase.auth.getUser();
 
   if (userError || !user) {
     console.error('User not authenticated for BM25 search:', userError?.message);
-    // Depending on requirements, you might return empty results or throw an error.
-    // Throwing an error might be safer if user context is strictly required.
-    // return []; 
     throw new Error('User not authenticated. BM25 search requires a user context.');
   }
   const userId = user.id;
   // --- END Get user ID ---
 
   // Call the RPC function search_documents_bm25
-  const { data: documents, error: rpcError } = await supabase
+  const { data: rpcResults, error: rpcError } = await supabase
     .rpc('search_documents_bm25', {
       p_query_text: query,
       p_user_id_input: userId,
-      p_match_count: 10 // Or make this configurable if needed
+      p_match_count: 10
     });
 
   if (rpcError) {
@@ -95,12 +105,43 @@ export async function searchByContentBM25(query: string): Promise<ContentBM25Sea
     throw new Error(`Failed to search by content using RPC: ${rpcError.message}`);
   }
 
-  // Map the results from the RPC function to the ContentBM25SearchResult interface
-  return (documents || []).map((doc: { id: string, name: string, score: number }) => ({
+  if (!rpcResults || rpcResults.length === 0) {
+    return [];
+  }
+
+  const docIds = rpcResults.map((doc: { id: string }) => doc.id);
+  const { data: fullDocs, error: docsError } = await supabase
+    .from('documents')
+    .select('id, name, updated_at, searchable_content, is_starred')
+    .in('id', docIds)
+    .eq('user_id', userId); // Ensure we only fetch user's documents
+
+  if (docsError) {
+    console.error('Error fetching full document details for BM25 results:', docsError.message);
+    // Return results from RPC with missing fields, or throw error
+    return rpcResults.map((doc: { id: string, name: string, score: number }) => ({
     id: doc.id,
     name: doc.name,
-    contentScore: doc.score // Use the score returned by the RPC function
-  }));
+    contentScore: doc.score,
+    updated_at: new Date().toISOString(), // Fallback
+    searchable_content: null, // Fallback
+    is_starred: false, // Fallback
+    }));
+  }
+  
+  const fullDocsMap = new Map(fullDocs.map(fd => [fd.id, fd]));
+
+  return rpcResults.map((doc: { id: string, name: string, score: number }) => {
+    const fullDoc = fullDocsMap.get(doc.id);
+    return {
+      id: doc.id,
+      name: doc.name,
+      contentScore: doc.score,
+      updated_at: fullDoc?.updated_at || new Date().toISOString(),
+      searchable_content: fullDoc?.searchable_content || null,
+      is_starred: fullDoc?.is_starred || false,
+    };
+  });
 }
 
 // Search by embeddings function
@@ -111,12 +152,6 @@ export async function searchByEmbeddings(query: string): Promise<SemanticSearchR
 
   const supabase = createSupabaseServerClient();
   
-  // --- NEW: Get user ID --- 
-  // Ensure you have a way to get the authenticated user's ID here.
-  // This might involve using the supabase client if it's already auth-aware,
-  // or you might need to pass it down from a higher-level context if searchService
-  // is called from a place that has user session information.
-  // For this example, I'll assume you can get it from the supabase client directly.
   const { data: { user }, error: userError } = await supabase.auth.getUser();
 
   if (userError || !user) {
@@ -124,7 +159,6 @@ export async function searchByEmbeddings(query: string): Promise<SemanticSearchR
     throw new Error('User not authenticated. Semantic search requires a user context.');
   }
   const userId = user.id;
-  // --- END NEW ---
 
   try {
     // 1. Generate query embedding using Gemini API
@@ -133,7 +167,7 @@ export async function searchByEmbeddings(query: string): Promise<SemanticSearchR
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         content: { parts: [{ text: query }] },
-        task_type: "RETRIEVAL_QUERY", // Use RETRIEVAL_QUERY for search queries
+        task_type: "RETRIEVAL_QUERY",
       }),
     });
 
@@ -151,11 +185,11 @@ export async function searchByEmbeddings(query: string): Promise<SemanticSearchR
     const queryEmbedding = embedApiData.embedding.values;
 
     // 2. Search for similar documents using the match_documents RPC function
-    const { data: matches, error: searchError } = await supabase
+    const { data: rpcMatches, error: searchError } = await supabase
       .rpc('match_documents', {
         query_embedding: queryEmbedding,
-        match_threshold: 0.55, // Lower threshold to cast a wider net
-        match_count: 10, // Limit to top 10 matches
+        match_threshold: 0.55,
+        match_count: 10,
         user_id_input: userId
       });
 
@@ -164,12 +198,44 @@ export async function searchByEmbeddings(query: string): Promise<SemanticSearchR
       throw new Error(`Failed to search by embeddings: ${searchError.message}`);
     }
 
+    if (!rpcMatches || rpcMatches.length === 0) {
+      return [];
+    }
+
+    const docIds = rpcMatches.map((match: MatchDocumentsResult) => match.id);
+    const { data: fullDocs, error: docsError } = await supabase
+      .from('documents')
+      .select('id, name, updated_at, searchable_content, is_starred')
+      .in('id', docIds)
+      .eq('user_id', userId); // Ensure we only fetch user's documents
+
+    if (docsError) {
+      console.error('Error fetching full document details for semantic results:', docsError.message);
+      // Return results from RPC with missing fields, or throw error
+      return rpcMatches.map((match: MatchDocumentsResult) => ({
+        id: match.id,
+        name: match.name,
+        semanticScore: match.similarity,
+        updated_at: new Date().toISOString(), // Fallback
+        searchable_content: null, // Fallback
+        is_starred: false, // Fallback
+      }));
+    }
+
+    const fullDocsMap = new Map(fullDocs.map(fd => [fd.id, fd]));
+
     // 3. Map results to our interface
-    return (matches || []).map((match: MatchDocumentsResult) => ({
+    return rpcMatches.map((match: MatchDocumentsResult) => {
+      const fullDoc = fullDocsMap.get(match.id);
+      return {
       id: match.id,
       name: match.name,
-      semanticScore: match.similarity
-    }));
+        semanticScore: match.similarity,
+        updated_at: fullDoc?.updated_at || new Date().toISOString(),
+        searchable_content: fullDoc?.searchable_content || null,
+        is_starred: fullDoc?.is_starred || false,
+      };
+    });
 
   } catch (error) {
     console.error('Error in semantic search:', error);
@@ -186,72 +252,87 @@ export function combineAndRankResults(
 ): CombinedSearchResult[] {
   // Helper function to get ranks from a list of search results
   const getRanks = (
-    results: Array<{ id: string; name: string; score: number }>,
-  ): Map<string, { rank: number; name: string }> => {
+    results: Array<{ id: string; name: string; score: number; updated_at?: string; searchable_content?: string | null; is_starred?: boolean; }>
+  ): Map<string, { rank: number; name: string; updated_at?: string; searchable_content?: string | null; is_starred?: boolean; }> => {
     // Sort by score descending to assign ranks
     const sortedResults = [...results].sort((a, b) => b.score - a.score);
-    const ranks = new Map<string, { rank: number; name: string }>();
+    const ranks = new Map<string, { rank: number; name: string; updated_at?: string; searchable_content?: string | null; is_starred?: boolean; }>();
     sortedResults.forEach((result, index) => {
-      ranks.set(result.id, { rank: index + 1, name: result.name });
+      ranks.set(result.id, { 
+        rank: index + 1, 
+        name: result.name, 
+        updated_at: result.updated_at,
+        searchable_content: result.searchable_content,
+        is_starred: result.is_starred
+      });
     });
     return ranks;
   };
 
-  // Generate ranks for each type of search result
-  // Ensure the 'score' property is consistent for the getRanks helper
-  const titleRanks = getRanks(
-    titleMatches.map(m => ({ id: m.id, name: m.name, score: m.titleMatchScore }))
-  );
-  const semanticRanks = getRanks(
-    semanticMatches.map(m => ({ id: m.id, name: m.name, score: m.semanticScore }))
-  );
-  const contentRanks = getRanks(
-    contentMatches.map(m => ({ id: m.id, name: m.name, score: m.contentScore }))
-  );
+  const titleRanks = getRanks(titleMatches.map(tm => ({ ...tm, score: tm.titleMatchScore })));
+  const semanticRanks = getRanks(semanticMatches.map(sm => ({ ...sm, score: sm.semanticScore })));
+  const contentRanks = getRanks(contentMatches.map(cm => ({ ...cm, score: cm.contentScore })));
 
-  // Collect all unique document IDs
-  const allDocIds = new Set<string>();
-  titleMatches.forEach(m => allDocIds.add(m.id));
-  semanticMatches.forEach(m => allDocIds.add(m.id));
-  contentMatches.forEach(m => allDocIds.add(m.id));
+  const allDocIds = new Set<string>([
+    ...titleMatches.map(doc => doc.id),
+    ...semanticMatches.map(doc => doc.id),
+    ...contentMatches.map(doc => doc.id)
+  ]);
 
-  const rrfResults: Array<{ id: string; name: string; finalScore: number }> = [];
+  const combinedScores = new Map<string, { score: number; name?: string; updated_at?: string; searchable_content?: string | null; is_starred?: boolean; }>();
 
-  // Calculate RRF score for each document
   allDocIds.forEach(id => {
     let rrfScore = 0;
-    let docName = ""; // To store the document name
+    let name: string | undefined;
+    let updated_at: string | undefined;
+    let searchable_content: string | null | undefined;
+    let is_starred: boolean | undefined;
 
-    const titleInfo = titleRanks.get(id);
-    if (titleInfo) {
-      rrfScore += 1 / (rrfK + titleInfo.rank);
-      docName = titleInfo.name;
+    const titleRankInfo = titleRanks.get(id);
+    if (titleRankInfo) {
+      rrfScore += 1 / (rrfK + titleRankInfo.rank);
+      name = titleRankInfo.name;
+      updated_at = titleRankInfo.updated_at;
+      searchable_content = titleRankInfo.searchable_content;
+      is_starred = titleRankInfo.is_starred;
     }
 
-    const semanticInfo = semanticRanks.get(id);
-    if (semanticInfo) {
-      rrfScore += 1 / (rrfK + semanticInfo.rank);
-      if (!docName) docName = semanticInfo.name; // Use name if not already set
+    const semanticRankInfo = semanticRanks.get(id);
+    if (semanticRankInfo) {
+      rrfScore += 1 / (rrfK + semanticRankInfo.rank);
+      if (!name) name = semanticRankInfo.name;
+      if (!updated_at) updated_at = semanticRankInfo.updated_at;
+      if (searchable_content === undefined) searchable_content = semanticRankInfo.searchable_content;
+      if (is_starred === undefined) is_starred = semanticRankInfo.is_starred;
+    }
+    
+    const contentRankInfo = contentRanks.get(id);
+    if (contentRankInfo) {
+      rrfScore += 1 / (rrfK + contentRankInfo.rank);
+      if (!name) name = contentRankInfo.name;
+      if (!updated_at) updated_at = contentRankInfo.updated_at;
+      if (searchable_content === undefined) searchable_content = contentRankInfo.searchable_content;
+      if (is_starred === undefined) is_starred = contentRankInfo.is_starred;
     }
 
-    const contentInfo = contentRanks.get(id);
-    if (contentInfo) {
-      rrfScore += 1 / (rrfK + contentInfo.rank);
-      if (!docName) docName = contentInfo.name; // Use name if not already set
-    }
-
-    if (rrfScore > 0) {
-      rrfResults.push({
-        id,
-        name: docName || "Unnamed Document", // Fallback name if somehow missed
-        finalScore: rrfScore
-      });
+    if (name) {
+      combinedScores.set(id, { score: rrfScore, name, updated_at, searchable_content, is_starred });
     }
   });
 
-  // Sort results by RRF score in descending order
-  rrfResults.sort((a, b) => b.finalScore - a.finalScore);
+  const rankedResults = Array.from(combinedScores.entries()).map(([id, data]) => ({
+    id,
+    data
+  }));
 
-  // Limit to top 10 results
-  return rrfResults.slice(0, 10);
+  rankedResults.sort((a, b) => b.data.score - a.data.score);
+
+  return rankedResults.slice(0, 10).map(doc => ({
+    id: doc.id,
+    name: doc.data.name!,
+    finalScore: doc.data.score,
+    summary: doc.data.searchable_content ? doc.data.searchable_content.substring(0, 150) + '...' : 'No preview available.',
+    updated_at: doc.data.updated_at,
+    is_starred: doc.data.is_starred,
+  }));
 } 

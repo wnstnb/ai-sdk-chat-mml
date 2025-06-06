@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { Folder } from '@/types/supabase';
+import { Folder, Document } from '@/types/supabase';
+import { getFileBrowserRateLimiter, getIP } from '@/lib/rate-limit'; // Import rate limiting utilities
 
 // Helper function to check session and return user ID or error response
 async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerClient>) {
@@ -14,6 +15,102 @@ async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerCl
     return { errorResponse: NextResponse.json({ error: { code: 'UNAUTHENTICATED', message: 'User not authenticated.' } }, { status: 401 }) };
   }
   return { userId: session.user.id };
+}
+
+// GET handler for fetching folder details and contents
+export async function GET(
+  request: Request,
+  { params }: { params: { folderId: string } }
+) {
+  const ip = getIP(request);
+  if (ip) {
+    const limiter = getFileBrowserRateLimiter();
+    if (limiter) { // Check if limiter is available (Redis configured)
+      const { success, limit, remaining, reset } = await limiter.limit(ip);
+      // console.log(`Rate limit for ${ip}: success=${success}, limit=${limit}, remaining=${remaining}, reset=${new Date(reset).toISOString()}`);
+      if (!success) {
+        return NextResponse.json(
+          { error: { code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again later.' } }, 
+          { 
+            status: 429, 
+            headers: {
+              'X-RateLimit-Limit': limit.toString(),
+              'X-RateLimit-Remaining': remaining.toString(),
+              'X-RateLimit-Reset': new Date(reset).toISOString(),
+            }
+          }
+        );
+      }
+    }
+  } else {
+    // console.warn('Could not determine IP for rate limiting. Proceeding without rate limit check for this request.');
+    // Decide if you want to block requests without IP or allow them (potentially risky)
+  }
+
+  const folderId = params.folderId;
+  const cookieStore = cookies();
+  const supabase = createSupabaseServerClient();
+
+  try {
+    const { userId, errorResponse } = await getUserOrError(supabase);
+    if (errorResponse) return errorResponse;
+
+    // Fetch folder details
+    const { data: folder, error: folderError } = await supabase
+      .from('folders')
+      .select('*')
+      .eq('id', folderId)
+      .eq('user_id', userId)
+      .single();
+
+    if (folderError) {
+      console.error('Folder Fetch Error:', folderError.message);
+      if (folderError.code === 'PGRST116') {
+        return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Folder not found or you do not have permission to access it.' } }, { status: 404 });
+      }
+      return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch folder: ${folderError.message}` } }, { status: 500 });
+    }
+
+    // Fetch subfolders
+    const { data: subfolders, error: subfoldersError } = await supabase
+      .from('folders')
+      .select('*')
+      .eq('parent_folder_id', folderId)
+      .eq('user_id', userId)
+      .order('name', { ascending: true });
+
+    if (subfoldersError) {
+      console.error('Subfolders Fetch Error:', subfoldersError.message);
+      return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch subfolders: ${subfoldersError.message}` } }, { status: 500 });
+    }
+
+    // Fetch documents in this folder
+    const { data: documents, error: documentsError } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('folder_id', folderId)
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+
+    if (documentsError) {
+      console.error('Documents Fetch Error:', documentsError.message);
+      return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch documents: ${documentsError.message}` } }, { status: 500 });
+    }
+
+    // Return folder with its contents
+    return NextResponse.json({ 
+      data: {
+        folder: folder as Folder,
+        subfolders: (subfolders as Folder[]) || [],
+        documents: (documents as Document[]) || [],
+        totalItems: ((subfolders as Folder[]) || []).length + ((documents as Document[]) || []).length
+      }
+    }, { status: 200 });
+
+  } catch (error: any) {
+    console.error('Folder GET Error:', error.message);
+    return NextResponse.json({ error: { code: 'SERVER_ERROR', message: `An unexpected error occurred: ${error.message}` } }, { status: 500 });
+  }
 }
 
 // PUT handler for updating folder name or parent

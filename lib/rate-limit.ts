@@ -30,7 +30,7 @@ const redisClient =
 export const defaultRateLimiter = redisClient
   ? new Ratelimit({
       redis: redisClient,
-      limiter: Ratelimit.slidingWindow(10, "10 s"), // 10 requests from the same IP in 10 seconds
+      limiter: Ratelimit.slidingWindow(100, "10 s"), // 10 requests from the same IP in 10 seconds
       analytics: true, // Enable analytics on Upstash
       prefix: "ratelimit_default", // Optional: prefix for Redis keys
     })
@@ -79,6 +79,23 @@ export const getAuthRateLimiter = () => {
   }
   return mockLimiter; // Fallback to mock if not configured
 }
+
+// Rate limiter for file browser operations (more permissive)
+export const fileBrowserRateLimiter = redisClient
+  ? new Ratelimit({
+      redis: redisClient,
+      limiter: Ratelimit.slidingWindow(100, "10 s"), // 100 requests from the same IP in 10 seconds
+      analytics: true,
+      prefix: "ratelimit_filebrowser",
+    })
+  : null;
+
+export const getFileBrowserRateLimiter = () => {
+  if (fileBrowserRateLimiter) {
+    return fileBrowserRateLimiter;
+  }
+  return mockLimiter; // Fallback to mock if not configured
+};
 
 /**
  * Helper function to get the IP address from the request.

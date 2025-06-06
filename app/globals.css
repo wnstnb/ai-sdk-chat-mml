@@ -19,7 +19,7 @@
   --border-color: #96A2B4; /* Blue Pearl */
   --header-bg: #D9DDE2; /* Silver Fog */
   --editor-bg: #F6F8FA; /* Cloud Mist */
-  --title-hover-color: #FAD89D; /* Golden Sand */
+  --title-hover-color: #C79553; /* Golden Sand */
   --left-pane-bg: #F6F8FA; /* Cloud Mist */
   --toggle-button-bg: #D9DDE2; /* Silver Fog */
   --tab-active-bg: #D9DDE2; /* Silver Fog */
@@ -88,21 +88,21 @@
   --text-color: #FFFFFF; /* White */
   --muted-text-color: #A8ADB4; /* Keeping Frost Gray for readability */
   --border-color: #3F4F60; /* Moonlit Azure */
-  --header-bg: #2B3137; /* Steel Ash */
+  --header-bg: #222a37; /* Steel Ash */
   --editor-bg: #0F1317; /* Midnight Slate */
-  --title-hover-color: #F1C37D; /* Luminous Amber */
+  --title-hover-color: #C79553; /* Luminous Amber */
   --left-pane-bg: #0F1317; /* Midnight Slate */
   --toggle-button-bg: #2B3137; /* Steel Ash */
   --tab-active-bg: #2B3137; /* Steel Ash */
   --tab-active-border: #C79553; /* Ember Gold */
   --text-color-secondary: #8C6638; /* Burnished Bronze */
-  --bg-color: #0F1317; /* Midnight Slate */
+  --bg-color: #ffffff; /* Midnight Slate */
   --hover-bg: #2B3137; /* Steel Ash */
   --active-bg: #3F4F60; /* Moonlit Azure */
-  --input-bg: #2B3137; /* Steel Ash */
+  --input-bg: #222a37; /* Steel Ash */
   --accent-color-light: rgba(199, 149, 83, 0.15); /* Ember Gold with transparency */
   --accent-color-hover: #F1C37D; /* Luminous Amber */
-  --message-bg: #2B3137; /* Steel Ash */
+  --message-bg: #222a37; /* Steel Ash */
   --card-bg: #2B3137; /* Steel Ash */
   --disabled-bg: #3F4F60; /* Moonlit Azure */
   --success-bg: #064e3b; /* Keep existing */
@@ -364,7 +364,7 @@ body {
   }
 
   .sign-out-button:hover {
-    @apply bg-[--hover-bg] border-[--text-color-secondary];
+    @apply bg-transparent border-[--text-color-secondary];
   }
   /* --- End Header styles --- */
 
