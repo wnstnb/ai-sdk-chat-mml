@@ -9,8 +9,6 @@ import Sidebar from '@/components/sidebar/Sidebar';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { VoiceSummaryModal } from './modals/VoiceSummaryModal';
-import TuonLogoIcon from '@/components/ui/TuonLogoIcon';
-import styles from '@/components/sidebar/Sidebar.module.css';
 import useMediaQuery from '@/lib/hooks/utils/useMediaQuery';
 
 interface ThemeHandlerProps {
@@ -29,10 +27,19 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     isInitialized: isPrefStoreInitialized,
   } = usePreferenceStore();
   const { isAuthenticated } = useAuthStore();
-  const { openSearchModal, openPreferencesModal, openNewDocumentModal, isVoiceSummaryModalOpen, openVoiceSummaryModal, closeVoiceSummaryModal } = useModalStore();
+  const { 
+    openSearchModal, 
+    openPreferencesModal, 
+    openNewDocumentModal, 
+    isVoiceSummaryModalOpen, 
+    openVoiceSummaryModal, 
+    closeVoiceSummaryModal,
+    isMobileSidebarOpen,
+    openMobileSidebar,
+    closeMobileSidebar
+  } = useModalStore();
 
   const [isMounted, setIsMounted] = useState(false);
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const isMobile = useMediaQuery('(max-width: 768px)');
 
   // Set mounted state after initial render
@@ -94,7 +101,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
       {displaySidebar && (
         <Sidebar
           isOpenOnMobile={isMobileSidebarOpen}
-          onCloseMobile={() => setIsMobileSidebarOpen(false)}
+          onCloseMobile={closeMobileSidebar}
           onLogout={handleLogout}
           onToggleTheme={handleToggleTheme}
           currentTheme={currentThemeForSidebar}
@@ -112,15 +119,6 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
           isWebScrapeLoading={false}
           isWebScrapeDisabled={false}
         />
-      )}
-      {displaySidebar && isMobile && !isMobileSidebarOpen && (
-        <button
-          onClick={() => setIsMobileSidebarOpen(true)}
-          className={`fixed top-4 left-4 z-[1001] ${styles.toggleButton}`}
-          aria-label="Open sidebar"
-        >
-          <TuonLogoIcon className={styles.toggleButtonLogo} />
-        </button>
       )}
       <main className="flex-1 flex flex-col overflow-y-auto">
         {children}

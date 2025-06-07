@@ -4,6 +4,9 @@ import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, St
 import { AutosaveStatusIndicator } from '@/app/components/editor/AutosaveStatusIndicator';
 import { BlockNoteEditor } from '@blocknote/core'; // Added for editorRef type
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
+import TuonLogoIcon from '@/components/ui/TuonLogoIcon'; // ADDED: Import TuonLogoIcon
+import styles from '@/components/sidebar/Sidebar.module.css'; // ADDED: Import sidebar styles
+import { useModalStore } from '@/stores/useModalStore'; // ADDED: Import modal store
 
 // Define the props for the EditorTitleBar component
 interface EditorTitleBarProps {
@@ -52,7 +55,9 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
     onToggleDocumentStar,
 }) => {
     const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'error'>('idle');
-    const isMobile = useMediaQuery('(max-width: 768px)'); // md breakpoint
+    const [titleValue, setTitleValue] = useState(currentTitle);
+    const isMobile = useMediaQuery('(max-width: 768px)');
+    const { openMobileSidebar } = useModalStore(); // ADDED: Get function from store
 
     const handleCopyContent = async () => {
         if (!editorRef.current || editorRef.current.document.length === 0) {
@@ -86,7 +91,16 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
     return (
         <div className="flex justify-between items-center mb-2 flex-shrink-0">
             <div className="flex items-center gap-2 flex-grow min-w-0">
-                {/* Quick Access Dropdown Trigger - REMOVED */}
+                {/* UPDATED: Mobile-only Tuon logo button to open sidebar */}
+                {isMobile && (
+                    <button
+                        onClick={openMobileSidebar} // UPDATED: Use store function
+                        className={styles.toggleButton}
+                        aria-label="Open sidebar"
+                    >
+                        <TuonLogoIcon className={styles.toggleButtonLogo} />
+                    </button>
+                )}
 
                 {isEditingTitle ? (
                     <>

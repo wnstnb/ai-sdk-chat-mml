@@ -150,113 +150,119 @@ const Sidebar: React.FC<SidebarProps> = ({
           ${isSidebarEffectivelyOpen ? (isMobile ? styles.mobileDrawerOpen : styles.expanded) : (isMobile ? '' : styles.collapsed)}
         `}
       >
-        <div className={styles.sidebarHeader}>
-          {!isMobile && (
-            <button 
-              onClick={handleToggle} 
-              className={styles.toggleButton} 
-              aria-expanded={isDesktopSidebarExpanded}
-              aria-label={isDesktopSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
-            >
-              <TuonLogoIcon 
-                className={styles.toggleButtonLogo} 
+        {/* Flex container for all sidebar content */}
+        <div className={styles.sidebarInnerContainer}>
+          <div className={styles.sidebarHeader}>
+            {!isMobile && (
+              <button 
+                onClick={handleToggle} 
+                className={styles.toggleButton} 
+                aria-expanded={isDesktopSidebarExpanded}
                 aria-label={isDesktopSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
-              />
-            </button>
-          )}
-          {isMobile && isOpenOnMobile && (
-             <button 
-               onClick={onCloseMobile} 
-               className={styles.toggleButton}
-               aria-label="Close sidebar"
-             >
-               <TuonLogoIcon 
-                 className={styles.toggleButtonLogo} 
-               />
-             </button>
-          )}
-        </div>
-
-        <nav className={styles.sidebarNav}>
-          <ul>
-            <li><a href="/launch" className={styles.homeButton}><HomeIcon size={ACTION_ICON_SIZE} />{showText && <span className={styles.navText}>Home</span>}</a></li>
-          </ul>
-        </nav>
-
-        <div className={styles.sidebarActionsTop}>
-          <button 
-            onClick={onNewNote} 
-            className={styles.actionButton} 
-            disabled={isNewNoteLoading || isNewNoteDisabled}
-            aria-label={!showText && !isNewNoteLoading ? "New Note" : (isNewNoteLoading ? "Creating new note..." : undefined)}
-          >
-            {isNewNoteLoading ? (
-              <Loader2 size={ACTION_ICON_SIZE} className={styles.loadingIcon} />
-            ) : (
-              <FilePlus size={ACTION_ICON_SIZE} />
+              >
+                <TuonLogoIcon 
+                  className={styles.toggleButtonLogo} 
+                  aria-label={isDesktopSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
+                />
+              </button>
             )}
-            {showText && !isNewNoteLoading && 'New Note'}
-          </button>
-          <button 
-            onClick={onVoiceSummary} 
-            className={styles.actionButton} 
-            disabled={isVoiceSummaryLoading || isVoiceSummaryDisabled}
-            aria-label={!showText && !isVoiceSummaryLoading ? "Voice Summary" : (isVoiceSummaryLoading ? "Processing voice summary..." : undefined)}
-          >
-            {isVoiceSummaryLoading ? (
-              <Loader2 size={ACTION_ICON_SIZE} className={styles.loadingIcon} />
-            ) : (
-              <AudioWaveform size={ACTION_ICON_SIZE} />
+            {isMobile && isOpenOnMobile && (
+               <button 
+                 onClick={onCloseMobile} 
+                 className={styles.toggleButton}
+                 aria-label="Close sidebar"
+               >
+                 <TuonLogoIcon 
+                   className={styles.toggleButtonLogo} 
+                 />
+               </button>
             )}
-            {showText && !isVoiceSummaryLoading && 'Voice Summary'}
-          </button>
-          <button 
-            onClick={onWebScrape} 
-            className={styles.actionButton} 
-            disabled={isWebScrapeLoading || isWebScrapeDisabled}
-            aria-label={!showText && !isWebScrapeLoading ? "Web Scrape" : (isWebScrapeLoading ? "Processing web scrape..." : undefined)}
-          >
-            {isWebScrapeLoading ? (
-              <Loader2 size={ACTION_ICON_SIZE} className={styles.loadingIcon} />
-            ) : (
-              <Shovel size={ACTION_ICON_SIZE} />
-            )}
-            {showText && !isWebScrapeLoading && 'Web Scrape'}
-          </button>
-          <button 
-            onClick={onPdfSummary} 
-            className={styles.actionButton} 
-            disabled={isPdfSummaryLoading || isPdfSummaryDisabled}
-            aria-label={!showText && !isPdfSummaryLoading ? "PDF Summary" : (isPdfSummaryLoading ? "Processing PDF summary..." : undefined)}
-          >
-            {isPdfSummaryLoading ? (
-              <Loader2 size={ACTION_ICON_SIZE} className={styles.loadingIcon} />
-            ) : (
-              <BookOpenText size={ACTION_ICON_SIZE} />
-            )}
-            {showText && !isPdfSummaryLoading && 'PDF Summary'}
-          </button>
-        </div>
-
-        {showText && (
-          <div className={styles.quickAccessSection}>
-            <QuickAccessDropdown />
           </div>
-        )}
 
-        <div className={styles.sidebarFooter}>
-          <button onClick={onToggleTheme} className={styles.actionButtonSecondary} aria-label={!showText ? (currentTheme === 'light' ? "Switch to dark theme" : "Switch to light theme") : undefined}>
-            {currentTheme === 'light' ? <MoonIcon size={ACTION_ICON_SIZE} /> : <SunIcon size={ACTION_ICON_SIZE} />}
-            {showText && `Theme: ${currentTheme}`}
-          </button>
-          <button onClick={onOpenPreferences} className={styles.actionButtonSecondary} aria-label={!showText ? "Open Preferences" : undefined}>
-            <SettingsIcon size={ACTION_ICON_SIZE} />
-            {showText && 'Preferences'}
-          </button>
-          <button onClick={onLogout} className={styles.actionButtonSecondary} aria-label={!showText ? "Logout" : undefined}>
-            <LogOutIcon size={ACTION_ICON_SIZE} />
-            {showText && 'Logout'}
-          </button>
+          <nav className={styles.sidebarNav}>
+            <ul>
+              <li><a href="/launch" className={styles.homeButton}><HomeIcon size={ACTION_ICON_SIZE} />{showText && <span className={styles.navText}>Home</span>}</a></li>
+            </ul>
+          </nav>
+
+          <div className={styles.sidebarActionsTop}>
+            <button 
+              onClick={onNewNote} 
+              className={styles.actionButton} 
+              disabled={isNewNoteLoading || isNewNoteDisabled}
+              aria-label={!showText && !isNewNoteLoading ? "New Note" : (isNewNoteLoading ? "Creating new note..." : undefined)}
+            >
+              {isNewNoteLoading ? (
+                <Loader2 size={ACTION_ICON_SIZE} className={styles.loadingIcon} />
+              ) : (
+                <FilePlus size={ACTION_ICON_SIZE} />
+              )}
+              {showText && !isNewNoteLoading && 'New Note'}
+            </button>
+            <button 
+              onClick={onVoiceSummary} 
+              className={styles.actionButton} 
+              disabled={isVoiceSummaryLoading || isVoiceSummaryDisabled}
+              aria-label={!showText && !isVoiceSummaryLoading ? "Voice Summary" : (isVoiceSummaryLoading ? "Processing voice summary..." : undefined)}
+            >
+              {isVoiceSummaryLoading ? (
+                <Loader2 size={ACTION_ICON_SIZE} className={styles.loadingIcon} />
+              ) : (
+                <AudioWaveform size={ACTION_ICON_SIZE} />
+              )}
+              {showText && !isVoiceSummaryLoading && 'Voice Summary'}
+            </button>
+            <button 
+              onClick={onWebScrape} 
+              className={styles.actionButton} 
+              disabled={isWebScrapeLoading || isWebScrapeDisabled}
+              aria-label={!showText && !isWebScrapeLoading ? "Web Scrape" : (isWebScrapeLoading ? "Processing web scrape..." : undefined)}
+            >
+              {isWebScrapeLoading ? (
+                <Loader2 size={ACTION_ICON_SIZE} className={styles.loadingIcon} />
+              ) : (
+                <Shovel size={ACTION_ICON_SIZE} />
+              )}
+              {showText && !isWebScrapeLoading && 'Web Scrape'}
+            </button>
+            <button 
+              onClick={onPdfSummary} 
+              className={styles.actionButton} 
+              disabled={isPdfSummaryLoading || isPdfSummaryDisabled}
+              aria-label={!showText && !isPdfSummaryLoading ? "PDF Summary" : (isPdfSummaryLoading ? "Processing PDF summary..." : undefined)}
+            >
+              {isPdfSummaryLoading ? (
+                <Loader2 size={ACTION_ICON_SIZE} className={styles.loadingIcon} />
+              ) : (
+                <BookOpenText size={ACTION_ICON_SIZE} />
+              )}
+              {showText && !isPdfSummaryLoading && 'PDF Summary'}
+            </button>
+          </div>
+
+          {/* This section will be made scrollable */}
+          {showText && (
+            <div className={styles.quickAccessScrollableArea}>
+              <div className={styles.quickAccessSection}>
+                <QuickAccessDropdown />
+              </div>
+            </div>
+          )}
+
+          <div className={styles.sidebarFooter}>
+            <button onClick={onToggleTheme} className={styles.actionButtonSecondary} aria-label={!showText ? (currentTheme === 'light' ? "Switch to dark theme" : "Switch to light theme") : undefined}>
+              {currentTheme === 'light' ? <MoonIcon size={ACTION_ICON_SIZE} /> : <SunIcon size={ACTION_ICON_SIZE} />}
+              {showText && `Theme: ${currentTheme}`}
+            </button>
+            <button onClick={onOpenPreferences} className={styles.actionButtonSecondary} aria-label={!showText ? "Open Preferences" : undefined}>
+              <SettingsIcon size={ACTION_ICON_SIZE} />
+              {showText && 'Preferences'}
+            </button>
+            <button onClick={onLogout} className={styles.actionButtonSecondary} aria-label={!showText ? "Logout" : undefined}>
+              <LogOutIcon size={ACTION_ICON_SIZE} />
+              {showText && 'Logout'}
+            </button>
+          </div>
         </div>
       </aside>
     </>

@@ -44,6 +44,10 @@ import { toast } from 'sonner';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Folder } from '@/types/supabase';
 import { useFileMediaStore } from '@/stores/fileMediaStore';
+import TuonLogoIcon from '@/components/ui/TuonLogoIcon';
+import styles from '@/components/sidebar/Sidebar.module.css';
+import { useModalStore } from '@/stores/useModalStore';
+import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 
 // Define types for sorting
 /**
@@ -1138,6 +1142,9 @@ const DocumentCardGrid: React.FC = () => {
 
   const displayItems = currentDisplayItems;
 
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  const { openMobileSidebar } = useModalStore();
+
   // Function to render the main content of the grid (items, loading, errors, empty states)
   const renderGridContent = () => {
     // Initial loading (only if not searching)
@@ -1382,7 +1389,18 @@ const DocumentCardGrid: React.FC = () => {
   return (
     <>
       {/* Search Bar */}
-      <div className="mb-4 px-4 pt-4 flex items-center justify-center">
+      <div className="mb-4 px-4 pt-4 flex items-center justify-center gap-x-2">
+        {/* ADDED: Mobile-only Tuon logo button */}
+        {isMobile && (
+          <button
+            onClick={openMobileSidebar}
+            className={styles.toggleButton}
+            aria-label="Open sidebar"
+          >
+            <TuonLogoIcon className={styles.toggleButtonLogo} />
+          </button>
+        )}
+        
         <div className="relative w-3/4">
           <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground z-10 pointer-events-none" />
           <Input

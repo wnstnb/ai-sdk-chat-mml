@@ -11,7 +11,10 @@
 
 .sidebar.expanded {
   width: 240px;
-  padding: 20px;
+  padding: 12px; /* Maintain existing padding */
+  overflow-y: hidden; /* CHANGED from auto to hidden */
+  height: 100vh; /* Ensure it takes full viewport height */
+  /* Remove box-shadow if it's for mobile drawer only or adjust */
 }
 
 .sidebar.collapsed {
@@ -22,7 +25,7 @@
 
 /* Sidebar Header (Branding/Logo) */
 .sidebarHeader {
-  margin-bottom: 20px;
+  margin-bottom: 12px; /* Added margin for spacing */
   text-align: center;
   /* Added to align toggle button and logo text/icon */
   display: flex;
@@ -30,7 +33,7 @@
   align-items: center; /* Center items horizontally */
   position: relative; /* For mobile close button positioning */
   padding-top: 10px; /* Add some padding at the top */
-  flex-shrink: 0; /* Prevent shrinking */
+  flex-shrink: 0; /* ADDED */
 }
 
 /* Removed .logoText and .logoIcon as they are no longer used */
@@ -144,8 +147,8 @@ html[data-theme="dark"] .toggleButtonLogo {
 
 /* Sidebar Navigation */
 .sidebarNav {
-  flex-shrink: 0; /* Prevent shrinking */
-  margin-bottom: 16px; /* Reduced from default */
+  flex-shrink: 0; /* ADDED */
+  margin-bottom: 12px; /* Added margin for spacing */
 }
 
 .sidebarNav ul {
@@ -205,9 +208,9 @@ html[data-theme="dark"] .toggleButtonLogo {
 /* Action Buttons */
 .sidebarActionsTop {
   margin-top: 0; /* Reduced from 20px */
-  margin-bottom: 16px; /* Reduced from 20px */
+  margin-bottom: 12px; /* Added margin for spacing */
   width: 100%; /* Ensure container takes full width for buttons */
-  flex-shrink: 0; /* Prevent shrinking */
+  flex-shrink: 0; /* ADDED */
 }
 
 .actionButton {
@@ -283,11 +286,11 @@ html[data-theme="dark"] .toggleButtonLogo {
 /* Removed .sidebarActionsLaunch and .sectionTitle rules as the section is deleted */
 
 .sidebarFooter {
-  margin-top: auto; /* Push footer sections to the bottom */
+  margin-top: auto; /* Pushes footer to the bottom if content above is not filling space */
   width: 100%;
-  padding-top: 20px;
-  border-top: 1px solid var(--border-color); /* Updated separator */
-  flex-shrink: 0; /* Prevent shrinking */
+  padding-top: 12px; /* Add some space above the footer */
+  border-top: 1px solid var(--border-color); /* Separator line for footer */
+  flex-shrink: 0; /* ADDED */
 }
 
 .actionButtonSecondary {
@@ -499,16 +502,32 @@ html[data-theme="dark"] .toggleButtonLogo {
 /* ADDED: Styles for Quick Access Section */
 .quickAccessSection {
   width: 100%;
-  margin-bottom: 16px; /* Space below the section */
-  padding-top: 16px;   /* Space above the section, below the nav */
-  border-top: 1px solid var(--border-color); /* Separator line */
-  flex-shrink: 0; /* Prevent shrinking */
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0; /* This section itself shouldn't shrink if its content is small */
+}
+
+/* ADDED: New inner container for flex layout */
+.sidebarInnerContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden; /* Prevent this container from scrolling */
+}
+
+/* ADDED: Scrollable area for quick access */
+.quickAccessScrollableArea {
+  flex-grow: 1;
+  overflow-y: auto; /* Enable vertical scroll for this section only */
+  min-height: 0; /* Essential for flex-grow and overflow-y to work correctly */
+  /* Consider adding some padding if .quickAccessSection itself doesn't have it */
+  padding-bottom: 12px; /* Space before the footer */
 }
 
 /* Action Buttons */
 .sidebarActionsTop {
   margin-top: 0; /* Reduced from 20px */
-  margin-bottom: 16px; /* Reduced from 20px */
+  margin-bottom: 12px; /* Added margin for spacing */
   width: 100%; /* Ensure container takes full width for buttons */
-  flex-shrink: 0; /* Prevent shrinking */
+  flex-shrink: 0; /* ADDED */
 } 

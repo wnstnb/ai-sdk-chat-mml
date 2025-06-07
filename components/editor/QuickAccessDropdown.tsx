@@ -25,7 +25,7 @@ export const QuickAccessDropdown: React.FC = () => {
           <li key={doc.id}>
             <Link 
               href={`/editor/${doc.id}`} 
-              className="block p-1.5 text-sm text-[--text-color] hover:bg-[--hover-bg] rounded truncate"
+              className="block p-1.5 text-xs text-[--text-color] hover:bg-[--hover-bg] rounded truncate"
             >
               {doc.name}
             </Link>
