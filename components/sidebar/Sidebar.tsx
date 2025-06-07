@@ -11,6 +11,7 @@ import {
   FileTextIcon,
   GlobeIcon,
   HomeIcon,
+  LayoutGrid,
   MicIcon,
   FileJsonIcon,
   Loader2,
@@ -181,7 +182,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
           <nav className={styles.sidebarNav}>
             <ul>
-              <li><a href="/launch" className={styles.homeButton}><HomeIcon size={ACTION_ICON_SIZE} />{showText && <span className={styles.navText}>Home</span>}</a></li>
+              <li><a href="/launch" className={styles.homeButton}><LayoutGrid size={ACTION_ICON_SIZE} />{showText && <span className={styles.navText}>Home</span>}</a></li>
             </ul>
           </nav>
 
