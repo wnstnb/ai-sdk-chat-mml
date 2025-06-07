@@ -159,13 +159,19 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               <TuonLogoIcon 
                 className={styles.toggleButtonLogo} 
-                aria-label={isDesktopSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"} 
+                aria-label={isDesktopSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
               />
             </button>
           )}
           {isMobile && isOpenOnMobile && (
-             <button onClick={onCloseMobile} className={styles.mobileCloseButton} aria-label="Close sidebar">
-                 <ChevronLeftIcon size={24} />
+             <button 
+               onClick={onCloseMobile} 
+               className={styles.toggleButton}
+               aria-label="Close sidebar"
+             >
+               <TuonLogoIcon 
+                 className={styles.toggleButtonLogo} 
+               />
              </button>
           )}
         </div>

@@ -6,13 +6,19 @@ import { useAllDocuments } from '@/hooks/useDocumentLists';
 import DocumentCard from './DocumentCard';
 import CardSkeleton from './CardSkeleton';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, RotateCw, FileText, FolderPlus, CheckSquare, Square, FileText as FileTextIcon, Folder as FolderIcon, Search, X } from 'lucide-react';
+import { AlertTriangle, RotateCw, FileText, FolderPlus, CheckSquare, Square, FileText as FileTextIcon, Folder as FolderIcon, Search, X, ChevronDown } from 'lucide-react';
 import CreateFolderModal from './CreateFolderModal';
 import { useFolders } from '@/hooks/useFolders';
 import { useFolderNavigation } from '@/hooks/useFolderNavigation';
 import FolderCard from './FolderCard';
 import FolderBreadcrumbs from './FolderBreadcrumbs';
 import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   DndContext,
   closestCenter,
@@ -68,8 +74,9 @@ const getNumberOfColumns = (width: number): number => {
   if (width >= BREAKPOINTS.xl) return 5; // Tailwind's xl:grid-cols-5
   if (width >= BREAKPOINTS.lg) return 4; // Tailwind's lg:grid-cols-4
   if (width >= BREAKPOINTS.md) return 3; // Tailwind's md:grid-cols-3
-  if (width >= BREAKPOINTS.sm) return 2; // Tailwind's sm:grid-cols-2
-  return 1; // Default to 1 column
+  // if (width >= BREAKPOINTS.sm) return 2; // Tailwind's sm:grid-cols-2
+  // return 1; // Default to 1 column
+  return 2; // Default to 2 columns for mobile and up to sm
 };
 
 /**
@@ -1136,7 +1143,7 @@ const DocumentCardGrid: React.FC = () => {
     // Initial loading (only if not searching)
     if (isLoading && (!fetchedDocs || fetchedDocs.length === 0) && !searchQuery) {
       return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4">
           {Array.from({ length: numberOfColumns * 3 }).map((_, index) => ( // Show a few rows of skeletons
             <CardSkeleton key={`initial-skeleton-${index}`} />
           ))}
@@ -1165,7 +1172,7 @@ const DocumentCardGrid: React.FC = () => {
     if (searchQuery) {
       if (isSearching) {
         return (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4">
             {Array.from({ length: numberOfColumns * 3 }).map((_, index) => (
               <CardSkeleton key={`search-skeleton-${index}`} />
             ))}
@@ -1291,7 +1298,7 @@ const DocumentCardGrid: React.FC = () => {
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 p-4">
                     {itemsInRow.map((item) => {
                       const originalFolderId = item.itemType === 'folder' ? (item as Folder & { itemType: 'folder' }).id.replace('folder-', '') : null;
                       return (
@@ -1399,56 +1406,57 @@ const DocumentCardGrid: React.FC = () => {
       </div>
 
       {/* Sorting Controls & New Folder Button */}
-      <div className="p-4 flex flex-wrap items-center gap-2 border-b border-[--border-color]" role="toolbar" aria-label="Document sorting controls">
-        <span className="text-sm font-medium mr-2" id="sort-label">Sort by:</span>
-        <div className="flex gap-2" role="group" aria-labelledby="sort-label">
+      <div className="p-4 flex items-center justify-between gap-x-2 border-b border-[--border-color]" role="toolbar" aria-label="Document sorting controls">
+        {/* Left Group: Sort Dropdown */}
+        <div className="flex items-center gap-x-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="flex items-center gap-x-1">
+                Sort: {sortKey === 'lastUpdated' ? 'Last Updated' : sortKey === 'title' ? 'Title' : 'Starred'}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={() => handleSortKeyChange('lastUpdated')}
+                aria-pressed={sortKey === 'lastUpdated'}
+              >
+                Last Updated
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSortKeyChange('title')}
+                aria-pressed={sortKey === 'title'}
+              >
+                Title
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSortKeyChange('is_starred')}
+                aria-pressed={sortKey === 'is_starred'}
+              >
+                Starred
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Right Group: Sort Direction and New Folder */}
+        <div className="flex items-center gap-x-2">
           <Button 
-            variant={sortKey === 'lastUpdated' ? 'default' : 'outline'}
+            variant="outline"
             size="sm"
-            onClick={() => handleSortKeyChange('lastUpdated')}
-            aria-pressed={sortKey === 'lastUpdated'}
-            aria-describedby="sort-help"
+            onClick={handleSortDirectionToggle}
+            aria-label={`Sort direction: ${sortDirection === 'asc' ? 'Ascending' : 'Descending'}. Click to change to ${sortDirection === 'asc' ? 'descending' : 'ascending'}.`}
           >
-            Last Updated
+            {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
           </Button>
+          
           <Button 
-            variant={sortKey === 'title' ? 'default' : 'outline'}
+            variant="default"
             size="sm"
-            onClick={() => handleSortKeyChange('title')}
-            aria-pressed={sortKey === 'title'}
-            aria-describedby="sort-help"
+            onClick={handleCreateFolder}
+            className="flex items-center" // Removed gap-2 as parent div now has gap-x-2
           >
-            Title
-          </Button>
-          <Button 
-            variant={sortKey === 'is_starred' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => handleSortKeyChange('is_starred')}
-            aria-pressed={sortKey === 'is_starred'}
-            aria-describedby="sort-help"
-          >
-            Starred
+            <FolderPlus className="w-4 h-4 mr-1.5" /> {/* Added explicit margin for icon */}
+            New
           </Button>
         </div>
-        <Button 
-          variant="outline"
-          size="sm"
-          onClick={handleSortDirectionToggle}
-          className="ml-auto" /* Pushes this group to the right */
-          aria-label={`Sort direction: ${sortDirection === 'asc' ? 'Ascending' : 'Descending'}. Click to change to ${sortDirection === 'asc' ? 'descending' : 'ascending'}.`}
-        >
-          {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
-        </Button>
-        
-        <Button 
-          variant="default"
-          size="sm"
-          onClick={handleCreateFolder}
-          className="flex items-center gap-2" // Removed ml-2, relies on gap-2 from parent
-        >
-          <FolderPlus className="w-4 h-4" />
-          New Folder
-        </Button>
         <div id="sort-help" className="sr-only">
           Choose how to sort the document list. Current sort: {sortKey} in {sortDirection === 'asc' ? 'ascending' : 'descending'} order.
         </div>

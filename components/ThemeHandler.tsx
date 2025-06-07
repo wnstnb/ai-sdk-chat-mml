@@ -9,6 +9,9 @@ import Sidebar from '@/components/sidebar/Sidebar';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { VoiceSummaryModal } from './modals/VoiceSummaryModal';
+import TuonLogoIcon from '@/components/ui/TuonLogoIcon';
+import styles from '@/components/sidebar/Sidebar.module.css';
+import useMediaQuery from '@/lib/hooks/utils/useMediaQuery';
 
 interface ThemeHandlerProps {
   children: React.ReactNode;
@@ -30,6 +33,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
 
   const [isMounted, setIsMounted] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const isMobile = useMediaQuery('(max-width: 768px)');
 
   // Set mounted state after initial render
   useEffect(() => {
@@ -109,15 +113,13 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
           isWebScrapeDisabled={false}
         />
       )}
-      {displaySidebar && !isMobileSidebarOpen && (
+      {displaySidebar && isMobile && !isMobileSidebarOpen && (
         <button
           onClick={() => setIsMobileSidebarOpen(true)}
-          className="fixed top-4 left-4 z-[1001] p-2 bg-gray-600 hover:bg-gray-700 text-white rounded-md shadow-lg md:hidden"
+          className={`fixed top-4 left-4 z-[1001] ${styles.toggleButton}`}
           aria-label="Open sidebar"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-          </svg>
+          <TuonLogoIcon className={styles.toggleButtonLogo} />
         </button>
       )}
       <main className="flex-1 flex flex-col overflow-y-auto">

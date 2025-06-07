@@ -132,7 +132,7 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
   const cardClassName = useMemo(() => 
     `group relative flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-md \
     transition-all duration-300 ease-in-out motion-reduce:transition-none overflow-hidden \
-    w-full max-w-[256px] aspect-[3/4] touch-manipulation \
+    w-full max-w-[220px] aspect-[3/4] touch-manipulation \
     focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 \
     ${isSelected ? 'ring-2 ring-[--accent-color] shadow-lg' : 'focus:ring-[--accent-color]'} \
     ${!isSelected ? 'hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none' : ''} \

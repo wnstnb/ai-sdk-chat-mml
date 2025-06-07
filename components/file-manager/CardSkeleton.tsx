@@ -2,7 +2,10 @@ import React from 'react';
 
 const CardSkeleton: React.FC = () => {
   return (
-    <article className="group relative flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-md w-full max-w-[256px] aspect-[3/4] animate-pulse overflow-hidden">
+    <article className="group relative flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-md w-full max-w-[220px] aspect-[3/4] animate-pulse overflow-hidden">
+      {/* Checkbox placeholder */}
+      <div className="absolute top-2 left-2 z-20 w-4 h-4 bg-gray-300 dark:bg-gray-600 rounded"></div>
+
       {/* Top Section Placeholder (approx 20%) */}
       <div className="h-[20%] bg-gray-200 dark:bg-gray-700 p-3 flex items-center border-b border-gray-300/50 dark:border-gray-600/50">
         <div className="w-5 h-5 bg-gray-300 dark:bg-gray-600 rounded ml-auto"></div> {/* Icon Placeholder */}

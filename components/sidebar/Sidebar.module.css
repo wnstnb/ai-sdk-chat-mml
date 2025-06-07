@@ -30,6 +30,7 @@
   align-items: center; /* Center items horizontally */
   position: relative; /* For mobile close button positioning */
   padding-top: 10px; /* Add some padding at the top */
+  flex-shrink: 0; /* Prevent shrinking */
 }
 
 /* Removed .logoText and .logoIcon as they are no longer used */
@@ -106,6 +107,7 @@ html[data-theme="dark"] .toggleButtonLogo {
   box-shadow: 2px 0 5px rgba(0,0,0,0.1); /* This shadow can be themed later if needed */
   background-color: var(--header-bg); /* Match sidebar background */
   border-right: 1px solid var(--border-color); /* Match sidebar border */
+  padding: 16px; /* Add horizontal padding to the entire mobile drawer */
 }
 
 .mobileDrawerOpen {
@@ -141,6 +143,11 @@ html[data-theme="dark"] .toggleButtonLogo {
 }
 
 /* Sidebar Navigation */
+.sidebarNav {
+  flex-shrink: 0; /* Prevent shrinking */
+  margin-bottom: 16px; /* Reduced from default */
+}
+
 .sidebarNav ul {
   list-style: none;
   padding: 0;
@@ -197,15 +204,16 @@ html[data-theme="dark"] .toggleButtonLogo {
 
 /* Action Buttons */
 .sidebarActionsTop {
-  margin-top: 20px;
-  margin-bottom: 20px;
+  margin-top: 0; /* Reduced from 20px */
+  margin-bottom: 16px; /* Reduced from 20px */
   width: 100%; /* Ensure container takes full width for buttons */
+  flex-shrink: 0; /* Prevent shrinking */
 }
 
 .actionButton {
   width: 100%;
   padding: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 8px; /* Reduced from 10px */
   background-color: var(--primary-color); 
   color: var(--text-color); 
   border: 1px solid var(--primary-color); 
@@ -279,6 +287,7 @@ html[data-theme="dark"] .toggleButtonLogo {
   width: 100%;
   padding-top: 20px;
   border-top: 1px solid var(--border-color); /* Updated separator */
+  flex-shrink: 0; /* Prevent shrinking */
 }
 
 .actionButtonSecondary {
@@ -419,30 +428,22 @@ html[data-theme="dark"] .toggleButtonLogo {
 
 /* Styling for the Home button to give it a glass effect */
 .homeButton {
-  /* display: flex; /* Already in .sidebarNav li a */
-  /* align-items: center; /* Already in .sidebarNav li a */
-  padding: 10px; /* Consistent padding */
-  margin-bottom: 10px; /* Space below the home button */
-  border-radius: var(--radius, 4px);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px); /* For Safari */
-  background-color: rgba(243, 244, 246, 0.6); /* Light mode: Tailwind gray-100 @ 60% opacity */
-  border: 1px solid rgba(229, 231, 235, 0.7); /* Light mode: Tailwind gray-200 @ 70% opacity */
-  color: var(--text-color); /* More prominent text color */
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-  width: 100%; /* Make it full width like other action buttons */
-  gap: 8px; /* Space between icon and text */
-}
-
-.sidebar.expanded .homeButton {
-  justify-content: center; /* Changed from flex-start to center */
-}
-
-.sidebar.collapsed .homeButton {
+  display: flex;
+  align-items: center;
   justify-content: center;
-  width: 36px; /* Fixed width for square shape */
-  height: 36px; /* Fixed height for square shape */
-  padding: 0; /* Remove padding to center icon in fixed size */
+  padding: 10px;
+  border-radius: var(--radius-medium, 6px);
+  transition: background-color 0.2s ease, color 0.2s ease;
+  width: 100%;
+  color: var(--nav-item-color);
+  font-weight: 500;
+  margin-bottom: 8px;
+  text-decoration: none;
+  gap: 8px; /* ADDED for consistent spacing with actionButton */
+}
+
+.homeButton .navText {
+  /* margin-left: 8px; REMOVED - gap on parent .homeButton handles spacing */
 }
 
 .homeButton:hover {
@@ -465,4 +466,32 @@ html[data-theme="dark"] .toggleButtonLogo {
 [data-theme='dark'] .homeButton:hover {
   background-color: rgba(75, 85, 99, 0.8);  /* Dark mode: Tailwind gray-600 @ 80% opacity */
   border-color: rgba(107, 114, 128, 0.9); /* Dark mode: Tailwind gray-500 @ 90% opacity */
+}
+
+/* Mobile-specific optimizations */
+.mobileDrawer .sidebarHeader {
+  margin-bottom: 16px; /* Reduced spacing on mobile */
+  padding-top: 8px; /* Reduced padding on mobile */
+}
+
+.mobileDrawer .sidebarNav {
+  margin-bottom: 12px; /* Reduced spacing on mobile */
+}
+
+.mobileDrawer .sidebarActionsTop {
+  margin-bottom: 12px; /* Reduced spacing on mobile */
+}
+
+.mobileDrawer .sidebarFooter {
+  padding-top: 16px; /* Reduced padding on mobile */
+}
+
+.mobileDrawer .actionButton {
+  margin-bottom: 6px; /* Reduced spacing between action buttons on mobile */
+  padding: 8px 12px; /* Slightly smaller vertical padding, consistent horizontal padding */
+}
+
+.mobileDrawer .actionButtonSecondary {
+  margin-bottom: 6px; /* Reduced spacing between footer buttons on mobile */
+  padding: 8px 12px; /* Slightly smaller vertical padding, consistent horizontal padding */
 } 

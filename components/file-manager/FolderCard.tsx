@@ -174,7 +174,7 @@ const FolderCard: React.FC<FolderCardProps> = ({
       className={`
         group relative flex flex-col rounded-lg bg-white dark:bg-gray-800
         transition-all duration-300 ease-in-out motion-reduce:transition-none 
-        ${isMenuOpen ? 'overflow-visible' : 'overflow-hidden'} w-full max-w-[256px] ${cardHeightClass} touch-manipulation 
+        ${isMenuOpen ? 'overflow-visible' : 'overflow-hidden'} w-full max-w-[220px] ${cardHeightClass} touch-manipulation 
         focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 
         ${isSelected ? 'ring-2 ring-[var(--accent-color)] shadow-md' : 'focus:ring-[var(--accent-color)]'}
         ${isOver ? 'ring-2 ring-[var(--title-hover-color)] ring-opacity-50' : ''}
