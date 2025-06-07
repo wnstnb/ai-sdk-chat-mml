@@ -38,6 +38,29 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
       ],
     },
     {
+      previewImageSrc: "/voice-summary-landing-1.png",
+      title: "Live Voice<br />Summaries",
+      caption: "Get a summary of your voice notes in real-time.",
+      content: [
+        <div key="section-live-voice-summary-1">
+          <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
+            <strong>Capture your thoughts as they come, and let the AI summarize them instantly.</strong> No more pausing to type or losing your train of thought. Just speak freely and get a clean, concise summary ready to use. It's the most natural way to unload your brain.
+          </p>
+          <div className="flex justify-center mt-4">
+            <img src="/voice-summary-landing-1.png" alt="Live Voice Summary" className="w-full h-full object-cover rounded-xl max-w-xl" />
+          </div>
+        </div>,
+        <div key="section-live-voice-summary-2">
+          <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
+            <strong>Your spoken notes are automatically transcribed and organized, turning unstructured audio into a structured document.</strong> Go from a stream of consciousness to an editable, shareable note in seconds. This bridges the gap between thinking and writing, making your workflow faster and more fluid.
+          </p>
+          <div className="flex justify-center mt-4">
+            <img src="/voice-summary-landing-2.png" alt="Live Voice Summary Organized" className="w-full h-full object-cover rounded-xl max-w-xl" />
+          </div>
+        </div>
+      ],
+    },
+    {
       previewImageSrc: "/tag_docs_2.png",
       title: "Tag<br />Documents",
       caption: "Tag documents as context for AI and never start from zero.",
@@ -77,22 +100,22 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
         </div>
       ]
     },
-    {
-      previewImageSrc: "/file_browser_1.png",
-      title: "Stay<br />Organized",
-      caption: "Easily manage your files and notes with an intuitive browser and folder system.",
-      // category: "Management",
-      content: [
-        <div key="section-stay-organized">
-        <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
-          <strong>Stay organized without the clutter or complexity of traditional note apps.</strong> Most apps either bury your content in rigid folder hierarchies or overwhelm you with tagging systems that don&apos;t scale. This feature strikes the balance, giving you just enough structure to keep things clean and accessible.
-        </p>
-        <div className="flex justify-center mt-4">
-          <img src="/file_browser_1.png" alt="Stay Organized" className="w-full h-full object-cover rounded-xl max-w-xl" />
-        </div>
-        </div>
-      ],
-    },
+    // {
+    //   previewImageSrc: "/file_browser_1.png",
+    //   title: "Stay<br />Organized",
+    //   caption: "Easily manage your files and notes with an intuitive browser and folder system.",
+    //   // category: "Management",
+    //   content: [
+    //     <div key="section-stay-organized">
+    //     <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
+    //       <strong>Stay organized without the clutter or complexity of traditional note apps.</strong> Most apps either bury your content in rigid folder hierarchies or overwhelm you with tagging systems that don&apos;t scale. This feature strikes the balance, giving you just enough structure to keep things clean and accessible.
+    //     </p>
+    //     <div className="flex justify-center mt-4">
+    //       <img src="/file_browser_1.png" alt="Stay Organized" className="w-full h-full object-cover rounded-xl max-w-xl" />
+    //     </div>
+    //     </div>
+    //   ],
+    // },
     {      
       previewImageSrc: "/user_diff_models_1.png",
       title: "Use Different<br />Models",
