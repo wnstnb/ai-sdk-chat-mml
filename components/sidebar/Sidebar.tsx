@@ -14,10 +14,17 @@ import {
   MicIcon,
   FileJsonIcon,
   Loader2,
-  PanelLeftIcon,
-  ChevronLeftIcon
+  ChevronLeftIcon,
+  FilePlus,
+  AudioWaveform,
+  Shovel,
+  BookOpenText
 } from 'lucide-react'; // Consolidate icons from lucide-react
 import { useSwipeable } from 'react-swipeable'; // Added for swipe gestures
+import TuonLogoIcon from '@/components/ui/TuonLogoIcon'; // Import the new TuonLogoIcon component
+
+// Define a smaller icon size for action buttons
+const ACTION_ICON_SIZE = 16;
 
 interface SidebarProps {
   // Props that might be passed from a parent to control the sidebar, e.g., for mobile hamburger toggle
@@ -150,10 +157,10 @@ const Sidebar: React.FC<SidebarProps> = ({
               aria-expanded={isDesktopSidebarExpanded}
               aria-label={isDesktopSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
             >
-              {isDesktopSidebarExpanded ? 
-                <ChevronLeftIcon size={20} /> : 
-                <PanelLeftIcon size={20} />
-              }
+              <TuonLogoIcon 
+                className={styles.toggleButtonLogo} 
+                aria-label={isDesktopSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"} 
+              />
             </button>
           )}
           {isMobile && isOpenOnMobile && (
@@ -161,19 +168,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                  <ChevronLeftIcon size={24} />
              </button>
           )}
-          {(isSidebarEffectivelyOpen || !isMobile) && (
-            isDesktopSidebarExpanded || isMobile ? (
-              <p className={styles.logoText}>MyApp</p>
-            ) : (
-              <p className={styles.logoIcon}>M</p>
-            )
-          )}
         </div>
 
         <nav className={styles.sidebarNav}>
           <ul>
-            <li><a href="#">{showText ? 'Home' : <span title="Home"><HomeIcon size={20} /></span>}</a></li>
-            <li><a href="#">{showText ? 'Documents' : <span title="Documents"><FileTextIcon size={20} /></span>}</a></li>
+            <li><a href="/launch" className={styles.homeButton}><HomeIcon size={ACTION_ICON_SIZE} />{showText && <span className={styles.navText}>Home</span>}</a></li>
           </ul>
         </nav>
 
@@ -182,68 +181,68 @@ const Sidebar: React.FC<SidebarProps> = ({
             onClick={onNewNote} 
             className={styles.actionButton} 
             disabled={isNewNoteLoading || isNewNoteDisabled}
-            aria-label={!showText && !isNewNoteLoading ? "New Note" : undefined}
+            aria-label={!showText && !isNewNoteLoading ? "New Note" : (isNewNoteLoading ? "Creating new note..." : undefined)}
           >
             {isNewNoteLoading ? (
-              <Loader2 size={20} className={styles.loadingIcon} />
+              <Loader2 size={ACTION_ICON_SIZE} className={styles.loadingIcon} />
             ) : (
-              showText ? 'New Note' : <span title="New Note"><PlusIcon size={20} /></span>
+              <FilePlus size={ACTION_ICON_SIZE} />
             )}
+            {showText && !isNewNoteLoading && 'New Note'}
           </button>
           <button 
             onClick={onVoiceSummary} 
             className={styles.actionButton} 
             disabled={isVoiceSummaryLoading || isVoiceSummaryDisabled}
-            aria-label={!showText && !isVoiceSummaryLoading ? "Voice Summary" : undefined}
+            aria-label={!showText && !isVoiceSummaryLoading ? "Voice Summary" : (isVoiceSummaryLoading ? "Processing voice summary..." : undefined)}
           >
             {isVoiceSummaryLoading ? (
-              <Loader2 size={20} className={styles.loadingIcon} />
+              <Loader2 size={ACTION_ICON_SIZE} className={styles.loadingIcon} />
             ) : (
-              showText ? 'Voice Summary' : <span title="Voice Summary"><VoicemailIcon size={20} /></span>
+              <AudioWaveform size={ACTION_ICON_SIZE} />
             )}
-          </button>
-          <button 
-            onClick={onPdfSummary} 
-            className={styles.actionButton} 
-            disabled={isPdfSummaryLoading || isPdfSummaryDisabled}
-            aria-label={!showText && !isPdfSummaryLoading ? "PDF Summary" : undefined}
-          >
-            {isPdfSummaryLoading ? (
-              <Loader2 size={20} className={styles.loadingIcon} />
-            ) : (
-              showText ? 'PDF Summary' : <span title="PDF Summary"><FileTextIcon size={20} /></span>
-            )}
+            {showText && !isVoiceSummaryLoading && 'Voice Summary'}
           </button>
           <button 
             onClick={onWebScrape} 
             className={styles.actionButton} 
             disabled={isWebScrapeLoading || isWebScrapeDisabled}
-            aria-label={!showText && !isWebScrapeLoading ? "Web Scrape" : undefined}
+            aria-label={!showText && !isWebScrapeLoading ? "Web Scrape" : (isWebScrapeLoading ? "Processing web scrape..." : undefined)}
           >
             {isWebScrapeLoading ? (
-              <Loader2 size={20} className={styles.loadingIcon} />
+              <Loader2 size={ACTION_ICON_SIZE} className={styles.loadingIcon} />
             ) : (
-              showText ? 'Web Scrape' : <span title="Web Scrape"><GlobeIcon size={20} /></span>
+              <Shovel size={ACTION_ICON_SIZE} />
             )}
+            {showText && !isWebScrapeLoading && 'Web Scrape'}
           </button>
-        </div>
-
-        <div className={styles.sidebarActionsLaunch}>
-          <p className={styles.sectionTitle}>{showText ? 'Quick Actions' : <span title="Quick Actions">🚀</span>}</p>
-          <button onClick={onVoiceSummary} className={styles.actionButtonSecondary} aria-label={!showText ? "Voice Summary" : undefined}>{showText ? 'Voice Summary' : <span title="Voice Summary"><MicIcon size={18} /></span>}</button>
-          <button onClick={onPdfSummary} className={styles.actionButtonSecondary} aria-label={!showText ? "PDF Summary" : undefined}>{showText ? 'PDF Summary' : <span title="PDF Summary"><FileJsonIcon size={18} /></span>}</button>
-          <button onClick={onWebScrape} className={styles.actionButtonSecondary} aria-label={!showText ? "Web Scrape" : undefined}>{showText ? 'Web Scrape' : <span title="Web Scrape"><GlobeIcon size={18} /></span>}</button>
+          <button 
+            onClick={onPdfSummary} 
+            className={styles.actionButton} 
+            disabled={isPdfSummaryLoading || isPdfSummaryDisabled}
+            aria-label={!showText && !isPdfSummaryLoading ? "PDF Summary" : (isPdfSummaryLoading ? "Processing PDF summary..." : undefined)}
+          >
+            {isPdfSummaryLoading ? (
+              <Loader2 size={ACTION_ICON_SIZE} className={styles.loadingIcon} />
+            ) : (
+              <BookOpenText size={ACTION_ICON_SIZE} />
+            )}
+            {showText && !isPdfSummaryLoading && 'PDF Summary'}
+          </button>
         </div>
 
         <div className={styles.sidebarFooter}>
-          <button onClick={onToggleTheme} className={styles.actionButtonSecondary} aria-label={!showText ? (currentTheme === 'light' ? "Switch to dark theme" : "Switch to light theme") : "Toggle theme"}>
-            {showText ? `Theme: ${currentTheme}` : (currentTheme === 'light' ? <MoonIcon size={20} /> : <SunIcon size={20} />)}
+          <button onClick={onToggleTheme} className={styles.actionButtonSecondary} aria-label={!showText ? (currentTheme === 'light' ? "Switch to dark theme" : "Switch to light theme") : undefined}>
+            {currentTheme === 'light' ? <MoonIcon size={ACTION_ICON_SIZE} /> : <SunIcon size={ACTION_ICON_SIZE} />}
+            {showText && `Theme: ${currentTheme}`}
           </button>
-          <button onClick={onOpenPreferences} className={styles.actionButtonSecondary} aria-label={!showText ? "Open Preferences" : "Preferences"}>
-            {showText ? 'Preferences' : <span title="Preferences"><SettingsIcon size={20} /></span>}
+          <button onClick={onOpenPreferences} className={styles.actionButtonSecondary} aria-label={!showText ? "Open Preferences" : undefined}>
+            <SettingsIcon size={ACTION_ICON_SIZE} />
+            {showText && 'Preferences'}
           </button>
-          <button onClick={onLogout} className={styles.actionButtonSecondary} aria-label={!showText ? "Logout" : "Logout"}>
-            {showText ? 'Logout' : <span title="Logout"><LogOutIcon size={20} /></span>}
+          <button onClick={onLogout} className={styles.actionButtonSecondary} aria-label={!showText ? "Logout" : undefined}>
+            <LogOutIcon size={ACTION_ICON_SIZE} />
+            {showText && 'Logout'}
           </button>
         </div>
       </aside>

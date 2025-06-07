@@ -84,18 +84,6 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   const displaySidebar = isAuthenticated && isMounted && !NO_SIDEBAR_PATHS.includes(pathname);
   const currentThemeForSidebar: 'light' | 'dark' = (isMounted && prefTheme) ? prefTheme : 'dark';
 
-  // Placeholder for mobile menu toggle button (could be in a new top bar or floating)
-  // For now, this button is just for testing and would ideally be placed elsewhere
-  const MobileMenuButton = () => (
-    <button
-      onClick={() => setIsMobileSidebarOpen(true)}
-      className="fixed top-4 left-4 z-[1001] p-2 bg-gray-700 text-white rounded md:hidden"
-      aria-label="Open sidebar"
-    >
-      Menu
-    </button>
-  );
-
   return (
     <div className="flex h-screen bg-[--bg-color] text-[--text-color]">
       {displaySidebar && (
