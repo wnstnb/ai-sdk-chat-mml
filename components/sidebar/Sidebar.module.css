@@ -1,0 +1,406 @@
+/* Basic styling for the sidebar */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: var(--header-bg); /* Updated */
+  border-right: 1px solid var(--border-color); /* Updated */
+  transition: width 0.3s ease;
+  overflow-x: hidden; /* Hide content when collapsing */
+}
+
+.sidebar.expanded {
+  width: 260px;
+  padding: 20px;
+}
+
+.sidebar.collapsed {
+  width: 70px; /* Width for collapsed state, showing icons */
+  padding: 20px 10px;
+  align-items: center;
+}
+
+/* Sidebar Header (Branding/Logo) */
+.sidebarHeader {
+  margin-bottom: 20px;
+  text-align: center;
+  /* Added to align toggle button and logo text/icon */
+  display: flex;
+  flex-direction: column; /* Stack toggle button above logo */
+  align-items: center; /* Center items horizontally */
+  position: relative; /* For mobile close button positioning */
+  padding-top: 10px; /* Add some padding at the top */
+}
+
+.logoText {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--text-color); /* Updated */
+  margin: 0;
+  margin-top: 10px; /* Space between toggle and logo */
+}
+
+.logoIcon {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--text-color); /* Updated */
+  margin: 0;
+  margin-top: 10px; /* Space between toggle and logo */
+}
+
+/* Toggle Button for Expand/Collapse (Desktop) */
+.toggleButton {
+  background: transparent; /* Updated */
+  border: 1px solid var(--border-color); /* Updated */
+  color: var(--text-color); /* Updated for icon color */
+  padding: 8px; /* Adjusted padding for better icon display */
+  cursor: pointer;
+  border-radius: var(--radius, 4px); /* Updated */
+  font-size: 0.8rem; /* Maintained */
+  /* margin-bottom: 15px; Removed, header flex controls spacing */
+  display: flex; /* For icon centering */
+  align-items: center;
+  justify-content: center;
+  width: auto; /* Allow button to size to content (icon) */
+  min-width: 36px; /* Ensure a decent click area */
+  min-height: 36px;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease; /* Added color transition */
+}
+
+.toggleButton:hover {
+  background-color: var(--hover-bg); /* Updated */
+  border-color: var(--primary-color); /* Updated */
+  color: var(--primary-color); /* Updated for icon color */
+}
+
+.toggleButton:focus-visible { /* Added focus state */
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-color: var(--primary-color); /* Ensure border matches focus ring */
+}
+
+.toggleButton:active { /* Added active state */
+  background-color: var(--active-bg);
+  color: var(--primary-color);
+  transform: scale(0.96);
+}
+
+.sidebar.collapsed .toggleButton {
+  /* Optionally, style differently when collapsed, e.g., icon only */
+  font-size: 1rem; /* Make expand icon larger if text is removed */
+  /* Specific collapsed styles can be added if needed, current hover is fine */
+}
+
+/* Styles for Mobile Drawer */
+.mobileDrawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(280px, 90vw); /* Adaptive width for smaller screens */
+  transform: translateX(-100%);
+  transition: transform 0.3s ease-out; /* For slide-in/out */
+  z-index: 1000; /* Ensure it's above other content */
+  box-shadow: 2px 0 5px rgba(0,0,0,0.1); /* This shadow can be themed later if needed */
+  background-color: var(--header-bg); /* Match sidebar background */
+  border-right: 1px solid var(--border-color); /* Match sidebar border */
+}
+
+.mobileDrawerOpen {
+  transform: translateX(0);
+}
+
+/* Overlay for Mobile Drawer */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black */
+  z-index: 998; /* Below the drawer (999) */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease-out, visibility 0s linear 0.3s;
+}
+
+.overlayOpen {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.3s ease-out, visibility 0s linear 0s;
+}
+
+/* When using an overlay with a class on body or a wrapper for open state */
+/* This assumes a parent component might add a class like .mobile-drawer-open-overlay-active to body or a wrapper */
+.mobileDrawerOpen + .overlay, /* If overlay is a sibling after drawer */
+.overlay.active { /* If overlay itself gets an active class */
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Sidebar Navigation */
+.sidebarNav ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sidebarNav li a {
+  display: flex;
+  align-items: center;
+  padding: 10px 0;
+  color: var(--muted-text-color); /* Updated */
+  text-decoration: none;
+  border-radius: var(--radius, 4px); /* Updated */
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.sidebar.expanded .sidebarNav li a {
+  padding-left: 10px; /* Add padding when expanded */
+}
+
+.sidebar.collapsed .sidebarNav li a {
+  justify-content: center; /* Center icons when collapsed */
+  padding: 10px;
+}
+
+.sidebarNav li a:hover {
+  background-color: var(--hover-bg); /* Updated */
+  color: var(--primary-color); /* Updated */
+}
+
+.sidebarNav li a:focus-visible { /* Added focus state */
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  background-color: var(--hover-bg); /* Match hover for consistency */
+  color: var(--primary-color);
+  border-radius: var(--radius, 4px); /* Ensure radius is maintained */
+}
+
+.sidebarNav li a.active { /* Added active state styling */
+  color: var(--primary-color);
+  background-color: var(--accent-color-light); /* Using accent-color-light for subtle active bg */
+  font-weight: 600; /* Make active link bolder */
+}
+
+.sidebarNav li a span[title] { /* For icon-only view */
+  font-size: 1.2rem;
+}
+
+/* Action Buttons */
+.sidebarActionsTop {
+  margin-top: 20px;
+  margin-bottom: 20px;
+  width: 100%; /* Ensure container takes full width for buttons */
+}
+
+.actionButton {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 10px;
+  background-color: var(--primary-color); /* Updated */
+  color: var(--text-color); /* Updated */
+  border: 1px solid var(--primary-color); /* Added border */
+  border-radius: var(--radius, 4px); /* Updated */
+  cursor: pointer;
+  font-size: 1rem;
+  text-align: center;
+  transition: background-color 0.2s ease, border-color 0.2s ease; /* Added border-color transition */
+  display: flex; /* For icon and text alignment */
+  align-items: center;
+  justify-content: center;
+  gap: 8px; /* Space between icon and text */
+}
+
+.actionButton:hover {
+  background-color: var(--primary-color-dark); /* Updated */
+  border-color: var(--primary-color-dark); /* Updated */
+  /* color: var(--text-color); Already set, should remain consistent */
+}
+
+.actionButton:focus-visible { /* Added focus state */
+  outline: 2px solid var(--primary-color-dark);
+  outline-offset: 2px;
+}
+
+.actionButton:active { /* Added active state */
+  background-color: var(--primary-color-dark);
+  transform: scale(0.98);
+}
+
+.actionButton:disabled,
+.actionButton[disabled] { /* Added disabled state */
+  background-color: var(--disabled-bg);
+  color: var(--muted-text-color);
+  border-color: var(--border-color); /* Use a less prominent border */
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none; /* Reset transform if any */
+}
+
+.sidebar.collapsed .actionButton span[title] {
+  font-size: 1.2rem;
+}
+
+/* Ensure buttons in collapsed view are centered and padded for icons */
+.sidebar.collapsed .actionButton {
+  padding: 10px; /* Consistent padding for icon-only */
+  /* gap will be irrelevant if only icon is shown */
+}
+
+/* Launch Actions & Footer Actions */
+.sidebarActionsLaunch,
+.sidebarFooter {
+  margin-top: auto; /* Push footer sections to the bottom */
+  width: 100%; /* Ensure container takes full width for buttons */
+}
+
+.sidebarActionsLaunch {
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color); /* Separator for launch actions, updated in 8.1 */
+}
+
+.sectionTitle {
+  font-size: 0.9rem;
+  color: var(--muted-text-color); /* Updated */
+  margin-bottom: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.sidebar.collapsed .sectionTitle span[title] {
+  font-size: 1.2rem;
+}
+
+.actionButtonSecondary {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 8px;
+  background-color: transparent; /* Updated */
+  color: var(--muted-text-color); /* Updated */
+  border: 1px solid var(--border-color); /* Updated */
+  border-radius: var(--radius, 4px); /* Updated */
+  cursor: pointer;
+  font-size: 0.9rem;
+  text-align: center;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease; /* Added color and border-color transition */
+  display: flex; /* For icon and text alignment */
+  align-items: center;
+  justify-content: center;
+  gap: 8px; /* Space between icon and text */
+}
+
+.actionButtonSecondary:hover {
+  background-color: var(--hover-bg); /* Updated */
+  color: var(--primary-color); /* Updated */
+  border-color: var(--primary-color); /* Updated */
+}
+
+.actionButtonSecondary:focus-visible { /* Added focus state */
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-color: var(--primary-color); /* Match focus outline color */
+  color: var(--primary-color);
+}
+
+.actionButtonSecondary:active { /* Added active state */
+  background-color: var(--active-bg);
+  color: var(--primary-color);
+  transform: scale(0.98);
+}
+
+.actionButtonSecondary:disabled,
+.actionButtonSecondary[disabled] { /* Added disabled state */
+  background-color: transparent;
+  color: var(--muted-text-color);
+  border-color: var(--border-color);
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none; /* Reset transform if any */
+}
+
+.sidebar.collapsed .actionButtonSecondary span[title] {
+  font-size: 1.2rem;
+}
+
+/* Ensure buttons in collapsed view are centered and padded for icons */
+.sidebar.collapsed .actionButtonSecondary {
+  padding: 10px; /* Consistent padding for icon-only */
+  /* gap will be irrelevant if only icon is shown */
+}
+
+.sidebarFooter {
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color); /* Updated separator */
+  margin-top: 20px; /* Ensure space above footer */
+}
+
+/* Ensure the footer is at the bottom for taller sidebars */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebarNav {
+  flex-grow: 1; /* Allow nav to take up space, pushing footer down if needed */
+}
+
+/* Style for the spinning loading icon */
+.loadingIcon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Respect user preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .mobileDrawer,
+  .toggleButton, /* Added */
+  .sidebarNav li a, /* Added */
+  .actionButton, /* Added */
+  .actionButtonSecondary, /* Added */
+  .loadingIcon {
+    transition-duration: 0.01ms !important; /* Effectively disable transitions */
+    animation-duration: 0.01ms !important; /* Effectively disable animations */
+    animation-iteration-count: 1 !important; /* For any animations that might loop */
+  }
+  .loadingIcon {
+    animation: none !important; /* Disable spin animation on loader if motion is reduced */
+  }
+}
+
+.mobileCloseButton {
+  background: transparent; /* Updated */
+  border: none; /* Updated */
+  color: var(--text-color); /* Updated for icon color */
+  padding: 8px;
+  cursor: pointer;
+  border-radius: var(--radius, 50%); /* Make it round */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute; /* Position within header */
+  top: 10px;
+  right: 10px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.mobileCloseButton:hover {
+  background-color: var(--hover-bg); /* Updated */
+  color: var(--primary-color); /* Updated for icon color */
+}
+
+.mobileCloseButton:focus-visible { /* Added focus state */
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.mobileCloseButton:active { /* Added active state */
+  background-color: var(--active-bg);
+  color: var(--primary-color);
+  transform: scale(0.96);
+} 

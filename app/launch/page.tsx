@@ -768,11 +768,6 @@ export default function LaunchPage() {
   // --- Return JSX ---
   return (
     <div className="flex flex-col h-screen bg-[--bg-primary] text-[--text-color] overflow-hidden">
-      {/* Header Area - Kept minimal for now - REMOVED
-      <header className="p-4 border-b border-[--border-color] flex items-center justify-between print-hide">
-        <h1 className="text-xl font-semibold">Launch Pad</h1>
-      </header>
-      */}
 
       {/* Main Content Area */}
       <div className="flex-grow overflow-y-auto">

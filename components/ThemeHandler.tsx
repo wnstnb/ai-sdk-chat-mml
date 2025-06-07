@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Header from '@/components/header';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore';
 import { useAuthStore } from '@/lib/stores/useAuthStore';
 import { useModalStore } from '@/stores/useModalStore';
+import Sidebar from '@/components/sidebar/Sidebar';
+import { createClient } from '@/lib/supabase/client';
+import { toast } from 'sonner';
 
 interface ThemeHandlerProps {
   children: React.ReactNode;
@@ -13,6 +15,9 @@ interface ThemeHandlerProps {
 
 const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createClient();
+
   const { 
     fetchPreferences, 
     theme: prefTheme, 
@@ -20,9 +25,10 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     isInitialized: isPrefStoreInitialized,
   } = usePreferenceStore();
   const { isAuthenticated } = useAuthStore();
-  const openSearchModal = useModalStore((state) => state.openSearchModal);
+  const { openSearchModal, openPreferencesModal, openNewDocumentModal } = useModalStore();
 
   const [isMounted, setIsMounted] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Set mounted state after initial render
   useEffect(() => {
@@ -41,22 +47,15 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   useEffect(() => {
     if (!isMounted) return; // Don't do anything until mounted
 
-    // The anti-flicker script in layout.tsx handles the very initial theme.
-    // This effect refines it once the store is ready or auth state changes.
-    let themeToApply = 'dark'; // Default to dark
+    let themeToApply = 'dark';
 
     if (isAuthenticated && isPrefStoreInitialized) {
-      themeToApply = prefTheme || 'dark'; // Use stored preference or fallback to dark
+      themeToApply = prefTheme || 'dark';
       console.log('[ThemeHandler] Authenticated and prefs initialized. Applying theme:', themeToApply);
     } else if (isAuthenticated && !isPrefStoreInitialized) {
-      // Authenticated, but prefs not yet loaded/initialized. Stick to dark (likely set by anti-flicker or previous state).
       console.log('[ThemeHandler] Authenticated, but prefs NOT initialized. Keeping current theme (expected dark).');
-      // No explicit set needed here if anti-flicker worked, or if it was already dark.
-      // Could re-assert dark if there was a concern: document.documentElement.setAttribute('data-theme', 'dark'); 
-      themeToApply = document.documentElement.getAttribute('data-theme') || 'dark'; // read current, should be dark
+      themeToApply = document.documentElement.getAttribute('data-theme') || 'dark';
     } else {
-      // Not authenticated (or isMounted is false, though guarded above)
-      // Anti-flicker script should have set it to dark. This ensures it if needed.
       console.log('[ThemeHandler] Not authenticated or not mounted. Ensuring dark theme:', themeToApply);
     }
     document.documentElement.setAttribute('data-theme', themeToApply);
@@ -68,28 +67,71 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     const currentAppliedTheme = document.documentElement.getAttribute('data-theme') || 'dark';
     const nextTheme = currentAppliedTheme === 'light' ? 'dark' : 'light';
     console.log('[ThemeHandler] Toggling theme to:', nextTheme);
-    setPrefTheme(nextTheme); // Update theme in the store (which will also update remote)
+    setPrefTheme(nextTheme);
+  };
+
+  const handleLogout = async () => {
+    toast.success('Logging out...');
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  const handleNewNote = () => {
+    openNewDocumentModal();
   };
   
-  const showHeader = isAuthenticated && !['/', '/login', '/signup', '/signup/success', '/terms', '/privacy'].includes(pathname);
-  const headerTheme = (isMounted && isAuthenticated && isPrefStoreInitialized && prefTheme) ? prefTheme : 'dark';
+  const NO_SIDEBAR_PATHS = ['/', '/login', '/signup', '/signup/confirm-email', '/signup/success', '/terms', '/privacy', '/auth/callback', '/auth/reset-password'];
+  const displaySidebar = isAuthenticated && isMounted && !NO_SIDEBAR_PATHS.includes(pathname);
+  const currentThemeForSidebar: 'light' | 'dark' = (isMounted && prefTheme) ? prefTheme : 'dark';
 
-  // If not mounted, the anti-flicker script in <head> handles initial theme.
-  // We render children directly to avoid hydration issues with theme-dependent rendering before mount.
-  // A minimal loading UI could be an alternative here if children heavily depend on theme context not yet available.
-  // However, `suppressHydrationWarning` on <html> and direct DOM manipulation by the anti-flicker script
-  // should make this safe.
-  // The main div wrapper is kept for structure.
+  // Placeholder for mobile menu toggle button (could be in a new top bar or floating)
+  // For now, this button is just for testing and would ideally be placed elsewhere
+  const MobileMenuButton = () => (
+    <button
+      onClick={() => setIsMobileSidebarOpen(true)}
+      className="fixed top-4 left-4 z-[1001] p-2 bg-gray-700 text-white rounded md:hidden"
+      aria-label="Open sidebar"
+    >
+      Menu
+    </button>
+  );
+
   return (
-    <div className="flex flex-col h-screen">
-      {isMounted && showHeader && (
-        <Header 
-          currentTheme={headerTheme} 
-          onToggleTheme={handleToggleTheme} 
-          onOpenSearch={openSearchModal}
+    <div className="flex h-screen bg-[--bg-color] text-[--text-color]">
+      {displaySidebar && (
+        <Sidebar
+          isOpenOnMobile={isMobileSidebarOpen}
+          onCloseMobile={() => setIsMobileSidebarOpen(false)}
+          onLogout={handleLogout}
+          onToggleTheme={handleToggleTheme}
+          currentTheme={currentThemeForSidebar}
+          onOpenPreferences={openPreferencesModal}
+          onNewNote={handleNewNote}
+          isNewNoteLoading={false}
+          isNewNoteDisabled={false}
+          onVoiceSummary={() => toast.info('Voice Summary clicked')}
+          isVoiceSummaryLoading={false}
+          isVoiceSummaryDisabled={false}
+          onPdfSummary={() => toast.info('PDF Summary clicked')}
+          isPdfSummaryLoading={false}
+          isPdfSummaryDisabled={false}
+          onWebScrape={() => toast.info('Web Scrape clicked')}
+          isWebScrapeLoading={false}
+          isWebScrapeDisabled={false}
         />
       )}
-      <main className={`flex-grow overflow-y-auto ${(!isMounted || !showHeader) ? 'h-screen' : ''}`}>
+      {displaySidebar && !isMobileSidebarOpen && (
+        <button
+          onClick={() => setIsMobileSidebarOpen(true)}
+          className="fixed top-4 left-4 z-[1001] p-2 bg-gray-600 hover:bg-gray-700 text-white rounded-md shadow-lg md:hidden"
+          aria-label="Open sidebar"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+          </svg>
+        </button>
+      )}
+      <main className="flex-1 flex flex-col overflow-y-auto">
         {children}
       </main>
     </div>
