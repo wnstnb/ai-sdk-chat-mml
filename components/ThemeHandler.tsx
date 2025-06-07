@@ -8,6 +8,7 @@ import { useModalStore } from '@/stores/useModalStore';
 import Sidebar from '@/components/sidebar/Sidebar';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
+import { VoiceSummaryModal } from './modals/VoiceSummaryModal';
 
 interface ThemeHandlerProps {
   children: React.ReactNode;
@@ -25,7 +26,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     isInitialized: isPrefStoreInitialized,
   } = usePreferenceStore();
   const { isAuthenticated } = useAuthStore();
-  const { openSearchModal, openPreferencesModal, openNewDocumentModal } = useModalStore();
+  const { openSearchModal, openPreferencesModal, openNewDocumentModal, isVoiceSummaryModalOpen, openVoiceSummaryModal, closeVoiceSummaryModal } = useModalStore();
 
   const [isMounted, setIsMounted] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -97,7 +98,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
           onNewNote={handleNewNote}
           isNewNoteLoading={false}
           isNewNoteDisabled={false}
-          onVoiceSummary={() => toast.info('Voice Summary clicked')}
+          onVoiceSummary={openVoiceSummaryModal}
           isVoiceSummaryLoading={false}
           isVoiceSummaryDisabled={false}
           onPdfSummary={() => toast.info('PDF Summary clicked')}
@@ -122,6 +123,10 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
       <main className="flex-1 flex flex-col overflow-y-auto">
         {children}
       </main>
+      <VoiceSummaryModal 
+        isOpen={isVoiceSummaryModalOpen} 
+        onClose={closeVoiceSummaryModal} 
+      />
     </div>
   );
 };

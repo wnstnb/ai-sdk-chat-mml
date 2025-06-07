@@ -18,13 +18,16 @@ import remarkGfm from 'remark-gfm';
 import CustomAudioVisualizer from '@/components/editor/CustomAudioVisualizer';
 import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions';
 import { debounce } from '@/lib/utils/debounce';
+import { useRouter } from 'next/navigation';
 
 interface VoiceSummaryModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-const initialTranscriptionPlaceholder = 'Transcription will appear here once recording starts...';
+type TargetDocumentType = 'current' | 'new'; // Define type for target selection
+
+const initialTranscriptionPlaceholder = "Start speaking to record your thoughts. Transcription will appear here...";
 
 // JavaScript code for the AudioWorkletProcessor
 const audioProcessorWorkletCode = `
@@ -61,6 +64,9 @@ registerProcessor('audio-processor', AudioProcessor);
 
 const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onClose }) => {
   const editorRef = useModalStore(state => state.editorRef);
+  const hasActiveDocument = !!editorRef?.current; // Derived state for active document
+  const router = useRouter();
+  const prevIsOpenRef = React.useRef<boolean>(isOpen); // <-- Add ref to track previous isOpen state
 
   const isRecordingFromStore = useModalStore(state => state.voiceSummary.isRecording);
   const transcription = useModalStore(state => state.voiceSummary.transcription);
@@ -72,6 +78,8 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
   const [activeTab, setActiveTab] = React.useState<string>("transcription");
   const [insertionType, setInsertionType] = React.useState<'active' | 'transcription' | 'notes' | 'both'>('active');
   const [notesAction, setNotesAction] = React.useState<'summary' | 'prettify'>('summary');
+  const [targetDocument, setTargetDocument] = React.useState<TargetDocumentType>('new'); // State for target selection
+  const [isCreatingNewDocument, setIsCreatingNewDocument] = React.useState<boolean>(false);
 
   // --- NEW: State for WebSocket configuration ---
   const [websocketUrl, setWebsocketUrl] = React.useState<string | null>(null);
@@ -333,6 +341,27 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
       statusDiv.textContent = ''; 
     }
   }, [isOpen, isRecordingFromStore, transcription, legacySummary, setVoiceSummaryTranscription, setVoiceSummaryLegacySummary]);
+
+  // Effect to manage targetDocument based on document availability and modal state
+  React.useEffect(() => {
+    if (isOpen) {
+      if (!prevIsOpenRef.current) { // Modal was previously closed and is now open
+        if (hasActiveDocument) {
+          setTargetDocument('current');
+        } else {
+          setTargetDocument('new');
+        }
+      } else { // Modal was already open
+        // If no document is active (e.g., was closed while modal is open) 
+        // and the current target is 'current', switch to 'new'.
+        if (!hasActiveDocument && targetDocument === 'current') {
+          setTargetDocument('new');
+        }
+      }
+    }
+    // Always update the ref to the current isOpen state for the next render.
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, hasActiveDocument, targetDocument, setTargetDocument]); // targetDocument and setTargetDocument are needed for the conditions and actions within the effect.
 
   // Helper function to scroll an element to its bottom if overflowing
   const scrollToBottomIfOverflowing = (element: HTMLDivElement | null) => {
@@ -867,15 +896,10 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
     }
   };
 
+  // Handler to add content to the currently active editor (BlockNote specific)
   const handleAddToEditor = async (content: string) => {
-    if (!editorRef) {
-      toast.error('Editor reference object is not available. Please ensure the editor page is fully loaded.');
-      return;
-    }
-
-    const editor = editorRef.current;
-    if (!editor) {
-      toast.error('Editor instance not available. Please ensure the editor has initialized.');
+    if (!editorRef?.current) {
+      toast.error('Editor instance not available.');
       return;
     }
     if (!content || content.trim() === '') {
@@ -883,17 +907,15 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
       return;
     }
 
+    const editor = editorRef.current;
+
     try {
-      // Attempt to parse as Markdown first
       let blocksToInsert: PartialBlock[] = await editor.tryParseMarkdownToBlocks(content);
 
-      // If Markdown parsing results in no blocks (e.g., plain text that isn't valid Markdown or empty),
-      // treat the content as a single paragraph.
       if (blocksToInsert.length === 0 && content.trim() !== '') {
         blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: content, styles: {} }] }];
       }
       
-      // If there are still no blocks to insert (e.g., content was only whitespace), do nothing.
       if (blocksToInsert.length === 0) {
           toast.info("No content to insert.");
           return;
@@ -909,20 +931,78 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
       if (referenceBlockId) {
         editor.insertBlocks(blocksToInsert, referenceBlockId, 'after');
       } else {
-        // If the document is empty or no reference block, replace everything (or insert at start)
         editor.replaceBlocks(editor.document, blocksToInsert);
       }
       
       toast.success('Content added to editor.');
-      // Ensure recording is stopped and connections are closed BEFORE closing the modal.
-      handleStopRecordingAndCleanup();
-      clearModalContent(); // Clear content after adding to editor
-      onClose(); // Close modal after adding content and cleaning up
+      // clearModalContent(); // Consider if this is needed or if onClose handles it
+      onClose(); // Close modal after adding content
     } catch (error: any) {
       console.error('Error adding content to editor:', error);
       toast.error(`Failed to add content to editor: ${error.message}`);
-      // Still attempt cleanup if an error occurs during editor insertion
-      handleStopRecordingAndCleanup();
+    }
+  };
+
+  // --- NEW: Handler for creating a new document with content ---
+  const handleCreateNewDocumentWithContent = async (contentToSave: string) => {
+    if (!editorRef?.current) {
+      toast.error("Editor instance not available. Cannot format content for new document.");
+      return;
+    }
+    if (!contentToSave || contentToSave.trim() === '') {
+      toast.error("No content available to create a new document.");
+      return;
+    }
+
+    setIsCreatingNewDocument(true);
+    toast.info("Creating new document...");
+
+    try {
+      let blocksToInsert: PartialBlock[] = await editorRef.current.tryParseMarkdownToBlocks(contentToSave);
+
+      if (blocksToInsert.length === 0 && contentToSave.trim() !== '') {
+        // If parsing fails but content exists, create a simple paragraph block
+        blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
+      }
+      
+      if (blocksToInsert.length === 0) {
+          toast.info("No content to insert after formatting.");
+          setIsCreatingNewDocument(false);
+          return;
+      }
+
+      const response = await fetch('/api/documents/create-with-content', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          // Title can be added here if needed, e.g., from a new input field or derived
+          // title: `Voice Note - ${new Date().toLocaleString()}`, 
+          content: blocksToInsert, // Send BlockNote JSON content
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: { message: 'Failed to create new document. Please try again.' } }));
+        throw new Error(errorData.error?.message || 'Failed to create new document.');
+      }
+
+      const result = await response.json();
+      const newDocumentId = result.data?.documentId;
+
+      if (!newDocumentId) {
+        throw new Error('Failed to get new document ID from response.');
+      }
+
+      toast.success('New document created successfully!');
+      onClose(); 
+      router.push(`/editor/${newDocumentId}`);
+    } catch (error: any) {
+      console.error('Error creating new document with content:', error);
+      toast.error(error.message || 'An unexpected error occurred while creating the document.');
+    } finally {
+      setIsCreatingNewDocument(false);
     }
   };
 
@@ -999,8 +1079,35 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
           </TabsContent>
         </Tabs>
         <div className="mt-auto pt-4 border-t border-[--border-color]">
-          <div className="flex justify-between items-center mb-3">
-            {/* Button Order: Clear, Notes, Editor, Record */}
+          {/* Row 1: Target Selection Toggle (right-aligned) */}
+          <div className="flex justify-end mb-3">
+            <div className="flex items-center rounded-md" role="radiogroup" aria-labelledby="target-document-label">
+              <span id="target-document-label" className="sr-only">Select target document</span>
+              <Button
+                onClick={() => setTargetDocument('current')}
+                variant={targetDocument === 'current' ? 'default' : 'outline'}
+                size="sm" // h-9
+                className="rounded-r-none text-xs px-3" // Keep px-3 for these
+                disabled={!hasActiveDocument}
+                aria-pressed={targetDocument === 'current'}
+              >
+                Current
+              </Button>
+              <Button
+                onClick={() => setTargetDocument('new')}
+                variant={targetDocument === 'new' ? 'default' : 'outline'}
+                size="sm" // h-9
+                className="rounded-l-none border-l-0 text-xs px-3" // Keep px-3 for these
+                aria-pressed={targetDocument === 'new'}
+              >
+                New
+              </Button>
+            </div>
+          </div>
+
+          {/* Row 2: Main Action & Utility Buttons (distributed) */}
+          <div className="flex justify-between items-center gap-2">
+            {/* Clear Button */}
             <Button
               onClick={() => {
                 setVoiceSummaryTranscription(initialTranscriptionPlaceholder);
@@ -1012,8 +1119,8 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
               }}
               disabled={isRecordingRef.current || (!transcriptionAvailable && !notesAvailable)}
               variant="outline"
-              size="sm"
-              className="flex items-center text-xs"
+              size="sm" // h-9
+              className="flex items-center text-xs px-2" // Compact padding
             >
               <Eraser size={14} className="mr-1.5" />
               Clear
@@ -1025,8 +1132,8 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
                 onClick={handleGenerateNotes}
                 disabled={isRecordingRef.current || isGeneratingNotes || !transcriptionAvailable}
                 variant="outline"
-                size="sm"
-                className="flex items-center text-xs rounded-r-none"
+                size="sm" // h-9
+                className="flex items-center text-xs rounded-r-none px-2" // Compact padding
               >
                 {isGeneratingNotes ? (
                   <span className="animate-spin mr-1.5">⏳</span>
@@ -1043,7 +1150,7 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
                 disabled={isGeneratingNotes || isRecordingRef.current || !transcriptionAvailable}
               >
                 <SelectTrigger
-                  className="h-9 px-2 text-xs rounded-l-none border-l-0"
+                  className="h-9 px-1 text-xs rounded-l-none border-l-0" // Changed px-2 to px-1
                   aria-label="Select notes action type"
                 >
                   {/* ChevronDown icon is typically part of SelectTrigger by default */}
@@ -1054,99 +1161,93 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
                 </SelectContent>
               </Select>
             </div>
-
-            {/* Add to Editor Split Button */}
+            
+            {/* Content Selection / Main Action Split Button */}
             <div className="flex items-center">
               <Button
                 onClick={() => {
+                  const hasContent = (activeTab === 'transcription' && transcriptionAvailable) || (activeTab === 'notes' && notesAvailable);
                   let contentToInsert = '';
-                  let hasContent = false;
 
-                  switch (insertionType) {
-                    case 'active':
-                      if (activeTab === 'transcription' && transcriptionAvailable) {
-                        contentToInsert = finalizedTranscriptContent.current.trim();
-                        hasContent = !!contentToInsert;
-                      } else if (activeTab === 'notes' && notesAvailable) {
-                        contentToInsert = generatedNotes as string;
-                        hasContent = true;
-                      }
-                      break;
-                    case 'transcription':
-                      if (transcriptionAvailable) {
-                        contentToInsert = finalizedTranscriptContent.current.trim();
-                        hasContent = !!contentToInsert;
-                      }
-                      break;
-                    case 'notes':
-                      if (notesAvailable) {
-                        contentToInsert = generatedNotes as string;
-                        hasContent = true;
-                      }
-                      break;
-                    case 'both':
-                      if (transcriptionAvailable && notesAvailable) {
-                        contentToInsert = `## Transcription\n\n${finalizedTranscriptContent.current.trim()}\n\n## Notes\n\n${generatedNotes}`;
-                        hasContent = true;
-                      }
-                      break;
+                  if (insertionType === 'active') {
+                    if (activeTab === 'transcription' && transcriptionAvailable) {
+                      contentToInsert = finalizedTranscriptContent.current;
+                    } else if (activeTab === 'notes' && notesAvailable) {
+                      contentToInsert = generatedNotes || '';
+                    }
+                  } else if (insertionType === 'transcription' && transcriptionAvailable) {
+                    contentToInsert = finalizedTranscriptContent.current;
+                  } else if (insertionType === 'notes' && notesAvailable) {
+                    contentToInsert = generatedNotes || '';
+                  } else if (insertionType === 'both' && transcriptionAvailable && notesAvailable) {
+                    contentToInsert = `## Transcription\n\n${finalizedTranscriptContent.current}\n\n## Notes\n\n${generatedNotes || ''}`;
                   }
-
+                  
+                  // --- Conditional call to handler based on targetDocument ---
                   if (hasContent && contentToInsert.trim()) {
-                    handleAddToEditor(contentToInsert);
+                    if (targetDocument === 'current') {
+                      if(hasActiveDocument) { // Ensure there is an active document for 'current'
+                        handleAddToEditor(contentToInsert);
+                      } else {
+                        toast.error("No active document to add to. Please open a document first or select 'Create New'.")
+                      }
+                    } else { // targetDocument === 'new'
+                      handleCreateNewDocumentWithContent(contentToInsert);
+                    }
                   } else {
                     toast.info("No content available for the selected option or content is empty.");
                   }
                 }}
                 disabled={
-                  isGeneratingNotes || isRecordingRef.current || !editorRef || !editorRef.current ||
+                  isGeneratingNotes || isRecordingRef.current || isCreatingNewDocument || // <-- Disable if creating
+                  // Disable if target is 'current' but no active editor
+                  (targetDocument === 'current' && !hasActiveDocument) || 
                   (insertionType === 'active' && !((activeTab === 'transcription' && transcriptionAvailable) || (activeTab === 'notes' && notesAvailable))) ||
                   (insertionType === 'transcription' && !transcriptionAvailable) ||
                   (insertionType === 'notes' && !notesAvailable) ||
                   (insertionType === 'both' && (!transcriptionAvailable || !notesAvailable))
                 }
-                variant="outline"
-                size="sm"
-                className="flex items-center text-xs rounded-r-none"
+                variant="default" // Primary action
+                size="sm" // h-9
+                className="flex items-center text-xs rounded-r-none px-2" // Compact padding
+                aria-live="polite" // Announce label changes
               >
                 <FilePlus2 size={14} className="mr-1.5" />
-                Editor
+                {targetDocument === 'current' ? 'Add to Current' : 'Create New'}
               </Button>
               <Select 
                 value={insertionType} 
                 onValueChange={(value: 'active' | 'transcription' | 'notes' | 'both') => setInsertionType(value)}
-                disabled={
+                disabled={ // Simplified disabled logic for the select part
                   isGeneratingNotes || isRecordingRef.current || !editorRef || !editorRef.current ||
-                  (insertionType === 'active' && !((activeTab === 'transcription' && transcriptionAvailable) || (activeTab === 'notes' && notesAvailable))) ||
-                  (insertionType === 'transcription' && !transcriptionAvailable) ||
-                  (insertionType === 'notes' && !notesAvailable) ||
-                  (insertionType === 'both' && (!transcriptionAvailable || !notesAvailable))
+                  !((transcriptionAvailable || notesAvailable)) 
                 }
               >
                 <SelectTrigger
-                  className="h-9 px-2 text-xs rounded-l-none border-l-0"
+                  className="h-9 px-1 text-xs rounded-l-none border-l-0" // Changed px-2 to px-1
                   aria-label="Select content type to add to editor"
                 >
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active" className="text-xs">Insert Active Tab Content</SelectItem>
-                  <SelectItem value="transcription" disabled={!transcriptionAvailable} className="text-xs">Insert Transcription Only</SelectItem>
-                  <SelectItem value="notes" disabled={!notesAvailable} className="text-xs">Insert Notes Only</SelectItem>
-                  <SelectItem value="both" disabled={!transcriptionAvailable || !notesAvailable} className="text-xs">Insert Both (Transcription & Notes)</SelectItem>
+                  <SelectItem value="active" className="text-xs">Insert Active Tab</SelectItem>
+                  <SelectItem value="transcription" disabled={!transcriptionAvailable} className="text-xs">Transcription Only</SelectItem>
+                  <SelectItem value="notes" disabled={!notesAvailable} className="text-xs">Notes/Summary Only</SelectItem>
+                  <SelectItem value="both" disabled={!transcriptionAvailable || !notesAvailable} className="text-xs">Both (Transcription & Notes)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Record button moved to the far right */}
+            {/* Record button */}
             <Button
               ref={micButtonRef}
               onClick={handleRecordToggle}
               aria-label={isRecordingRef.current ? 'Stop recording' : 'Start recording'}
-              className={`flex items-center justify-center w-12 h-12 p-0 rounded-full transition-colors ${isRecordingRef.current ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
+              variant="outline" // Making it outline to be less prominent than main action
+              size="sm" // h-9. For square, use w-9 too.
+              className={`flex items-center justify-center w-9 p-0 rounded-full transition-colors ${isRecordingRef.current ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
             >
-              {isRecordingRef.current ? <StopIcon size={24} /> : <Mic size={24} />}
+              {isRecordingRef.current ? <StopIcon size={18} /> : <Mic size={18} />}
             </Button>
-
           </div>
         </div>
       </div>
