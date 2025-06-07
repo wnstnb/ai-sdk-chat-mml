@@ -44,7 +44,7 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
       content: [
         <div key="section-live-voice-summary-1">
           <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
-            <strong>Capture your thoughts as they come, and let the AI summarize them instantly.</strong> No more pausing to type or losing your train of thought. Just speak freely and get a clean, concise summary ready to use. It's the most natural way to unload your brain.
+            <strong>Capture your thoughts as they come, and let the AI summarize them instantly.</strong> No more pausing to type or losing your train of thought. Just speak freely and get a clean, concise summary ready to use. It&apos;s the most natural way to unload your brain.
           </p>
           <div className="flex justify-center mt-4">
             <img src="/voice-summary-landing-1.png" alt="Live Voice Summary" className="w-full h-full object-cover rounded-xl max-w-xl" />
