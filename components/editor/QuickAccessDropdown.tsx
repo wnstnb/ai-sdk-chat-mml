@@ -40,13 +40,13 @@ export const QuickAccessDropdown: React.FC = () => {
       <TabsList className="grid w-full grid-cols-2 bg-[--input-bg] border-[--border-color]">
         <TabsTrigger 
           value="recent" 
-          className="data-[state=active]:bg-[--primary-color] data-[state=active]:text-gray-700 text-[--muted-text-color] hover:text-[--text-color]"
+          className="data-[state=active]:bg-[--primary-color] data-[state=active]:text-[--text-color] text-[--muted-text-color] hover:text-[--text-color]"
         >
           <FileClock className="w-4 h-4 mr-1.5" /> Recent
         </TabsTrigger>
         <TabsTrigger 
           value="starred"
-          className="data-[state=active]:bg-[--primary-color] data-[state=active]:text-gray-700 text-[--muted-text-color] hover:text-[--text-color]"
+          className="data-[state=active]:bg-[--primary-color] data-[state=active]:text-[--text-color] text-[--muted-text-color] hover:text-[--text-color]"
         >
           <Star className="w-4 h-4 mr-1.5" /> Starred
         </TabsTrigger>

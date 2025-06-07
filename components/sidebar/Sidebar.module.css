@@ -3,10 +3,12 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background-color: var(--header-bg); /* Updated */
+  background-color: var(--header-bg);
+  color: var(--sidebar-text-color);
   border-right: 1px solid var(--border-color); /* Updated */
-  transition: width 0.3s ease;
+  transition: width 0.3s ease-in-out, transform 0.3s ease-in-out;
   overflow-x: hidden; /* Hide content when collapsing */
+  z-index: 1000; /* Ensure sidebar is above other content */
 }
 
 .sidebar.expanded {
@@ -122,19 +124,18 @@ html[data-theme="dark"] .toggleButtonLogo {
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black */
-  z-index: 998; /* Below the drawer (999) */
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.3s ease-out, visibility 0s linear 0.3s;
+  z-index: 999; /* Below sidebar, above content */
+  transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out; /* ADDED transition */
 }
 
 .overlayOpen {
   opacity: 1;
   visibility: visible;
-  transition: opacity 0.3s ease-out, visibility 0s linear 0s;
 }
 
 /* When using an overlay with a class on body or a wrapper for open state */

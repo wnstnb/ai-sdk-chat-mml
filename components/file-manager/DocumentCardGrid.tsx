@@ -1144,6 +1144,7 @@ const DocumentCardGrid: React.FC = () => {
 
   const isMobile = useMediaQuery('(max-width: 768px)');
   const { openMobileSidebar } = useModalStore();
+  const [loadingDocumentId, setLoadingDocumentId] = useState<string | null>(null);
 
   // Function to render the main content of the grid (items, loading, errors, empty states)
   const renderGridContent = () => {
@@ -1336,6 +1337,8 @@ const DocumentCardGrid: React.FC = () => {
                             isSelected={selectedItemIds.has(item.id)}
                             onToggleSelect={() => toggleSelectItem(item.id)}
                             onToggleStar={handleToggleStarGridItem}
+                            isLoading={loadingDocumentId === item.id}
+                            onClick={() => setLoadingDocumentId(item.id)}
                           />
                         )}
                       </div>

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo, useCallback } from 'react';
-import { FileText, Star, CheckSquare, Square } from 'lucide-react'; // Added CheckSquare, Square
+import { FileText, Star, CheckSquare, Square, Loader2 } from 'lucide-react'; // Added Loader2
 import { formatRelativeDate } from '@/lib/utils/dateUtils'; // Import the new date utility
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -28,6 +28,10 @@ interface DocumentCardProps {
   onToggleStar: (documentId: string) => void;
   /** Optional path of the folder containing the document. */
   folderPath?: string;
+  /** Optional boolean to indicate if the card is in a loading state. */
+  isLoading?: boolean;
+  /** Optional callback for when the card is clicked, typically to set loading state. */
+  onClick?: () => void;
 }
 
 /**
@@ -38,7 +42,7 @@ interface DocumentCardProps {
  * @returns {React.ReactElement} The rendered DocumentCard.
  */
 const DocumentCard: React.FC<DocumentCardProps> = (props) => {
-  const { title, lastUpdated, snippet, id, is_starred, isSelected = false, onToggleSelect, folderPath, onToggleStar } = props;
+  const { title, lastUpdated, snippet, id, is_starred, isSelected = false, onToggleSelect, folderPath, onToggleStar, isLoading, onClick } = props;
   
   /** Memoized display title, defaults to "(Untitled)" if title is not provided. */
   const displayTitle = useMemo(() => title || "(Untitled)", [title]);
@@ -89,6 +93,8 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
    * @param {React.MouseEvent<HTMLElement>} e - The mouse event.
    */
   const handleCardClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    onClick?.();
+
     const targetElement = e.target as HTMLElement;
     
     if (isDragStartedRef.current || 
@@ -100,7 +106,7 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
     }
     
     window.location.href = `/editor/${id}`;
-  }, [id, isDragging]);
+  }, [id, isDragging, onClick]);
 
   /**
    * Memoized handler to toggle the selection state of the card.
@@ -158,6 +164,13 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
       aria-label={ariaLabel}
       onClick={handleCardClick}
     >
+      {/* ADDED: Loading Overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-30 rounded-lg">
+          <Loader2 className="w-8 h-8 text-white animate-spin" />
+        </div>
+      )}
+
       {/* Checkbox for selection - positioned absolutely */}
       {onToggleSelect && (
         <button 
@@ -266,7 +279,9 @@ const areDocumentCardPropsEqual = (prevProps: DocumentCardProps, nextProps: Docu
     prevProps.snippet === nextProps.snippet &&
     prevProps.is_starred === nextProps.is_starred &&
     prevProps.isSelected === nextProps.isSelected &&
-    prevProps.folderPath === nextProps.folderPath;
+    prevProps.folderPath === nextProps.folderPath &&
+    prevProps.isLoading === nextProps.isLoading &&
+    prevProps.onClick === nextProps.onClick;
     // Removed function comparisons as they prevent proper optimistic updates
 
   // if (!areEqual) {
