@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'; // Consolidate icons from lucide-react
 import { useSwipeable } from 'react-swipeable'; // Added for swipe gestures
 import TuonLogoIcon from '@/components/ui/TuonLogoIcon'; // Import the new TuonLogoIcon component
+import { QuickAccessDropdown } from '@/components/editor/QuickAccessDropdown'; // ADDED: Import QuickAccessDropdown
 
 // Define a smaller icon size for action buttons
 const ACTION_ICON_SIZE = 16;
@@ -236,6 +237,12 @@ const Sidebar: React.FC<SidebarProps> = ({
             {showText && !isPdfSummaryLoading && 'PDF Summary'}
           </button>
         </div>
+
+        {showText && (
+          <div className={styles.quickAccessSection}>
+            <QuickAccessDropdown />
+          </div>
+        )}
 
         <div className={styles.sidebarFooter}>
           <button onClick={onToggleTheme} className={styles.actionButtonSecondary} aria-label={!showText ? (currentTheme === 'light' ? "Switch to dark theme" : "Switch to light theme") : undefined}>

@@ -1,14 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, Star, ListTree, FileText } from 'lucide-react';
+import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, Star, FileText } from 'lucide-react';
 import { AutosaveStatusIndicator } from '@/app/components/editor/AutosaveStatusIndicator';
 import { BlockNoteEditor } from '@blocknote/core'; // Added for editorRef type
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { QuickAccessDropdown } from '@/components/editor/QuickAccessDropdown'; // IMPORT ACTUAL COMPONENT
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 
 // Define the props for the EditorTitleBar component
@@ -92,20 +86,7 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
     return (
         <div className="flex justify-between items-center mb-2 flex-shrink-0">
             <div className="flex items-center gap-2 flex-grow min-w-0">
-                {/* Quick Access Dropdown Trigger */}
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <button className="p-1 mr-1 text-[--muted-text-color] hover:text-[--text-color] hover:bg-[--hover-bg] rounded flex-shrink-0" title="Quick Access">
-                            <ListTree size={18} />
-                        </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent 
-                        className="w-72 md:w-96 bg-[--bg-color] border-[--border-color] shadow-xl text-[--text-color]" 
-                        align="start"
-                    >
-                        <QuickAccessDropdown />
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                {/* Quick Access Dropdown Trigger - REMOVED */}
 
                 {isEditingTitle ? (
                     <>

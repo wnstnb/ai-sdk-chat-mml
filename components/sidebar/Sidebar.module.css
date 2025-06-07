@@ -494,4 +494,21 @@ html[data-theme="dark"] .toggleButtonLogo {
 .mobileDrawer .actionButtonSecondary {
   margin-bottom: 6px; /* Reduced spacing between footer buttons on mobile */
   padding: 8px 12px; /* Slightly smaller vertical padding, consistent horizontal padding */
+}
+
+/* ADDED: Styles for Quick Access Section */
+.quickAccessSection {
+  width: 100%;
+  margin-bottom: 16px; /* Space below the section */
+  padding-top: 16px;   /* Space above the section, below the nav */
+  border-top: 1px solid var(--border-color); /* Separator line */
+  flex-shrink: 0; /* Prevent shrinking */
+}
+
+/* Action Buttons */
+.sidebarActionsTop {
+  margin-top: 0; /* Reduced from 20px */
+  margin-bottom: 16px; /* Reduced from 20px */
+  width: 100%; /* Ensure container takes full width for buttons */
+  flex-shrink: 0; /* Prevent shrinking */
 } 
