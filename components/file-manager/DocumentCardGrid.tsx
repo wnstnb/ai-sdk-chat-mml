@@ -197,6 +197,12 @@ const usePerformanceMonitoring = (itemCount: number, isVirtualized: boolean = tr
   };
 };
 
+// Helper function to truncate text
+const truncateText = (text: string, maxLength: number): string => {
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength - 3) + '...';
+};
+
 /**
  * DocumentCardGrid component.
  * Renders a grid of document and folder cards with support for folder navigation,
@@ -1012,7 +1018,7 @@ const DocumentCardGrid: React.FC = () => {
       const cleanupFPS = performanceHook.trackScrollFPS(); // Assuming it returns a cleanup function
       return cleanupFPS;
     }
-  }, [performanceHook.trackScrollFPS, parentRef.current]); // Added parentRef.current as dependency
+  }, []); // Removed problematic dependencies that were causing infinite loop
 
   // ADD: Dynamic overscan calculation based on dataset size
   const dynamicOverscan = useMemo(() => {
@@ -1337,63 +1343,32 @@ const DocumentCardGrid: React.FC = () => {
 
     const itemCount = draggedItems.length;
 
-    // return (
-    //   <DragOverlay dropAnimation={null}>
-    //     <div 
-    //       className="rounded-lg shadow-2xl p-4 bg-[var(--accent-color)] text-white dark:bg-opacity-90 flex flex-col items-center justify-center space-y-2"
-    //       style={{ minWidth: '180px', minHeight: '100px' }}
-    //     >
-    //       {draggedItems.length === 1 && draggedItems[0].type === 'document' && (
-    //         <FileTextIcon size={28} className="mb-1" />
-    //       )}
-    //       {draggedItems.length === 1 && draggedItems[0].type === 'folder' && (
-    //         <FolderIcon size={28} className="mb-1" />
-    //       )}
-    //       {draggedItems.length > 1 && (
-    //         <div className="relative mb-1">
-    //           <FileTextIcon size={28} className="opacity-70 transform -translate-x-1 -translate-y-1" />
-    //           <FolderIcon size={28} className="absolute top-0 left-0 opacity-70 transform translate-x-1 translate-y-1" />
-    //           <CheckSquare size={28} className="absolute top-0 left-0" />
-    //         </div>
-    //       )}
-          
-    //       <p className="font-semibold text-sm text-center">
-    //         {draggedItems.length === 1 
-    //           ? truncateText(draggedItems[0].name, 25) 
-    //           : `${draggedItems.length} items`
-    //         }
-    //       </p>
-    //       {/* <p className="text-xs">Moving...</p> */}
-    //     </div>
-    //   </DragOverlay>
-    // );
-
-    // // console.log('[DEBUG] DragOverlay rendering. draggedItems:', JSON.stringify(draggedItems)); // This was the one added previously by mistake
-
     return (
-      <DragOverlay dropAnimation={null}>
-        {/* Breadcrumb Navigation - moved inside DndContext for potential drop targets */}
-        <div className="px-4 pt-2 pb-2"> {/* Added some padding around breadcrumbs */}
-          <FolderBreadcrumbs
-            currentPath={breadcrumbPath}
-            onNavigate={navigateToFolder} // Changed from handleFolderNavigate as it includes subfolder loading
-          />
-        </div>
-        
-        {/* Call the function to render the main grid content */}
-        {renderGridContent()}
-
-        {/* DragOverlay should be inside DndContext */}
-        {draggedItems && draggedItems.length > 0 && (
-           <DragOverlay dropAnimation={null}>
-            {(() => { // IIFE for logging within JSX
-              // console.log('[DEBUG] DragOverlay rendering. draggedItems:', JSON.stringify(draggedItems)); // REMOVE THIS LINE
-              return renderDragOverlay(); // Corrected function name
-            })()}
-          </DragOverlay>
+      <div 
+        className="rounded-lg shadow-2xl p-4 bg-[var(--accent-color)] text-white dark:bg-opacity-90 flex flex-col items-center justify-center space-y-2"
+        style={{ minWidth: '180px', minHeight: '100px' }}
+      >
+        {draggedItems.length === 1 && draggedItems[0].type === 'document' && (
+          <FileTextIcon size={28} className="mb-1" />
         )}
-
-      </DragOverlay>
+        {draggedItems.length === 1 && draggedItems[0].type === 'folder' && (
+          <FolderIcon size={28} className="mb-1" />
+        )}
+        {draggedItems.length > 1 && (
+          <div className="relative mb-1">
+            <FileTextIcon size={28} className="opacity-70 transform -translate-x-1 -translate-y-1" />
+            <FolderIcon size={28} className="absolute top-0 left-0 opacity-70 transform translate-x-1 translate-y-1" />
+            <CheckSquare size={28} className="absolute top-0 left-0" />
+          </div>
+        )}
+        
+        <p className="font-semibold text-sm text-center">
+          {draggedItems.length === 1 
+            ? truncateText(draggedItems[0].name, 25) 
+            : `${draggedItems.length} items`
+          }
+        </p>
+      </div>
     );
   };
 

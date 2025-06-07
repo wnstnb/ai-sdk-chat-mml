@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, Star, ListTree, FileText, Mic } from 'lucide-react';
-import { DocumentPlusIcon } from '@heroicons/react/24/outline';
+import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, Star, ListTree, FileText } from 'lucide-react';
 import { AutosaveStatusIndicator } from '@/app/components/editor/AutosaveStatusIndicator';
 import { BlockNoteEditor } from '@blocknote/core'; // Added for editorRef type
-import { useModalStore } from '@/stores/useModalStore'; // Import the modal store
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -30,7 +28,6 @@ interface EditorTitleBarProps {
 
     // From page.tsx state/handlers
     autosaveStatus: 'idle' | 'unsaved' | 'saving' | 'saved' | 'error';
-    handleNewDocument: () => void;
     handleSaveContent: () => void;
     isSaving: boolean; // Manual save button state
     onOpenHistory: () => void; // Prop to open version history modal
@@ -38,9 +35,6 @@ interface EditorTitleBarProps {
     // ADDED for starring
     isDocumentStarred: boolean;
     onToggleDocumentStar: () => void;
-
-    // ADDED for Live Summaries
-    onOpenVoiceSummary: () => void;
 }
 
 export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
@@ -62,10 +56,7 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
     // ADDED for starring
     isDocumentStarred,
     onToggleDocumentStar,
-    // ADDED for Live Summaries
-    onOpenVoiceSummary,
 }) => {
-    const { openNewDocumentModal } = useModalStore(); // Get the action from the store
     const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'error'>('idle');
     const isMobile = useMediaQuery('(max-width: 768px)'); // md breakpoint
 
@@ -166,13 +157,6 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
             </div>
             <div className="flex items-center space-x-2 flex-shrink-0">
                 <AutosaveStatusIndicator status={autosaveStatus} />
-                <button 
-                    onClick={openNewDocumentModal} // Changed to call the store action directly
-                    className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded" 
-                    title="Create New Document"
-                >
-                    <DocumentPlusIcon className="h-5 w-5" />
-                </button>
                 <button onClick={handleSaveContent} disabled={isSaving || autosaveStatus === 'saving'} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed" title="Save Document Manually">
                    {isSaving ? <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <SaveAll className="h-5 w-5" />}
                 </button>
@@ -197,17 +181,6 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
                     )}
                 </button>
                 {/* NEW "COPY CONTENT" BUTTON - END */}
-
-                {/* NEW "LIVE SUMMARIES" BUTTON - START */}
-                <button
-                    onClick={onOpenVoiceSummary}
-                    className="p-1.5 rounded hover:bg-[--hover-bg] text-[--text-color] transition-colors"
-                    title="Voice Summary"
-                    aria-label="Open voice summary modal"
-                >
-                    <Mic size={18} />
-                </button>
-                {/* NEW "LIVE SUMMARIES" BUTTON - END */}
 
                 <button onClick={onOpenHistory} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded" title="Version History">
                     <Clock size={20} />

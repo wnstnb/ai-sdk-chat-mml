@@ -1377,8 +1377,6 @@ export default function EditorPage() {
                                 onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
                                 isDocumentStarred={currentDocIsStarred}
                                 onToggleDocumentStar={handleToggleCurrentDocumentStar}
-                                handleNewDocument={handleNewDocument}
-                                onOpenVoiceSummary={openVoiceSummaryModal} // CORRECTED: Use openVoiceSummaryModal directly
                             />
                             {pageError && !pageError.startsWith("Chat Error:") && (
                                 <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -1507,8 +1505,6 @@ export default function EditorPage() {
                             onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
                             isDocumentStarred={currentDocIsStarred}
                             onToggleDocumentStar={handleToggleCurrentDocumentStar}
-                            handleNewDocument={handleNewDocument}
-                            onOpenVoiceSummary={openVoiceSummaryModal} // CORRECTED: Use openVoiceSummaryModal directly
                          />
                         {pageError && !pageError.startsWith("Chat Error:") && (
                             <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>

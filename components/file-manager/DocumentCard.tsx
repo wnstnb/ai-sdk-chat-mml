@@ -226,7 +226,7 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
           aria-label={`Last updated ${formattedDate}`}
         >
           <span aria-hidden="true">Last updated: </span>
-          <time dateTime={new Date(lastUpdated).toISOString()}>
+          <time dateTime={new Date(lastUpdated || Date.now()).toISOString()}>
             {formattedDate}
           </time>
         </p>
