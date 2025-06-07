@@ -77,6 +77,7 @@ interface ChatPaneWrapperProps {
     isMainChatCollapsed?: boolean;
     miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
     // --- END NEW ---
+    currentTheme: 'light' | 'dark'; // ADDED: For dynamic BlockNote theme
 }
 
 export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
@@ -128,6 +129,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     isMainChatCollapsed,
     miniPaneToggleRef, // Destructure the ref
     // --- END NEW ---
+    currentTheme, // ADDED: Destructure currentTheme
 }) => {
     // State to force remount of ChatInputArea after animation - Keep if still needed
     // const [inputAreaKey, setInputAreaKey] = useState(0);

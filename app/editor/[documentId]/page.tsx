@@ -169,6 +169,8 @@ export default function EditorPage() {
     const [isMiniPaneOpen, setIsMiniPaneOpen] = useState(false);
     // --- ADDED: State for document star status ---
     const [currentDocIsStarred, setCurrentDocIsStarred] = useState(false);
+    // --- NEW: State for current theme ---
+    const [currentTheme, setCurrentTheme] = useState<'light' | 'dark'>('light');
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
@@ -1211,6 +1213,37 @@ export default function EditorPage() {
         };
     }, [documentId]);
 
+    // --- NEW: Effect to detect and update theme ---
+    useEffect(() => {
+        const getTheme = () => {
+            // Check for data-theme attribute on <html> first
+            const dataTheme = document.documentElement.getAttribute('data-theme');
+            if (dataTheme === 'dark' || dataTheme === 'light') {
+                return dataTheme;
+            }
+            // Fallback to checking class if data-theme is not definitive
+            if (document.documentElement.classList.contains('dark')) {
+                return 'dark';
+            }
+            return 'light';
+        };
+
+        setCurrentTheme(getTheme());
+
+        const observer = new MutationObserver(() => {
+            setCurrentTheme(getTheme());
+        });
+
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-theme', 'class'], // Observe changes to data-theme and class
+        });
+
+        return () => {
+            observer.disconnect();
+        };
+    }, []);
+
     // --- Handler Definitions (Place standard handlers here) ---
     const handlePaste = (event: React.ClipboardEvent) => handleFilePasteEvent(event);
     const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
@@ -1286,25 +1319,6 @@ export default function EditorPage() {
         mobileVisiblePane, // Log visible pane on mobile
     });
 
-    // New handler to gate opening the modal
-    const handleOpenVoiceSummaryModal = () => {
-        if (editorRef.current) {
-            // Ensure the ref object is in the store if somehow it wasn't yet (defensive)
-            if (useModalStore.getState().editorRef !== editorRef) {
-                console.warn('[EditorPage] editorRef in store was not current. Re-setting before opening modal.');
-                setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
-            }
-            openVoiceSummaryModal();
-        } else {
-            toast.error("Editor is not fully initialized yet. Please wait a moment.");
-            console.warn('[EditorPage] Attempted to open voice summary modal, but editorRef.current is null.');
-            // Also try to set the ref object just in case it missed the useEffect run, though unlikely if .current is null.
-            if (useModalStore.getState().editorRef !== editorRef) {
-                 setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
-            }
-        }
-    };
-
     // Main Render
     return (
         <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden relative" 
@@ -1343,7 +1357,7 @@ export default function EditorPage() {
                 // --- Mobile Layout: Show only one pane ---
                 <>
                     {mobileVisiblePane === 'editor' && (
-                        <div className="w-full flex-1 flex flex-col relative overflow-hidden p-4">
+                        <div className="w-full flex-1 flex flex-col relative overflow-hidden p-4 bg-[var(--editor-bg)]"> {/* ADDED bg-[var(--editor-bg)] */}
                             {/* EditorTitleBar */}
                             <EditorTitleBar
                                 currentTitle={currentTitle}
@@ -1364,7 +1378,7 @@ export default function EditorPage() {
                                 isDocumentStarred={currentDocIsStarred}
                                 onToggleDocumentStar={handleToggleCurrentDocumentStar}
                                 handleNewDocument={handleNewDocument}
-                                onOpenVoiceSummary={handleOpenVoiceSummaryModal} // Use the new handler
+                                onOpenVoiceSummary={openVoiceSummaryModal} // CORRECTED: Use openVoiceSummaryModal directly
                             />
                             {pageError && !pageError.startsWith("Chat Error:") && (
                                 <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -1412,7 +1426,8 @@ export default function EditorPage() {
                                     isMiniPaneOpen={isMiniPaneOpen}
                                     onToggleMiniPane={handleToggleMiniPane}
                                     isMainChatCollapsed={true} // For mobile, editor implies main chat is hidden
-                                    miniPaneToggleRef={miniPaneToggleRef} 
+                                    miniPaneToggleRef={miniPaneToggleRef}
+                                    currentTheme={currentTheme} // Pass down the theme
                                 />
                             </div>
                         </div>
@@ -1463,6 +1478,7 @@ export default function EditorPage() {
                                 onToggleMiniPane={handleToggleMiniPane}
                                 isMainChatCollapsed={false} // Chat is visible here
                                 miniPaneToggleRef={miniPaneToggleRef}
+                                currentTheme={currentTheme} // ADDED currentTheme prop
                             />
                          </div>
                     )}
@@ -1471,7 +1487,7 @@ export default function EditorPage() {
                 // --- Desktop Layout: Show both panes with resize ---
                 <>
                     {/* Editor Pane Container - Takes remaining space, add padding here */}
-                    <div className="flex-1 flex flex-col relative overflow-hidden p-4">
+                    <div className="flex-1 flex flex-col relative overflow-hidden p-4 bg-[var(--editor-bg)]"> {/* ADDED bg-[var(--editor-bg)] */}
                         {/* EditorTitleBar */}
                          <EditorTitleBar
                             currentTitle={currentTitle}
@@ -1492,7 +1508,7 @@ export default function EditorPage() {
                             isDocumentStarred={currentDocIsStarred}
                             onToggleDocumentStar={handleToggleCurrentDocumentStar}
                             handleNewDocument={handleNewDocument}
-                            onOpenVoiceSummary={handleOpenVoiceSummaryModal} // Use the new handler
+                            onOpenVoiceSummary={openVoiceSummaryModal} // CORRECTED: Use openVoiceSummaryModal directly
                          />
                         {pageError && !pageError.startsWith("Chat Error:") && (
                             <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -1541,18 +1557,26 @@ export default function EditorPage() {
                                 onToggleMiniPane={handleToggleMiniPane}
                                 isMainChatCollapsed={isChatCollapsed}
                                 miniPaneToggleRef={miniPaneToggleRef}
+                                currentTheme={currentTheme} // Pass down the theme
                             />
                         </div>
                     </div>
 
                     {/* Resize Handle - Rendered conditionally based on chat pane state (Desktop only) */}
                     {!isChatCollapsed && (
-                        <div
+                        <div // Outer handle container (for interaction)
                             ref={dragHandleRef}
                             onMouseDown={handleMouseDownResize}
-                            className="w-2 h-full cursor-col-resize bg-transparent hover:bg-[--accent-color]/20 transition-colors z-20 flex-shrink-0 border-l border-[--border-color]"
-                            style={{ flexBasis: '8px' }} // Ensure handle has base width
-                        />
+                            className="h-full cursor-col-resize bg-transparent z-20 flex-shrink-0 flex items-center justify-center" // Centering the inner line
+                            style={{ flexBasis: '1px' }} // Interactive width
+                        >
+                            <div // Inner visual line
+                                className="h-full w-[1px] bg-[var(--border-color)] group-hover:opacity-80 transition-opacity duration-150"
+                                // The hover effect can be on the outer div if preferred, e.g., by adding a class to it on hover like 'group'
+                                // For simplicity, applying opacity change to the line itself. 
+                                // Or, use hover:bg-[--accent-color]/20 on the outer div and make the inner line transparent on hover.
+                            />
+                        </div>
                     )}
 
                     {/* Chat Pane with Animation (Desktop only) */}
@@ -1616,6 +1640,7 @@ export default function EditorPage() {
                                     onToggleMiniPane={handleToggleMiniPane}
                                     isMainChatCollapsed={isChatCollapsed}
                                     miniPaneToggleRef={miniPaneToggleRef}
+                                    currentTheme={currentTheme} // Ensured currentTheme is passed
                                 />
                             </motion.div>
                         )}

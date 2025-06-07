@@ -940,7 +940,7 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
         role="dialog"
         aria-modal="true"
         aria-labelledby="voiceSummaryModalTitle"
-        className="bg-[--bg-color] text-[--text-color] p-6 rounded-lg shadow-xl w-full max-w-lg relative flex flex-col max-h-[90vh] animate-modalFadeIn"
+        className="bg-[var(--editor-bg)] text-[--text-color] p-6 rounded-lg shadow-xl w-full max-w-lg relative flex flex-col max-h-[90vh] animate-modalFadeIn"
       >
         <button
           onClick={handleCloseModal}
