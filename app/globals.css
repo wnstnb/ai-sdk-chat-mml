@@ -96,7 +96,7 @@
   --tab-active-bg: #2B3137; /* Steel Ash */
   --tab-active-border: #C79553; /* Ember Gold */
   --text-color-secondary: #8C6638; /* Burnished Bronze */
-  --bg-color: #ffffff; /* Midnight Slate */
+  --bg-color: #0F1317; /* Midnight Slate */
   --hover-bg: #2B3137; /* Steel Ash */
   --active-bg: #3F4F60; /* Moonlit Azure */
   --input-bg: #222a37; /* Steel Ash */
@@ -299,23 +299,26 @@ body {
 
   /* If your model-select has specific internal elements, style them too */
   .model-select option {
-    /* Styles for the options within the select */
-    @apply bg-[--input-bg] text-[--text-color];
+    background-color: var(--input-bg); /* Use var for background */
+    color: var(--text-color); /* Use var for text */
   }
 
   /* --- Translated Components from prds/globals.txt --- */
   .btn-primary {
-    @apply bg-[--primary-color] text-white border-none px-4 py-2 rounded-[0.375rem] font-medium cursor-pointer transition-colors duration-200 ease-in-out;
+    background-color: var(--primary-color);
   }
   .btn-primary:hover {
-    @apply bg-[--accent-color-hover];
+    background-color: var(--accent-color-hover);
   }
 
   .editor-container {
-    @apply relative h-full max-w-full m-0 pt-2 px-0 bg-[--editor-bg] rounded-none shadow-none overflow-auto min-h-[400px];
-    /* padding: 0.5rem 0rem 0rem; (Handled by pt-2 px-0) */
-    /* min-height: 400px; (Done via min-h-[400px]) */
+    /* Styles for the editor container */
+    /* Add any specific styles here */
+    /* Example: */
+    /* border: 1px solid #ccc; */
+    /* padding: 10px; */
   }
+
   /* --- End Translated Components --- */
 
   /* Dark mode styles */
@@ -323,50 +326,12 @@ body {
   /* Keeping this media query block if needed for non-variable overrides */
   @media (prefers-color-scheme: dark) {
     .model-select {
-      /* Dark mode variables are already applied via [data-theme='dark'] */
-      /* @apply border-gray-700;  */
-      /* background-color: #333; */
-      /* color: white; */
+      background-color: var(--input-bg);
+      color: var(--text-color);
+      border-color: var(--border-color);
     }
+    /* Removed .app-header and related styles */
   }
-
-  /* --- Header styles from prds/globals.txt --- */
-  .app-header { /* Renamed from header to avoid conflict */
-    @apply flex justify-between items-center h-[48px] p-0 bg-[--header-bg] border-b border-solid border-[--border-color] transition-colors duration-300 ease-in-out;
-    /* Slimmer height than original screenshot */
-  }
-
-  .header-content {
-    @apply flex justify-between items-center w-full pl-4 pr-0 h-[48px]; /* Adjusted height and padding */
-  }
-
-  .header-logo {
-    @apply text-[1.5rem] font-bold text-[--title-color]; /* Changed from --text-color */
-    font-family: 'Lora', serif; /* Apply Lora font */
-    @apply flex items-center justify-center; /* Add flex centering */
-  }
-
-  .header-actions {
-    @apply flex items-center gap-4 justify-self-end mr-5;
-  }
-
-  .theme-toggle {
-    @apply bg-none border-none text-[--text-color] cursor-pointer p-2 flex items-center justify-center rounded-full transition-colors duration-300 ease-in-out;
-  }
-
-  .theme-toggle:hover {
-    background-color: rgba(var(--foreground-rgb), 0.1);
-  }
-
-  .sign-out-button {
-    @apply px-2 py-[0.3rem] bg-transparent text-[--text-color] border border-solid border-[--border-color] rounded text-[0.9rem] cursor-pointer transition-all duration-200 ease-in-out;
-    /* Adjusted padding for slimmer look */
-  }
-
-  .sign-out-button:hover {
-    @apply bg-transparent border-[--text-color-secondary];
-  }
-  /* --- End Header styles --- */
 
   /* --- Custom Chat Message Text Size --- */
   .chat-message-text {

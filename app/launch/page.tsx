@@ -768,11 +768,6 @@ export default function LaunchPage() {
   // --- Return JSX ---
   return (
     <div className="flex flex-col h-screen bg-[--bg-primary] text-[--text-color] overflow-hidden">
-      {/* Header Area - Kept minimal for now - REMOVED
-      <header className="p-4 border-b border-[--border-color] flex items-center justify-between print-hide">
-        <h1 className="text-xl font-semibold">Launch Pad</h1>
-      </header>
-      */}
 
       {/* Main Content Area */}
       <div className="flex-grow overflow-y-auto">
@@ -798,39 +793,7 @@ export default function LaunchPage() {
           {/* Tab: Preview Cards - Existing File Browser / Document Grid */}
           {/* The TabsContent wrapper might be removable if it's the only content */}
           <div className="mt-0 border-0 p-0 flex-grow">
-            {/* UPDATED BUTTONS CONTAINER - Min 2x2 grid, 1x4 on lg, with glass effect, rounded-lg, shadow-md, and hover effects */}
-            <div className="py-6 grid grid-cols-2 gap-3 max-w-xs mx-auto lg:flex lg:flex-row lg:justify-around lg:w-full lg:max-w-2xl lg:mx-auto lg:space-y-0">
-              <Button 
-                variant="secondary"
-                className="flex flex-col items-center justify-center p-3 w-32 h-32 lg:w-36 lg:h-36 bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md border border-gray-200/50 dark:border-gray-600/50 rounded-lg shadow-md transition-all duration-300 ease-in-out motion-reduce:transition-none hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none will-change-[transform,box-shadow,opacity]"
-                onClick={openNewDocumentModal} 
-              >
-                <FilePlus className="mb-1.5 h-9 w-9 lg:h-10 lg:w-10 lg:mb-2 text-gray-700 dark:text-gray-300" />
-                <span className="text-center text-sm lg:text-base text-gray-700 dark:text-gray-300 w-full">New Note</span>
-              </Button>
-              <Button 
-                variant="secondary" 
-                className="flex flex-col items-center justify-center p-3 w-32 h-32 lg:w-36 lg:h-36 bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md border border-gray-200/50 dark:border-gray-600/50 rounded-lg shadow-md transition-all duration-300 ease-in-out motion-reduce:transition-none hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none will-change-[transform,box-shadow,opacity]"
-              >
-                <AudioWaveform className="mb-1.5 h-9 w-9 lg:h-10 lg:w-10 lg:mb-2 text-gray-700 dark:text-gray-300" />
-                <span className="text-center text-sm lg:text-base text-gray-700 dark:text-gray-300 w-full">Voice Summary<br />(WIP)</span>
-              </Button>
-              <Button 
-                variant="secondary" 
-                className="flex flex-col items-center justify-center p-3 w-32 h-32 lg:w-36 lg:h-36 bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md border border-gray-200/50 dark:border-gray-600/50 rounded-lg shadow-md transition-all duration-300 ease-in-out motion-reduce:transition-none hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none will-change-[transform,box-shadow,opacity]"
-              >
-                <Shovel className="mb-1.5 h-9 w-9 lg:h-10 lg:w-10 lg:mb-2 text-gray-700 dark:text-gray-300" />
-                <span className="text-center text-sm lg:text-base text-gray-700 dark:text-gray-300 w-full">Web Scrape<br />(WIP)</span>
-              </Button>
-              <Button 
-                variant="secondary" 
-                className="flex flex-col items-center justify-center p-3 w-32 h-32 lg:w-36 lg:h-36 bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md border border-gray-200/50 dark:border-gray-600/50 rounded-lg shadow-md transition-all duration-300 ease-in-out motion-reduce:transition-none hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none will-change-[transform,box-shadow,opacity]"
-              >
-                <BookOpenText className="mb-1.5 h-9 w-9 lg:h-10 lg:w-10 lg:mb-2 text-gray-700 dark:text-gray-300" />
-                <span className="text-center text-sm lg:text-base text-gray-700 dark:text-gray-300 w-full">PDF Summary<br />(WIP)</span>
-              </Button>
-            </div>
-            {/* END UPDATED BUTTONS CONTAINER */}
+            {/* REMOVED BUTTONS CONTAINER - Min 2x2 grid, 1x4 on lg, with glass effect, rounded-lg, shadow-md, and hover effects */}
             
             {/* Existing Document Card Grid - Placeholder */}
             <DocumentCardGrid />

@@ -60,6 +60,7 @@
     "react-markdown": "^9.1.0",
     "react-modal": "^3.16.1",
     "react-resizable-panels": "^2.1.8",
+    "react-swipeable": "^7.0.2",
     "react-voice-visualizer": "^2.0.8",
     "remark-gfm": "^4.0.0",
     "sonner": "^1.5.0",

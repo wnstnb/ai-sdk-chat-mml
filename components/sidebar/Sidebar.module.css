@@ -1,0 +1,468 @@
+/* Basic styling for the sidebar */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: var(--header-bg); /* Updated */
+  border-right: 1px solid var(--border-color); /* Updated */
+  transition: width 0.3s ease;
+  overflow-x: hidden; /* Hide content when collapsing */
+}
+
+.sidebar.expanded {
+  width: 240px;
+  padding: 20px;
+}
+
+.sidebar.collapsed {
+  width: 60px;
+  padding: 20px 10px;
+  align-items: center;
+}
+
+/* Sidebar Header (Branding/Logo) */
+.sidebarHeader {
+  margin-bottom: 20px;
+  text-align: center;
+  /* Added to align toggle button and logo text/icon */
+  display: flex;
+  flex-direction: column; /* Stack toggle button above logo */
+  align-items: center; /* Center items horizontally */
+  position: relative; /* For mobile close button positioning */
+  padding-top: 10px; /* Add some padding at the top */
+}
+
+/* Removed .logoText and .logoIcon as they are no longer used */
+
+/* Toggle Button for Expand/Collapse (Desktop) */
+.toggleButton {
+  background: transparent; 
+  border: 1px solid var(--border-color); 
+  padding: 4px; /* Reduced padding to 4px for the larger logo */
+  cursor: pointer;
+  border-radius: var(--radius, 4px); 
+  display: flex; 
+  align-items: center;
+  justify-content: center;
+  width: auto; 
+  min-width: 36px; 
+  min-height: 36px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* New style for the SVG logo image within the toggle button */
+.toggleButtonLogo {
+  width: 28px; /* Increased size */
+  height: 28px; /* Increased size */
+  transition: fill 0.3s ease; /* Transition for fill color changes */
+}
+
+/* Light theme - specific fill color */
+html[data-theme="light"] .toggleButtonLogo {
+  fill: #0F1317;
+}
+
+/* Dark theme - specific fill color */
+html[data-theme="dark"] .toggleButtonLogo {
+  fill: #C79553;
+}
+
+.toggleButton:hover {
+  background-color: var(--hover-bg); 
+  border-color: var(--primary-color); 
+  /* color: var(--primary-color); Removed */
+}
+
+.toggleButton:hover .toggleButtonLogo {
+  /* Add hover effect for logo if needed, e.g., slightly change filter */
+}
+
+.toggleButton:focus-visible { 
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-color: var(--primary-color); /* Ensure border matches focus ring */
+}
+
+.toggleButton:active { 
+  background-color: var(--active-bg);
+  /* color: var(--primary-color); Removed */
+  transform: scale(0.96);
+}
+
+.sidebar.collapsed .toggleButton {
+  /* font-size: 1rem; Removed */
+}
+
+/* Styles for Mobile Drawer */
+.mobileDrawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(280px, 90vw); /* Adaptive width for smaller screens */
+  transform: translateX(-100%);
+  transition: transform 0.3s ease-out; /* For slide-in/out */
+  z-index: 1000; /* Ensure it's above other content */
+  box-shadow: 2px 0 5px rgba(0,0,0,0.1); /* This shadow can be themed later if needed */
+  background-color: var(--header-bg); /* Match sidebar background */
+  border-right: 1px solid var(--border-color); /* Match sidebar border */
+}
+
+.mobileDrawerOpen {
+  transform: translateX(0);
+}
+
+/* Overlay for Mobile Drawer */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black */
+  z-index: 998; /* Below the drawer (999) */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease-out, visibility 0s linear 0.3s;
+}
+
+.overlayOpen {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.3s ease-out, visibility 0s linear 0s;
+}
+
+/* When using an overlay with a class on body or a wrapper for open state */
+/* This assumes a parent component might add a class like .mobile-drawer-open-overlay-active to body or a wrapper */
+.mobileDrawerOpen + .overlay, /* If overlay is a sibling after drawer */
+.overlay.active { /* If overlay itself gets an active class */
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Sidebar Navigation */
+.sidebarNav ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sidebarNav li a {
+  display: flex;
+  align-items: center;
+  padding: 10px 0; /* Vertical padding, horizontal handled by expanded/collapsed */
+  color: var(--muted-text-color); 
+  text-decoration: none;
+  border-radius: var(--radius, 4px); 
+  transition: background-color 0.2s ease, color 0.2s ease;
+  font-size: 0.85rem; /* Smaller font for nav links */
+}
+
+.navText {
+  margin-left: 8px; /* Space between icon and text in nav links */
+}
+
+.sidebar.expanded .sidebarNav li a {
+  padding-left: 10px; /* Add padding when expanded */
+}
+
+.sidebar.collapsed .sidebarNav li a {
+  justify-content: center; /* Center icons when collapsed */
+  padding: 10px;
+}
+
+.sidebarNav li a:hover {
+  background-color: var(--hover-bg); /* Updated */
+  color: var(--primary-color); /* Updated */
+}
+
+.sidebarNav li a:focus-visible { /* Added focus state */
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  background-color: var(--hover-bg); /* Match hover for consistency */
+  color: var(--primary-color);
+  border-radius: var(--radius, 4px); /* Ensure radius is maintained */
+}
+
+.sidebarNav li a.active { /* Added active state styling */
+  color: var(--primary-color);
+  background-color: var(--accent-color-light); /* Using accent-color-light for subtle active bg */
+  font-weight: 600; /* Make active link bolder */
+}
+
+.sidebarNav li a span[title] { /* For icon-only view */
+  /* This rule might be redundant now or need adjustment if span[title] is no longer the primary icon wrapper */
+  /* font-size: 1.2rem; */ /* Commented out, icon size is now direct */
+}
+
+/* Action Buttons */
+.sidebarActionsTop {
+  margin-top: 20px;
+  margin-bottom: 20px;
+  width: 100%; /* Ensure container takes full width for buttons */
+}
+
+.actionButton {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 10px;
+  background-color: var(--primary-color); 
+  color: var(--text-color); 
+  border: 1px solid var(--primary-color); 
+  border-radius: var(--radius, 4px); 
+  cursor: pointer;
+  font-size: 0.85rem; /* Reduced font size */
+  text-align: center;
+  transition: background-color 0.2s ease, border-color 0.2s ease; 
+  display: flex; 
+  align-items: center;
+  justify-content: center;
+  gap: 8px; /* Changed from 6px to 8px */
+  appearance: none; /* Reset default browser styles */
+  -webkit-appearance: none; /* For Safari */
+}
+
+.actionButton:hover {
+  background-color: var(--primary-color-dark); /* Updated */
+  border-color: var(--primary-color-dark); /* Updated */
+  /* color: var(--text-color); Already set, should remain consistent */
+}
+
+.actionButton:focus-visible { /* Added focus state */
+  outline: 2px solid var(--primary-color-dark);
+  outline-offset: 2px;
+}
+
+.actionButton:active { /* Added active state */
+  background-color: var(--primary-color-dark);
+  transform: scale(0.98);
+}
+
+.actionButton:disabled,
+.actionButton[disabled] { /* Added disabled state */
+  background-color: var(--disabled-bg);
+  color: var(--muted-text-color);
+  border-color: var(--border-color); /* Use a less prominent border */
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none; /* Reset transform if any */
+}
+
+.sidebar.collapsed .actionButton span[title] {
+  /* font-size: 1.2rem; */ /* Removed as icons are direct children now */
+}
+
+/* Ensure buttons in collapsed view are centered and padded for icons */
+.sidebar.collapsed .actionButton {
+  width: 36px; /* Fixed width for square shape */
+  min-width: 36px; /* Prevent shrinking */
+  max-width: 36px; /* Prevent growing */
+  height: 36px; /* Fixed height for square shape */
+  min-height: 36px; /* Prevent shrinking */
+  max-height: 36px; /* Prevent growing */
+  padding: 0; /* Remove padding to center icon in fixed size */
+  margin-left: auto; /* Center button in sidebar if sidebar content area > 36px */
+  margin-right: auto; /* Center button in sidebar */
+  box-sizing: border-box; /* Ensure padding/border are included in width/height */
+  display: flex; /* Ensure flex properties for centering */
+  align-items: center;
+  justify-content: center;
+  line-height: 36px; /* Explicitly match height */
+  margin-bottom: 8px; /* Consistent spacing for collapsed buttons */
+}
+
+/* Launch Actions & Footer Actions */
+/* Removed .sidebarActionsLaunch and .sectionTitle rules as the section is deleted */
+
+.sidebarFooter {
+  margin-top: auto; /* Push footer sections to the bottom */
+  width: 100%;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color); /* Updated separator */
+}
+
+.actionButtonSecondary {
+  width: 100%;
+  padding: 10px; /* Changed from 8px to 10px */
+  margin-bottom: 8px;
+  background-color: transparent; 
+  color: var(--muted-text-color); 
+  border: 1px solid var(--border-color); 
+  border-radius: var(--radius, 4px); 
+  cursor: pointer;
+  font-size: 0.8rem; /* Reduced font size */
+  text-align: center;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease; 
+  display: flex; 
+  align-items: center;
+  justify-content: center;
+  gap: 8px; /* Changed from 6px to 8px */
+  appearance: none; /* Reset default browser styles */
+  -webkit-appearance: none; /* For Safari */
+}
+
+.actionButtonSecondary:hover {
+  background-color: var(--hover-bg); /* Updated */
+  color: var(--primary-color); /* Updated */
+  border-color: var(--primary-color); /* Updated */
+}
+
+.actionButtonSecondary:focus-visible { /* Added focus state */
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-color: var(--primary-color); /* Match focus outline color */
+  color: var(--primary-color);
+}
+
+.actionButtonSecondary:active { /* Added active state */
+  background-color: var(--active-bg);
+  color: var(--primary-color);
+  transform: scale(0.98);
+}
+
+.actionButtonSecondary:disabled,
+.actionButtonSecondary[disabled] { /* Added disabled state */
+  background-color: transparent;
+  color: var(--muted-text-color);
+  border-color: var(--border-color);
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none; /* Reset transform if any */
+}
+
+.sidebar.collapsed .actionButtonSecondary span[title] {
+  /* font-size: 1.2rem; */ /* Removed as icons are direct children now */
+}
+
+/* Ensure buttons in collapsed view are centered and padded for icons */
+.sidebar.collapsed .actionButtonSecondary {
+  width: 36px; /* Fixed width for square shape */
+  min-width: 36px; /* Prevent shrinking */
+  max-width: 36px; /* Prevent growing */
+  height: 36px; /* Fixed height for square shape */
+  min-height: 36px; /* Prevent shrinking */
+  max-height: 36px; /* Prevent growing */
+  padding: 0; /* Remove padding to center icon in fixed size */
+  margin-left: auto; /* Center button in sidebar */
+  margin-right: auto; /* Center button in sidebar */
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 36px; /* Explicitly match height */
+  margin-bottom: 8px; /* Consistent spacing for collapsed buttons */
+}
+
+.sidebarNav {
+  /* flex-grow: 1; Removed to prevent pushing action buttons down */
+}
+
+/* Style for the spinning loading icon */
+.loadingIcon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Respect user preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .mobileDrawer,
+  .toggleButton, /* Added */
+  .sidebarNav li a, /* Added */
+  .actionButton, /* Added */
+  .actionButtonSecondary, /* Added */
+  .loadingIcon {
+    transition-duration: 0.01ms !important; /* Effectively disable transitions */
+    animation-duration: 0.01ms !important; /* Effectively disable animations */
+    animation-iteration-count: 1 !important; /* For any animations that might loop */
+  }
+  .loadingIcon {
+    animation: none !important; /* Disable spin animation on loader if motion is reduced */
+  }
+}
+
+.mobileCloseButton {
+  background: transparent; /* Updated */
+  border: none; /* Updated */
+  color: var(--text-color); /* Updated for icon color */
+  padding: 8px;
+  cursor: pointer;
+  border-radius: var(--radius, 50%); /* Make it round */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute; /* Position within header */
+  top: 10px;
+  right: 10px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.mobileCloseButton:hover {
+  background-color: var(--hover-bg); /* Updated */
+  color: var(--primary-color); /* Updated for icon color */
+}
+
+.mobileCloseButton:focus-visible { /* Added focus state */
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.mobileCloseButton:active { /* Added active state */
+  background-color: var(--active-bg);
+  color: var(--primary-color);
+  transform: scale(0.96);
+}
+
+/* Styling for the Home button to give it a glass effect */
+.homeButton {
+  /* display: flex; /* Already in .sidebarNav li a */
+  /* align-items: center; /* Already in .sidebarNav li a */
+  padding: 10px; /* Consistent padding */
+  margin-bottom: 10px; /* Space below the home button */
+  border-radius: var(--radius, 4px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px); /* For Safari */
+  background-color: rgba(243, 244, 246, 0.6); /* Light mode: Tailwind gray-100 @ 60% opacity */
+  border: 1px solid rgba(229, 231, 235, 0.7); /* Light mode: Tailwind gray-200 @ 70% opacity */
+  color: var(--text-color); /* More prominent text color */
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  width: 100%; /* Make it full width like other action buttons */
+  gap: 8px; /* Space between icon and text */
+}
+
+.sidebar.expanded .homeButton {
+  justify-content: center; /* Changed from flex-start to center */
+}
+
+.sidebar.collapsed .homeButton {
+  justify-content: center;
+  width: 36px; /* Fixed width for square shape */
+  height: 36px; /* Fixed height for square shape */
+  padding: 0; /* Remove padding to center icon in fixed size */
+}
+
+.homeButton:hover {
+  background-color: rgba(229, 231, 235, 0.7); /* Light mode: Tailwind gray-200 @ 70% opacity */
+  border-color: rgba(209, 213, 219, 0.8); /* Light mode: Tailwind gray-300 @ 80% opacity */
+}
+
+.homeButton:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+/* Dark theme overrides for homeButton */
+[data-theme='dark'] .homeButton {
+  background-color: rgba(55, 65, 81, 0.7);  /* Dark mode: Tailwind gray-700 @ 70% opacity */
+  border-color: rgba(75, 85, 99, 0.7); /* Dark mode: Tailwind gray-600 @ 70% opacity */
+  color: var(--dark-text-color);
+}
+
+[data-theme='dark'] .homeButton:hover {
+  background-color: rgba(75, 85, 99, 0.8);  /* Dark mode: Tailwind gray-600 @ 80% opacity */
+  border-color: rgba(107, 114, 128, 0.9); /* Dark mode: Tailwind gray-500 @ 90% opacity */
+} 

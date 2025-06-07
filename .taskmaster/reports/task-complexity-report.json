@@ -1,8 +1,8 @@
 {
   "meta": {
-    "generatedAt": "2025-06-06T21:52:38.230Z",
-    "tasksAnalyzed": 5,
-    "totalTasks": 21,
+    "generatedAt": "2025-06-07T02:58:54.783Z",
+    "tasksAnalyzed": 11,
+    "totalTasks": 12,
     "analysisCount": 20,
     "thresholdScore": 5,
     "projectName": "Taskmaster",
@@ -24,94 +24,6 @@
       "recommendedSubtasks": 3,
       "expansionPrompt": "Break down the project setup into initialization, configuration, and documentation phases with specific deliverables for each",
       "reasoning": "This task involves standard project setup procedures with clear steps already outlined. The complexity is moderate due to ensuring compatibility with existing codebase, but the steps are well-defined and follow established patterns."
-    },
-    {
-      "taskId": 2,
-      "taskTitle": "Design Card Component",
-      "complexityScore": 5,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Divide the card component design into visual design, CSS implementation, and responsive behavior subtasks with specific acceptance criteria for each",
-      "reasoning": "Creating the card component involves implementing visual effects (glassmorphism) and ensuring responsive behavior. The complexity is moderate as it requires both design skills and CSS implementation with consideration for different screen sizes."
-    },
-    {
-      "taskId": 3,
-      "taskTitle": "Implement Card Content Display",
-      "complexityScore": 6,
-      "recommendedSubtasks": 4,
-      "expansionPrompt": "Break down the content display implementation into title handling, date formatting, content snippet extraction, and edge case management with specific test cases for each",
-      "reasoning": "This task involves multiple data formatting challenges and edge cases. The complexity is higher due to the need to handle various document formats, implement proper truncation, and ensure accessibility requirements are met."
-    },
-    {
-      "taskId": 4,
-      "taskTitle": "Create Card Grid Layout",
-      "complexityScore": 6,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Divide the grid layout implementation into basic grid structure, responsive behavior, and performance optimization with clear metrics for success",
-      "reasoning": "Implementing a responsive grid layout with proper spacing and potential virtual scrolling adds complexity. The task requires consideration of performance with large document sets and handling various screen sizes."
-    },
-    {
-      "taskId": 5,
-      "taskTitle": "Implement Drag and Drop Functionality",
-      "complexityScore": 8,
-      "recommendedSubtasks": 5,
-      "expansionPrompt": "Break down drag and drop implementation into core functionality, visual indicators, state management, accessibility features, and backend integration with specific test scenarios for each",
-      "reasoning": "Drag and drop functionality is inherently complex, requiring state management, visual feedback, accessibility considerations, and backend integration. The cyclomatic complexity of this feature would be high due to the many possible interaction paths."
-    },
-    {
-      "taskId": 6,
-      "taskTitle": "Add Animation Effects",
-      "complexityScore": 5,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Divide animation implementation into hover effects, transition animations, and performance optimization with specific performance benchmarks",
-      "reasoning": "Animation implementation requires attention to performance and user preferences. The complexity is moderate as it involves ensuring smooth 60fps animations while respecting reduced motion preferences."
-    },
-    {
-      "taskId": 7,
-      "taskTitle": "Integrate with Existing Document Data Source",
-      "complexityScore": 7,
-      "recommendedSubtasks": 4,
-      "expansionPrompt": "Break down data integration into data fetching mechanism, mapping logic, loading state handling, and real-time update implementation with specific error scenarios to test",
-      "reasoning": "Integration with existing data sources involves understanding the current architecture, implementing proper data mapping, handling loading states, and ensuring real-time updates. The complexity is high due to the need to work with existing code and handle various data scenarios."
-    },
-    {
-      "taskId": 8,
-      "taskTitle": "Implement View Switching Mechanism",
-      "complexityScore": 6,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Divide view switching implementation into UI component, state management, and user preference persistence with specific user flow diagrams",
-      "reasoning": "View switching requires maintaining state consistency between views and handling user preferences. The complexity comes from ensuring smooth transitions and maintaining document selection across view changes."
-    },
-    {
-      "taskId": 9,
-      "taskTitle": "Implement Accessibility Features",
-      "complexityScore": 7,
-      "recommendedSubtasks": 4,
-      "expansionPrompt": "Break down accessibility implementation into ARIA attributes, keyboard navigation, screen reader support, and visual accessibility with specific WCAG success criteria for each",
-      "reasoning": "Accessibility implementation is complex due to the need to support various assistive technologies and ensure compliance with WCAG standards. The task requires specialized knowledge and thorough testing across different scenarios."
-    },
-    {
-      "taskId": 10,
-      "taskTitle": "Optimize Performance for Large Document Sets",
-      "complexityScore": 8,
-      "recommendedSubtasks": 5,
-      "expansionPrompt": "Divide performance optimization into virtualized rendering, component optimization, pagination implementation, animation optimization, and monitoring setup with specific performance metrics for each",
-      "reasoning": "Performance optimization for large datasets involves multiple advanced techniques like virtualization, memoization, and potentially web workers. The complexity is high due to the technical challenges and the need for extensive testing with large datasets."
-    },
-    {
-      "taskId": 11,
-      "taskTitle": "Implement Comprehensive Error Handling",
-      "complexityScore": 6,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Break down error handling into UI error boundaries, network error handling, and telemetry implementation with specific error scenarios to address",
-      "reasoning": "Comprehensive error handling requires anticipating various failure modes and implementing appropriate recovery mechanisms. The complexity comes from the need to handle diverse error scenarios while maintaining a good user experience."
-    },
-    {
-      "taskId": 12,
-      "taskTitle": "Create Comprehensive Documentation and User Guide",
-      "complexityScore": 5,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Divide documentation creation into technical documentation, user guides, and inline code documentation with specific audience needs for each",
-      "reasoning": "Documentation requires understanding the entire system and creating clear explanations for different audiences. The complexity is moderate as it involves comprehensive knowledge of the system but follows established documentation patterns."
     },
     {
       "taskId": 15,
@@ -168,6 +80,94 @@
       "recommendedSubtasks": 6,
       "reasoning": "Testing and debugging audio functionality is complex due to the variety of environments, browser implementations, and potential permission issues. This task requires comprehensive testing across different browsers, microphone configurations, and user scenarios. It also involves comparing behavior with the original implementation and fixing any discrepancies.",
       "expansionPrompt": "Break down the testing and debugging process into subtasks covering: cross-browser compatibility testing, permission handling verification, transcription accuracy testing, error state handling, performance optimization, and accessibility validation. Include specific test cases and debugging strategies for each area."
+    },
+    {
+      "taskId": 2,
+      "taskTitle": "Create basic sidebar component structure",
+      "complexityScore": 5,
+      "recommendedSubtasks": 4,
+      "expansionPrompt": "Break down the sidebar component creation into component setup, layout implementation, state management, and responsive design subtasks",
+      "reasoning": "This task involves creating a new component with responsive layout, state management, and basic functionality. It has moderate complexity due to the need for both desktop and mobile views, plus state management with React hooks."
+    },
+    {
+      "taskId": 3,
+      "taskTitle": "Migrate existing header bar buttons to sidebar",
+      "complexityScore": 4,
+      "recommendedSubtasks": 3,
+      "expansionPrompt": "Divide the migration process into button identification and analysis, component creation, and functionality transfer subtasks",
+      "reasoning": "This task requires transferring existing functionality rather than creating new features. The complexity is moderate as it involves understanding existing code and ensuring proper integration with the new sidebar."
+    },
+    {
+      "taskId": 4,
+      "taskTitle": "Implement new 'New' button functionality",
+      "complexityScore": 3,
+      "recommendedSubtasks": 2,
+      "expansionPrompt": "Split the 'New' button implementation into UI component creation and API integration subtasks",
+      "reasoning": "This is a relatively straightforward task focused on a single button with specific functionality. The complexity is low to moderate as it involves API integration and error handling but is limited in scope."
+    },
+    {
+      "taskId": 5,
+      "taskTitle": "Add launch page action buttons to sidebar",
+      "complexityScore": 4,
+      "recommendedSubtasks": 3,
+      "expansionPrompt": "Divide the action buttons implementation into button component creation, functionality transfer, and conditional rendering subtasks",
+      "reasoning": "Similar to task 3, this involves transferring existing functionality but for multiple buttons. The complexity increases slightly due to potential conditional rendering and performance optimization requirements."
+    },
+    {
+      "taskId": 6,
+      "taskTitle": "Implement responsive behavior for desktop view",
+      "complexityScore": 6,
+      "recommendedSubtasks": 4,
+      "expansionPrompt": "Break down desktop responsiveness into toggle mechanism, animation implementation, layout adjustment, and state persistence subtasks",
+      "reasoning": "This task has higher complexity due to the need for smooth animations, state persistence, and ensuring proper layout adjustments. It also requires keyboard accessibility implementation."
+    },
+    {
+      "taskId": 7,
+      "taskTitle": "Implement responsive behavior for mobile view",
+      "complexityScore": 7,
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Divide mobile responsiveness into drawer component creation, touch gesture implementation, animation effects, overlay implementation, and breakpoint management subtasks",
+      "reasoning": "Mobile view implementation has high complexity due to the need for touch gestures, animations, and proper overlay behavior. It requires integration with third-party libraries and careful testing across various devices."
+    },
+    {
+      "taskId": 8,
+      "taskTitle": "Style sidebar to match application design",
+      "complexityScore": 5,
+      "recommendedSubtasks": 4,
+      "expansionPrompt": "Split styling tasks into color scheme implementation, layout refinement, interactive state styling, and accessibility compliance subtasks",
+      "reasoning": "Styling tasks have moderate complexity due to the need for consistency with existing design, accessibility compliance, and support for features like dark mode. It requires attention to detail across multiple components."
+    },
+    {
+      "taskId": 9,
+      "taskTitle": "Implement state management and event handling",
+      "complexityScore": 8,
+      "recommendedSubtasks": 6,
+      "expansionPrompt": "Break down state management into state analysis, hook implementation, event handler migration, error handling, performance optimization, and data flow architecture subtasks",
+      "reasoning": "This task has high complexity as it involves managing application state, optimizing performance, and ensuring proper data flow. It requires deep understanding of React patterns and may involve refactoring existing code."
+    },
+    {
+      "taskId": 10,
+      "taskTitle": "Remove existing header bar",
+      "complexityScore": 3,
+      "recommendedSubtasks": 2,
+      "expansionPrompt": "Divide header removal into component removal and layout adjustment subtasks",
+      "reasoning": "This is a relatively straightforward task focused on removing existing code and adjusting layouts. The complexity is low, though it requires careful testing to ensure no regressions occur."
+    },
+    {
+      "taskId": 11,
+      "taskTitle": "Implement automated tests",
+      "complexityScore": 9,
+      "recommendedSubtasks": 7,
+      "expansionPrompt": "Split testing implementation into unit test setup, component testing, integration testing, snapshot testing, end-to-end testing, accessibility testing, and CI/CD integration subtasks",
+      "reasoning": "Testing implementation has very high complexity due to the variety of test types required, the need for CI/CD integration, and ensuring comprehensive coverage. It requires expertise in multiple testing frameworks and methodologies."
+    },
+    {
+      "taskId": 12,
+      "taskTitle": "Conduct final review and documentation",
+      "complexityScore": 6,
+      "recommendedSubtasks": 4,
+      "expansionPrompt": "Divide review and documentation into code review, user documentation, API documentation, and release preparation subtasks",
+      "reasoning": "This task has moderate to high complexity due to its comprehensive nature, requiring thorough review of all previous work and creation of various documentation types. It serves as a critical quality gate before release."
     }
   ]
 }

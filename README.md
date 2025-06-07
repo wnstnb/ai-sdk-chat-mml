@@ -7,6 +7,7 @@ This project is a chat interface combined with a document editor, leveraging AI 
 ### User-Facing Features
 
 *   **Authentication:** Secure user login and session management via Supabase Auth.
+*   **Dynamic Application Sidebar:** A responsive sidebar providing access to navigation (Home), primary actions (New Note, Voice Summary, Web Scrape, PDF Summary), and application settings (Theme, Preferences, Logout). Supports expanded/collapsed states on desktop and a slide-in drawer on mobile.
 *   **Document & Folder Management:** Create, view, organize, rename, and delete documents and folders via the launch page.
 *   **Rich Text Document Editor (BlockNote):** 
     *   Edit documents with standard formatting options.
@@ -31,7 +32,7 @@ This project is a chat interface combined with a document editor, leveraging AI 
 
 *   **Framework:** Built with Next.js 14+ (App Router).
 *   **Backend:** Leverages Supabase for:
-    *   **Database:** PostgreSQL for storing application data (users, folders, documents, messages, tool calls, preferences).
+    *   **Database:** PostgreSQL for storing application data (users, folders, documents, messages, tool_calls, preferences).
     *   **Authentication:** Manages user accounts and sessions.
     *   **Storage:** Securely stores user-uploaded images (`message-images` bucket).
     *   **Embeddings/Search:** Likely uses Supabase pgvector for document search.
@@ -116,4 +117,3 @@ This project is a chat interface combined with a document editor, leveraging AI 
     ```
 
 7.  Open [http://localhost:3000](http://localhost:3000) with your browser.
-
