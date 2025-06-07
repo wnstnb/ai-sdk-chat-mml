@@ -141,7 +141,7 @@ const PricingSection = () => {
           }}
         >
           <Link href={getStartedLink}>
-            <Button className="bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] px-10 py-7 text-lg">
+            <Button variant="landing" className="px-10 py-7 text-lg">
               Get Started
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
@@ -156,11 +156,11 @@ const PricingSection = () => {
 const FeatureListSection = () => {
   const featureItems: FeatureListItem[] = [
     { text: "Beautiful rich text editing with Markdown and drag-and-drop blocks." },
+    { text: "Live voice summaries to capture your thoughts as they come." },
     { text: "Smart AI integration to help you write, ideate, and refine effortlessly." },
     { text: "Autosave and manual version history so you never lose your work." },
     { text: "Browse previous versions with a clean, intuitive interface." },
     { text: "Auto-title your documents with AI so you can stay in flow." },
-    { text: "Organize with folders, or star your favorites for easy access." },
     { text: "Stay productive anywhere with both desktop and mobile layouts." },
     { text: "Tag notes and documents as context, and never start from zero." },
     { text: "Talk, type, or drop in images. Engage however you want." },
@@ -224,7 +224,7 @@ const FeatureListSection = () => {
           }}
         >
           <Link href="/signup">
-            <Button className="bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] px-10 py-7 text-lg">
+            <Button variant="landing" className="px-10 py-7 text-lg">
               Try Free For 7 Days 
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
