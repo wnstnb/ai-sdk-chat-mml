@@ -38,7 +38,7 @@ const ActualFileBrowserModal: React.FC<FileBrowserModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-[--bg-color] p-6 rounded-lg shadow-xl w-full max-w-2xl h-[70vh] flex flex-col text-[--text-color] transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalFadeIn"
+        className="bg-[var(--editor-bg)] p-6 rounded-lg shadow-xl w-full max-w-2xl h-[70vh] flex flex-col text-[--text-color] transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalFadeIn"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-4 flex-shrink-0">

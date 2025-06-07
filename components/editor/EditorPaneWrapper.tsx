@@ -85,6 +85,7 @@ interface EditorPaneWrapperProps {
     isMainChatCollapsed?: boolean;
     miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
     // --- END NEW ---
+    currentTheme: 'light' | 'dark'; // CHANGED: Made non-optional
 }
 
 export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
@@ -141,6 +142,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     isMainChatCollapsed,
     miniPaneToggleRef, // Destructure the ref
     // --- END NEW ---
+    currentTheme, // ADDED: Destructure currentTheme
 }) => {
     // State for the pinned message bubble collapse state
     const [isMessageBubbleCollapsed, setIsMessageBubbleCollapsed] = React.useState(false);
@@ -220,7 +222,8 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                         key={documentId} 
                         editorRef={editorRef}
                         initialContent={initialContent}
-                        onEditorContentChange={onEditorContentChange} 
+                        onEditorContentChange={onEditorContentChange}
+                        theme={currentTheme} // Pass the theme to BlockNoteEditorComponent
                     />
                 ) : (
                     // Consistent loading state

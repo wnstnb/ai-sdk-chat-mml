@@ -8,6 +8,7 @@ import { ChatInputUI } from '@/components/editor/ChatInputUI';
 import { useModalStore } from '@/stores/useModalStore';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // For default model
 import type { TaggedDocument } from '@/lib/types'; // Import TaggedDocument type
+import { Button } from '@/components/ui/button';
 
 // Define a default model fallback (used if store isn't ready)
 const defaultModelFallback = 'gemini-1.5-flash'; // Or your preferred default
@@ -145,7 +146,7 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-[--bg-color] text-[--text-color] p-6 rounded-lg shadow-xl w-full max-w-2xl relative">
+      <div className="bg-[var(--editor-bg)] text-[--text-color] p-6 rounded-lg shadow-xl w-full max-w-2xl relative">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Create New Document</h2>
           <button
@@ -193,14 +194,14 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
         </form>
 
         <div className="flex justify-end space-x-2 mt-6">
-          <button
+          <Button
             type="button"
+            variant="modalSecondary"
             onClick={onClose}
-            className="px-4 py-2 bg-[--secondary-btn-bg] text-[--secondary-btn-text] rounded hover:bg-[--secondary-btn-bg-hover]"
             disabled={isCreating}
           >
             Cancel
-          </button>
+          </Button>
         </div>
       </div>
     </div>
