@@ -61,6 +61,29 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
       ],
     },
     {
+      previewImageSrc: "/web-scrape-1.png",
+      title: "Web<br />Scraping",
+      caption: "Capture and summarize web content effortlessly.",
+      content: [
+        <div key="section-web-scraping-1">
+          <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
+            <strong>Want to grab content from a webpage to read later?</strong> Simply provide one or more URLs, and we&apos;ll fetch the content for you. It&apos;s perfect for saving articles, blog posts, or any online material you want to revisit.
+          </p>
+          <div className="flex justify-center mt-4">
+            <img src="/web-scrape-1.png" alt="Web Scraping - Capture Content" className="w-full h-full object-cover rounded-xl max-w-xl" />
+          </div>
+        </div>,
+        <div key="section-web-scraping-2">
+          <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
+            <strong>Prefer a quick overview? Get an AI-powered summary for your URLs instead of the full text.</strong> This is ideal for quickly understanding the gist of multiple sources. Our web scraping is designed for flexibility, allowing you to capture content, consume it how you like, make notes, and even use it as context for future projects.
+          </p>
+          <div className="flex justify-center mt-4">
+            <img src="/web-scrape-2.png" alt="Web Scraping - AI Summary" className="w-full h-full object-cover rounded-xl max-w-xl" />
+          </div>
+        </div>
+      ],
+    },
+    {
       previewImageSrc: "/tag_docs_2.png",
       title: "Tag<br />Documents",
       caption: "Tag documents as context for AI and never start from zero.",
@@ -68,7 +91,7 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
       content: [
         <div key="section-tag-docs">
           <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
-            <strong>Tagging previous notes gives your AI instant context, so it knows what matters to you without needing a long explanation.</strong> You avoid repeating yourself and get more relevant results, faster. It turns your past work into a living knowledge base you can build on.
+            <strong>Tagging previous notes gives your AI instant context, so it knows what matters to you without needing a long explanation.</strong> Whether it's a typed note, a recorded voice memo, an AI-generated voice summary, or even a web page you've scraped: if it's in your notes, it can be tagged and used as context. You avoid repeating yourself and get more relevant results, faster. It turns your past work into a living knowledge base you can build on.
           </p>
           <div className="flex justify-center mt-4">
             <img src="/tag-documents.png" alt="Tag Documents" className="w-full h-full object-cover rounded-xl max-w-xl" />

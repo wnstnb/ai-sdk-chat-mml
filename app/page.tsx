@@ -40,14 +40,14 @@ const PricingSection = () => {
       name: "Monthly",
       price: "$16",
       priceDetails: "/ month",
-      features: ["7-day free trial", "Cancel anytime", "All features included"],
+      features: ["7-day free trial", "Cancel anytime", "All features included", "Full access to multiple AI models"],
     },
     {
       id: 'annual',
       name: "Annual",
       price: "$150",
       priceDetails: "/ year",
-      features: ["7-day free trial", "Cancel anytime", "All features included"],
+      features: ["7-day free trial", "Cancel anytime", "All features included", "Full access to multiple AI models"],
       highlight: "Save 22%",
     },
   ];
@@ -157,6 +157,7 @@ const FeatureListSection = () => {
   const featureItems: FeatureListItem[] = [
     { text: "Beautiful rich text editing with Markdown and drag-and-drop blocks." },
     { text: "Live voice summaries to capture your thoughts as they come." },
+    { text: "Scrape and summarize web content to easily capture online information." },
     { text: "Smart AI integration to help you write, ideate, and refine effortlessly." },
     { text: "Autosave and manual version history so you never lose your work." },
     { text: "Browse previous versions with a clean, intuitive interface." },
