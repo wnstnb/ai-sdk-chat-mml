@@ -945,10 +945,6 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
 
   // --- NEW: Handler for creating a new document with content ---
   const handleCreateNewDocumentWithContent = async (contentToSave: string) => {
-    if (!editorRef?.current) {
-      toast.error("Editor instance not available. Cannot format content for new document.");
-      return;
-    }
     if (!contentToSave || contentToSave.trim() === '') {
       toast.error("No content available to create a new document.");
       return;
@@ -957,28 +953,42 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
     setIsCreatingNewDocument(true);
     toast.info("Creating new document...");
 
-    try {
-      let blocksToInsert: PartialBlock[] = await editorRef.current.tryParseMarkdownToBlocks(contentToSave);
+    let blocksToInsert: PartialBlock[];
 
-      if (blocksToInsert.length === 0 && contentToSave.trim() !== '') {
-        // If parsing fails but content exists, create a simple paragraph block
+    if (editorRef?.current) {
+      try {
+        blocksToInsert = await editorRef.current.tryParseMarkdownToBlocks(contentToSave);
+        if (blocksToInsert.length === 0 && contentToSave.trim() !== '') {
+          blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
+        }
+      } catch (parseError) {
+        console.error("[VoiceSummaryModal] Error parsing markdown to blocks with editor, falling back to simple paragraph:", parseError);
+        toast.info("Could not fully parse content for new document; formatting will be simplified.");
         blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
       }
-      
-      if (blocksToInsert.length === 0) {
-          toast.info("No content to insert after formatting.");
-          setIsCreatingNewDocument(false);
-          return;
-      }
+    } else {
+      console.warn("[VoiceSummaryModal] Editor instance not available for tryParseMarkdownToBlocks. Creating document with content in a single paragraph. Advanced formatting may be lost.");
+      // No toast here, proceed with simplified blocks if on /launch
+      blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
+    }
+    
+    // Ensure blocksToInsert is not empty if contentToSave was just whitespace or parsing failed completely
+    if (blocksToInsert.length === 0 && contentToSave.trim() !== '') {
+      blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
+    } else if (blocksToInsert.length === 0) {
+        toast.info("Content is effectively empty. Cannot create new document.");
+        setIsCreatingNewDocument(false);
+        return;
+    }
 
+    try {
       const response = await fetch('/api/documents/create-with-content', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          // Title can be added here if needed, e.g., from a new input field or derived
-          // title: `Voice Note - ${new Date().toLocaleString()}`, 
+          title: `Voice Note - ${new Date().toLocaleDateString()}`,
           content: blocksToInsert, // Send BlockNote JSON content
         }),
       });

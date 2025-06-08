@@ -72,6 +72,16 @@ export class PDFProcessingService {
       throw new Error(`File size exceeds the limit of ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB.`);
     }
 
+    // Validate PDF content for buffer source (magic number check)
+    if (sourceType === 'buffer') {
+      // Check for PDF magic number (%PDF-)
+      if (pdfBuffer.length < 5 || pdfBuffer.toString('utf8', 0, 5) !== '%PDF-') {
+        // A more robust check might involve looking for %PDF- within the first 1024 bytes
+        // or using a library if available and simple. For now, a direct check at the start.
+        throw new Error("Invalid file content: The uploaded file does not appear to be a valid PDF document.");
+      }
+    }
+
     const cacheKey = this.generateCacheKey(pdfBuffer);
     const cachedResult = this.extractCache.get(cacheKey);
     if (cachedResult) {

@@ -1,44 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PDFProcessingService } from '@/app/services/PDFProcessingService'; // Adjusted import path
-import { checkRateLimit } from '@/lib/utils/rate-limiter'; // Import rate limiter
-
-const getCorsHeaders = (origin?: string | null) => {
-  const headers: Record<string, string> = {
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  };
-  // For simplicity, allow any origin. In production, restrict this to your frontend domain.
-  // const allowedOrigin = process.env.ALLOWED_ORIGIN || (origin || '*'); // Example: use env var
-  headers['Access-Control-Allow-Origin'] = origin || '*'; // Reflect origin or allow all
-  return headers;
-};
+// import { checkRateLimit } from '@/lib/utils/rate-limiter'; // Removed import
 
 export async function OPTIONS(request: NextRequest) {
-  const origin = request.headers.get('origin');
-  return new NextResponse(null, { headers: getCorsHeaders(origin), status: 204 });
+  // return new NextResponse(null, { headers: getCorsHeaders(request.headers.get('origin')), status: 204 }); // Handled by next.config.mjs
+  return new NextResponse(null, { status: 204 }); // Standard OPTIONS response
 }
 
 export async function POST(request: NextRequest) {
-  const origin = request.headers.get('origin');
-  const corsHeaders = getCorsHeaders(origin);
+  // const origin = request.headers.get('origin'); // No longer needed
+  // const corsHeaders = getCorsHeaders(origin); // No longer needed, headers set globally
 
-  const ip = request.ip || request.headers.get('x-forwarded-for') || 'unknown';
-  if (!checkRateLimit(ip)) {
-    return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: corsHeaders });
-  }
+  // const ip = request.ip || request.headers.get('x-forwarded-for') || 'unknown'; // IP for checkRateLimit, no longer needed here
+  // if (!checkRateLimit(ip)) { // Removed old rate limit check
+  //   return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+  // }
 
   try {
     const body = await request.json();
     const { text } = body;
 
     if (!text || typeof text !== 'string' || text.trim().length === 0) {
-      return NextResponse.json({ error: 'Text must be provided and be a non-empty string.' }, { status: 400, headers: corsHeaders });
+      return NextResponse.json({ error: 'Text must be provided and be a non-empty string.' }, { status: 400 }); // Removed corsHeaders
     }
 
     const pdfService = new PDFProcessingService();
     const summarizedText = await pdfService.summarizeText(text);
 
-    return NextResponse.json({ summarizedText }, { headers: corsHeaders });
+    return NextResponse.json({ summarizedText }); // Removed corsHeaders
 
   } catch (error) {
     console.error('[API /pdf/summarize] Error:', error);
@@ -50,6 +39,6 @@ export async function POST(request: NextRequest) {
       publicErrorMessage = "Server configuration error.";
     }
     // Add other specific error checks if needed
-    return NextResponse.json({ error: publicErrorMessage }, { status: statusCode, headers: corsHeaders });
+    return NextResponse.json({ error: publicErrorMessage }, { status: statusCode }); // Removed corsHeaders
   }
 } 

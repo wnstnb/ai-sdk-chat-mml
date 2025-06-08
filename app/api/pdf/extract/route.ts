@@ -1,41 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PDFProcessingService } from '@/app/services/PDFProcessingService'; // Adjusted import path
-import { checkRateLimit } from '@/lib/utils/rate-limiter'; // Import rate limiter
-
-const getCorsHeaders = (origin?: string | null) => {
-  const headers: Record<string, string> = {
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  };
-  // For simplicity, allow any origin. In production, restrict this to your frontend domain.
-  // const allowedOrigin = process.env.ALLOWED_ORIGIN || (origin || '*'); // Example: use env var
-  headers['Access-Control-Allow-Origin'] = origin || '*'; // Reflect origin or allow all
-  return headers;
-};
+import { isURL } from 'validator'; // Added import
 
 export async function OPTIONS(request: NextRequest) {
-  const origin = request.headers.get('origin');
-  return new NextResponse(null, { headers: getCorsHeaders(origin), status: 204 });
+  return new NextResponse(null, { status: 204 });
 }
 
 export async function POST(request: NextRequest) {
-  const origin = request.headers.get('origin');
-  const corsHeaders = getCorsHeaders(origin);
+  // const origin = request.headers.get('origin'); // No longer needed
+  // const corsHeaders = getCorsHeaders(origin); // No longer needed, headers set globally
 
-  const ip = request.ip || request.headers.get('x-forwarded-for') || 'unknown';
-  if (!checkRateLimit(ip)) {
-    return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: corsHeaders });
-  }
+  // const ip = request.ip || request.headers.get('x-forwarded-for') || 'unknown'; // IP for checkRateLimit, no longer needed here
+  // if (!checkRateLimit(ip)) { // Removed old rate limit check
+  //   return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+  // }
 
   try {
     const body = await request.json();
     const { fileBlobBase64, sourceUrl } = body;
 
     if (!fileBlobBase64 && !sourceUrl) {
-      return NextResponse.json({ error: 'Either fileBlobBase64 or sourceUrl must be provided.' }, { status: 400, headers: corsHeaders });
+      return NextResponse.json({ error: 'Either fileBlobBase64 or sourceUrl must be provided.' }, { status: 400 });
     }
     if (fileBlobBase64 && sourceUrl) {
-      return NextResponse.json({ error: 'Provide either fileBlobBase64 or sourceUrl, not both.' }, { status: 400, headers: corsHeaders });
+      return NextResponse.json({ error: 'Provide either fileBlobBase64 or sourceUrl, not both.' }, { status: 400 });
     }
 
     const pdfService = new PDFProcessingService();
@@ -43,21 +31,32 @@ export async function POST(request: NextRequest) {
 
     if (fileBlobBase64) {
       if (typeof fileBlobBase64 !== 'string') {
-        return NextResponse.json({ error: 'fileBlobBase64 must be a base64 encoded string.' }, { status: 400, headers: corsHeaders });
+        return NextResponse.json({ error: 'fileBlobBase64 must be a base64 encoded string.' }, { status: 400 });
       }
       const pdfBuffer = Buffer.from(fileBlobBase64, 'base64');
       extractedText = await pdfService.extractText(pdfBuffer, 'buffer');
     } else if (sourceUrl) {
       if (typeof sourceUrl !== 'string') {
-        return NextResponse.json({ error: 'sourceUrl must be a string.' }, { status: 400, headers: corsHeaders });
+        return NextResponse.json({ error: 'sourceUrl must be a string.' }, { status: 400 });
+      }
+      // Validate sourceUrl
+      if (!isURL(sourceUrl, {
+        protocols: ['http', 'https'],
+        require_protocol: true,
+        require_host: true,
+        require_valid_protocol: true,
+        disallow_auth: true, // Do not allow username/password in URL
+        // TODO: Consider adding require_tld: true if it makes sense for PDF sources
+      })) {
+        return NextResponse.json({ error: 'Invalid or unsupported sourceUrl format. Please provide a valid HTTP/HTTPS URL.' }, { status: 400 });
       }
       extractedText = await pdfService.extractText(sourceUrl, 'url');
     } else {
       // This case should be caught by the initial check, but as a safeguard:
-      return NextResponse.json({ error: 'Invalid input.' }, { status: 400, headers: corsHeaders });
+      return NextResponse.json({ error: 'Invalid input.' }, { status: 400 });
     }
 
-    return NextResponse.json({ extractedText }, { headers: corsHeaders });
+    return NextResponse.json({ extractedText });
 
   } catch (error) {
     console.error('[API /pdf/extract] Error:', error);
@@ -95,6 +94,6 @@ export async function POST(request: NextRequest) {
       // For generic errors from the service or unknown errors, retain the original message or a generic one.
     }
     
-    return NextResponse.json({ error: errorMessage }, { status: statusCode, headers: corsHeaders });
+    return NextResponse.json({ error: errorMessage }, { status: statusCode });
   }
 } 

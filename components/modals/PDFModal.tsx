@@ -43,6 +43,7 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
   const editorRef = useModalStore(state => state.editorRef);
   const router = useRouter();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const hasActiveDocument = !!editorRef?.current;
 
   const [activeTab, setActiveTab] = useState('file');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -227,96 +228,118 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
   }, [isOpen, resetAllStates]);
 
   useEffect(() => {
-    if (!isProcessing) {
+    if (!isProcessing && !extractedResult && !summarizedResult) {
         setFileError(null);
         setUrlError(null);
-    } else {
+    } else if (isProcessing) {
         setFileError(null);
         setUrlError(null);
-        setExtractedResult(null);
-        setSummarizedResult(null);
     }
-  }, [activeTab, isProcessing]);
+  }, [activeTab, isProcessing, extractedResult, summarizedResult]);
 
-  const handleProcessPDF = async () => {
-    if (isProcessing) return;
+  const handleProcessPDF = async (explicitProcessingType?: ProcessingType) => {
+    console.log('[PDFModal] handleProcessPDF called.');
+    console.log('[PDFModal] current isProcessing state:', isProcessing);
+    if (isProcessing) {
+      console.log('[PDFModal] Exiting: Already processing.');
+      toast.info("Processing is already underway.");
+      return;
+    }
+
+    const currentProcessingType = explicitProcessingType || processingType;
+
     let isValid = false;
-    if (activeTab === 'file') {
-      isValid = validateFile(selectedFile);
-      if (!isValid || !selectedFile) return;
-    } else if (activeTab === 'url') {
-      isValid = validateUrl(pdfUrl);
-      if (!isValid || !pdfUrl) return;
-    }
-    if (!isValid) return;
+    let requestBody: any = { processingType: currentProcessingType };
 
+    console.log('[PDFModal] Active tab:', activeTab);
+
+    if (activeTab === 'file') {
+      console.log('[PDFModal] File tab selected. Selected file:', selectedFile);
+      isValid = validateFile(selectedFile);
+      console.log('[PDFModal] File validation result:', isValid, 'File error state:', fileError);
+      if (!isValid || !selectedFile) {
+        toast.error(fileError || 'Please select a valid PDF file.');
+        console.log('[PDFModal] Exiting: File validation failed or no file selected.');
+        return;
+      }
+      try {
+        console.log('[PDFModal] Attempting to convert file to Base64...');
+        const base64Pdf = await convertFileToBase64(selectedFile);
+        requestBody.fileBlobBase64 = base64Pdf;
+        requestBody.fileName = selectedFile.name;
+        console.log('[PDFModal] File converted to Base64 successfully. FileName:', selectedFile.name);
+      } catch (error) {
+        console.error("[PDFModal] Error converting file to Base64:", error);
+        toast.error("Error preparing file for processing. Check console for details.");
+        setProcessingStatus("Error: Could not read file.");
+        return;
+      }
+    } else if (activeTab === 'url') {
+      console.log('[PDFModal] URL tab selected. PDF URL:', pdfUrl);
+      isValid = validateUrl(pdfUrl);
+      console.log('[PDFModal] URL validation result:', isValid, 'URL error state:', urlError);
+      if (!isValid || !pdfUrl) {
+        toast.error(urlError || 'Please enter a valid PDF URL.');
+        console.log('[PDFModal] Exiting: URL validation failed or URL empty.');
+        return;
+      }
+      requestBody.sourceUrl = pdfUrl;
+      console.log('[PDFModal] URL is valid for processing.');
+    } else {
+      console.error('[PDFModal] Exiting: Invalid active tab:', activeTab);
+      toast.error("Invalid tab selected. Please refresh and try again.");
+      return;
+    }
+
+    console.log('[PDFModal] Proceeding to make API call. Request body (without fileBlobBase64 if too long):', { ...requestBody, fileBlobBase64: requestBody.fileBlobBase64 ? 'Present (too long to log)' : undefined });
     setIsProcessing(true);
-    const initialProcessingMessage = processingType === 'extract' ? 'Extracting text...' : 'Summarizing and extracting text...';
-    setProcessingStatus(initialProcessingMessage);
+    setProcessingStatus(`Starting ${currentProcessingType}...`);
     setExtractedResult(null);
     setSummarizedResult(null);
 
+    const endpoint = currentProcessingType === 'summarize' ? '/api/pdf/summarize' : '/api/pdf/extract';
+    console.log('[PDFModal] Target endpoint:', endpoint);
+
     try {
-      let data;
-      if (activeTab === 'file' && selectedFile) {
-        setProcessingStatus('Converting and processing file...');
-        const fileBase64 = await convertFileToBase64(selectedFile);
-        const response = await fetch('/api/pdf/extract', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ fileBlobBase64: fileBase64 }),
-        });
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: 'Failed to process PDF file.' }));
-          throw new Error(errorData.error || `Server error: ${response.status}`);
-        }
-        data = await response.json();
+      console.log('[PDFModal] Entering TRY block for fetch.');
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+      console.log('[PDFModal] Fetch call completed. Response status:', response.status);
 
-      } else if (activeTab === 'url' && pdfUrl) {
-        setProcessingStatus(`Fetching and processing PDF from URL...`);
-        const response = await fetch('/api/pdf/extract', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ sourceUrl: pdfUrl }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: 'Failed to process PDF from URL.' }));
-          throw new Error(errorData.error || `Server error: ${response.status}`);
-        }
-        data = await response.json();
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from server.' }));
+        console.error('[PDFModal] API Error Response:', errorData);
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
 
-      if (data?.extractedText) {
-        setExtractedResult(data.extractedText);
-        if (processingType === 'summarize') {
-          // TODO: Call summarization API if processingType is 'summarize'
-          // For now, if summarize is selected with URL, we only have extracted text.
-          // We can use a placeholder or inform user summarization for URL will be separate.
-          // For this step, we assume /api/pdf/extract only gives extractedText.
-          // So, for URL summarization, we will set a dummy summary for now.
-          const dummySummarizedText = `Summary for ${pdfUrl} (actual summarization to be implemented via /api/pdf/summarize).`;
-          setSummarizedResult(dummySummarizedText);
-          setActivePreviewTab('summary');
-           setProcessingStatus('Text extracted. Summarization step placeholder.');
-        } else {
-          setActivePreviewTab('fullText');
-          setProcessingStatus('Text extracted successfully!');
-        }
-      } else {
-        throw new Error('No extracted text received from server.');
-      }
-
-    } catch (error) {
-      console.error("Error processing PDF:", error);
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+      const result = await response.json();
+      console.log('[PDFModal] Successfully processed PDF. API Result:', result);
+      setExtractedResult(result.extractedText || result.summary || result.text || 'No content found.');
+      setSummarizedResult(result.summary || result.text || 'No summary found.');
+      setActivePreviewTab('fullText');
+      setProcessingStatus('Text extracted successfully!');
+      setFileError(null);
+      setUrlError(null);
+      toast.success('PDF processed successfully!');
+    } catch (error: any) {
+      console.error('[PDFModal] CATCH block: Error processing PDF:', error);
+      const errorMessage = error.message || 'An unknown error occurred during PDF processing.';
+      toast.error(`Error: ${errorMessage}`);
+      setExtractedResult(null);
+      setSummarizedResult(null);
       setProcessingStatus(`Error: ${errorMessage}`);
-      toast.error(`Processing failed: ${errorMessage}`);
+      if (activeTab === 'file') {
+        setFileError(errorMessage);
+      } else {
+        setUrlError(errorMessage);
+      }
     } finally {
+      console.log('[PDFModal] FINALLY block: Setting isProcessing to false.');
       setIsProcessing(false);
     }
   };
@@ -373,35 +396,45 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
       toast.error("No content available to create a new document.");
       return;
     }
-    if (!editorRef?.current) {
-        toast.error("Editor instance not available to format content.");
-        return;
+
+    setIsProcessing(true);
+    setProcessingStatus("Creating new document...");
+
+    let blocksForNewDocument: PartialBlock[];
+
+    if (editorRef?.current) {
+      try {
+        blocksForNewDocument = await editorRef.current.tryParseMarkdownToBlocks(contentToSave);
+        if (blocksForNewDocument.length === 0 && contentToSave.trim() !== '') {
+           blocksForNewDocument = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
+        }
+      } catch (parseError) {
+        console.error("[PDFModal] Error parsing markdown to blocks with editor, falling back to simple paragraph:", parseError);
+        toast.info("Could not fully parse content for new document; formatting will be simplified.");
+        blocksForNewDocument = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
+      }
+    } else {
+      console.warn("[PDFModal] Editor instance not available for tryParseMarkdownToBlocks. Creating document with content in a single paragraph. Advanced formatting may be lost.");
+      blocksForNewDocument = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
     }
 
-    setIsProcessing(true); // Reuse isProcessing to indicate new doc creation process
-    setProcessingStatus("Creating new document..."); // Update status message
+    // Ensure blocksForNewDocument is not empty if contentToSave was just whitespace or parsing failed completely
+    if (blocksForNewDocument.length === 0 && contentToSave.trim() !== '') {
+      // This case should ideally be caught above, but as a safeguard if blocksForNewDocument became empty unexpectedly
+      blocksForNewDocument = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
+    } else if (blocksForNewDocument.length === 0) { // Handles if contentToSave was empty or parsing resulted in nothing valid
+      toast.info("Content is effectively empty. Cannot create new document.");
+      setIsProcessing(false);
+      setProcessingStatus(null);
+      return;
+    }
 
     try {
-      let blocksForNewDocument: PartialBlock[] = await editorRef.current.tryParseMarkdownToBlocks(contentToSave);
-
-      if (blocksForNewDocument.length === 0 && contentToSave.trim() !== '') {
-         blocksForNewDocument = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
-      }
-
-      if (blocksForNewDocument.length === 0) {
-        toast.info("Formatted content is empty. Cannot create new document.");
-        setIsProcessing(false);
-        setProcessingStatus(null);
-        return;
-      }
-
-      // Simulate API call to create a new document
-      // In a real app, this would be:
       const response = await fetch('/api/documents/create-with-content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          // title: `PDF Import - ${new Date().toLocaleDateString()}`, // Optional: Add a title
+          title: `PDF Extraction - ${new Date().toLocaleDateString()}`,
           content: blocksForNewDocument 
         }),
       });
@@ -435,190 +468,233 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
     (activeTab === 'file' && (!selectedFile || !!fileError)) || 
     (activeTab === 'url' && (!pdfUrl || !!urlError));
 
-  const showResults = !!(extractedResult || summarizedResult) && !isProcessing;
+  const showResults = !!(extractedResult || summarizedResult);
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-[650px] md:max-w-[750px] lg:max-w-[850px] xl:max-w-[950px] flex flex-col h-[85vh] max-h-[900px]">
-        <DialogHeader>
-          <DialogTitle>Process PDF Document</DialogTitle>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { onClose(); } }}>
+      <DialogContent 
+        className="bg-[var(--editor-bg)] text-[--text-color] p-0 max-w-2xl max-h-[90vh] flex flex-col gap-0"
+        onPointerDownOutside={(e) => {
+          // Allow interaction with toasts
+          if ((e.target as HTMLElement).closest('[data-sonner-toast]')) {
+            e.preventDefault();
+          }
+        }}
+        onInteractOutside={(e) => {
+             // Allow interaction with toasts
+          if ((e.target as HTMLElement).closest('[data-sonner-toast]')) {
+            e.preventDefault();
+          }
+        }}
+      >
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-[--border-color]">
+          <DialogTitle className="text-xl font-semibold">Process PDF</DialogTitle>
           <DialogDescription>
-            Extract text or summarize content from your PDF files by uploading or providing a URL.
+            Upload a PDF file or provide a URL to extract text or generate an AI summary.
           </DialogDescription>
           <DialogClose asChild>
-            <Button variant="ghost" size="icon" className="absolute top-4 right-4" disabled={isProcessing}>
-              <X className="h-4 w-4" />
-              <span className="sr-only">Close</span>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="absolute top-4 right-4 text-[--muted-text-color] hover:text-[--text-color]"
+              onClick={onClose} // Ensure onClose is called explicitly for the X button
+              aria-label="Close"
+            >
+              <X size={20} />
             </Button>
           </DialogClose>
         </DialogHeader>
+        
+        <Tabs 
+          value={activeTab} 
+          onValueChange={(newTab) => { 
+            if (!isProcessing) setActiveTab(newTab); 
+          }} 
+          className="flex-grow flex flex-col"
+        >
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="file" disabled={isProcessing}><UploadCloud className="mr-2 h-4 w-4" /> Upload File</TabsTrigger>
+            <TabsTrigger value="url" disabled={isProcessing}><Link2 className="mr-2 h-4 w-4" /> From URL</TabsTrigger>
+          </TabsList>
+          <TabsContent value="file" className="mt-4">
+            <div
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onClick={() => !isProcessing && fileInputRef.current?.click()}
+              className={`p-6 py-10 border-2 border-dashed rounded-md text-center cursor-pointer transition-colors
+                ${isDraggingOver ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/50'}
+                ${fileError ? 'border-destructive bg-destructive/5' : ''}
+                ${isProcessing ? 'cursor-not-allowed opacity-60' : ''}
+              `}
+            >
+              <Input 
+                ref={fileInputRef} 
+                id="pdf-file-upload" 
+                type="file" 
+                accept={ACCEPTED_FILE_TYPES.join(',')} 
+                onChange={handleFileChange} 
+                disabled={isProcessing} 
+                className="hidden"
+              />
+              <UploadCloud 
+                className={`mx-auto h-10 w-10 mb-3
+                  ${isDraggingOver ? 'text-primary' : 'text-muted-foreground'}
+                  ${fileError ? 'text-destructive' : ''}
+                `} 
+              />
+              <p className="text-sm text-muted-foreground">
+                <span className={`font-medium ${isDraggingOver || fileError ? (fileError ? 'text-destructive': 'text-primary') : 'text-foreground'}`}>
+                  {isDraggingOver ? 'Drop your PDF here' : 'Drag & drop PDF or click to browse'}
+                </span>
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Max file size: {MAX_PDF_FILE_SIZE_BYTES / (1024 * 1024)}MB. Only .pdf files.
+              </p>
+              {selectedFile && !fileError && !isDraggingOver && (
+                <p className="mt-2 text-xs text-green-600 font-medium">
+                  Selected: {selectedFile.name}
+                </p>
+              )}
+              {fileError && !isDraggingOver && (
+                <p className="mt-2 text-sm text-destructive flex items-center justify-center">
+                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" /> {fileError}
+                </p>
+              )}
+            </div>
+          </TabsContent>
+          <TabsContent value="url" className="mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="pdf-url-input">PDF URL</Label>
+              <Input id="pdf-url-input" type="url" placeholder="https://example.com/document.pdf" value={pdfUrl} onChange={handleUrlChange} disabled={isProcessing} className={`${urlError ? 'border-destructive' : ''}`} />
+              {urlError && <p className="text-sm text-destructive flex items-center"><AlertCircle className="h-4 w-4 mr-1" /> {urlError}</p>}
+              <p className="text-xs text-muted-foreground pt-1">Enter the direct URL to a publicly accessible PDF file.</p>
+            </div>
+          </TabsContent>
+        </Tabs>
 
-        <fieldset disabled={isProcessing && !showResults} className="flex-grow flex flex-col min-h-0">
-          <div className="p-1 pr-3 space-y-4 mb-4">
-            <Tabs value={activeTab} onValueChange={(newTab) => {if (!isProcessing) { setActiveTab(newTab); resetProcessingAndResults();}}} className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="file" disabled={isProcessing}><UploadCloud className="mr-2 h-4 w-4" /> Upload File</TabsTrigger>
-                <TabsTrigger value="url" disabled={isProcessing}><Link2 className="mr-2 h-4 w-4" /> From URL</TabsTrigger>
+        <div className="space-y-2">
+          <Label>Processing Type</Label>
+          <RadioGroup defaultValue="extract" value={processingType} onValueChange={(value: string) => setProcessingType(value as ProcessingType)} className="flex space-x-4" disabled={isProcessing}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="extract" id="extract" />
+              <Label htmlFor="extract" className="font-normal">Extract Text</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="summarize" id="summarize" />
+              <Label htmlFor="summarize" className="font-normal">Summarize & Extract</Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {showResults && (
+          <div className="flex-grow overflow-y-auto px-6 pt-2 pb-2 border-b border-[--border-color] min-h-[200px] max-h-[40vh]">
+            <Tabs value={activePreviewTab} onValueChange={(value) => setActivePreviewTab(value as 'summary' | 'fullText')} className="h-full flex flex-col">
+              <TabsList className="grid w-full grid-cols-2 shrink-0">
+                <TabsTrigger value="fullText" disabled={!extractedResult}>
+                  <FileText size={16} className="mr-2" /> Full Text
+                </TabsTrigger>
+                <TabsTrigger value="summary" disabled={!summarizedResult}>
+                   <BotMessageSquare size={16} className="mr-2" /> Summary
+                </TabsTrigger>
               </TabsList>
-              <TabsContent value="file" className="mt-4">
-                <div
-                  onDragEnter={handleDragEnter}
-                  onDragLeave={handleDragLeave}
-                  onDragOver={handleDragOver}
-                  onDrop={handleDrop}
-                  onClick={() => !isProcessing && fileInputRef.current?.click()}
-                  className={`p-6 py-10 border-2 border-dashed rounded-md text-center cursor-pointer transition-colors
-                    ${isDraggingOver ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/50'}
-                    ${fileError ? 'border-destructive bg-destructive/5' : ''}
-                    ${isProcessing ? 'cursor-not-allowed opacity-60' : ''}
-                  `}
-                >
-                  <Input 
-                    ref={fileInputRef} 
-                    id="pdf-file-upload" 
-                    type="file" 
-                    accept={ACCEPTED_FILE_TYPES.join(',')} 
-                    onChange={handleFileChange} 
-                    disabled={isProcessing} 
-                    className="hidden"
-                  />
-                  <UploadCloud 
-                    className={`mx-auto h-10 w-10 mb-3
-                      ${isDraggingOver ? 'text-primary' : 'text-muted-foreground'}
-                      ${fileError ? 'text-destructive' : ''}
-                    `} 
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    <span className={`font-medium ${isDraggingOver || fileError ? (fileError ? 'text-destructive': 'text-primary') : 'text-foreground'}`}>
-                      {isDraggingOver ? 'Drop your PDF here' : 'Drag & drop PDF or click to browse'}
-                    </span>
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Max file size: {MAX_PDF_FILE_SIZE_BYTES / (1024 * 1024)}MB. Only .pdf files.
-                  </p>
-                  {selectedFile && !fileError && !isDraggingOver && (
-                    <p className="mt-2 text-xs text-green-600 font-medium">
-                      Selected: {selectedFile.name}
-                    </p>
-                  )}
-                  {fileError && !isDraggingOver && (
-                    <p className="mt-2 text-sm text-destructive flex items-center justify-center">
-                      <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" /> {fileError}
-                    </p>
-                  )}
-                </div>
+              <TabsContent value="fullText" className="flex-grow overflow-y-auto mt-2 p-3 bg-[--input-bg] border border-[--border-color] rounded text-sm">
+                {extractedResult ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {extractedResult}
+                  </ReactMarkdown>
+                ) : <p className="text-[--muted-text-color]">No full text extracted or available.</p>}
               </TabsContent>
-              <TabsContent value="url" className="mt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="pdf-url-input">PDF URL</Label>
-                  <Input id="pdf-url-input" type="url" placeholder="https://example.com/document.pdf" value={pdfUrl} onChange={handleUrlChange} disabled={isProcessing} className={`${urlError ? 'border-destructive' : ''}`} />
-                  {urlError && <p className="text-sm text-destructive flex items-center"><AlertCircle className="h-4 w-4 mr-1" /> {urlError}</p>}
-                  <p className="text-xs text-muted-foreground pt-1">Enter the direct URL to a publicly accessible PDF file.</p>
-                </div>
+              <TabsContent value="summary" className="flex-grow overflow-y-auto mt-2 p-3 bg-[--input-bg] border border-[--border-color] rounded text-sm">
+                {summarizedResult ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {summarizedResult}
+                  </ReactMarkdown>
+                ) : <p className="text-[--muted-text-color]">No summary generated or available.</p>}
               </TabsContent>
             </Tabs>
+          </div>
+        )}
 
-            <div className="space-y-2">
-              <Label>Processing Type</Label>
-              <RadioGroup defaultValue="extract" value={processingType} onValueChange={(value: string) => setProcessingType(value as ProcessingType)} className="flex space-x-4" disabled={isProcessing}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="extract" id="extract" />
-                  <Label htmlFor="extract" className="font-normal">Extract Text</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="summarize" id="summarize" />
-                  <Label htmlFor="summarize" className="font-normal">Summarize & Extract</Label>
-                </div>
-              </RadioGroup>
+        {isProcessing && processingStatus && (
+          <div className="px-6 py-4 border-b border-[--border-color] text-center">
+            <div className="flex items-center justify-center text-[--text-color]">
+              <Loader2 size={20} className="animate-spin mr-2" />
+              <span>{processingStatus}</span>
             </div>
           </div>
+        )}
+        
+        <DialogFooter className="px-6 py-4 bg-[var(--subtle-bg)] border-t border-[--border-color] flex-wrap justify-between sm:justify-between gap-2">
+          {!showResults ? (
+            <>
+              <Button
+                onClick={() => handleProcessPDF('extract')}
+                disabled={isSubmitButtonDisabled}
+                variant="outline"
+                className="flex-1 sm:flex-initial"
+              >
+                <FileText size={16} className="mr-2" />
+                Extract Text
+              </Button>
+              <Button
+                onClick={() => handleProcessPDF('summarize')}
+                disabled={isSubmitButtonDisabled}
+                variant="default"
+                className="flex-1 sm:flex-initial"
+              >
+                <BotMessageSquare size={16} className="mr-2" />
+                Generate Summary
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center rounded-md order-1 sm:order-none" role="radiogroup" aria-labelledby="target-document-label-pdf">
+                <span id="target-document-label-pdf" className="sr-only">Select target document</span>
+                <Button
+                  onClick={() => setInsertionTarget('current')}
+                  variant={insertionTarget === 'current' ? 'default' : 'outline'}
+                  size="sm"
+                  className="rounded-r-none text-xs px-3"
+                  disabled={!hasActiveDocument || isProcessing}
+                  aria-pressed={insertionTarget === 'current'}
+                >
+                  Current Doc
+                </Button>
+                <Button
+                  onClick={() => setInsertionTarget('new')}
+                  variant={insertionTarget === 'new' ? 'default' : 'outline'}
+                  size="sm"
+                  className="rounded-l-none border-l-0 text-xs px-3"
+                  disabled={isProcessing}
+                  aria-pressed={insertionTarget === 'new'}
+                >
+                  New Doc
+                </Button>
+              </div>
 
-          {(isProcessing || processingStatus || extractedResult || summarizedResult) && (
-            <div className="border-t pt-4 flex-grow flex flex-col min-h-0">
-              {isProcessing && (
-                <div className="flex items-center justify-center p-4 space-x-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  <span>{processingStatus || 'Processing...'}</span>
-                </div>
-              )}
-              {!isProcessing && processingStatus && !(extractedResult || summarizedResult) && (
-                 <div className={`flex items-center justify-center p-4 space-x-2 text-sm ${processingStatus.includes('Error') || processingStatus.includes('Failed') ? 'text-destructive' : 'text-green-600'}`}>
-                  <span>{processingStatus}</span>
-                </div>
-              )}
-
-              {showResults && (
-                <div className="flex-grow flex flex-col min-h-0">
-                  {processingType === 'summarize' && summarizedResult && extractedResult && (
-                    <Tabs value={activePreviewTab} onValueChange={(value) => setActivePreviewTab(value as 'summary' | 'fullText')} className="w-full flex-shrink-0 mb-2">
-                      <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="summary" onClick={() => setActivePreviewTab('summary')}><BotMessageSquare className="mr-2 h-4 w-4" />Summary</TabsTrigger>
-                        <TabsTrigger value="fullText" onClick={() => setActivePreviewTab('fullText')}><FileText className="mr-2 h-4 w-4" />Full Text</TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="summary" className="mt-2 p-2 border rounded-md max-h-60 overflow-y-auto bg-muted/30">
-                        {summarizedResult ? (
-                          <div className="prose prose-sm dark:prose-invert max-w-none">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {summarizedResult}
-                            </ReactMarkdown>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">Summary will appear here.</p>
-                        )}
-                      </TabsContent>
-                      <TabsContent value="fullText" className="mt-2 p-2 border rounded-md max-h-60 overflow-y-auto bg-muted/30">
-                        {extractedResult ? (
-                          <div className="prose prose-sm dark:prose-invert max-w-none">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {extractedResult}
-                            </ReactMarkdown>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">Extracted text will appear here.</p>
-                        )}
-                      </TabsContent>
-                    </Tabs>
-                  )}
-                </div>
-              )}
-            </div>
+              <Button
+                onClick={() => {
+                  if (insertionTarget === 'current') {
+                    handleInsertContent();
+                  } else {
+                    handleCreateNewDocumentWithContent();
+                  }
+                }}
+                disabled={
+                  isProcessing ||
+                  (insertionTarget === 'current' && !hasActiveDocument) ||
+                  (!extractedResult && !summarizedResult) // Ensure there's something to insert
+                }
+                variant="default"
+                className="order-2 sm:order-none flex-1 sm:flex-initial min-w-[180px]"
+              >
+                <FilePlus2 size={16} className="mr-2" />
+                {insertionTarget === 'current' ? 'Insert to Current' : 'Create New Document'}
+              </Button>
+            </>
           )}
-        </fieldset>
-
-        <DialogFooter className="mt-auto pt-4 border-t flex-col sm:flex-row sm:justify-between items-center">
-          <div className="flex items-center space-x-2 mb-2 sm:mb-0">
-            {showResults && (
-              <>
-                <Label htmlFor="insertion-target" className="text-sm">Insert to:</Label>
-                <Select value={insertionTarget} onValueChange={(value) => setInsertionTarget(value as InsertionTarget)} disabled={isProcessing}>
-                    <SelectTrigger className="w-[180px] h-9">
-                        <SelectValue placeholder="Select target..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="current" disabled={!editorRef?.current}>Current Document</SelectItem>
-                        <SelectItem value="new">New Document</SelectItem>
-                    </SelectContent>
-                </Select>
-              </>
-            )}
-          </div>
-          <div className="flex space-x-2">
-            <Button variant="outline" onClick={onClose} disabled={isProcessing}>Cancel</Button>
-            <Button 
-              onClick={
-                processingType === 'extract' || processingType === 'summarize'
-                  ? handleProcessPDF
-                  : insertionTarget === 'current'
-                    ? handleInsertContent
-                    : handleCreateNewDocumentWithContent
-              } 
-              disabled={isProcessing || (!selectedFile && !pdfUrl) || !!fileError || !!urlError || (!extractedResult && !summarizedResult && (processingType !== 'extract' && processingType !== 'summarize'))}
-              className="w-full"
-            >
-              {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (insertionTarget === 'current' ? <FileText className="mr-2 h-4 w-4"/> : <FilePlus2 className="mr-2 h-4 w-4"/>)}
-              {isProcessing ? 'Processing...' : (insertionTarget === 'current' ? 'Insert to Current' : 'Create New & Insert')}
-            </Button>
-          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

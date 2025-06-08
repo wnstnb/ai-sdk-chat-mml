@@ -16,6 +16,7 @@ export interface ModalState {
   isPreferencesModalOpen: boolean;
   isVoiceSummaryModalOpen: boolean;
   isMobileSidebarOpen: boolean;
+  isPDFModalOpen: boolean;
   voiceSummary: VoiceSummaryState;
   editorRef: React.RefObject<BlockNoteEditor<any> | null> | null;
 
@@ -33,6 +34,8 @@ export interface ModalState {
   closeVoiceSummaryModal: () => void;
   openMobileSidebar: () => void;
   closeMobileSidebar: () => void;
+  openPDFModal: () => void;
+  closePDFModal: () => void;
 
   setVoiceSummaryTranscription: (transcription: string) => void;
   setVoiceSummaryLegacySummary: (summary: string) => void;
@@ -57,6 +60,7 @@ export const useModalStore = create<ModalState>()(
       isPreferencesModalOpen: false,
       isVoiceSummaryModalOpen: false,
       isMobileSidebarOpen: false,
+      isPDFModalOpen: false,
       voiceSummary: initialVoiceSummaryState,
       editorRef: null,
 
@@ -75,6 +79,8 @@ export const useModalStore = create<ModalState>()(
       closeVoiceSummaryModal: () => set({ isVoiceSummaryModalOpen: false, voiceSummary: initialVoiceSummaryState }),
       openMobileSidebar: () => set({ isMobileSidebarOpen: true }),
       closeMobileSidebar: () => set({ isMobileSidebarOpen: false }),
+      openPDFModal: () => set({ isPDFModalOpen: true }),
+      closePDFModal: () => set({ isPDFModalOpen: false }),
 
       setVoiceSummaryTranscription: (transcription) =>
         set((state) => ({

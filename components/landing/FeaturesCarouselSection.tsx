@@ -91,7 +91,7 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
       content: [
         <div key="section-tag-docs">
           <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
-            <strong>Tagging previous notes gives your AI instant context, so it knows what matters to you without needing a long explanation.</strong> Whether it's a typed note, a recorded voice memo, an AI-generated voice summary, or even a web page you've scraped: if it's in your notes, it can be tagged and used as context. You avoid repeating yourself and get more relevant results, faster. It turns your past work into a living knowledge base you can build on.
+            <strong>Tagging previous notes gives your AI instant context, so it knows what matters to you without needing a long explanation.</strong> Whether it&apos;s a typed note, a recorded voice memo, an AI-generated voice summary, or even a web page you&apos;ve scraped: if it&apos;s in your notes, it can be tagged and used as context. You avoid repeating yourself and get more relevant results, faster. It turns your past work into a living knowledge base you can build on.
           </p>
           <div className="flex justify-center mt-4">
             <img src="/tag-documents.png" alt="Tag Documents" className="w-full h-full object-cover rounded-xl max-w-xl" />
