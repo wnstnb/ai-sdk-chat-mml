@@ -76,11 +76,38 @@ const config: Config = {
   				to: {
   					height: '0'
   				}
+  			},
+  			'spin': {
+  				from: {
+  					transform: 'rotate(0deg)'
+  				},
+  				to: {
+  					transform: 'rotate(360deg)'
+  				}
+  			},
+  			'pulse-subtle': {
+  				'0%, 100%': {
+  					opacity: '1'
+  				},
+  				'50%': {
+  					opacity: '0.7'
+  				}
+  			},
+  			'shimmer': {
+  				'0%': {
+  					'background-position': '-1000px 0'
+  				},
+  				'100%': {
+  					'background-position': '1000px 0'
+  				}
   			}
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
-  			'accordion-up': 'accordion-up 0.2s ease-out'
+  			'accordion-up': 'accordion-up 0.2s ease-out',
+  			'spin': 'spin 1s linear infinite',
+  			'pulse-subtle': 'pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+  			'shimmer': 'shimmer 2s infinite linear'
   		}
   	}
   },
