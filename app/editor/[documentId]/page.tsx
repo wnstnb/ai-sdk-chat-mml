@@ -183,6 +183,10 @@ export default function EditorPage() {
     const [currentTheme, setCurrentTheme] = useState<'light' | 'dark'>('light');
     // --- NEW: State for pane resizing ---
     const [isPaneBeingResized, setIsPaneBeingResized] = useState(false);
+    // --- NEW: Restore local state for mobile pane visibility ---
+    const [mobileVisiblePane, setMobileVisiblePane] = useState<'editor' | 'chat'>('editor');
+    // --- NEW: State for pending content to be added to the editor on mobile ---
+    const [pendingContentForEditor, setPendingContentForEditor] = useState<string | null>(null);
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
@@ -190,8 +194,7 @@ export default function EditorPage() {
     const { mutate } = useSWRConfig();
     // NEW: Add useMediaQuery hook
     const isMobile = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
-    // NEW: Add state for mobile pane visibility
-    const [mobileVisiblePane, setMobileVisiblePane] = useState<'editor' | 'chat'>('editor'); // Default to editor
+
     // Added for Live Summaries
     const { openVoiceSummaryModal, setEditorRef } = useModalStore(); // Get setEditorRef
     const { currentTitle, isEditingTitle, newTitleValue, isInferringTitle, handleEditTitleClick, handleCancelEditTitle, handleSaveTitle, handleTitleInputKeyDown, handleInferTitle, setNewTitleValue } = useTitleManagement({
@@ -206,8 +209,8 @@ export default function EditorPage() {
         toggleExpanded: toggleChatPane,
         previousWidth: chatPanePreviousWidth, // Will store '30%' or '450px' etc.
         handleWidthChange: handleChatPaneWidthChange,
-        // mobileVisiblePane, // also available but might not be directly used here
-        // toggleMobilePane, // also available
+        // Do not destructure mobileVisiblePane or toggleMobilePane from useChatPane here,
+        // EditorPage will use its own local state for this.
     } = useChatPane({}); // Pass empty object or relevant props if any are added back to UseChatPaneProps
     
     const { files, isUploading, uploadError, uploadedImagePath, uploadedImageSignedUrl, handleFileSelectEvent, handleFilePasteEvent, handleFileDropEvent, clearPreview } = useFileUpload({ documentId });
@@ -1326,7 +1329,18 @@ export default function EditorPage() {
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => handleFileSelectEvent(event);
     const handleSendToEditor = async (content: string) => {
         const editor = editorRef.current;
-        if (!editor || !content || content.trim() === '') return;
+        if (!editor) {
+            if (isMobile && mobileVisiblePane === 'chat') {
+                console.log('[handleSendToEditor] Mobile chat view, editor not ready. Stashing content.');
+                setPendingContentForEditor(content);
+                setMobileVisiblePane('editor'); // Switch to editor view
+            } else {
+                console.error("Editor not available and not in mobile chat view. Cannot send content.");
+                toast.error("Editor is not ready. Please try again.");
+            }
+            return;
+        }
+
         try {
             let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(content);
              if (blocksToInsert.length === 0 && content.trim() !== '') {
@@ -1405,8 +1419,81 @@ export default function EditorPage() {
 
     // --- NEW: Toggle function for mobile pane visibility ---
     const handleToggleMobilePane = () => {
-        setMobileVisiblePane(prev => (prev === 'editor' ? 'chat' : 'editor'));
+        setMobileVisiblePane(pane => pane === 'chat' ? 'editor' : 'chat');
     };
+
+    // --- NEW: Effect to handle pending content for editor on mobile ---
+    useEffect(() => {
+        if (pendingContentForEditor && mobileVisiblePane === 'editor' && isMobile) {
+            const editor = editorRef.current;
+            if (editor) {
+                // Short delay to ensure editor is fully rendered and ready after pane switch
+                setTimeout(async () => {
+                    try {
+                        let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(pendingContentForEditor);
+                        if (blocksToInsert.length === 0 && pendingContentForEditor.trim() !== '') {
+                            blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: pendingContentForEditor, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
+                        }
+                        if (blocksToInsert.length > 0) {
+                            const { block: currentBlock } = editor.getTextCursorPosition();
+                            let referenceBlockId: string | undefined = currentBlock?.id;
+                            if (!referenceBlockId && editor.document.length > 0) {
+                                referenceBlockId = editor.document[editor.document.length - 1]?.id;
+                            }
+                            if (referenceBlockId) {
+                                editor.insertBlocks(blocksToInsert, referenceBlockId, 'after');
+                            } else {
+                                editor.replaceBlocks(editor.document, blocksToInsert);
+                            }
+                            toast.success('Content added to editor.');
+                            handleEditorChange(editor); // Ensure changes are saved/propagated
+                        }
+                    } catch (error: any) {
+                        console.error('Failed to add pending content to editor:', error);
+                        toast.error(`Could not add pending content: ${error.message}`);
+                    } finally {
+                        setPendingContentForEditor(null); // Clear pending content
+                    }
+                }, 100); // 100ms delay, adjust if needed
+            } else {
+                // This case should ideally not happen if logic is correct,
+                // but as a fallback, retry or notify.
+                console.warn('[useEffect] Editor not ready for pending content, will retry or it might be lost.');
+                // Consider a retry mechanism or re-setting pending content if editor doesn't become available.
+            }
+        }
+    }, [pendingContentForEditor, mobileVisiblePane, isMobile, editorRef, handleEditorChange]); // Added handleEditorChange to dependencies
+
+    // --- Effect for dynamic theme changes ---
+    useEffect(() => {
+        const getTheme = () => {
+            // Check for data-theme attribute on <html> first
+            const dataTheme = document.documentElement.getAttribute('data-theme');
+            if (dataTheme === 'dark' || dataTheme === 'light') {
+                return dataTheme;
+            }
+            // Fallback to checking class if data-theme is not definitive
+            if (document.documentElement.classList.contains('dark')) {
+                return 'dark';
+            }
+            return 'light';
+        };
+
+        setCurrentTheme(getTheme());
+
+        const observer = new MutationObserver(() => {
+            setCurrentTheme(getTheme());
+        });
+
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-theme', 'class'], // Observe changes to data-theme and class
+        });
+
+        return () => {
+            observer.disconnect();
+        };
+    }, []);
 
     // --- Render Logic ---
     // Find the last assistant message to pass down
@@ -1414,10 +1501,56 @@ export default function EditorPage() {
 
     console.log('[Render Check] State before render:', {
         totalMessages: chatMessages.length,
-        shouldShowLoadMore: false,
+        // shouldShowLoadMore: false, // This was commented out, ensure it's intended
         isMobile, // Log mobile state
         mobileVisiblePane, // Log visible pane on mobile
     });
+
+    // --- NEW: Calculations for ARIA attributes for resize handle ---
+    let currentWidthPxCalculated = 0;
+    if (typeof window !== 'undefined') { // Ensure window is defined
+        if (chatPanePreviousWidth.endsWith('px')) {
+            currentWidthPxCalculated = parseFloat(chatPanePreviousWidth);
+        } else if (chatPanePreviousWidth.endsWith('%')) {
+            currentWidthPxCalculated = (parseFloat(chatPanePreviousWidth) / 100) * window.innerWidth;
+        } else {
+            // Fallback or default if format is unexpected.
+            currentWidthPxCalculated = (INITIAL_CHAT_PANE_WIDTH_PERCENT / 100) * window.innerWidth;
+        }
+    }
+    const ariaMinChatPaneWidth = MIN_CHAT_PANE_WIDTH_PX;
+    const ariaMaxChatPaneWidth = typeof window !== 'undefined' ? window.innerWidth * (MAX_CHAT_PANE_WIDTH_PERCENT / 100) : 1000; // Default max if window undefined
+    // --- END NEW ---
+
+    // --- NEW: Keyboard handler for desktop pane resize ---
+    const handleDesktopResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+            event.preventDefault();
+            let currentPx = 0;
+            if (typeof window !== 'undefined') {
+                if (chatPanePreviousWidth.endsWith('px')) {
+                    currentPx = parseFloat(chatPanePreviousWidth);
+                } else if (chatPanePreviousWidth.endsWith('%')) {
+                    currentPx = (parseFloat(chatPanePreviousWidth) / 100) * window.innerWidth;
+                } else {
+                    currentPx = (INITIAL_CHAT_PANE_WIDTH_PERCENT / 100) * window.innerWidth;
+                }
+            } else { return; } // Cannot resize if window is not defined
+
+            const step = 10; // Resize by 10px
+            // Pane is on the right. Moving its left edge:
+            // Left Arrow: moves the edge to the left, pane gets wider.
+            // Right Arrow: moves the edge to the right, pane gets narrower.
+            let newWidthPx = event.key === 'ArrowLeft' ? currentPx + step : currentPx - step;
+
+            const minPx = MIN_CHAT_PANE_WIDTH_PX;
+            const maxPx = window.innerWidth * (MAX_CHAT_PANE_WIDTH_PERCENT / 100);
+            newWidthPx = Math.max(minPx, Math.min(newWidthPx, maxPx));
+
+            handleChatPaneWidthChange(`${newWidthPx}px`);
+        }
+    }, [chatPanePreviousWidth, handleChatPaneWidthChange]);
+    // --- END NEW ---
 
     // Main Render
     return (
@@ -1675,6 +1808,17 @@ export default function EditorPage() {
                             onPointerDown={handleDesktopResizePointerDown} // Attach the drag handler
                             className="h-full cursor-col-resize bg-transparent group flex-shrink-0 flex items-center justify-center w-[7px] hover:bg-[--accent-color]/20 transition-colors duration-150"
                             title="Resize chat pane"
+                            // --- NEW ACCESSIBILITY ATTRIBUTES ---
+                            tabIndex={0}
+                            role="separator"
+                            aria-orientation="vertical"
+                            aria-label="Resize chat pane"
+                            aria-controls="chat-pane-resizable"
+                            aria-valuenow={currentWidthPxCalculated} // Use calculated value
+                            aria-valuemin={ariaMinChatPaneWidth}
+                            aria-valuemax={ariaMaxChatPaneWidth}
+                            onKeyDown={handleDesktopResizeKeyDown}
+                            // --- END NEW ---
                         >
                             <div className="h-full w-[1px] bg-[--border-color] group-hover:w-[3px] group-hover:bg-[--accent-color] transition-all duration-150" />
                         </div>
@@ -1694,6 +1838,7 @@ export default function EditorPage() {
                         {!isChatPaneCollapsed && !isMobile && (
                             <motion.div
                                 key="chat-pane"
+                                id="chat-pane-resizable" // --- NEW: Added ID for aria-controls ---
                                 initial={{ width: 0, opacity: 0 }}
                                 animate={{
                                     width: chatPanePreviousWidth || `${INITIAL_CHAT_PANE_WIDTH_PERCENT}%`, 

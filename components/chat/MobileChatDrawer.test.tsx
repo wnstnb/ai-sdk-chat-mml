@@ -19,8 +19,10 @@ jest.mock('react-swipeable', () => ({
 jest.mock('focus-trap-react', () => {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const React = require('react'); // Need React for JSX
-  return ({ active, children }: { active: boolean; children: React.ReactNode }) =>
+  const MockFocusTrap = ({ active, children }: { active: boolean; children: React.ReactNode }) =>
     active ? <div data-testid="focus-trap-active">{children}</div> : <>{children}</>;
+  MockFocusTrap.displayName = 'MockFocusTrap';
+  return MockFocusTrap;
 });
 
 

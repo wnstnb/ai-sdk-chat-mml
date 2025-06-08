@@ -172,14 +172,14 @@ const FolderCard: React.FC<FolderCardProps> = ({
         ...style,
       }}
       className={`
-        group relative flex flex-col rounded-lg bg-white dark:bg-gray-800
+        group relative flex flex-col rounded-lg bg-white dark:bg-gray-800 shadow-md 
         transition-all duration-300 ease-in-out motion-reduce:transition-none 
         ${isMenuOpen ? 'overflow-visible' : 'overflow-hidden'} w-full max-w-[220px] ${cardHeightClass} touch-manipulation 
         focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 
-        ${isSelected ? 'ring-2 ring-[var(--accent-color)] shadow-md' : 'focus:ring-[var(--accent-color)]'}
+        ${isSelected ? 'ring-2 ring-[var(--accent-color)] shadow-lg' : 'focus:ring-[var(--accent-color)]'}
         ${isOver ? 'ring-2 ring-[var(--title-hover-color)] ring-opacity-50' : ''}
-        ${!isSelected && 'hover:shadow-lg motion-reduce:hover:transform-none'}
-        ${!isSelected && !isInternalPreviewExpanded && 'hover:-translate-y-1 hover:scale-[1.02]'}
+        ${!isSelected ? 'hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none' : ''}
+        will-change-[transform,box-shadow,opacity]
       `}
       aria-labelledby={`folder-title-${id}`}
       aria-describedby={`folder-count-${id} folder-preview-status-${id}`}

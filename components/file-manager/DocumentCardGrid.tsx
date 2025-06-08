@@ -445,7 +445,7 @@ const DocumentCardGrid: React.FC = () => {
     sortedItems.sort((a, b) => {
       let comparison = 0;
       if (key === 'lastUpdated') {
-        comparison = new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime(); // Default to descending for dates
+        comparison = new Date(a.lastUpdated).getTime() - new Date(b.lastUpdated).getTime(); // Corrected for descending by default
       } else if (key === 'title') {
         comparison = a.title.localeCompare(b.title);
       } else if (key === 'is_starred') {
@@ -1362,8 +1362,8 @@ const DocumentCardGrid: React.FC = () => {
 
     return (
       <div 
-        className="rounded-lg shadow-2xl p-4 bg-[var(--accent-color)] text-white dark:bg-opacity-90 flex flex-col items-center justify-center space-y-2"
-        style={{ minWidth: '180px', minHeight: '100px' }}
+        className="text-white" // Further simplified: only text color
+        style={{ backgroundColor: 'rgba(0, 100, 255, 0.25)', minWidth: '180px', minHeight: '100px' }} // Kept direct RGBA bg
       >
         {draggedItems.length === 1 && draggedItems[0].type === 'document' && (
           <FileTextIcon size={28} className="mb-1" />
@@ -1515,6 +1515,23 @@ const DocumentCardGrid: React.FC = () => {
         </div>
       )}
 
+      {/* Toolbar for selected items - MOVED HERE and adjusted z-index potentially */}
+      {selectedItemIds.size > 0 && (
+        <div className="p-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex items-center justify-between sticky top-0 z-30">
+          <span className="text-xs text-gray-600 dark:text-gray-300">
+            {selectedItemIds.size} item(s) selected
+          </span>
+          <div>
+            <Button variant="ghost" onClick={clearSelection} className="mr-2 text-xs px-2 py-1 h-auto">
+              Clear Selection
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteSelected} className="text-xs px-2 py-1 h-auto">
+              Delete Selected
+            </Button>
+          </div>
+        </div>
+      )}
+
       <DndContext
         sensors={sensors}
         collisionDetection={(args) => {
@@ -1532,7 +1549,7 @@ const DocumentCardGrid: React.FC = () => {
         onDragCancel={handleDragCancel}
       >
         {/* Breadcrumb Navigation - moved inside DndContext for potential drop targets */}
-        <div className="px-4 pt-2 pb-2"> {/* Added some padding around breadcrumbs */}
+        <div className="px-4 py-1"> {/* Reduced vertical padding */}
           <FolderBreadcrumbs
             currentPath={breadcrumbPath}
             onNavigate={navigateToFolder} // Changed from handleFolderNavigate as it includes subfolder loading
@@ -1544,7 +1561,11 @@ const DocumentCardGrid: React.FC = () => {
 
         {/* DragOverlay should be inside DndContext */}
         {draggedItems && draggedItems.length > 0 && (
-           <DragOverlay dropAnimation={null}>
+           <DragOverlay 
+             dropAnimation={null} 
+             style={{ backgroundColor: 'transparent' }} 
+             className="!bg-transparent"
+           >
             {(() => { // IIFE for logging within JSX
               // console.log('[DEBUG] DragOverlay rendering. draggedItems:', JSON.stringify(draggedItems)); // REMOVE THIS LINE
               return renderDragOverlay(); // Corrected function name
@@ -1560,23 +1581,6 @@ const DocumentCardGrid: React.FC = () => {
         onClose={() => setShowCreateFolderModal(false)}
         onFolderCreated={handleFolderCreated}
       />
-
-      {/* Toolbar for selected items */}
-      {selectedItemIds.size > 0 && (
-        <div className="p-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex items-center justify-between sticky top-0 z-20">
-          <span className="text-sm text-gray-600 dark:text-gray-300">
-            {selectedItemIds.size} item(s) selected
-          </span>
-          <div>
-            <Button variant="ghost" size="sm" onClick={clearSelection} className="mr-2">
-              Clear Selection
-            </Button>
-            <Button variant="destructive" size="sm" onClick={handleDeleteSelected}>
-              Delete Selected
-            </Button>
-          </div>
-        </div>
-      )}
     </>
   );
 };
