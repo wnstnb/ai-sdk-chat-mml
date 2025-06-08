@@ -93,20 +93,20 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
    * @param {React.MouseEvent<HTMLElement>} e - The mouse event.
    */
   const handleCardClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
-    onClick?.();
-
     const targetElement = e.target as HTMLElement;
-    
-    if (isDragStartedRef.current || 
-        targetElement.closest('[data-drag-handle="true"]') || 
+
+    if (isDragStartedRef.current ||
+        targetElement.closest('[data-drag-handle="true"]') ||
         targetElement.closest('[data-interactive-element="true"]')) {
       e.preventDefault();
       e.stopPropagation();
-      return;
+      return; // If it's a drag or click on interactive element, do nothing further
     }
-    
+
+    // If we reach here, it's a valid navigation click
+    onClick?.(); // MOVED HERE: Call to set loading state right before navigation
     window.location.href = `/editor/${id}`;
-  }, [id, isDragging, onClick]);
+  }, [id, onClick]); // Updated dependencies: isDragStartedRef is a ref, isDragging not directly used here
 
   /**
    * Memoized handler to toggle the selection state of the card.

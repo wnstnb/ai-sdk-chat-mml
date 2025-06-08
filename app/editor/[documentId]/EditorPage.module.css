@@ -1,0 +1,26 @@
+.editorPageContainer {
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.desktopLayout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.editorContainer {
+  flex: 1;
+  min-width: 0; /* Prevent flex item from overflowing */
+  height: 100%;
+}
+
+.mobileEditorContainer {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* Removed .mobileChatToggle styles as FloatingActionTab has its own module */ 

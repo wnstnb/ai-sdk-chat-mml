@@ -1,0 +1,39 @@
+.chatPaneTab {
+  width: 44px;
+  height: 44px;
+  position: fixed;
+  right: 0;
+  top: calc(50vh - 22px);
+  border-radius: 8px 0 0 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-right: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  z-index: 10;
+}
+
+.chatPaneTab:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.chatPaneTab:active {
+  transform: scale(0.98);
+}
+
+/* Added for keyboard navigation focus */
+.chatPaneTab:focus-visible {
+  outline: 2px solid var(--focus-ring-color, Highlight); /* Fallback to browser default Highlight */
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chatPaneTab {
+    transition: none;
+  }
+} 

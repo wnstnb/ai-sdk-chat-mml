@@ -1,0 +1,41 @@
+.collapseChatTab {
+  width: 32px; /* Same as ChatPaneTab width */
+  height: 32px; /* Same as ChatPaneTab height */
+  position: fixed; /* Fixed positioning relative to the viewport */
+  /* top: calc(50vh - 16px); /* Vertically centered */
+  /* The positioning will be handled by inline styles for 'right' based on chat pane width */
+  /* We need to ensure it's vertically centered relative to the resizer/pane edge */
+  top: 50%; /* Start at 50% from the top */
+  transform: translateY(-50%); /* Shift up by half its height to truly center */
+  border-radius: 8px 0 0 8px; /* Rounded on the LEFT side now */
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-right: none; /* No RIGHT border to merge with divider */
+  /* box-shadow: -2px 2px 8px rgba(0,0,0,0.05); */ /* REMOVED box-shadow */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, background-color 0.2s ease; /* Removed box-shadow from transition */
+  z-index: 30; /* Ensure it's above the editor but potentially below modals, same as main toggle */
+}
+
+.collapseChatTab:hover {
+  background-color: var(--hover-bg);
+  /* box-shadow: -3px 4px 12px rgba(0,0,0,0.1); */ /* REMOVED box-shadow from hover */
+}
+
+.collapseChatTab:active {
+  transform: translateY(-50%) scale(0.95); /* Keep translateY for centering */
+}
+
+.collapseChatTab:focus-visible {
+  outline: 2px solid var(--focus-ring-color, Highlight);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapseChatTab {
+    transition: none;
+  }
+} 

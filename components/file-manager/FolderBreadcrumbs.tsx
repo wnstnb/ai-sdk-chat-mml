@@ -179,7 +179,7 @@ const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
 
   return (
     <nav 
-      className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 mb-4 p-2 bg-gray-50/50 dark:bg-gray-800/50 rounded-lg backdrop-blur-sm"
+      className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 mb-2 px-2 py-1 bg-gray-50/50 dark:bg-gray-800/50 rounded-lg backdrop-blur-sm"
       aria-label="Folder navigation breadcrumbs"
     >
       {/* Root/Home button - droppable */}
@@ -196,7 +196,7 @@ const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
         }}
         onClick={(e) => handleBreadcrumbClick(null, e)}
         className={`
-          flex items-center space-x-1 px-3 py-2 rounded-md transition-all duration-200
+          flex items-center space-x-1 px-3 py-1 rounded-md transition-all duration-200
           hover:bg-gray-200/50 dark:hover:bg-gray-700/50
           ${currentPath.length === 1 ? 'text-[var(--title-hover-color)] font-medium' : 'hover:text-gray-900 dark:hover:text-gray-100'}
           ${isOverRoot ? 'ring-2 ring-[var(--title-hover-color)] bg-[#C79553]/20 scale-105' : ''}
@@ -219,7 +219,7 @@ const FolderBreadcrumbs: React.FC<FolderBreadcrumbsProps> = ({
               ref={setNodeRef}
               onClick={(e) => handleBreadcrumbClick(item.id, e)}
               className={`
-                px-3 py-2 rounded-md transition-all duration-200 truncate max-w-[120px]
+                px-3 py-1 rounded-md transition-all duration-200 truncate max-w-[120px]
                 hover:bg-gray-200/50 dark:hover:bg-gray-700/50
                 ${index === breadcrumbFolders.length - 1 
                   ? 'text-[var(--title-hover-color)] font-medium' 

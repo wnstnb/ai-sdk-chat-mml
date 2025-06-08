@@ -51,9 +51,9 @@ interface ChatPaneWrapperProps {
     fileInputRef: RefObject<HTMLInputElement>;
     handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 
-    // Constants from page (Keep if needed by children, otherwise can remove)
-    initialChatPaneWidthPercent: number;
-    minChatPaneWidthPx: number;
+    // REMOVED: initialChatPaneWidthPercent and minChatPaneWidthPx as they are no longer used
+    // initialChatPaneWidthPercent: number;
+    // minChatPaneWidthPx: number;
 
     // --- NEW AUDIO PROPS ADDED TO INTERFACE --- 
     isRecording: boolean;
@@ -112,8 +112,6 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     inputRef,
     fileInputRef,
     handleKeyDown,
-    initialChatPaneWidthPercent,
-    minChatPaneWidthPx,
     isRecording,
     isTranscribing,
     micPermissionError,

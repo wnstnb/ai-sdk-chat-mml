@@ -142,11 +142,11 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     // Adjust textarea height dynamically based on content
     useLayoutEffect(() => {
         if (actualTextareaNode) { // Use the state variable holding the node
-            // console.log('[ChatInputUI] Adjusting height via actualTextareaNode. ScrollHeight:', actualTextareaNode.scrollHeight);
-            actualTextareaNode.style.height = 'auto';
+            // console.log('[ChatInputUI] Adjusting height. isChatCollapsed:', isChatCollapsed, 'ScrollHeight:', actualTextareaNode.scrollHeight);
+            actualTextareaNode.style.height = 'auto'; // Reset height first to get accurate scrollHeight
             actualTextareaNode.style.height = `${actualTextareaNode.scrollHeight}px`;
         }
-    }, [input, actualTextareaNode]); // Depend on input and the actualTextareaNode state
+    }, [input, actualTextareaNode, isChatCollapsed]); // Depend on input, the node, AND isChatCollapsed
 
     // Determine if send button should be enabled (check depends on optional props)
     const canSubmitText = !isLoading && !isUploading && !(isTranscribing ?? false) && !!input.trim();

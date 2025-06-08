@@ -1,0 +1,41 @@
+.floatingActionTab {
+  width: 32px;
+  height: 32px;
+  position: fixed;
+  right: 0;
+  top: calc(50vh - 16px); /* Vertically centered */
+  border-radius: 8px 0 0 8px; /* Tab shape (rounded left corners) */
+  background: var(--bg-secondary, hsl(204 10% 90%)); /* Fallback from ChatPaneTab.module.css's var(--bg-secondary) */
+  border: 1px solid var(--border-color, hsl(204 10% 80%));
+  border-right: none; /* Key for tab appearance */
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  z-index: 1050; /* Keep higher z-index for mobile FAB */
+  color: var(--text-color, hsl(204 10% 20%)); /* Ensure icon color contrasts with --bg-secondary */
+}
+
+.floatingActionTab:hover {
+  background: var(--bg-secondary-hover, hsl(204 10% 85%)); /* Assuming a hover state for --bg-secondary */
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.floatingActionTab:active {
+  transform: scale(0.98);
+  background: var(--bg-secondary-active, hsl(204 10% 80%)); /* Assuming an active state for --bg-secondary */
+}
+
+.floatingActionTab:focus-visible {
+  outline: 2px solid var(--focus-ring-color, Highlight);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floatingActionTab {
+    transition: none;
+  }
+} 
