@@ -75,6 +75,7 @@ interface UseChatInteractionsReturn {
     taggedDocuments: TaggedDocument[];
     setTaggedDocuments: React.Dispatch<React.SetStateAction<TaggedDocument[]>>;
     // --- END NEW TAGGED DOCUMENTS PROPS ---
+    addToolResult: ({toolCallId, result}: {toolCallId: string; result: any;}) => void; // Added addToolResult for completing client-side tool calls
 }
 
 // Define Zod schemas for the editor tools (matching backend)
@@ -307,7 +308,8 @@ export function useChatInteractions({
         stop: stopAiGeneration, 
         setMessages, // Need setMessages from the hook
         setInput,
-        append
+        append,
+        addToolResult // Added addToolResult for completing client-side tool calls
     } = useChat({
         api: apiEndpoint,
         id: documentId,
@@ -1227,5 +1229,6 @@ export function useChatInteractions({
         taggedDocuments,
         setTaggedDocuments,
         // --- END NEW TAGGED DOCUMENTS PROPS ---
+        addToolResult, // Added addToolResult for completing client-side tool calls
     };
 } 

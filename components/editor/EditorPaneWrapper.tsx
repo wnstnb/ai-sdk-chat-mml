@@ -237,7 +237,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                 <div className="relative max-w-[800px] mx-auto w-full">
                     {/* Conditional Rendering for Bubbles */} 
                     {!followUpContext && lastMessageContent && !isMessageBubbleCollapsed && (
-                         <div className="w-full mb-2">
+                         <div className="w-full mb-2 flex justify-center">
                              <PinnedMessageBubble 
                                 key={lastAssistantMessageId}
                                 messageContent={lastMessageContent} 

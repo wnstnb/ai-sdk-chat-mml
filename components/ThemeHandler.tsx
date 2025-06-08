@@ -10,6 +10,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { VoiceSummaryModal } from './modals/VoiceSummaryModal';
 import useMediaQuery from '@/lib/hooks/utils/useMediaQuery';
+import { WebScrapingModal } from '@/components/modals/WebScrapingModal';
 
 interface ThemeHandlerProps {
   children: React.ReactNode;
@@ -38,6 +39,8 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     openMobileSidebar,
     closeMobileSidebar
   } = useModalStore();
+
+  const [isWebScrapingModalOpen, setIsWebScrapingModalOpen] = useState(false);
 
   const [isMounted, setIsMounted] = useState(false);
   const isMobile = useMediaQuery('(max-width: 768px)');
@@ -92,6 +95,9 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     openNewDocumentModal();
   };
   
+  const openWebScrapingModal = () => setIsWebScrapingModalOpen(true);
+  const closeWebScrapingModal = () => setIsWebScrapingModalOpen(false);
+
   const NO_SIDEBAR_PATHS = ['/', '/login', '/signup', '/signup/confirm-email', '/signup/success', '/terms', '/privacy', '/auth/callback', '/auth/reset-password'];
   const displaySidebar = isAuthenticated && isMounted && !NO_SIDEBAR_PATHS.includes(pathname);
   const currentThemeForSidebar: 'light' | 'dark' = (isMounted && prefTheme) ? prefTheme : 'dark';
@@ -115,7 +121,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
           onPdfSummary={() => toast.info('PDF Summary clicked')}
           isPdfSummaryLoading={false}
           isPdfSummaryDisabled={false}
-          onWebScrape={() => toast.info('Web Scrape clicked')}
+          onWebScrape={openWebScrapingModal}
           isWebScrapeLoading={false}
           isWebScrapeDisabled={false}
         />
@@ -126,6 +132,10 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
       <VoiceSummaryModal 
         isOpen={isVoiceSummaryModalOpen} 
         onClose={closeVoiceSummaryModal} 
+      />
+      <WebScrapingModal
+        isOpen={isWebScrapingModalOpen}
+        onClose={closeWebScrapingModal}
       />
     </div>
   );
