@@ -1,38 +1,14 @@
 {
   "meta": {
-    "generatedAt": "2025-06-07T22:24:33.975Z",
-    "tasksAnalyzed": 10,
-    "totalTasks": 10,
+    "generatedAt": "2025-06-08T04:41:14.039Z",
+    "tasksAnalyzed": 15,
+    "totalTasks": 15,
     "analysisCount": 20,
     "thresholdScore": 5,
     "projectName": "Taskmaster",
     "usedResearch": true
   },
   "complexityAnalysis": [
-    {
-      "taskId": 14,
-      "taskTitle": "Implement Internationalization (i18n)",
-      "complexityScore": 5,
-      "recommendedSubtasks": 5,
-      "expansionPrompt": "Expand into subtasks for i18n library setup, string extraction, translation integration, locale formatting, and RTL support preparation.",
-      "reasoning": "i18n is a well-understood process with clear steps, but it touches many parts of the UI and requires careful string management."
-    },
-    {
-      "taskId": 15,
-      "taskTitle": "Implement Folder Support in Card-Based View",
-      "complexityScore": 8,
-      "recommendedSubtasks": 12,
-      "expansionPrompt": "Break down the implementation into distinct technical and UX components, including component creation, database and API updates, hierarchy management, UI/UX features, accessibility, performance optimization, and edge case handling.",
-      "reasoning": "This task involves multiple technical domains (frontend, backend, database, UX, accessibility, performance, edge cases) and requires careful coordination between them. The detailed description already outlines 12 major subtasks, each addressing a critical aspect of the feature. The high complexity is due to the need for recursive rendering, state management, drag-and-drop, accessibility, and performance optimizations, all of which are non-trivial and require thorough testing and integration[4][5]."
-    },
-    {
-      "taskId": 13,
-      "taskTitle": "Implement Star/Favorite Toggle Functionality for Document Cards",
-      "complexityScore": 7,
-      "recommendedSubtasks": 8,
-      "expansionPrompt": "Break down the implementation of the star/favorite toggle for document cards into subtasks covering UI component integration, state management, API communication, optimistic updates, error handling, offline support, accessibility, and testing.",
-      "reasoning": "This task involves multiple layers of complexity: UI/UX design, real-time state management, backend API integration, optimistic UI updates, error handling, offline queuing, and comprehensive testing (unit, integration, end-to-end, and manual). The need to handle asynchronous operations, maintain responsive feedback, and ensure accessibility and offline support increases both cyclomatic and structural complexity. Given these factors, the task is moderately complex and should be split into at least 8 subtasks to ensure clarity and maintainability."
-    },
     {
       "taskId": 17,
       "taskTitle": "Implement Audio Recording Custom Hook",
@@ -74,100 +50,124 @@
       "expansionPrompt": "Break down the testing and debugging process into subtasks covering: cross-browser compatibility testing, permission handling verification, transcription accuracy testing, error state handling, performance optimization, and accessibility validation. Include specific test cases and debugging strategies for each area."
     },
     {
-      "taskId": 11,
-      "taskTitle": "Implement automated tests",
-      "complexityScore": 9,
-      "recommendedSubtasks": 7,
-      "expansionPrompt": "Split testing implementation into unit test setup, component testing, integration testing, snapshot testing, end-to-end testing, accessibility testing, and CI/CD integration subtasks",
-      "reasoning": "Testing implementation has very high complexity due to the variety of test types required, the need for CI/CD integration, and ensuring comprehensive coverage. It requires expertise in multiple testing frameworks and methodologies."
-    },
-    {
-      "taskId": 12,
-      "taskTitle": "Conduct final review and documentation",
-      "complexityScore": 6,
-      "recommendedSubtasks": 4,
-      "expansionPrompt": "Divide review and documentation into code review, user documentation, API documentation, and release preparation subtasks",
-      "reasoning": "This task has moderate to high complexity due to its comprehensive nature, requiring thorough review of all previous work and creation of various documentation types. It serves as a critical quality gate before release."
-    },
-    {
       "taskId": 1,
-      "taskTitle": "Set up project structure and dependencies",
-      "complexityScore": 3,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Break down the project setup task into subtasks for repository preparation, dependency installation, and environment configuration",
-      "reasoning": "This is a relatively straightforward setup task with clear steps. The complexity is low as it involves standard project initialization procedures with minimal technical challenges."
+      "taskTitle": "Refactor useChatPane Hook",
+      "complexityScore": 8,
+      "recommendedSubtasks": 7,
+      "expansionPrompt": "Break down the refactor of the useChatPane hook into subtasks for: (1) replacing width-based logic with binary state, (2) removing resizable logic, (3) adding localStorage persistence, (4) implementing tab drag-to-expand, (5) tracking/restoring previous width, (6) ensuring mobile compatibility, and (7) writing comprehensive unit tests.",
+      "reasoning": "This task involves significant state management changes, persistent storage, UI interaction logic (drag-to-expand), and mobile compatibility, each with potential edge cases and testing requirements. The breadth of changes and the need for robust error handling and testing increase its complexity."
     },
     {
       "taskId": 2,
-      "taskTitle": "Implement backend API endpoint for web scraping",
-      "complexityScore": 7,
-      "recommendedSubtasks": 5,
-      "expansionPrompt": "Divide the API endpoint implementation into subtasks covering route creation, validation logic, EXA.AI integration, response formatting, and error handling",
-      "reasoning": "This task involves complex integration with an external API, handling multiple scenarios (single/multiple URLs), implementing validation, and error handling. The cyclomatic complexity would be moderate to high due to multiple decision paths."
+      "taskTitle": "Create ChatPaneTab Component",
+      "complexityScore": 6,
+      "recommendedSubtasks": 6,
+      "expansionPrompt": "Expand the ChatPaneTab component implementation into subtasks for: (1) UI layout and styling, (2) icon integration, (3) hover/active animations, (4) click and keyboard event handling, (5) drag-to-resize logic, and (6) accessibility support.",
+      "reasoning": "While the component is visually simple, it requires careful handling of pointer and keyboard events, accessibility, and animation, each of which can introduce subtle bugs if not handled in isolation."
     },
     {
       "taskId": 3,
-      "taskTitle": "Create Web Scraping Modal component",
-      "complexityScore": 6,
-      "recommendedSubtasks": 4,
-      "expansionPrompt": "Break down the modal component creation into subtasks for UI structure, input handling, processing options logic, and content display implementation",
-      "reasoning": "This UI component has moderate complexity due to conditional rendering logic, state management, and multiple user interaction points. The cognitive complexity is increased by the dynamic behavior based on user inputs."
+      "taskTitle": "Update ChatPaneWrapper Component",
+      "complexityScore": 7,
+      "recommendedSubtasks": 6,
+      "expansionPrompt": "Decompose the ChatPaneWrapper refactor into subtasks for: (1) removing re-resizable, (2) implementing CSS transitions, (3) integrating useChatPane state, (4) integrating ChatPaneTab, (5) adding smooth animations, and (6) updating tests.",
+      "reasoning": "This task requires architectural changes (removing a dependency), new animation logic, state integration, and careful UI updates, all of which can impact maintainability and test coverage."
     },
     {
       "taskId": 4,
-      "taskTitle": "Implement Web Scraping service",
-      "complexityScore": 4,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Divide the web scraping service implementation into subtasks for API client setup, response handling, and error management",
-      "reasoning": "This is a relatively simple service layer with standard API communication patterns. The complexity is moderate due to error handling requirements but the core functionality is straightforward."
+      "taskTitle": "Implement Mobile Drawer Component",
+      "complexityScore": 7,
+      "recommendedSubtasks": 7,
+      "expansionPrompt": "Expand the mobile drawer implementation into subtasks for: (1) drawer UI and animation, (2) overlay/backdrop logic, (3) swipe gesture support, (4) body scroll prevention, (5) close button and accessibility, (6) responsive layout, and (7) testing.",
+      "reasoning": "Mobile-specific UI, gesture handling, scroll management, and accessibility each introduce unique challenges, especially for cross-device compatibility and user experience."
     },
     {
       "taskId": 5,
-      "taskTitle": "Integrate Web Scraping Modal with main application",
+      "taskTitle": "Update EditorPage Layout",
       "complexityScore": 6,
-      "recommendedSubtasks": 4,
-      "expansionPrompt": "Break down the integration task into subtasks for sidebar button connection, document state detection, content insertion logic, and service connection",
-      "reasoning": "This integration task has moderate complexity due to the need to connect multiple components and handle different document states. It requires understanding of the application's architecture and state management."
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Break down the EditorPage layout update into subtasks for: (1) integrating ChatPaneWrapper, (2) integrating MobileChatDrawer, (3) updating responsive layout logic, (4) implementing breakpoints, and (5) updating tests.",
+      "reasoning": "This task is mostly integration and layout logic, but requires careful handling of responsive breakpoints and conditional rendering, which can introduce subtle bugs."
     },
     {
       "taskId": 6,
-      "taskTitle": "Implement error handling and user feedback",
+      "taskTitle": "Implement Animation System",
       "complexityScore": 5,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Divide the error handling implementation into subtasks for centralized error utility, UI notifications, and specific error case handling",
-      "reasoning": "This task involves moderate complexity in creating a robust error handling system. It requires handling various error scenarios and providing appropriate user feedback, but follows standard patterns."
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Expand the animation system implementation into subtasks for: (1) defining keyframes and transitions, (2) implementing reduced motion support, (3) optimizing for performance, (4) creating utility classes, and (5) integration testing.",
+      "reasoning": "The task is focused on CSS and performance, with moderate complexity due to the need for consistency, accessibility, and performance optimization."
     },
     {
       "taskId": 7,
-      "taskTitle": "Optimize content display for multiple URLs",
-      "complexityScore": 5,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Break down the content display optimization into subtasks for collapsible view implementation, content formatting, and responsive design",
-      "reasoning": "This UI enhancement task has moderate complexity due to the need to handle variable content sizes and implement interactive elements. The UI patterns are common but require careful implementation."
+      "taskTitle": "Implement Touch & Gesture Support",
+      "complexityScore": 6,
+      "recommendedSubtasks": 6,
+      "expansionPrompt": "Decompose touch and gesture support into subtasks for: (1) mobile drawer swipe gestures, (2) tab touch interactions, (3) drag-to-resize on touch, (4) touch target accessibility, (5) cross-browser testing, and (6) documentation.",
+      "reasoning": "Touch and gesture support requires careful event handling, accessibility, and cross-browser/device testing, each of which can be a source of complexity."
     },
     {
       "taskId": 8,
-      "taskTitle": "Implement caching mechanism for scraped content",
+      "taskTitle": "Implement State Persistence",
       "complexityScore": 5,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Divide the caching implementation into subtasks for cache storage setup, cache lookup logic, and invalidation strategy",
-      "reasoning": "This performance optimization task has moderate complexity due to the need to implement proper cache invalidation and handle edge cases. The core caching concept is straightforward but requires careful implementation."
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Expand state persistence into subtasks for: (1) implementing storage helpers, (2) integrating with useChatPane, (3) handling storage errors/fallbacks, (4) edge case testing, and (5) documentation.",
+      "reasoning": "Persistence logic is straightforward but must handle error cases, integration, and testing for robustness, especially in restricted environments."
     },
     {
       "taskId": 9,
-      "taskTitle": "Implement analytics for web scraping feature",
-      "complexityScore": 4,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Break down the analytics implementation into subtasks for library integration, event tracking setup, and performance measurement",
-      "reasoning": "This analytics task has moderate complexity as it requires integrating with an analytics system and tracking appropriate metrics. The implementation follows standard patterns with minimal technical challenges."
+      "taskTitle": "Implement Accessibility Features",
+      "complexityScore": 8,
+      "recommendedSubtasks": 7,
+      "expansionPrompt": "Break down accessibility implementation into subtasks for: (1) keyboard navigation, (2) screen reader support, (3) focus management, (4) ARIA attributes, (5) high contrast mode, (6) accessibility testing, and (7) documentation.",
+      "reasoning": "Ensuring full WCAG 2.1 AA compliance across interactive components is complex, requiring deep testing, multiple user scenarios, and careful integration."
     },
     {
       "taskId": 10,
-      "taskTitle": "Conduct user acceptance testing and gather feedback",
-      "complexityScore": 8,
+      "taskTitle": "Create Animation Performance Optimizations",
+      "complexityScore": 6,
       "recommendedSubtasks": 6,
-      "expansionPrompt": "Divide the testing task into subtasks for test plan creation, environment setup, tester recruitment, feedback collection, analysis, and improvement prioritization",
-      "reasoning": "This comprehensive testing task has high complexity due to its broad scope, dependency on all other tasks, and the need to coordinate multiple people and processes. It requires careful planning and execution across various test scenarios."
+      "expansionPrompt": "Expand animation performance optimizations into subtasks for: (1) CSS transform/opacity optimizations, (2) DOM update minimization, (3) will-change usage, (4) debouncing/throttling, (5) frame rate testing, and (6) documentation.",
+      "reasoning": "Performance tuning for smooth animations involves both CSS and JS optimizations, testing, and profiling, each requiring focused effort."
+    },
+    {
+      "taskId": 11,
+      "taskTitle": "Implement Theme Integration",
+      "complexityScore": 5,
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Break down theme integration into subtasks for: (1) defining CSS variables, (2) implementing dark/light mode, (3) high contrast support, (4) consistent component styling, and (5) testing.",
+      "reasoning": "Theme integration is mostly CSS and configuration, but must be thorough to ensure consistency and accessibility across all components."
+    },
+    {
+      "taskId": 12,
+      "taskTitle": "Implement Responsive Breakpoints",
+      "complexityScore": 5,
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Expand responsive breakpoint implementation into subtasks for: (1) defining breakpoints, (2) implementing media query hooks, (3) updating component layouts, (4) orientation handling, and (5) responsive testing.",
+      "reasoning": "Responsive design is a standard requirement, but ensuring smooth transitions and correct behavior across all breakpoints adds moderate complexity."
+    },
+    {
+      "taskId": 13,
+      "taskTitle": "Remove re-resizable Dependency",
+      "complexityScore": 6,
+      "recommendedSubtasks": 6,
+      "expansionPrompt": "Decompose the removal of re-resizable into subtasks for: (1) removing the dependency, (2) implementing a custom resize handle, (3) integrating with ChatPaneWrapper, (4) mouse/touch event handling, (5) accessibility, and (6) testing.",
+      "reasoning": "Replacing a third-party library with custom logic requires careful event handling, accessibility, and integration, which can introduce subtle bugs."
+    },
+    {
+      "taskId": 14,
+      "taskTitle": "Implement Cross-Browser Compatibility",
+      "complexityScore": 7,
+      "recommendedSubtasks": 7,
+      "expansionPrompt": "Expand cross-browser compatibility into subtasks for: (1) browser testing (Chrome, Firefox, Safari, Edge), (2) vendor prefixing, (3) browser-specific bug fixes, (4) touch event consistency, (5) storage/feature detection, (6) polyfills, and (7) documentation.",
+      "reasoning": "Ensuring consistent behavior across browsers and devices is challenging, requiring extensive testing, bug fixing, and sometimes polyfills or workarounds."
+    },
+    {
+      "taskId": 15,
+      "taskTitle": "Implement Comprehensive Testing Suite",
+      "complexityScore": 9,
+      "recommendedSubtasks": 8,
+      "expansionPrompt": "Break down the comprehensive testing suite into subtasks for: (1) unit tests, (2) integration tests, (3) end-to-end tests, (4) accessibility tests, (5) performance tests, (6) visual regression tests, (7) test coverage reporting, and (8) CI/CD integration.",
+      "reasoning": "A full testing suite covering all aspects (unit, integration, E2E, a11y, performance, visual) is highly complex, requiring coordination, tooling, and maintenance across the entire codebase."
     }
   ]
 }

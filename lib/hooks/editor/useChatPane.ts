@@ -1,141 +1,141 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 interface UseChatPaneProps {
-    initialWidthPercent: number;
-    minWidthPx: number;
-    maxWidthPercent: number;
+    // Removed initialWidthPercent, minWidthPx, maxWidthPercent
 }
 
 interface UseChatPaneReturn {
-    isChatCollapsed: boolean;
-    setIsChatCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
-    chatPaneWidth: number | null;
-    isResizing: boolean;
-    dragHandleRef: React.RefObject<HTMLDivElement>;
-    handleMouseDownResize: (e: React.MouseEvent<HTMLDivElement>) => void;
+    isExpanded: boolean;
+    isCollapsed: boolean;
+    toggleExpanded: () => void;
+    previousWidth: string;
+    handleWidthChange: (newWidth: string) => void;
+    handleTabPointerDown: (event: React.PointerEvent) => void;
+    mobileVisiblePane: 'editor' | 'chat';
+    toggleMobilePane: () => void;
 }
 
-export function useChatPane({
-    initialWidthPercent,
-    minWidthPx,
-    maxWidthPercent,
-}: UseChatPaneProps): UseChatPaneReturn {
-    const [isChatCollapsed, setIsChatCollapsed] = useState(false);
-    const [chatPaneWidth, setChatPaneWidth] = useState<number | null>(null);
-    const [isResizing, setIsResizing] = useState(false);
-    const dragHandleRef = useRef<HTMLDivElement>(null);
-    const startWidthRef = useRef<number>(0);
-    const startXRef = useRef<number>(0);
+const DRAG_THRESHOLD_PX = 50; // Threshold for drag-to-expand
 
-    // Refs to store the latest logic for event handlers
-    const mouseMoveLogicRef = useRef<(me: MouseEvent) => void>(() => {});
-    const mouseUpLogicRef = useRef<() => void>(() => {});
+export function useChatPane({}: UseChatPaneProps): UseChatPaneReturn {
+    const [isExpanded, setIsExpanded] = useState(true);
+    const [previousWidth, setPreviousWidth] = useState('30%'); // New state for string width
+    const [mobileVisiblePane, setMobileVisiblePane] = useState<'editor' | 'chat'>('editor'); // New state for mobile
 
-    // Update mouse move logic ref when dependencies change
-    useEffect(() => {
-        mouseMoveLogicRef.current = (me: MouseEvent) => {
-            requestAnimationFrame(() => {
-                const currentX = me.clientX;
-                const deltaX = currentX - startXRef.current;
-                const newWidth = startWidthRef.current - deltaX;
-                const windowWidth = window.innerWidth;
-                const maxWidth = Math.max(minWidthPx, (windowWidth * maxWidthPercent) / 100);
-                const clampedWidth = Math.max(minWidthPx, Math.min(newWidth, maxWidth));
-                setChatPaneWidth(clampedWidth);
-            });
-        };
-    }, [minWidthPx, maxWidthPercent]); // Keep original dependencies
-
-    // Stable mouse move handler that calls the logic ref
-    const handleMouseMoveStable = useCallback((me: MouseEvent) => {
-        mouseMoveLogicRef.current(me);
-    }, []);
-
-    // Update mouse up logic ref when dependencies change
-    useEffect(() => {
-        mouseUpLogicRef.current = () => {
-            // Check isResizing state directly, no need to pass as arg
-            if (!isResizing) return;
-            setIsResizing(false);
-            document.body.style.userSelect = '';
-            document.body.style.cursor = '';
-            window.removeEventListener('mousemove', handleMouseMoveStable);
-            window.removeEventListener('mouseup', handleMouseUpStable); // Use stable handler
-            console.log("Mouse Up - Resizing stopped (Stable Ref)");
-        };
-        // Add handleMouseMoveStable dependency? No, it's stable.
-    }, [isResizing, handleMouseMoveStable]); // Add isResizing here
-
-    // Stable mouse up handler that calls the logic ref
-    const handleMouseUpStable = useCallback(() => {
-        mouseUpLogicRef.current();
-    }, []);
-
-    // Resize Mouse Down Handler (Initiation) - Uses stable handlers
-    const handleMouseDownResize = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        // Read chatPaneWidth directly, no need for it to be a dependency if logic is simple
-        const currentWidth = chatPaneWidth; // Read latest value
-        if (currentWidth === null) return;
-        console.log("Mouse Down - Resizing started (Stable Ref)");
-        setIsResizing(true);
-        startXRef.current = e.clientX;
-        startWidthRef.current = currentWidth; // Use the read value
-        document.body.style.userSelect = 'none';
-        document.body.style.cursor = 'col-resize';
-        // Add the STABLE handlers
-        window.addEventListener('mousemove', handleMouseMoveStable);
-        window.addEventListener('mouseup', handleMouseUpStable);
-    // Depend only on stable handlers and state setters
-    }, [chatPaneWidth, handleMouseMoveStable, handleMouseUpStable, setIsResizing]); 
-
-    // Effect for Initial Width Calculation and Window Resize Handling
-    useEffect(() => {
-        const calculateWidth = () => {
-            if (!isChatCollapsed) { // Only calculate if pane is visible
-                const windowWidth = window.innerWidth;
-                const initialWidth = Math.max(minWidthPx, (windowWidth * initialWidthPercent) / 100);
-                const potentialMaxWidth = (windowWidth * maxWidthPercent) / 100;
-                const effectiveMaxWidth = Math.max(potentialMaxWidth, minWidthPx);
-                // Only set width if not currently resizing
-                // or if the current width is invalid (null, too large, too small)
-                if (!isResizing) {
-                    if (chatPaneWidth === null || chatPaneWidth > effectiveMaxWidth || chatPaneWidth < minWidthPx) {
-                        const newWidth = Math.max(minWidthPx, Math.min(initialWidth, effectiveMaxWidth));
-                        console.log(`[useChatPane] Calculating initial/resize width: ${newWidth}`);
-                        setChatPaneWidth(newWidth);
-                    }
-                }
+    const toggleExpanded = useCallback(() => {
+        setIsExpanded(prevIsExpanded => {
+            const newState = !prevIsExpanded;
+            try {
+                localStorage.setItem('chatPaneExpandedState', JSON.stringify(newState));
+            } catch (error) {
+                console.error('Error saving chat pane state to localStorage:', error);
             }
-        };
-        
-        calculateWidth(); // Initial calculation
-        
-        window.addEventListener('resize', calculateWidth);
-        return () => window.removeEventListener('resize', calculateWidth);
-    // Dependencies: Include props and state affecting calculation
-    }, [isResizing, chatPaneWidth, isChatCollapsed, initialWidthPercent, minWidthPx, maxWidthPercent]);
+            return newState;
+        });
+    }, []);
 
-    // Effect for Cleaning Up Global Listeners (Use stable handlers)
+    const latestIsExpandedRef = useRef(isExpanded);
+    const latestToggleExpandedRef = useRef(toggleExpanded);
+    const dragStartPointXRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        latestIsExpandedRef.current = isExpanded;
+    }, [isExpanded]);
+
+    useEffect(() => {
+        latestToggleExpandedRef.current = toggleExpanded;
+    }, [toggleExpanded]);
+
+    // Effect to load saved state from localStorage on mount
+    useEffect(() => {
+        try {
+            const savedIsExpanded = localStorage.getItem('chatPaneExpandedState');
+            if (savedIsExpanded !== null) {
+                setIsExpanded(JSON.parse(savedIsExpanded));
+            }
+            const savedPreviousWidth = localStorage.getItem('chatPaneWidth'); // Load previousWidth
+            if (savedPreviousWidth !== null) {
+                setPreviousWidth(savedPreviousWidth);
+            }
+            // Note: mobileVisiblePane is not persisted by default, it's session-specific.
+            // If persistence is needed for mobileVisiblePane, it could be added here.
+        } catch (error) {
+            console.error('Error loading chat pane state from localStorage:', error);
+        }
+    }, []);
+
+    const handleWidthChange = useCallback((newWidth: string) => {
+        setPreviousWidth(newWidth);
+        try {
+            localStorage.setItem('chatPaneWidth', newWidth);
+        } catch (error) {
+            console.error('Error saving chat pane width to localStorage:', error);
+        }
+    }, []);
+
+    const stableHandleTabPointerMove = useCallback((event: PointerEvent) => {
+        if (dragStartPointXRef.current === null || latestIsExpandedRef.current) {
+            // Drag not started, or already expanded (e.g., toggled by other means or quick succession)
+            document.removeEventListener('pointermove', stableHandleTabPointerMove);
+            document.removeEventListener('pointerup', stableHandleTabPointerUp); // Ensure stableHandleTabPointerUp is defined or passed if different
+            dragStartPointXRef.current = null;
+            return;
+        }
+
+        const currentX = event.clientX;
+        const deltaX = currentX - dragStartPointXRef.current;
+
+        // Assuming pane is on the right, dragging left (negative deltaX) expands it.
+        if (deltaX < -DRAG_THRESHOLD_PX) {
+            latestToggleExpandedRef.current(); // Expand the pane
+            // Clean up listeners as the action is completed
+            document.removeEventListener('pointermove', stableHandleTabPointerMove);
+            document.removeEventListener('pointerup', stableHandleTabPointerUp); // Ensure stableHandleTabPointerUp is defined or passed
+            dragStartPointXRef.current = null;
+        }
+    }, []); // Stable: relies on refs for dynamic values
+
+    const stableHandleTabPointerUp = useCallback(() => {
+        document.removeEventListener('pointermove', stableHandleTabPointerMove);
+        document.removeEventListener('pointerup', stableHandleTabPointerUp); // Self-removal
+        dragStartPointXRef.current = null;
+    }, [stableHandleTabPointerMove]); // Depends on stableHandleTabPointerMove for removal logic if it were complex
+
+    const handleTabPointerDown = useCallback((event: React.PointerEvent) => {
+        if (latestIsExpandedRef.current || !event.isPrimary) {
+            // Don't initiate drag if already expanded or not a primary pointer action
+            return;
+        }
+        // Optional: event.preventDefault(); // If needed to prevent text selection or other default browser actions
+        dragStartPointXRef.current = event.clientX;
+        document.addEventListener('pointermove', stableHandleTabPointerMove);
+        document.addEventListener('pointerup', stableHandleTabPointerUp);
+    }, [stableHandleTabPointerMove, stableHandleTabPointerUp]); // Depends on stable handlers
+
+    // Cleanup effect for global listeners on unmount
     useEffect(() => {
         return () => {
-            if (isResizing) {
-                window.removeEventListener('mousemove', handleMouseMoveStable);
-                window.removeEventListener('mouseup', handleMouseUpStable);
-                if (document.body.style.cursor === 'col-resize') {
-                    document.body.style.userSelect = '';
-                    document.body.style.cursor = '';
-                }
-                console.log("[useChatPane Cleanup] Removed stable resize listeners on unmount.");
+            if (dragStartPointXRef.current !== null) {
+                document.removeEventListener('pointermove', stableHandleTabPointerMove);
+                document.removeEventListener('pointerup', stableHandleTabPointerUp);
+                dragStartPointXRef.current = null;
             }
         };
-    }, [isResizing, handleMouseMoveStable, handleMouseUpStable]); // Depend on isResizing and stable handlers
+    }, [stableHandleTabPointerMove, stableHandleTabPointerUp]);
+
+    // Mobile toggle function
+    const toggleMobilePane = useCallback(() => {
+        setMobileVisiblePane(prev => (prev === 'editor' ? 'chat' : 'editor'));
+    }, []);
 
     return {
-        isChatCollapsed,
-        setIsChatCollapsed,
-        chatPaneWidth,
-        isResizing,
-        dragHandleRef,
-        handleMouseDownResize,
+        isExpanded,
+        isCollapsed: !isExpanded,
+        toggleExpanded,
+        previousWidth,
+        handleWidthChange,
+        handleTabPointerDown,
+        mobileVisiblePane,
+        toggleMobilePane,
     };
 } 

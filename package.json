@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
@@ -37,6 +40,10 @@
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.4",
     "@tanstack/react-virtual": "^3.13.9",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^29.5.14",
     "@types/multer": "^1.4.12",
     "@types/pdf-parse": "^1.1.5",
     "@upstash/ratelimit": "^2.0.5",
@@ -52,6 +59,8 @@
     "exa-js": "^1.6.13",
     "framer-motion": "^11.3.19",
     "geist": "^1.4.2",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "30.0.0-beta.3",
     "multer": "^1.4.5-lts.2",
     "next": "^14.2.28",
     "next-pwa": "^5.6.0",

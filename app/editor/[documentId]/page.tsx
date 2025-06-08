@@ -9,6 +9,7 @@ import React, {
     useCallback,
     KeyboardEvent,
     DragEvent,
+    PointerEvent,
 } from 'react';
 import { useParams, useRouter, useSearchParams, usePathname } from 'next/navigation'; // Added usePathname for Step 8
 import dynamic from 'next/dynamic';
@@ -95,6 +96,8 @@ import { ChatInputArea } from '@/components/editor/ChatInputArea'; // Import the
 import { ChatMessagesList } from '@/components/editor/ChatMessagesList'; // Import the new component
 import { ChatPaneWrapper } from '@/components/editor/ChatPaneWrapper'; // Import the new wrapper
 import { EditorPaneWrapper } from '@/components/editor/EditorPaneWrapper'; // Import the new wrapper
+import { ChatPaneTab } from '@/components/chat/ChatPaneTab'; // <-- ADD THIS IMPORT
+import { CollapseChatTab } from '@/components/chat/CollapseChatTab'; // <-- ADD THIS IMPORT
 // NEW: Import useMediaQuery hook
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 // --- NEW: Import VersionHistoryModal ---
@@ -147,6 +150,7 @@ export default function EditorPage() {
     // --- NEW: Refs for Mini-Pane click-off logic ---
     const miniPaneRef = useRef<HTMLDivElement>(null);
     const miniPaneToggleRef = useRef<HTMLButtonElement>(null); // Assuming ChatInputUI renders a button we can get a ref to, or adjust as needed
+    const desktopResizeDragStartRef = useRef<{ x: number; initialWidth: number } | null>(null); // NEW Ref for desktop resizing
 
     // --- State Variables --- (Declare state early)
     const { default_model: preferredModel, isInitialized: isPreferencesInitialized } = usePreferenceStore();
@@ -171,6 +175,8 @@ export default function EditorPage() {
     const [currentDocIsStarred, setCurrentDocIsStarred] = useState(false);
     // --- NEW: State for current theme ---
     const [currentTheme, setCurrentTheme] = useState<'light' | 'dark'>('light');
+    // --- NEW: State for pane resizing ---
+    const [isPaneBeingResized, setIsPaneBeingResized] = useState(false);
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
@@ -187,11 +193,17 @@ export default function EditorPage() {
         initialName: documentData?.name || '',
         editorRef,
     });
-    const { isChatCollapsed, setIsChatCollapsed, chatPaneWidth, isResizing, dragHandleRef, handleMouseDownResize } = useChatPane({
-        initialWidthPercent: INITIAL_CHAT_PANE_WIDTH_PERCENT,
-        minWidthPx: MIN_CHAT_PANE_WIDTH_PX,
-        maxWidthPercent: MAX_CHAT_PANE_WIDTH_PERCENT,
-    });
+    // CORRECTED Destructuring from useChatPane
+    const { 
+        isExpanded: isChatPaneExpanded,
+        isCollapsed: isChatPaneCollapsed,
+        toggleExpanded: toggleChatPane,
+        previousWidth: chatPanePreviousWidth, // Will store '30%' or '450px' etc.
+        handleWidthChange: handleChatPaneWidthChange,
+        // mobileVisiblePane, // also available but might not be directly used here
+        // toggleMobilePane, // also available
+    } = useChatPane({}); // Pass empty object or relevant props if any are added back to UseChatPaneProps
+    
     const { files, isUploading, uploadError, uploadedImagePath, uploadedImageSignedUrl, handleFileSelectEvent, handleFilePasteEvent, handleFileDropEvent, clearPreview } = useFileUpload({ documentId });
     
     // === DEBUG LOGGING FOR IMAGE UPLOAD STATE ===
@@ -1327,7 +1339,7 @@ export default function EditorPage() {
             toast.error(`Could not add content to the editor. Please try again. (Error: ${error.message})`); 
         }
     };
-    // UPDATED: Toggle handler to check for mobile
+    // UPDATED: Toggle handler to use new state from useChatPane
     const handleToggleChat = () => {
         if (isMobile) {
             setMobileVisiblePane(pane => pane === 'chat' ? 'editor' : 'chat');
@@ -1335,8 +1347,10 @@ export default function EditorPage() {
                 setIsMiniPaneOpen(false);
             }
         } else {
-            setIsChatCollapsed(!isChatCollapsed);
-            if (!isChatCollapsed) { // If main chat is being opened, close mini-pane
+            toggleChatPane(); // Use the function from useChatPane
+            // Check the state *after* toggle to determine if it just opened
+            // If isChatPaneExpanded will be true AFTER toggle, it means it was collapsed and is now opening.
+            if (!isChatPaneCollapsed) { // This means it IS currently expanded (will be true if toggleChatPane just made it expanded)
                 setIsMiniPaneOpen(false);
             }
         }
@@ -1344,6 +1358,44 @@ export default function EditorPage() {
 
     // --- NEW: Handler for Mini-Pane Toggle ---
     const handleToggleMiniPane = () => setIsMiniPaneOpen(prev => !prev);
+
+    // --- NEW: Desktop Pane Resize Handlers ---
+    const handleDesktopResizePointerMove = useCallback((event: globalThis.PointerEvent) => { // Explicitly use globalThis.PointerEvent
+        if (!desktopResizeDragStartRef.current) return;
+        event.preventDefault(); 
+        const newWidth = window.innerWidth - event.clientX;
+        const minPx = MIN_CHAT_PANE_WIDTH_PX;
+        const maxPx = window.innerWidth * (MAX_CHAT_PANE_WIDTH_PERCENT / 100);
+        const clampedWidth = Math.max(minPx, Math.min(newWidth, maxPx));
+        handleChatPaneWidthChange(`${clampedWidth}px`);
+    }, [handleChatPaneWidthChange]);
+
+    const handleDesktopResizePointerUp = useCallback(() => {
+        document.removeEventListener('pointermove', handleDesktopResizePointerMove);
+        document.removeEventListener('pointerup', handleDesktopResizePointerUp);
+        desktopResizeDragStartRef.current = null;
+        document.body.style.cursor = '';
+        setIsPaneBeingResized(false); // <<< ADDED: Set resizing to false
+    }, [handleDesktopResizePointerMove]);
+
+    const handleDesktopResizePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => { // This is from JSX, React.PointerEvent is correct
+        if (event.button !== 0) return;
+        event.preventDefault();
+        setIsPaneBeingResized(true); // <<< ADDED: Set resizing to true
+        let currentWidthPx;
+        if (chatPanePreviousWidth.endsWith('px')) {
+            currentWidthPx = parseFloat(chatPanePreviousWidth);
+        } else if (chatPanePreviousWidth.endsWith('%')) {
+            currentWidthPx = (parseFloat(chatPanePreviousWidth) / 100) * window.innerWidth;
+        } else {
+            currentWidthPx = (INITIAL_CHAT_PANE_WIDTH_PERCENT / 100) * window.innerWidth;
+        }
+        desktopResizeDragStartRef.current = { x: event.clientX, initialWidth: currentWidthPx };
+        document.addEventListener('pointermove', handleDesktopResizePointerMove);
+        document.addEventListener('pointerup', handleDesktopResizePointerUp);
+        document.body.style.cursor = 'col-resize';
+    }, [chatPanePreviousWidth, handleChatPaneWidthChange, handleDesktopResizePointerMove, handleDesktopResizePointerUp]);
+    // --- END NEW: Desktop Pane Resize Handlers ---
 
     // --- Render Logic ---
     // Find the last assistant message to pass down
@@ -1366,7 +1418,7 @@ export default function EditorPage() {
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
             {/* --- Mini-Pane Container (Rendered conditionally) --- */}
-            {isMiniPaneOpen && (isChatCollapsed || mobileVisiblePane !== 'chat') && (
+            {isMiniPaneOpen && (isChatPaneCollapsed || mobileVisiblePane !== 'chat') && (
                 <motion.div
                     ref={miniPaneRef}
                     initial={{ opacity: 0, y: 10 }}
@@ -1500,8 +1552,8 @@ export default function EditorPage() {
                                 inputRef={inputRef}
                                 fileInputRef={fileInputRef}
                                 handleKeyDown={handleKeyDown}
-                                initialChatPaneWidthPercent={100} // Full width
-                                minChatPaneWidthPx={0} // No min width
+                                // initialChatPaneWidthPercent={100} // REMOVED - Mobile takes full width by default
+                                // minChatPaneWidthPx={0} // REMOVED - No min width constraint needed for full-width mobile
                                 isRecording={isRecording}
                                 isTranscribing={isTranscribing}
                                 micPermissionError={micPermissionError}
@@ -1553,7 +1605,7 @@ export default function EditorPage() {
                                 initialContent={initialEditorContent}
                                 editorRef={editorRef}
                                 onEditorContentChange={handleEditorChange}
-                                isChatCollapsed={isChatCollapsed}
+                                isChatCollapsed={isChatPaneCollapsed}
                                 lastMessageContent={lastAssistantMessage?.content}
                                 lastAssistantMessageId={lastAssistantMessage?.id}
                                 handleSendToEditor={handleSendToEditor}
@@ -1588,42 +1640,45 @@ export default function EditorPage() {
                                 setTaggedDocuments={setTaggedDocuments}
                                 isMiniPaneOpen={isMiniPaneOpen}
                                 onToggleMiniPane={handleToggleMiniPane}
-                                isMainChatCollapsed={isChatCollapsed}
+                                isMainChatCollapsed={isChatPaneCollapsed}
                                 miniPaneToggleRef={miniPaneToggleRef}
                                 currentTheme={currentTheme} // Pass down the theme
                             />
                         </div>
                     </div>
 
-                    {/* Resize Handle - Rendered conditionally based on chat pane state (Desktop only) */}
-                    {!isChatCollapsed && (
-                        <div // Outer handle container (for interaction)
-                            ref={dragHandleRef}
-                            onMouseDown={handleMouseDownResize}
-                            className="h-full cursor-col-resize bg-transparent z-20 flex-shrink-0 flex items-center justify-center" // Centering the inner line
-                            style={{ flexBasis: '1px' }} // Interactive width
+                    {/* NEW Draggable Resize Divider (Desktop, when chat pane is expanded) */}
+                    {!isChatPaneCollapsed && !isMobile && (
+                        <div 
+                            onPointerDown={handleDesktopResizePointerDown} // Attach the drag handler
+                            className="h-full cursor-col-resize bg-transparent group flex-shrink-0 flex items-center justify-center w-[7px] hover:bg-[--accent-color]/20 transition-colors duration-150"
+                            title="Resize chat pane"
                         >
-                            <div // Inner visual line
-                                className="h-full w-[1px] bg-[var(--border-color)] group-hover:opacity-80 transition-opacity duration-150"
-                                // The hover effect can be on the outer div if preferred, e.g., by adding a class to it on hover like 'group'
-                                // For simplicity, applying opacity change to the line itself. 
-                                // Or, use hover:bg-[--accent-color]/20 on the outer div and make the inner line transparent on hover.
-                            />
+                            <div className="h-full w-[1px] bg-[--border-color] group-hover:w-[3px] group-hover:bg-[--accent-color] transition-all duration-150" />
                         </div>
+                    )}
+
+                    {/* Render ChatPaneTab when collapsed on desktop */}
+                    {isChatPaneCollapsed && !isMobile && (
+                        <ChatPaneTab 
+                            onExpand={toggleChatPane} 
+                            onWidthChange={handleChatPaneWidthChange} 
+                            isChatPaneExpanded={isChatPaneExpanded}
+                        />
                     )}
 
                     {/* Chat Pane with Animation (Desktop only) */}
                     <AnimatePresence>
-                        {!isChatCollapsed && (
+                        {!isChatPaneCollapsed && !isMobile && (
                             <motion.div
                                 key="chat-pane"
                                 initial={{ width: 0, opacity: 0 }}
                                 animate={{
-                                    width: chatPaneWidth ? `${chatPaneWidth}px` : `${INITIAL_CHAT_PANE_WIDTH_PERCENT}%`,
+                                    width: chatPanePreviousWidth || `${INITIAL_CHAT_PANE_WIDTH_PERCENT}%`, 
                                     opacity: 1
                                 }}
                                 exit={{ width: 0, opacity: 0 }}
-                                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                                transition={isPaneBeingResized ? { type: 'tween', duration: 0 } : { duration: 0.3, ease: 'easeInOut' }} // <<< MODIFIED: Conditional transition
                                 style={{
                                     flexShrink: 0,
                                     overflow: 'hidden',
@@ -1631,7 +1686,7 @@ export default function EditorPage() {
                                 className="h-full flex flex-col bg-[--bg-secondary] relative"
                             >
                                 <ChatPaneWrapper
-                                    isChatCollapsed={isChatCollapsed}
+                                    isChatCollapsed={isChatPaneCollapsed} // Pass the correct state
                                     chatMessages={chatMessages}
                                     isLoadingMessages={isLoadingMessages}
                                     isChatLoading={isChatLoading}
@@ -1660,8 +1715,7 @@ export default function EditorPage() {
                                     inputRef={inputRef}
                                     fileInputRef={fileInputRef}
                                     handleKeyDown={handleKeyDown}
-                                    initialChatPaneWidthPercent={INITIAL_CHAT_PANE_WIDTH_PERCENT}
-                                    minChatPaneWidthPx={MIN_CHAT_PANE_WIDTH_PX}
+                                    // REMOVED redundant props: initialChatPaneWidthPercent, minChatPaneWidthPx
                                     isRecording={isRecording}
                                     isTranscribing={isTranscribing}
                                     micPermissionError={micPermissionError}
@@ -1671,44 +1725,23 @@ export default function EditorPage() {
                                     clearPreview={clearPreview}
                                     isMiniPaneOpen={isMiniPaneOpen}
                                     onToggleMiniPane={handleToggleMiniPane}
-                                    isMainChatCollapsed={isChatCollapsed}
+                                    isMainChatCollapsed={isChatPaneCollapsed} // Pass correct state
                                     miniPaneToggleRef={miniPaneToggleRef}
-                                    currentTheme={currentTheme} // Ensured currentTheme is passed
+                                    currentTheme={currentTheme}
                                 />
                             </motion.div>
                         )}
                     </AnimatePresence>
+
+                    {/* NEW: CollapseChatTab when expanded on desktop */}
+                    {!isChatPaneCollapsed && !isMobile && (
+                        <CollapseChatTab 
+                            onCollapse={toggleChatPane} 
+                            chatPaneWidth={chatPanePreviousWidth || `${INITIAL_CHAT_PANE_WIDTH_PERCENT}%`} 
+                        />
+                    )}
                 </>
             )}
-
-             {/* Toggle Button - Positioned absolutely, adapts based on mobile/desktop */}
-             <button
-                 onClick={handleToggleChat}
-                 className={`absolute top-1/2 transform -translate-y-1/2 z-30 p-1.5 rounded-full bg-[--toggle-button-bg] border border-[--border-color] shadow-md text-[--text-color] hover:bg-[--hover-bg] transition-all duration-300 ease-in-out`}
-                 style={{
-                     // Mobile: Fixed near right edge
-                     // Desktop: Position relative to chat pane edge or collapsed position
-                     right: isMobile
-                         ? '10px' // Fixed position for mobile
-                         : isChatCollapsed
-                           ? '-8px' // Desktop collapsed position
-                           : chatPaneWidth
-                             ? `${chatPaneWidth + 4}px` // Desktop open position
-                             : `${(INITIAL_CHAT_PANE_WIDTH_PERCENT / 100) * (typeof window !== 'undefined' ? window.innerWidth : 1000) + 4}px`, // Desktop fallback
-                     transform: isMobile ? 'translateY(-50%)' : 'translate(50%, -50%)' // Adjust horizontal positioning only for desktop
-                 }}
-                 aria-label={
-                     isMobile
-                       ? (mobileVisiblePane === 'chat' ? "Show editor" : "Show chat")
-                       : (isChatCollapsed ? "Open chat pane" : "Close chat pane")
-                 }
-             >
-                 {/* Conditional Icon Rendering */}
-                 {isMobile
-                    ? (mobileVisiblePane === 'chat' ? <NotebookPen size={16} /> : <MessageCircleMore size={16} />)
-                    : (isChatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />)
-                 }
-             </button>
 
             {/* --- NEW: Version History Modal --- */}
             {isVersionHistoryModalOpen && documentId && (
