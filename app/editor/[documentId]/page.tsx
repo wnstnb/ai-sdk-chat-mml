@@ -105,6 +105,12 @@ import { VersionHistoryModal } from '@/components/editor/VersionHistoryModal';
 // REMOVED: SearchModal import for now, will be re-added at a higher level
 // import { SearchModal } from '@/components/search/SearchModal'; 
 import { useSWRConfig } from 'swr'; // ADDED for cache mutation
+// NEW: Import MobileChatDrawer
+import { MobileChatDrawer } from '@/components/chat/MobileChatDrawer';
+// NEW: Import styles for EditorPage specific elements (like mobile toggle button)
+// import styles from './EditorPage.module.css'; // styles will be from FloatingActionTab.module.css directly or this file if specific overrides needed
+// NEW: Import FloatingActionTab
+import { FloatingActionTab } from '@/components/chat/FloatingActionTab';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -185,7 +191,7 @@ export default function EditorPage() {
     // NEW: Add useMediaQuery hook
     const isMobile = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
     // NEW: Add state for mobile pane visibility
-    const [mobileVisiblePane, setMobileVisiblePane] = useState<'editor' | 'chat'>('chat'); // Default to chat
+    const [mobileVisiblePane, setMobileVisiblePane] = useState<'editor' | 'chat'>('editor'); // Default to editor
     // Added for Live Summaries
     const { openVoiceSummaryModal, setEditorRef } = useModalStore(); // Get setEditorRef
     const { currentTitle, isEditingTitle, newTitleValue, isInferringTitle, handleEditTitleClick, handleCancelEditTitle, handleSaveTitle, handleTitleInputKeyDown, handleInferTitle, setNewTitleValue } = useTitleManagement({
@@ -1397,6 +1403,11 @@ export default function EditorPage() {
     }, [chatPanePreviousWidth, handleChatPaneWidthChange, handleDesktopResizePointerMove, handleDesktopResizePointerUp]);
     // --- END NEW: Desktop Pane Resize Handlers ---
 
+    // --- NEW: Toggle function for mobile pane visibility ---
+    const handleToggleMobilePane = () => {
+        setMobileVisiblePane(prev => (prev === 'editor' ? 'chat' : 'editor'));
+    };
+
     // --- Render Logic ---
     // Find the last assistant message to pass down
     const lastAssistantMessage = [...chatMessages].reverse().find(msg => msg.role === 'assistant');
@@ -1446,84 +1457,95 @@ export default function EditorPage() {
                 // --- Mobile Layout: Show only one pane ---
                 <>
                     {mobileVisiblePane === 'editor' && (
-                        <div className="w-full flex-1 flex flex-col relative overflow-hidden p-4 bg-[var(--editor-bg)]"> {/* ADDED bg-[var(--editor-bg)] */}
-                            {/* EditorTitleBar */}
-                            <EditorTitleBar
-                                currentTitle={currentTitle}
-                                isEditingTitle={isEditingTitle}
-                                newTitleValue={newTitleValue}
-                                setNewTitleValue={setNewTitleValue}
-                                handleTitleInputKeyDown={handleTitleInputKeyDown}
-                                handleSaveTitle={handleSaveTitle}
-                                handleCancelEditTitle={handleCancelEditTitle}
-                                handleEditTitleClick={handleEditTitleClick}
-                                isInferringTitle={isInferringTitle}
-                                handleInferTitle={handleInferTitle}
-                                editorRef={editorRef}
-                                autosaveStatus={autosaveStatus}
-                                handleSaveContent={handleSaveContent}
-                                isSaving={isSaving}
-                                onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
-                                isDocumentStarred={currentDocIsStarred}
-                                onToggleDocumentStar={handleToggleCurrentDocumentStar}
-                            />
-                            {pageError && !pageError.startsWith("Chat Error:") && (
-                                <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
-                            )}
-                            {/* EditorPaneWrapper */}
-                            <div className="flex-1 flex flex-col overflow-hidden relative">
-                                <EditorPaneWrapper
-                                    documentId={documentId}
-                                    initialContent={initialEditorContent}
+                        <>
+                            <div className="w-full flex-1 flex flex-col relative overflow-hidden p-4 bg-[var(--editor-bg)]"> {/* ADDED bg-[var(--editor-bg)] */}
+                                {/* EditorTitleBar */}
+                                <EditorTitleBar
+                                    currentTitle={currentTitle}
+                                    isEditingTitle={isEditingTitle}
+                                    newTitleValue={newTitleValue}
+                                    setNewTitleValue={setNewTitleValue}
+                                    handleTitleInputKeyDown={handleTitleInputKeyDown}
+                                    handleSaveTitle={handleSaveTitle}
+                                    handleCancelEditTitle={handleCancelEditTitle}
+                                    handleEditTitleClick={handleEditTitleClick}
+                                    isInferringTitle={isInferringTitle}
+                                    handleInferTitle={handleInferTitle}
                                     editorRef={editorRef}
-                                    onEditorContentChange={handleEditorChange}
-                                    isChatCollapsed={true} // Pass true as chat is conceptually 'collapsed'
-                                    lastMessageContent={lastAssistantMessage?.content}
-                                    lastAssistantMessageId={lastAssistantMessage?.id}
-                                    handleSendToEditor={handleSendToEditor}
-                                    input={input}
-                                    handleInputChange={handleInputChange}
-                                    handleSubmit={handleSubmit}
-                                    isLoading={isChatLoading}
-                                    model={model}
-                                    setModel={setModel}
-                                    stop={stop}
-                                    files={files}
-                                    handleFileChange={handleFileChange}
-                                    handlePaste={handlePaste}
-                                    handleUploadClick={handleUploadClick}
-                                    isUploading={isUploading}
-                                    uploadError={uploadError}
-                                    uploadedImagePath={uploadedImagePath}
-                                    followUpContext={followUpContext}
-                                    setFollowUpContext={setFollowUpContext}
-                                    formRef={formCallbackRef}
-                                    inputRef={inputRef}
-                                    fileInputRef={fileInputRef}
-                                    handleKeyDown={handleKeyDown}
-                                    isRecording={isRecording}
-                                    isTranscribing={isTranscribing}
-                                    micPermissionError={micPermissionError}
-                                    startRecording={startRecording}
-                                    stopRecording={stopRecording}
-                                    audioTimeDomainData={audioTimeDomainData}
-                                    clearPreview={clearPreview}
-                                    taggedDocuments={taggedDocuments}
-                                    setTaggedDocuments={setTaggedDocuments}
-                                    isMiniPaneOpen={isMiniPaneOpen}
-                                    onToggleMiniPane={handleToggleMiniPane}
-                                    isMainChatCollapsed={true} // For mobile, editor implies main chat is hidden
-                                    miniPaneToggleRef={miniPaneToggleRef}
-                                    currentTheme={currentTheme} // Pass down the theme
+                                    autosaveStatus={autosaveStatus}
+                                    handleSaveContent={handleSaveContent}
+                                    isSaving={isSaving}
+                                    onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
+                                    isDocumentStarred={currentDocIsStarred}
+                                    onToggleDocumentStar={handleToggleCurrentDocumentStar}
                                 />
+                                {pageError && !pageError.startsWith("Chat Error:") && (
+                                    <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
+                                )}
+                                {/* EditorPaneWrapper */}
+                                <div className="flex-1 flex flex-col overflow-hidden relative">
+                                    <EditorPaneWrapper
+                                        documentId={documentId}
+                                        initialContent={initialEditorContent}
+                                        editorRef={editorRef}
+                                        onEditorContentChange={handleEditorChange}
+                                        isChatCollapsed={true} // Pass true as chat is conceptually 'collapsed'
+                                        lastMessageContent={lastAssistantMessage?.content}
+                                        lastAssistantMessageId={lastAssistantMessage?.id}
+                                        handleSendToEditor={handleSendToEditor}
+                                        input={input}
+                                        handleInputChange={handleInputChange}
+                                        handleSubmit={handleSubmit}
+                                        isLoading={isChatLoading}
+                                        model={model}
+                                        setModel={setModel}
+                                        stop={stop}
+                                        files={files}
+                                        handleFileChange={handleFileChange}
+                                        handlePaste={handlePaste}
+                                        handleUploadClick={handleUploadClick}
+                                        isUploading={isUploading}
+                                        uploadError={uploadError}
+                                        uploadedImagePath={uploadedImagePath}
+                                        followUpContext={followUpContext}
+                                        setFollowUpContext={setFollowUpContext}
+                                        formRef={formCallbackRef}
+                                        inputRef={inputRef}
+                                        fileInputRef={fileInputRef}
+                                        handleKeyDown={handleKeyDown}
+                                        isRecording={isRecording}
+                                        isTranscribing={isTranscribing}
+                                        micPermissionError={micPermissionError}
+                                        startRecording={startRecording}
+                                        stopRecording={stopRecording}
+                                        audioTimeDomainData={audioTimeDomainData}
+                                        clearPreview={clearPreview}
+                                        taggedDocuments={taggedDocuments}
+                                        setTaggedDocuments={setTaggedDocuments}
+                                        isMiniPaneOpen={isMiniPaneOpen}
+                                        onToggleMiniPane={handleToggleMiniPane}
+                                        isMainChatCollapsed={true} // For mobile, editor implies main chat is hidden
+                                        miniPaneToggleRef={miniPaneToggleRef}
+                                        currentTheme={currentTheme} // Pass down the theme
+                                    />
+                                </div>
                             </div>
-                        </div>
+                            {/* --- NEW: Mobile Chat Toggle Button (Replaced) --- */}
+                            <FloatingActionTab 
+                                onClick={handleToggleMobilePane}
+                                isOpen={false} /* When editor is visible, chat drawer is not open */
+                                ariaLabel="Open chat drawer"
+                            />
+                        </>
                     )}
                     {mobileVisiblePane === 'chat' && (
-                         <div className="w-full h-full flex flex-col bg-[--bg-secondary] relative">
-                             {/* ChatPaneWrapper */}
+                         <MobileChatDrawer
+                            isOpen={mobileVisiblePane === 'chat'}
+                            onClose={handleToggleMobilePane}
+                         >
+                             {/* ChatPaneWrapper becomes the child of MobileChatDrawer */}
                              <ChatPaneWrapper
-                                isChatCollapsed={false} // Pass false as chat is visible
+                                isChatCollapsed={false} // Chat is visible in the drawer, so not collapsed
                                 chatMessages={chatMessages}
                                 isLoadingMessages={isLoadingMessages}
                                 isChatLoading={isChatLoading}
@@ -1567,7 +1589,7 @@ export default function EditorPage() {
                                 miniPaneToggleRef={miniPaneToggleRef}
                                 currentTheme={currentTheme} // ADDED currentTheme prop
                             />
-                         </div>
+                         </MobileChatDrawer>
                     )}
                 </>
             ) : (
