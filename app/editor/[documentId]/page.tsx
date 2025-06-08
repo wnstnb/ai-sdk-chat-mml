@@ -244,6 +244,7 @@ export default function EditorPage() {
         audioTimeDomainData,
         taggedDocuments,
         setTaggedDocuments,
+        addToolResult, // Added for completing client-side tool calls
     } = useChatInteractions({
         documentId,
         initialModel,
@@ -956,11 +957,46 @@ export default function EditorPage() {
                         console.log(`[ToolProcessing] Executing ${toolName} (ID: ${toolCall.toolCallId}) immediately.`);
                         try {
                             switch (toolName) {
-                                case 'addContent': executeAddContent(args); break;
-                                case 'modifyContent': executeModifyContent(args); break;
-                                case 'deleteContent': executeDeleteContent(args); break;
-                                case 'modifyTable': executeModifyTable(args); break;
-                                case 'createChecklist': executeCreateChecklist(args); break; // <-- ADDED CASE
+                                case 'addContent': 
+                                    executeAddContent(args).then(() => {
+                                        addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'forwarded to client' } });
+                                    }).catch((error) => {
+                                        console.error(`Error executing addContent:`, error);
+                                        addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'error', error: error.message } });
+                                    });
+                                    break;
+                                case 'modifyContent': 
+                                    executeModifyContent(args).then(() => {
+                                        addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'forwarded to client' } });
+                                    }).catch((error) => {
+                                        console.error(`Error executing modifyContent:`, error);
+                                        addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'error', error: error.message } });
+                                    });
+                                    break;
+                                case 'deleteContent': 
+                                    executeDeleteContent(args).then(() => {
+                                        addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'forwarded to client' } });
+                                    }).catch((error) => {
+                                        console.error(`Error executing deleteContent:`, error);
+                                        addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'error', error: error.message } });
+                                    });
+                                    break;
+                                case 'modifyTable': 
+                                    executeModifyTable(args).then(() => {
+                                        addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'forwarded to client' } });
+                                    }).catch((error) => {
+                                        console.error(`Error executing modifyTable:`, error);
+                                        addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'error', error: error.message } });
+                                    });
+                                    break;
+                                case 'createChecklist': 
+                                    executeCreateChecklist(args).then(() => {
+                                        addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'forwarded to client' } });
+                                    }).catch((error) => {
+                                        console.error(`Error executing createChecklist:`, error);
+                                        addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'error', error: error.message } });
+                                    });
+                                    break;
                                 case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); break;
                                 case 'webSearch': break; 
                                 case 'searchAndTagDocumentsTool': // Corrected case to match actual tool name
@@ -1007,7 +1043,8 @@ export default function EditorPage() {
         mobileVisiblePane,
         setPendingMobileEditorToolCall,
         setMobileVisiblePane,
-        setIncludeEditorContent 
+        setIncludeEditorContent,
+        addToolResult, // Added for completing client-side tool calls
     ]); 
     // Note: setPendingMobileEditorToolCall and setMobileVisiblePane are not needed in deps array
 

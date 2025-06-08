@@ -469,233 +469,160 @@ export async function POST(req: Request) {
     const userId = user.id;
     // --- End Validation ---
 
-    // --- BEGIN: Save User Message (Current Turn) ---
+    // --- BEGIN: Save Last Client Message (User or Tool Result) ---
     const lastClientMessageForSave = originalClientMessages.length > 0 ? originalClientMessages[originalClientMessages.length - 1] : null;
-    if (lastClientMessageForSave && lastClientMessageForSave.role === 'user') {
-        // === DETAILED LOGGING FOR MESSAGE SAVING DIAGNOSIS ===
-        console.log("=== [API Chat Save User Msg] MESSAGE SAVING DIAGNOSIS START ===");
-        console.log("[API Chat Save User Msg] Last client message for save:");
+
+    // We save the last message if it's from 'user' (their new input)
+    // OR if it's from 'tool' (a result from a client-side tool execution).
+    if (lastClientMessageForSave && (lastClientMessageForSave.role === 'user' || lastClientMessageForSave.role === 'tool')) {
+        console.log(`=== [API Chat Save Msg] Saving last client message (Role: ${lastClientMessageForSave.role}) START ===`);
+        console.log("[API Chat Save Msg] Last client message for save:");
         console.log("  - Message ID:", lastClientMessageForSave.id);
         console.log("  - Message role:", lastClientMessageForSave.role);
         console.log("  - Message content type:", typeof lastClientMessageForSave.content);
-        console.log("  - Message content:", JSON.stringify(lastClientMessageForSave.content, null, 2));
+        console.log("  - Message content raw:", JSON.stringify(lastClientMessageForSave.content, null, 2));
         console.log("  - Message metadata:", lastClientMessageForSave.metadata);
-        console.log("[API Chat Save User Msg] Available request data for image processing:");
-        console.log("  - firstImageSignedUrl:", firstImageSignedUrl);
-        console.log("  - typeof firstImageSignedUrl:", typeof firstImageSignedUrl);
-        console.log("  - inputMethod:", inputMethod);
-        console.log("[API Chat Save User Msg] MESSAGE SAVING DIAGNOSIS END ===");
 
-        // Reinstated logic based on prds/messages_refactor.md and app/api/documents/[documentId]/messages/route.ts
+        if (lastClientMessageForSave.role === 'user') {
+            console.log("[API Chat Save Msg] Available request data for image processing (user message):");
+            console.log("  - firstImageSignedUrl:", firstImageSignedUrl);
+            console.log("  - typeof firstImageSignedUrl:", typeof firstImageSignedUrl);
+            console.log("  - inputMethod:", inputMethod);
+        }
+        console.log("=== [API Chat Save Msg] DIAGNOSIS END ===");
+
         try {
-            console.log("[API Chat Save User Msg] Attempting to save user message:", JSON.stringify(lastClientMessageForSave, null, 2));
-
             let contentForDb: CoreMessage['content'] = [];
-            let clientContent = lastClientMessageForSave.content;
+            const clientContent = lastClientMessageForSave.content;
 
-            // === LOGGING: Analyze client content structure ===
-            console.log("[API Chat Save User Msg] Analyzing client content structure:");
-            console.log("  - clientContent type:", typeof clientContent);
-            console.log("  - clientContent is array:", Array.isArray(clientContent));
-            if (Array.isArray(clientContent)) {
-                console.log("  - clientContent length:", clientContent.length);
-                clientContent.forEach((part, index) => {
-                    console.log(`  - Part ${index}:`, {
-                        type: part.type,
-                        hasText: 'text' in part,
-                        hasImage: 'image' in part,
-                        imageType: typeof part.image,
-                        part: part
-                    });
-                });
-            }
-
-            // Ensure clientContent is an array of parts
-            if (typeof clientContent === 'string') {
-                console.log("[API Chat Save User Msg] Processing string content as TextPart");
-                contentForDb = [{ type: 'text', text: clientContent }];
-            } else if (Array.isArray(clientContent)) {
-                console.log("[API Chat Save User Msg] Processing array content, examining each part...");
-                // Process parts, especially for image paths
-                contentForDb = clientContent
-                    .map((part, index) => {
-                        console.log(`[API Chat Save User Msg] Processing part ${index}:`, part);
-                        
-                        if (part.type === 'image' && (typeof part.image === 'string' || part.image instanceof URL)) {
-                            console.log(`[API Chat Save User Msg] Found ImagePart at index ${index}`);
-                            let imageValue: string | URL = part.image;
-                            let originalImageString: string | undefined = typeof part.image === 'string' ? part.image : undefined;
-
-                            console.log(`[API Chat Save User Msg] Processing image value:`, imageValue);
-                            console.log(`[API Chat Save User Msg] Original image string:`, originalImageString);
-
-                            if (typeof part.image === 'string') { // If it's a string, try to parse as URL to extract path
-                                try {
-                                    const imageUrl = new URL(part.image);
-                                    console.log(`[API Chat Save User Msg] Parsed image URL:`, imageUrl.href);
-                                    const pathSegments = imageUrl.pathname.split('/');
-                                    console.log(`[API Chat Save User Msg] URL path segments:`, pathSegments);
-                                    const bucketName = process.env.SUPABASE_STORAGE_BUCKET_NAME || 'documents';
-                                    console.log(`[API Chat Save User Msg] Looking for bucket name:`, bucketName);
-                                    const bucketNameIndex = pathSegments.findIndex(segment => segment === bucketName);
-                                    console.log(`[API Chat Save User Msg] Bucket name index:`, bucketNameIndex);
-                                    
-                                    if (bucketNameIndex !== -1 && bucketNameIndex < pathSegments.length - 1) {
-                                        const storagePath = pathSegments.slice(bucketNameIndex + 1).join('/');
-                                        console.log(`[API Chat Save User Msg] Extracted storage path for image: ${storagePath}`);
-                                        imageValue = storagePath;
-                                    } else {
-                                        console.warn(`[API Chat Save User Msg] Could not determine storage path from image URL: ${part.image}. Storing original string value if any.`);
-                                        imageValue = originalImageString || ''; // Fallback to original string or empty
+            if (lastClientMessageForSave.role === 'user') {
+                console.log("[API Chat Save Msg] Processing USER message content...");
+                if (typeof clientContent === 'string') {
+                    contentForDb = [{ type: 'text', text: clientContent }];
+                } else if (Array.isArray(clientContent)) {
+                    contentForDb = clientContent
+                        .map((part: any) => {
+                            if (part.type === 'image' && (typeof part.image === 'string' || part.image instanceof URL)) {
+                                let imageValue: string | URL = part.image;
+                                if (typeof part.image === 'string') {
+                                    try {
+                                        const imageUrl = new URL(part.image);
+                                        const pathSegments = imageUrl.pathname.split('/');
+                                        const bucketName = process.env.SUPABASE_STORAGE_BUCKET_NAME || 'documents';
+                                        const bucketNameIndex = pathSegments.findIndex(segment => segment === bucketName);
+                                        if (bucketNameIndex !== -1 && bucketNameIndex < pathSegments.length - 1) {
+                                            imageValue = pathSegments.slice(bucketNameIndex + 1).join('/');
+                                        }
+                                    } catch (e) { 
+                                        console.warn(`[API Chat Save Msg] Could not parse image URL for user message part: ${part.image}. Using original value.`, e);
                                     }
-                                } catch (e) {
-                                    console.warn(`[API Chat Save User Msg] Invalid URL for image part: ${part.image}. Storing original string value if any.`, e);
-                                    imageValue = originalImageString || ''; // Fallback to original string or empty
                                 }
+                                const imagePart: ImagePart = { type: 'image', image: imageValue };
+                                if (typeof part.mimeType === 'string') imagePart.mimeType = part.mimeType;
+                                return imagePart;
+                            } else if (part.type === 'text' && typeof part.text === 'string') {
+                                return { type: 'text', text: part.text } as TextPart;
                             }
-                            // Construct a well-typed ImagePart
-                            const imagePart: ImagePart = { type: 'image', image: imageValue };
-                            if (typeof part.mimeType === 'string') { 
-                              imagePart.mimeType = part.mimeType;
-                            }
-                            console.log(`[API Chat Save User Msg] Created ImagePart:`, imagePart);
-                            return imagePart;
-
-                        } else if (part.type === 'text' && typeof part.text === 'string') {
-                            console.log(`[API Chat Save User Msg] Found TextPart at index ${index}:`, part.text);
-                            // Construct a well-typed TextPart
-                            return { type: 'text', text: part.text } as TextPart;
-                        }
-                        // Log and filter out unknown/malformed parts
-                        console.warn(`[API Chat Save User Msg] Unrecognized or malformed part type: ${part.type}. Skipping this part. Part:`, part);
-                        return null; 
-                    })
-                    .filter(p => p !== null) as Array<TextPart | ImagePart>; // Explicitly type the filtered array
-
-                console.log("[API Chat Save User Msg] Processed contentForDb after filtering:", contentForDb);
-
-                // If contentForDb is empty after filtering and clientContent had parts, it means all parts were unrecognized.
-                if (clientContent.length > 0 && contentForDb.length === 0) {
-                    console.warn("[API Chat Save User Msg] All message parts were unrecognized or malformed. Saving as single empty text part.");
+                            console.warn(`[API Chat Save Msg] Unrecognized or malformed part in user message content: ${part.type}. Skipping.`, part);
+                            return null;
+                        })
+                        .filter(p => p !== null) as Array<TextPart | ImagePart>;
+                } else {
+                    console.warn("[API Chat Save Msg] User message content is not a string or array. Saving as empty text part. Content:", clientContent);
                     contentForDb = [{ type: 'text', text: '' }];
                 }
 
-            } else {
-                 console.warn("[API Chat Save User Msg] User message content is not a string or array. Saving as single empty text part. Content:", clientContent);
-                 contentForDb = [{type: 'text', text: ''}]; // Default to empty text part
-            }
-            
-            // === CRITICAL: Check if we need to add ImagePart from requestData ===
-            console.log("=== [API Chat Save User Msg] CHECKING FOR UPLOADED IMAGE ===");
-            console.log("[API Chat Save User Msg] uploadedImagePath from requestData:", uploadedImagePath);
-            console.log("[API Chat Save User Msg] firstImageContentType from requestData:", firstImageContentType);
-            console.log("[API Chat Save User Msg] firstImageSignedUrl from requestData:", firstImageSignedUrl);
-            console.log("[API Chat Save User Msg] Current contentForDb before adding uploaded image:", contentForDb);
-            
-            // IMPLEMENTATION: Add ImagePart for uploaded image if present
-            // Priority 1: Use uploadedImagePath (clean storage path) if available
-            // Priority 2: Fall back to firstImageSignedUrl if uploadedImagePath is missing
-            if (uploadedImagePath) {
-                console.log("✅ [API Chat Save User Msg] Processing uploaded image using uploadedImagePath...");
-                
-                // Check if we already added this image (by matching path)
-                const imageAlreadyAdded = contentForDb.some(
-                    part => part.type === 'image' && part.image === uploadedImagePath
-                );
-                
-                if (!imageAlreadyAdded) {
-                    // Create the ImagePart with clean storage path
-                    const uploadedImagePart: ImagePart = {
-                        type: 'image',
-                        image: uploadedImagePath
-                    };
-                    
-                    // Add mimeType if available
-                    if (firstImageContentType) {
-                        uploadedImagePart.mimeType = firstImageContentType;
-                    }
-                    
-                    console.log("[API Chat Save User Msg] Created ImagePart for uploaded image:", uploadedImagePart);
-                    
-                    // Cast contentForDb to mutable array for push operation
-                    const mutableContentForDb = contentForDb as Array<TextPart | ImagePart>;
-                    mutableContentForDb.push(uploadedImagePart);
-                    contentForDb = mutableContentForDb;
-                    console.log("✅ [API Chat Save User Msg] Added uploaded ImagePart to contentForDb");
-                } else {
-                    console.log("[API Chat Save User Msg] Image already exists in contentForDb, skipping duplicate");
-                }
-            } else if (firstImageSignedUrl && typeof firstImageSignedUrl === 'string') {
-                console.log("✅ [API Chat Save User Msg] Processing uploaded image using firstImageSignedUrl fallback...");
-                
-                // Extract storage path from the signed URL as fallback
-                try {
-                    const signedUrl = new URL(firstImageSignedUrl);
-                    const pathSegments = signedUrl.pathname.split('/');
-                    const bucketName = 'message-images';
-                    const bucketIndex = pathSegments.findIndex(segment => segment === bucketName);
-                    
-                    let imageValueForDb = firstImageSignedUrl; // Default to signed URL
-                    if (bucketIndex !== -1 && bucketIndex < pathSegments.length - 1) {
-                        imageValueForDb = pathSegments.slice(bucketIndex + 1).join('/');
-                        console.log("[API Chat Save User Msg] Extracted storage path from signed URL:", imageValueForDb);
-                    }
-                    
-                    // Check for duplicates
-                    const imageAlreadyAdded = contentForDb.some(
-                        part => part.type === 'image' && part.image === imageValueForDb
-                    );
-                    
+                // Add uploaded image from requestData if applicable (for user messages)
+                if (uploadedImagePath) {
+                    const imageAlreadyAdded = contentForDb.some(part => part.type === 'image' && part.image === uploadedImagePath);
                     if (!imageAlreadyAdded) {
-                        const uploadedImagePart: ImagePart = {
-                            type: 'image',
-                            image: imageValueForDb
-                        };
-                        
-                        if (firstImageContentType) {
-                            uploadedImagePart.mimeType = firstImageContentType;
-                        }
-                        
-                        console.log("[API Chat Save User Msg] Created ImagePart from signed URL:", uploadedImagePart);
-                        
-                        const mutableContentForDb = contentForDb as Array<TextPart | ImagePart>;
-                        mutableContentForDb.push(uploadedImagePart);
-                        contentForDb = mutableContentForDb;
-                        console.log("✅ [API Chat Save User Msg] Added ImagePart from signed URL to contentForDb");
-                    } else {
-                        console.log("[API Chat Save User Msg] Image already exists in contentForDb, skipping duplicate");
+                        const uploadedImagePart: ImagePart = { type: 'image', image: uploadedImagePath };
+                        if (firstImageContentType) uploadedImagePart.mimeType = firstImageContentType;
+                        (contentForDb as Array<TextPart | ImagePart>).push(uploadedImagePart);
+                        console.log("✅ [API Chat Save Msg] Added uploaded ImagePart (from uploadedImagePath) to user message contentForDb");
                     }
-                } catch (urlError) {
-                    console.warn("[API Chat Save User Msg] Failed to parse firstImageSignedUrl, skipping image:", urlError);
+                } else if (firstImageSignedUrl && typeof firstImageSignedUrl === 'string') {
+                    try {
+                        const signedUrl = new URL(firstImageSignedUrl);
+                        const pathSegments = signedUrl.pathname.split('/');
+                        // Ensure this bucket name is correct for images directly uploaded with chat messages
+                        const bucketName = 'message-images'; 
+                        const bucketIndex = pathSegments.findIndex(segment => segment === bucketName);
+                        let imageValueForDb = firstImageSignedUrl;
+                        if (bucketIndex !== -1 && bucketIndex < pathSegments.length - 1) {
+                            imageValueForDb = pathSegments.slice(bucketIndex + 1).join('/');
+                        }
+                        const imageAlreadyAdded = contentForDb.some(part => part.type === 'image' && part.image === imageValueForDb);
+                        if (!imageAlreadyAdded) {
+                            const uploadedImagePart: ImagePart = { type: 'image', image: imageValueForDb };
+                            if (firstImageContentType) uploadedImagePart.mimeType = firstImageContentType;
+                            (contentForDb as Array<TextPart | ImagePart>).push(uploadedImagePart);
+                            console.log("✅ [API Chat Save Msg] Added uploaded ImagePart (from firstImageSignedUrl) to user message contentForDb");
+                        }
+                    } catch (urlError) {
+                        console.warn("[API Chat Save Msg] Failed to parse firstImageSignedUrl for user message, skipping image:", urlError);
+                    }
                 }
-            } else {
-                console.log("[API Chat Save User Msg] No uploaded image found in request data (missing both uploadedImagePath and firstImageSignedUrl)");
-            }
-            
-            // Ensure contentForDb is never just a string (it should be an array by now, but double check)
-            // And if it somehow became an empty array AND original clientContent was just a string, re-create from string.
-            if (contentForDb.length === 0 && typeof clientContent === 'string' && clientContent.trim() !== '') {
-                 console.log("[API Chat Save User Msg] contentForDb was empty after processing, but original content was a string. Re-populating from original string.");
-                 contentForDb = [{ type: 'text', text: clientContent }];
-            } else if (contentForDb.length === 0) {
-                console.warn("[API Chat Save User Msg] contentForDb is empty after processing. Saving as single empty text part.");
-                contentForDb = [{ type: 'text', text: '' }]; // Default to ensure it's always an array with at least one part
+                if (contentForDb.length === 0) {
+                    contentForDb = [{ type: 'text', text: typeof clientContent === 'string' ? clientContent : '' }];
+                }
+
+            } else if (lastClientMessageForSave.role === 'tool') {
+                console.log("[API Chat Save Msg] Processing TOOL message content...");
+                // For tool messages, content should be an array of ToolResultPart
+                // e.g., [{ type: 'tool-result', toolCallId: '...', toolName: '...', result: {...} }]
+                if (Array.isArray(clientContent)) {
+                    contentForDb = clientContent.map((part: any) => {
+                        if (part.type === 'tool-result' && part.toolCallId && typeof part.toolCallId === 'string' && part.toolName && typeof part.toolName === 'string') {
+                            // Ensure 'result' exists, even if it's null or undefined, as it's expected by CoreMessage type
+                            return {
+                                type: 'tool-result',
+                                toolCallId: part.toolCallId,
+                                toolName: part.toolName,
+                                result: part.result // result can be any JSON-serializable data, or undefined/null
+                            } as ToolResultPart;
+                        }
+                        console.warn("[API Chat Save Msg] Malformed tool-result part in tool message content:", part);
+                        return null;
+                    }).filter(p => p !== null) as ToolResultPart[];
+                    
+                    if (contentForDb.length === 0 && clientContent.length > 0) {
+                         console.warn("[API Chat Save Msg] All tool-result parts were malformed. Original clientContent:", clientContent);
+                         // This state is problematic for AI SDK. Saving as empty content might still lead to issues.
+                         // For now, it will be an empty array, which should be handled by convertToCoreMessages if it occurs.
+                    } else if (contentForDb.length === 0 && clientContent.length === 0) {
+                        console.warn("[API Chat Save Msg] Tool message had an empty content array. Saving as such.");
+                    }
+                } else {
+                    console.warn("[API Chat Save Msg] Tool message content is not an array as expected. Content:", clientContent);
+                    // This is highly unexpected. Tool results must be an array of ToolResultPart.
+                    // To prevent downstream errors with DB expecting an array, save as empty array.
+                    contentForDb = []; 
+                }
             }
 
-            console.log("[API Chat Save User Msg] Final contentForDb before database insert:", JSON.stringify(contentForDb, null, 2));
+            console.log("[API Chat Save Msg] Final contentForDb before DB insert:", JSON.stringify(contentForDb, null, 2));
+
+            // Ensure contentForDb is never empty for user messages after all processing.
+            if (lastClientMessageForSave.role === 'user' && contentForDb.length === 0) {
+                 console.warn("[API Chat Save Msg] User message contentForDb is empty after processing. Setting to default empty text part.");
+                 contentForDb = [{ type: 'text', text: '' }];
+            }
+            // For tool messages, contentForDb could be an empty array if clientContent was empty or all parts were malformed.
+            // This might be acceptable if no tool results were genuinely intended to be sent.
 
             const messageToInsert = {
                 document_id: documentId,
                 user_id: userId,
-                role: 'user' as const,
-                content: contentForDb, // This should be Array<TextPart | ImagePart | ...>
-                // image_url: null, // Explicitly nullify as per refactor plan (image info is in content.parts)
-                metadata: lastClientMessageForSave.metadata || requestData.inputMethod ? { input_method: requestData.inputMethod, ...(lastClientMessageForSave.metadata || {}) } : null,
+                role: lastClientMessageForSave.role as 'user' | 'tool', // Cast role
+                content: contentForDb, 
+                metadata: lastClientMessageForSave.metadata || (lastClientMessageForSave.role === 'user' && requestData.inputMethod) 
+                    ? { input_method: requestData.inputMethod, ...(lastClientMessageForSave.metadata || {}) } 
+                    : lastClientMessageForSave.metadata,
             };
 
-            console.log("[API Chat Save User Msg] Message object for DB:", JSON.stringify(messageToInsert, null, 2));
+            console.log("[API Chat Save Msg] Message object for DB:", JSON.stringify(messageToInsert, null, 2));
 
-            console.log("[API Chat Save User Msg] Attempting database insertion...");
             const { data: savedMessage, error: insertError } = await supabase
                 .from('messages')
                 .insert(messageToInsert)
@@ -703,34 +630,26 @@ export async function POST(req: Request) {
                 .single();
 
             if (insertError) {
-                console.error('[API Chat Save User Msg] Error saving user message:', insertError.message, insertError.details, insertError.hint);
-                console.error('[API Chat Save User Msg] Full insert error object:', insertError);
-                // Optionally, decide if this error should abort the AI call or just be logged
+                console.error('[API Chat Save Msg] Error saving message:', insertError.message, insertError.details, insertError.hint);
             } else {
-                console.log('[API Chat Save User Msg] User message saved successfully. ID:', savedMessage?.id);
-                console.log('[API Chat Save User Msg] Saved message data from DB:', JSON.stringify(savedMessage, null, 2));
-                
-                // Verify the content was saved correctly
+                console.log('[API Chat Save Msg] Message saved successfully. ID:', savedMessage?.id);
                 if (savedMessage?.content) {
-                    console.log('[API Chat Save User Msg] Verification - Content saved to DB:');
+                    console.log('[API Chat Save Msg] Verification - Content saved to DB:');
                     if (Array.isArray(savedMessage.content)) {
                         savedMessage.content.forEach((part: any, index: number) => {
-                            console.log(`  - Part ${index}: type=${part.type}, hasImage=${!!part.image}, hasText=${!!part.text}`);
+                            console.log(`  - Part ${index}: type=${part.type}, toolCallId=${part.toolCallId}, toolName=${part.toolName}, hasResult=${part.result !== undefined}, hasImage=${!!part.image}, hasText=${!!part.text}`);
                         });
                     } else {
                         console.log('  - Content is not an array:', typeof savedMessage.content);
                     }
                 }
-                // Update the originalClientMessages array with the saved message ID and created_at from DB?
-                // This might be complex if originalClientMessages is already passed to the AI stream.
-                // For now, just log success. The client should refetch or get messages via subscription.
             }
-
         } catch (e: any) {
-            console.error('[API Chat Save User Msg] Unexpected error trying to save user message:', e.message, e.stack);
+            console.error('[API Chat Save Msg] Unexpected error trying to save message:', e.message, e.stack);
         }
+        console.log(`=== [API Chat Save Msg] Saving last client message (Role: ${lastClientMessageForSave.role}) END ===`);
     }
-    // --- END: Save User Message ---
+    // --- END: Save Last Client Message ---
 
     // --- BEGIN: Handle Audio Transcription Tool Call Logging ---
     if (inputMethod === 'audio' && whisperDetails) {

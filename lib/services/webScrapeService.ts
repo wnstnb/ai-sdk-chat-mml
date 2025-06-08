@@ -2,6 +2,7 @@
 // This service will handle API calls to the backend for scraping content.
 
 import axios, { AxiosInstance, AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import { ApplicationError } from '../utils/errorHandling'; // Import ApplicationError
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '/api'; // Adjusted for Next.js
 const MAX_RETRIES = 3;
@@ -92,65 +93,59 @@ class WebScraperApiClient {
         urls,
         processingType,
       });
+
+      // Check for API-reported errors even if HTTP status is 2xx
+      if (response.data.overallError) {
+        console.warn('Web scraping API reported an overall error:', response.data.overallError);
+        throw new ApplicationError(`Scraping service error: ${response.data.overallError}`, {
+          context: { urls, processingType, apiResponse: response.data },
+          isTrusted: true, // This is an error reported by our API, so we can consider it trusted
+        });
+      }
+
+      // Optionally, check if all individual URL results have errors
+      const allFailed = response.data.results?.every(result => result.status === 'error');
+      if (allFailed && response.data.results?.length > 0) {
+        console.warn('Web scraping API reported all URLs failed.');
+        // Consolidate error messages or use a generic one
+        const firstErrorMessage = response.data.results[0].error || 'All URLs failed to scrape.';
+        throw new ApplicationError(`Scraping failed for all URLs. Example error: ${firstErrorMessage}` , {
+          context: { urls, processingType, apiResponse: response.data },
+          isTrusted: true,
+        });
+      }
+
       return response.data;
     } catch (error) {
-      let classifiedErrorMessage = 'Failed to scrape web content due to an unexpected error.';
+      // Log the error with context before re-throwing or wrapping
+      console.error('Error in scrapeWebContent:', {
+        originalError: error,
+        urls,
+        processingType,
+      });
 
       if (axios.isAxiosError(error)) {
-        const axiosError = error as AxiosError<{ message?: string; error?: string }>;
-        const status = axiosError.response?.status;
-        const apiErrorMessage = axiosError.response?.data?.message || axiosError.response?.data?.error || axiosError.message;
-
-        console.error('Web scraping request failed (AxiosError):', {
-          message: axiosError.message,
-          status,
-          responseData: axiosError.response?.data,
-          url: axiosError.config?.url,
+        // Re-throw the original AxiosError to be handled by the centralized handler
+        // The centralized handler will format the user-facing message
+        console.error('Web scraping request failed (AxiosError re-thrown):', {
+          message: error.message,
+          status: error.response?.status,
+          responseData: error.response?.data,
+          url: error.config?.url,
         });
-
-        if (status) {
-          switch (status) {
-            case 400:
-              classifiedErrorMessage = `Bad request to scraping API: ${apiErrorMessage}`;
-              break;
-            case 401:
-            case 403:
-              classifiedErrorMessage = `Authentication/Authorization error with scraping API: ${apiErrorMessage}`;
-              // TODO: Trigger re-authentication flow if applicable
-              break;
-            case 404:
-              classifiedErrorMessage = `Scraping API endpoint not found: ${apiErrorMessage}`;
-              break;
-            case 422:
-              classifiedErrorMessage = `Invalid input for scraping API: ${apiErrorMessage}`;
-              break;
-            case 429:
-              classifiedErrorMessage = `Rate limit exceeded with scraping API. Please try again later. Original: ${apiErrorMessage}`;
-              break;
-            case 500:
-            case 502:
-            case 503:
-            case 504:
-              classifiedErrorMessage = `Scraping API server error (status ${status}): ${apiErrorMessage}. Retries were attempted.`;
-              break;
-            default:
-              classifiedErrorMessage = `Scraping API request failed with status ${status}: ${apiErrorMessage}`;
-          }
-        } else if (axiosError.request) {
-          // Network error (no response received)
-          classifiedErrorMessage = `Network error while contacting scraping API: ${apiErrorMessage}`;
-          console.error('Network error details:', axiosError.request);
-        } else {
-          // Other Axios error (e.g., setup error)
-          classifiedErrorMessage = `Axios error during scraping API request: ${apiErrorMessage}`;
-        }
+        throw error; // Re-throw the original Axios error
+      } else if (error instanceof ApplicationError) {
+        // If it's already an ApplicationError (e.g., from overallError check), just re-throw
+        throw error;
       } else {
-        // Non-Axios error
-        console.error('Web scraping request failed (UnknownError):', error);
-        // classifiedErrorMessage remains the default
+        // For non-Axios errors or other unexpected errors caught here
+        console.error('Web scraping request failed (UnknownError wrapped):', error);
+        throw new ApplicationError('An unexpected error occurred during the web scraping process.', {
+          cause: error as Error, // Preserve the original error as cause
+          context: { urls, processingType },
+          isTrusted: false, // Mark as untrusted as it's an unexpected client-side issue
+        });
       }
-      // TODO: Integrate with a monitoring service here (e.g., Sentry.captureException(new Error(classifiedErrorMessage), { extra: { originalError: error } }))
-      throw new Error(classifiedErrorMessage);
     }
   }
 }

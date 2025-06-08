@@ -272,7 +272,6 @@ export function useInitialChatMessages({
                             content: finalContentForSdkMessage,
                             createdAt: new Date(createdAtTimestamp), // Use the determined timestamp
                             signedDownloadUrl: msg.signedDownloadUrl,
-                            ...(assistantSdkToolCalls.length > 0 && { tool_calls: assistantSdkToolCalls }),
                         };
                         
                         formattedMessages.push(assistantMsgForSdk);

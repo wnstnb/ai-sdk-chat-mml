@@ -1,53 +1,65 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, FilePlus2, FilePenLine } from 'lucide-react';
 import { useModalStore } from '@/stores/useModalStore';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-// import { type BlockNoteEditor, type PartialBlock } from '@blocknote/core'; // For later when inserting content
-import { useRouter } from 'next/navigation'; // Added import
+import { BlockNoteEditor, type PartialBlock, BlockNoteSchema, defaultBlockSpecs } from '@blocknote/core';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import webScraperApiClient from '@/lib/services/webScrapeService';
-import type { PartialBlock } from '@blocknote/core'; // Added import
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+interface ScrapedUrlResult {
+  url: string;
+  title?: string;
+  content?: string;
+  rawHtml?: string;
+  processedDate: string;
+  error?: string;
+  status: 'success' | 'error' | 'pending';
+}
 
 interface WebScrapingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  // onScrape: (urls: string[], processingType: string) => Promise<any>; // Placeholder for actual scraping
-  // onInsert: (target: 'new' | 'current', content: any) => void; // Placeholder for insertion
 }
 
 type TargetDocumentType = 'current' | 'new';
 
+const BNSchema = BlockNoteSchema.create({ blockSpecs: defaultBlockSpecs });
+
 export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
   isOpen,
   onClose,
-  // onScrape,
-  // onInsert,
 }) => {
-  const editorRef = useModalStore(state => state.editorRef);
+  const editorRef = useModalStore(state => state.editorRef as React.RefObject<BlockNoteEditor | null> | null);
   const hasActiveDocument = !!editorRef?.current;
-  const router = useRouter(); // Instantiated router
+  const router = useRouter();
 
   const [urls, setUrls] = useState('');
-  const [processingType, setProcessingType] = useState('full_text');
-  const [scrapedContent, setScrapedContent] = useState<string | null>(null);
+  const [processingType, setProcessingType] = useState<'full_text' | 'summarize'>('full_text');
+  const [scrapedResults, setScrapedResults] = useState<ScrapedUrlResult[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [targetDocument, setTargetDocument] = useState<TargetDocumentType>('new');
 
   const prevIsOpenRef = React.useRef<boolean>(isOpen);
+  const scrapedContentAreaRef = useRef<HTMLDivElement>(null);
 
-  // Effect to manage targetDocument based on document availability and modal state
   useEffect(() => {
     if (isOpen) {
-      if (!prevIsOpenRef.current) { // Modal was previously closed and is now open
+      if (!prevIsOpenRef.current) {
         if (hasActiveDocument) {
           setTargetDocument('current');
         } else {
           setTargetDocument('new');
         }
-      } else { // Modal was already open
+        setUrls('');
+        setScrapedResults(null);
+        setIsLoading(false);
+      } else {
         if (!hasActiveDocument && targetDocument === 'current') {
           setTargetDocument('new');
         }
@@ -68,79 +80,136 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
     }
 
     const invalidUrls = urlsArray.filter(url => !url.startsWith('http://') && !url.startsWith('https://'));
-
     if (invalidUrls.length > 0) {
       toast.error(`Invalid URL(s) found: ${invalidUrls.join(', ')}. Please ensure URLs start with http:// or https://.`);
       return;
     }
 
     setIsLoading(true);
-    setScrapedContent(null);
+    setScrapedResults(null);
     
     try {
-      // const result = await onScrape(urlsArray, processingType); // Use urlsArray here
-      // Replace with actual API call using urlsArray
-      // await new Promise(resolve => setTimeout(resolve, 1500)); 
-      // const exampleContent = `Scraped content for: ${urlsArray.join(', ')}. Processing type: ${processingType}`;
-      const response = await webScraperApiClient.scrapeWebContent(urlsArray, processingType as 'full_text' | 'summarize');
+      const response = await webScraperApiClient.scrapeWebContent(urlsArray, processingType);
       
-      let combinedContent = "";
       if (response.overallError) {
-        combinedContent = `Error during scraping: ${response.overallError}`;
-        toast.error(response.overallError);
+        toast.error(`Scraping failed: ${response.overallError}`);
+        setScrapedResults(response.results || [{
+          url: urlsArray.join(', '),
+          status: 'error',
+          error: response.overallError,
+          processedDate: new Date().toISOString(),
+        }]);
       } else if (response.results && response.results.length > 0) {
-        response.results.forEach(result => {
-          if (result.status === 'success') {
-            combinedContent += `URL: ${result.url}\nTitle: ${result.title || 'N/A'}\nContent:\n${result.content || 'No content extracted.'}\n\n---\n\n`;
-          } else {
-            combinedContent += `URL: ${result.url}\nError: ${result.error || 'Unknown error for this URL.'}\n\n---\n\n`;
-          }
-        });
-        toast.success('Content scraped successfully!');
+        setScrapedResults(response.results);
+        toast.success('Content scraped successfully! Review below and choose an action.');
       } else {
-        combinedContent = "No content was returned from scraping.";
-        toast.info("Scraping finished, but no content was returned.");
+        toast.info("Scraping finished, but no content or specific errors were returned.");
+        setScrapedResults([]);
       }
-      setScrapedContent(combinedContent.trim());
     } catch (error: any) {
       console.error('Error scraping content:', error);
-      const errorMessage = error.message || 'Failed to scrape content. See console for details.';
-      toast.error(errorMessage);
-      setScrapedContent(`Error fetching content: ${errorMessage}`);
+      setScrapedResults([{
+        url: urlsArray.join(', '),
+        status: 'error',
+        error: error.message || 'Client-side error during scraping operation.',
+        processedDate: new Date().toISOString(),
+      }]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleInsert = async (content: string | null, target: TargetDocumentType) => {
-    if (!content) {
+  const handleInsert = async (resultsToInsert: ScrapedUrlResult[] | null, target: TargetDocumentType) => {
+    if (!resultsToInsert || resultsToInsert.length === 0) {
         toast.error("No content to insert.");
         return;
     }
 
-    setIsLoading(true);
+    let editorForParsing: BlockNoteEditor | null = null;
 
     if (target === 'current') {
-        if (!hasActiveDocument || !editorRef?.current) {
-            toast.error("No active document to insert into. Please open a document or choose 'Insert into New Document'.");
-            setIsLoading(false);
-            return;
+      if (!editorRef?.current) {
+        toast.error("Editor instance not available for 'current document'. Please open a document.");
+        setIsLoading(false);
+        return;
+      }
+      editorForParsing = editorRef.current;
+    } else { // target === 'new'
+      // For new documents, create a temporary editor instance for parsing
+      // This doesn't need to be rendered or attached to a DOM element.
+      editorForParsing = BlockNoteEditor.create({ schema: BNSchema });
+    }
+
+    if (!editorForParsing) { // Should not happen if logic above is correct, but as a safeguard
+        toast.error("Failed to initialize editor for parsing Markdown.");
+        setIsLoading(false);
+        return;
+    }
+
+    setIsLoading(true);
+    let allBlocksToInsert: PartialBlock[] = [];
+
+    for (const result of resultsToInsert) {
+      if (result.status === 'success' && result.content) {
+        allBlocksToInsert.push({
+          type: 'heading',
+          props: { level: 3 }, 
+          content: [{ type: 'text', text: `Content from: ${result.url}`, styles: {} }],
+        });
+        if (result.title) {
+            allBlocksToInsert.push({
+                type: 'paragraph',
+                content: [{ type: 'text', text: `Title: ${result.title}`, styles: {italic: true} }],
+            });
+        }
+
+        try {
+          // Use the determined editorForParsing instance
+          let parsedContentBlocks: PartialBlock[] = await editorForParsing.tryParseMarkdownToBlocks(result.content);
+          if (parsedContentBlocks.length === 0 && result.content.trim() !== '') {
+            parsedContentBlocks = [{ type: 'paragraph', content: [{ type: 'text', text: result.content.trim(), styles: {} }] }];
+          }
+          allBlocksToInsert.push(...parsedContentBlocks);
+        } catch (parseError) {
+          console.error(`Error parsing Markdown for ${result.url}:`, parseError);
+          allBlocksToInsert.push({
+            type: 'paragraph',
+            content: [{ type: 'text', text: `Error parsing content for ${result.url}. Raw content:\n${result.content.trim()}`, styles: {} }],
+          });
+        }
+        allBlocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: '---', styles: {} }] });
+      } else if (result.error) {
+         allBlocksToInsert.push({
+          type: 'heading',
+          props: { level: 3 }, 
+          content: [{ type: 'text', text: `Failed to scrape: ${result.url}`, styles: {} }],
+        });
+        allBlocksToInsert.push({
+          type: 'paragraph',
+          content: [{ type: 'text', text: `Error: ${result.error}`, styles: { bold: true } }], 
+        });
+        allBlocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: '---', styles: {} }] });
+      }
+    }
+
+    if (allBlocksToInsert.length === 0) {
+        toast.info("No processable content found to insert after formatting.");
+        setIsLoading(false);
+        return;
+    }
+
+    if (target === 'current') {
+        if (!editorRef?.current) { // Re-check active editor for actual insertion
+             toast.error("No active document to insert into. Please open a document.");
+             setIsLoading(false);
+             return;
         }
         try {
-            const editor = editorRef.current;
-            let blocksToInsert: PartialBlock[] = await editor.tryParseMarkdownToBlocks(content);
-            if (blocksToInsert.length === 0 && content.trim() !== '') {
-                blocksToInsert = [{ type: 'paragraph', content: content.trim() }];
-            }
-
-            if (blocksToInsert.length > 0) {
-                const currentPosition = editor.getTextCursorPosition();
-                const referenceBlock = currentPosition.block || editor.document[editor.document.length - 1];
-                editor.insertBlocks(blocksToInsert, referenceBlock || editor.document[0], referenceBlock ? 'after' : 'before');
-                toast.success('Content inserted into current document.');
-            } else {
-                toast.info("No content to insert after formatting.");
-            }
+            const activeEditor = editorRef.current;
+            const currentPosition = activeEditor.getTextCursorPosition();
+            const referenceBlock = currentPosition.block || activeEditor.document[activeEditor.document.length - 1];
+            activeEditor.insertBlocks(allBlocksToInsert, referenceBlock || activeEditor.document[0], referenceBlock ? 'after' : 'before');
+            toast.success('Content inserted into current document.');
             onClose();
         } catch (error) {
             console.error("Error inserting content into current document:", error);
@@ -148,30 +217,12 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
         }
     } else { // target === 'new'
         try {
-            let blocksToInsert: PartialBlock[] = [];
-            if (editorRef?.current) { // Use editor to parse if available
-                blocksToInsert = await editorRef.current.tryParseMarkdownToBlocks(content);
-            }
-            // Fallback if editor not available or parsing fails but content exists
-            if (blocksToInsert.length === 0 && content.trim() !== '') {
-                blocksToInsert = [{ type: 'paragraph', content: content.trim() }];
-            }
-
-            if (blocksToInsert.length === 0) {
-                toast.info("No content available to create a new document after formatting.");
-                setIsLoading(false);
-                return;
-            }
-
             const response = await fetch('/api/documents/create-with-content', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    // Title could be derived or set to a default
                     title: `Scraped Content - ${new Date().toLocaleDateString()}`,
-                    content: blocksToInsert,
+                    content: allBlocksToInsert,
                 }),
             });
 
@@ -179,181 +230,144 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
                 const errorData = await response.json().catch(() => ({ error: { message: 'Failed to create new document.' } }));
                 throw new Error(errorData.error?.message || 'Failed to create new document.');
             }
-
             const result = await response.json();
             const newDocumentId = result.data?.documentId;
-
-            if (!newDocumentId) {
-                throw new Error('Failed to get new document ID from response.');
-            }
-
-            toast.success('New document created successfully with scraped content!');
+            if (!newDocumentId) throw new Error('Failed to get new document ID.');
+            
+            toast.success('New document created successfully!');
             router.push(`/editor/${newDocumentId}`);
             onClose();
         } catch (error: any) {
             console.error('Error creating new document with content:', error);
-            toast.error(error.message || 'An unexpected error occurred while creating the document.');
+            toast.error(error.message || 'An unexpected error occurred.');
         }
     }
     setIsLoading(false);
   };
 
-  const handleCloseModal = () => {
-    // Reset state if needed, or just close
-    // setUrls('');
-    // setProcessingType('full_text');
-    // setScrapedContent(null);
-    // setIsLoading(false);
-    onClose();
-  }
+  const handleClear = () => {
+    setUrls('');
+    setScrapedResults(null);
+    toast.info("Cleared URLs and scraped content.");
+  };
 
-  if (!isOpen) {
-    return null;
-  }
+  useEffect(() => {
+    if (scrapedResults && scrapedContentAreaRef.current) {
+      scrapedContentAreaRef.current.scrollTop = 0;
+    }
+  }, [scrapedResults]);
 
-  const numUrls = urls.split(',').map(url => url.trim()).filter(url => url).length;
+  if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-75 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity duration-300 ease-in-out"
-      onClick={handleCloseModal}
-    >
-      <div
-        className="bg-[var(--editor-bg)] p-6 rounded-lg shadow-xl w-full max-w-2xl flex flex-col text-[var(--text-color)] transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalFadeIn"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex justify-between items-center mb-6 flex-shrink-0">
-          <h2 className="text-xl font-semibold">Web Scrape Content</h2>
-          <button
-            onClick={handleCloseModal}
-            className="p-1 rounded-full hover:bg-[var(--hover-bg)] text-[var(--text-color)]"
-            aria-label="Close web scraping modal"
-          >
-            <X size={24} />
-          </button>
+    <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-[var(--editor-bg)] p-6 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold text-[--text-color]">Web Scrape Content</h2>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close modal">
+            <X size={20} />
+          </Button>
         </div>
 
-        {/* Body */}
-        <div className="space-y-4 mb-6 flex-grow overflow-y-auto pr-2">
+        <div className="space-y-4 mb-4">
           <div>
-            <Label htmlFor="urls-input" className="block text-sm font-medium text-[var(--muted-text-color)] mb-1">
-              Enter URL(s)
+            <Label htmlFor="urls-input" className="block text-sm font-medium text-[--text-color] mb-1">
+              Enter URLs (comma-separated)
             </Label>
             <Input
               id="urls-input"
               type="text"
               value={urls}
               onChange={(e) => setUrls(e.target.value)}
-              placeholder="https://example.com, https://another.com"
-              className="bg-[var(--input-bg)] border-[var(--border-color)] focus:ring-[var(--primary-color)] focus:border-[var(--primary-color)]"
-              disabled={isLoading}
+              placeholder="e.g., https://example.com, https://another.com"
+              className="bg-[--input-bg] text-[--text-color] border-[--border-color]"
             />
-            <p className="text-xs text-[var(--muted-text-color)] mt-1">
-              Enter one or more URLs, separated by commas.
-            </p>
           </div>
+          <div>
+            <Label className="block text-sm font-medium text-[--text-color] mb-1">Processing Type</Label>
+            <RadioGroup
+              value={processingType}
+              onValueChange={(value: 'full_text' | 'summarize') => setProcessingType(value)}
+              className="flex space-x-4"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="full_text" id="full_text" />
+                <Label htmlFor="full_text" className="text-[--text-color]">Full Text</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="summarize" id="summarize" />
+                <Label htmlFor="summarize" className="text-[--text-color]">Summarize (AI)</Label>
+              </div>
+            </RadioGroup>
+          </div>
+        </div>
 
-          {numUrls > 0 && (
-            <div>
-              <Label className="block text-sm font-medium text-[var(--muted-text-color)] mb-2">
-                Processing Options
-              </Label>
-              {numUrls > 1 ? (
-                <div className="p-3 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)]">
-                  <p className="text-sm">Get Full Text Content for all {numUrls} URLs.</p>
-                  {/* Implicitly set processingType to 'full_text_multiple' or handle in backend */}
-                </div>
-              ) : (
-                <RadioGroup
-                  value={processingType}
-                  onValueChange={setProcessingType}
-                  className="space-y-2"
-                  disabled={isLoading}
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="full_text" id="full_text" className="text-[var(--primary-color)] border-[var(--border-color)]" />
-                    <Label htmlFor="full_text" className="font-normal">Get Full Text Content</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="summarize" id="summarize" className="text-[var(--primary-color)] border-[var(--border-color)]" />
-                    <Label htmlFor="summarize" className="font-normal">Get Text Snippet & AI Summary</Label>
-                  </div>
-                </RadioGroup>
-              )}
-            </div>
-          )}
-          
-          <Button 
-            onClick={handleScrape} 
-            disabled={isLoading || !urls.trim()}
-            className="w-full bg-[var(--primary-color)] text-[var(--button-text-color)] hover:bg-[var(--primary-color-hover)] disabled:opacity-60"
-          >
-            {isLoading ? (
-              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-[var(--button-text-color)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            ) : null}
+        <div className="flex space-x-2 mb-4">
+          <Button onClick={handleScrape} disabled={isLoading} className="flex-1">
             {isLoading ? 'Scraping...' : 'Scrape Content'}
           </Button>
-
-          {scrapedContent && (
-            <div className="mt-4 p-3 border border-[var(--border-color)] rounded-md bg-[var(--input-bg)] max-h-60 overflow-y-auto">
-              <h3 className="text-sm font-semibold mb-2">Scraped Content Preview:</h3>
-              <pre className="text-xs whitespace-pre-wrap break-all">{scrapedContent}</pre>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="mt-auto flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3 flex-shrink-0 pt-4 border-t border-[var(--border-color)]">
-          <Button
-            onClick={handleCloseModal}
-            variant="outline"
-            className="border-[var(--border-color)] hover:bg-[var(--hover-bg)]"
-            disabled={isLoading}
-          >
-            Cancel
+          <Button onClick={handleClear} variant="outline" disabled={isLoading}>
+            Clear
           </Button>
-          {scrapedContent && (
-            <>
-              <Button
-                onClick={() => handleInsert(scrapedContent, 'new')}
-                className="bg-[var(--secondary-color)] text-[var(--button-text-color)] hover:bg-[var(--secondary-color-hover)] disabled:opacity-60 flex items-center"
+        </div>
+        
+        {scrapedResults && (
+          <div className="flex-grow overflow-y-auto border border-[--border-color] p-3 rounded-md bg-[--input-bg] mb-4 min-h-[200px]" ref={scrapedContentAreaRef}>
+            {scrapedResults.length === 0 && <p className="text-[--muted-text-color]">No content or errors to display.</p>}
+            {scrapedResults.map((result, index) => (
+              <div key={index} className="mb-4 pb-4 border-b border-[--border-color] last:border-b-0 last:pb-0 text-[--text-color]">
+                <h4 className="font-semibold">URL: <a href={result.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{result.url}</a></h4>
+                {result.title && <p className="text-sm italic">Title: {result.title}</p>}
+                {result.status === 'success' && result.content && (
+                  <div className="mt-2 prose prose-sm max-w-none text-[--text-color] dark:prose-invert 
+                                  prose-headings:text-[--text-color] prose-p:text-[--text-color] 
+                                  prose-strong:text-[--text-color] prose-em:text-[--text-color]
+                                  prose-a:text-blue-500 prose-blockquote:text-[--muted-text-color]
+                                  prose-code:text-[--text-color] prose-li:text-[--text-color]">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.content}</ReactMarkdown>
+                  </div>
+                )}
+                {result.error && (
+                  <p className="mt-2 text-red-500 text-sm">Error: {result.error}</p>
+                )}
+                <p className="text-xs text-[--muted-text-color] mt-1">Status: {result.status} | Processed: {new Date(result.processedDate).toLocaleString()}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {scrapedResults && scrapedResults.length > 0 && (
+          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mt-auto pt-4 border-t border-[--border-color]">
+            <div className="flex items-center space-x-2">
+              <Label htmlFor="target-doc" className="text-sm text-[--text-color]">Insert into:</Label>
+              <RadioGroup
+                id="target-doc"
+                value={targetDocument}
+                onValueChange={(value: TargetDocumentType) => setTargetDocument(value)}
+                className="flex"
                 disabled={isLoading}
               >
-                <FilePlus2 className="mr-2 h-4 w-4" />
-                Insert into New Document
-              </Button>
-              <Button
-                onClick={() => handleInsert(scrapedContent, 'current')}
-                className="bg-[var(--primary-color)] text-[var(--button-text-color)] hover:bg-[var(--primary-color-hover)] disabled:opacity-60 flex items-center"
-                disabled={isLoading || !hasActiveDocument}
-                title={!hasActiveDocument ? "No active document to insert into." : "Insert into current document"}
-              >
-                <FilePenLine className="mr-2 h-4 w-4" />
-                Insert into Current Document
-              </Button>
-            </>
-          )}
-        </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="current" id="current-doc" disabled={!hasActiveDocument || isLoading} />
+                  <Label htmlFor="current-doc" className={`text-sm ${!hasActiveDocument ? 'text-[--muted-text-color]' : 'text-[--text-color]'}`}>Current Document</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="new" id="new-doc" disabled={isLoading} />
+                  <Label htmlFor="new-doc" className="text-sm text-[--text-color]">New Document</Label>
+                </div>
+              </RadioGroup>
+            </div>
+            <Button 
+              onClick={() => handleInsert(scrapedResults, targetDocument)} 
+              disabled={isLoading || !scrapedResults || scrapedResults.filter(r => r.status === 'success' && r.content).length === 0 || (targetDocument === 'current' && !hasActiveDocument) }
+              className="flex-1 sm:flex-none"
+            >
+              {targetDocument === 'current' ? <FilePenLine size={18} className="mr-2" /> : <FilePlus2 size={18} className="mr-2" />}
+              {isLoading ? 'Processing...' : (targetDocument === 'current' ? 'Insert into Current' : 'Create New with Content')}
+            </Button>
+          </div>
+        )}
       </div>
-      {/* Keyframes for modal animation (same as VersionHistoryModal) */}
-      <style jsx global>{`
-        @keyframes modalFadeIn {
-          from {
-            opacity: 0;
-            transform: scale(0.95);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1);
-          }
-        }
-        .animate-modalFadeIn {
-          animation: modalFadeIn 0.2s ease-out forwards;
-        }
-      `}</style>
     </div>
   );
 };
