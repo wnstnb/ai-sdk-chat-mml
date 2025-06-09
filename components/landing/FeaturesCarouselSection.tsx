@@ -84,7 +84,7 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
       ],
     },
     {
-      previewImageSrc: "/PDF-summary-1.png",
+      previewImageSrc: "/pdf-summary-1.png",
       title: "PDF<br />Summaries",
       caption: "Extract text or get summaries from PDF documents.",
       content: [
@@ -93,7 +93,7 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
             <strong>Easily process PDF documents by uploading the file directly.</strong> Whether you need the full text extracted or a concise AI-powered summary, you can quickly integrate PDF content into your notes and projects. This feature is perfect for research, reviewing reports, or incorporating academic papers into your workflow when you have the file handy.
           </p>
           <div className="flex justify-center mt-4">
-            <img src="/PDF-summary-from-file.png" alt="PDF Summaries - Upload File" className="w-full h-full object-cover rounded-xl max-w-xl" />
+            <img src="/pdf-summary-from-file.png" alt="PDF Summaries - Upload File" className="w-full h-full object-cover rounded-xl max-w-xl" />
           </div>
         </div>,
         <div key="section-pdf-summary-2">
@@ -101,7 +101,7 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
             <strong>Alternatively, provide a URL to a publicly accessible PDF.</strong> Our tool will fetch and process it, allowing you to extract text or generate summaries just as easily. Ideal for when you&apos;re working with online documents and want to bring their content into your workspace without downloading first.
           </p>
           <div className="flex justify-center mt-4">
-            <img src="/PDF-summary-from-url.png" alt="PDF Summaries - From URL" className="w-full h-full object-cover rounded-xl max-w-xl" />
+            <img src="/pdf-summary-from-url.png" alt="PDF Summaries - From URL" className="w-full h-full object-cover rounded-xl max-w-xl" />
           </div>
         </div>
       ],
