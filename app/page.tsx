@@ -158,6 +158,7 @@ const FeatureListSection = () => {
     { text: "Beautiful rich text editing with Markdown and drag-and-drop blocks." },
     { text: "Live voice summaries to capture your thoughts as they come." },
     { text: "Scrape and summarize web content to easily capture online information." },
+    { text: "Process PDFs by uploading files or providing URLs to extract full text or get AI-powered summaries." },
     { text: "Smart AI integration to help you write, ideate, and refine effortlessly." },
     { text: "Autosave and manual version history so you never lose your work." },
     { text: "Browse previous versions with a clean, intuitive interface." },
@@ -277,7 +278,7 @@ export default function LandingPageContent() {
     {
       icon: <Clock className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
       title: "Tag<br />Documents",
-      description: "Tag documents as context for AI and never start from zero."
+      description: "Tag documents as context for AI<br /> and never start from zero."
     },
     {
       icon: <Zap className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable

@@ -169,9 +169,7 @@ export class PDFProcessingService {
     ];
 
     const parts: Part[] = [
-      { text: `Please summarize the following text concisely:
-
-${text}` }
+      { text: `Summarize this document.` }
     ];
 
     try {
@@ -198,6 +196,112 @@ ${text}` }
         throw new Error(`Gemini API error during summarization: ${error.message}`);
       }
       throw new Error("An unknown error occurred during text summarization.");
+    }
+  }
+
+  public async summarizePdf(pdfSource: Buffer | string, sourceType: 'buffer' | 'url'): Promise<string> {
+    let pdfBuffer: Buffer;
+
+    if (sourceType === 'url') {
+      if (typeof pdfSource !== 'string') {
+        throw new Error("Invalid pdfSource: Expected a URL string for sourceType 'url'.");
+      }
+      try {
+        const response = await fetch(pdfSource);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch PDF from URL: ${response.status} ${response.statusText}`);
+        }
+        const contentType = response.headers.get('content-type');
+        // Looser check for content type for URLs, as direct PDF links might not always have perfect headers
+        // but we still prefer application/pdf if available.
+        if (contentType && !contentType.toLowerCase().includes('application/pdf') && !pdfSource.toLowerCase().endsWith('.pdf')) {
+          console.warn(`URL ${pdfSource} Content-Type is ${contentType}, not strictly application/pdf. Proceeding based on URL extension or other checks.`);
+          // Allow if URL ends with .pdf even if content-type is generic, or if it's a known PDF serving domain (validated by frontend).
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        pdfBuffer = Buffer.from(arrayBuffer);
+      } catch (error) {
+        console.error("Error fetching or processing PDF from URL for summarization:", error);
+        throw new Error(`Could not retrieve PDF from URL for summarization: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    } else if (sourceType === 'buffer') {
+      if (!(pdfSource instanceof Buffer)) {
+        throw new Error("Invalid pdfSource: Expected a Buffer for sourceType 'buffer'.");
+      }
+      pdfBuffer = pdfSource;
+    } else {
+      throw new Error("Invalid sourceType. Must be 'buffer' or 'url'.");
+    }
+
+    if (pdfBuffer.byteLength > MAX_FILE_SIZE_BYTES) {
+      throw new Error(`File size exceeds the limit of ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB.`);
+    }
+
+    if (sourceType === 'buffer') {
+      if (pdfBuffer.length < 5 || pdfBuffer.toString('utf8', 0, 5) !== '%PDF-') {
+        throw new Error("Invalid file content: The uploaded file does not appear to be a valid PDF document.");
+      }
+    }
+
+    const cacheKey = this.generateCacheKey(pdfBuffer); // Cache based on PDF content
+    const cachedResult = this.summarizeCache.get(cacheKey);
+    if (cachedResult) {
+      console.log("Returning cached PDF summarization result.");
+      return cachedResult;
+    }
+
+    const generationConfig: GenerationConfig = {
+      responseMimeType: "text/plain",
+    };
+
+    const safetySettings = [
+      { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+    ];
+
+    const parts: Part[] = [
+      {
+        inlineData: {
+          mimeType: "application/pdf",
+          data: pdfBuffer.toString("base64"),
+        },
+      },
+      {
+        text: "Summarize this document concisely. Focus on the main topics, key findings, and overall purpose. If it is a research paper, include the problem statement, methods, and results if possible."
+      }
+    ];
+
+    try {
+      const model = this.generativeAI.getGenerativeModel({ model: this.model, safetySettings, generationConfig });
+      const result = await model.generateContent({ contents: [{ role: "user", parts }] });
+      const response = result.response;
+
+      if (!response || !response.candidates || response.candidates.length === 0) {
+        throw new Error("No summary generated from PDF or response was empty.");
+      }
+
+      const candidate = response.candidates[0];
+      if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
+        throw new Error("No parts found in the generated PDF summary.");
+      }
+
+      const summaryText = candidate.content.parts.map(part => part.text).join("").trim();
+      
+      if (!summaryText) { // Handle case where Gemini returns empty text part
+        throw new Error("Summarization resulted in empty text. The PDF might not contain summarizable content or there was an issue processing it.");
+      }
+      
+      this.summarizeCache.set(cacheKey, summaryText);
+      return summaryText;
+
+    } catch (error) {
+      console.error("Error summarizing PDF with Gemini API:", error);
+      if (error instanceof Error) {
+        throw new Error(`Gemini API error during PDF summarization: ${error.message}`);
+      }
+      throw new Error("An unknown error occurred during PDF summarization.");
     }
   }
 } 

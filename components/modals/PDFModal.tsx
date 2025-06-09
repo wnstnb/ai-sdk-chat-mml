@@ -57,7 +57,6 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
   const [extractedResult, setExtractedResult] = useState<string | null>(null);
   const [summarizedResult, setSummarizedResult] = useState<string | null>(null);
   const [insertionTarget, setInsertionTarget] = useState<InsertionTarget>('current');
-  const [activePreviewTab, setActivePreviewTab] = useState<'summary' | 'fullText'>('summary');
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
 
   const convertFileToBase64 = (file: File): Promise<string> => {
@@ -98,7 +97,6 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
     setActiveTab('file');
     setProcessingType('extract');
     setInsertionTarget('current');
-    setActivePreviewTab('summary');
   }, [resetInputStates, resetProcessingAndResults]);
 
   const validateFile = (file: File | null): boolean => {
@@ -139,8 +137,29 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
         setUrlError('Invalid URL protocol. Must be http or https.');
         return false;
       }
-      if (!newUrl.pathname.toLowerCase().endsWith('.pdf')) {
-        setUrlError('URL must point to a .pdf file.');
+      
+      // Check for known PDF-serving domains that don't use .pdf extensions
+      const hostname = newUrl.hostname.toLowerCase();
+      const pathname = newUrl.pathname.toLowerCase();
+      
+      // Known PDF-serving patterns
+      const isKnownPdfDomain = 
+        // ArXiv PDFs
+        (hostname.includes('arxiv.org') && pathname.startsWith('/pdf/')) ||
+        // ResearchGate PDFs  
+        (hostname.includes('researchgate.net') && pathname.includes('/publication/')) ||
+        // IEEE Xplore PDFs
+        (hostname.includes('ieee.org') && pathname.includes('/document/')) ||
+        // ACM Digital Library PDFs
+        (hostname.includes('acm.org') && pathname.includes('/doi/')) ||
+        // Other domains that commonly serve PDFs via URL parameters or special paths
+        pathname.includes('/pdf') ||
+        newUrl.searchParams.has('pdf') ||
+        // Direct .pdf file links
+        pathname.endsWith('.pdf');
+      
+      if (!isKnownPdfDomain) {
+        setUrlError('URL does not appear to point to a PDF. Please ensure the URL serves PDF content (e.g., direct .pdf links, arXiv, ResearchGate, IEEE, etc.).');
         return false;
       }
     } catch (_error) {
@@ -321,8 +340,7 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
       console.log('[PDFModal] Successfully processed PDF. API Result:', result);
       setExtractedResult(result.extractedText || result.summary || result.text || 'No content found.');
       setSummarizedResult(result.summary || result.text || 'No summary found.');
-      setActivePreviewTab('fullText');
-      setProcessingStatus('Text extracted successfully!');
+      setProcessingStatus('Text processed successfully!');
       setFileError(null);
       setUrlError(null);
       toast.success('PDF processed successfully!');
@@ -350,7 +368,7 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
       return;
     }
 
-    const contentToInsert = activePreviewTab === 'summary' && summarizedResult ? summarizedResult : extractedResult;
+    const contentToInsert = extractedResult;
 
     if (!contentToInsert) {
       toast.info("No content to insert.");
@@ -391,7 +409,7 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
   };
 
   const handleCreateNewDocumentWithContent = async () => {
-    const contentToSave = activePreviewTab === 'summary' && summarizedResult ? summarizedResult : extractedResult;
+    const contentToSave = extractedResult;
     if (!contentToSave) {
       toast.error("No content available to create a new document.");
       return;
@@ -477,7 +495,7 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { onClose(); } }}>
       <DialogContent 
-        className="bg-[var(--editor-bg)] text-[--text-color] p-0 max-w-2xl max-h-[90vh] flex flex-col gap-0"
+        className="bg-[var(--editor-bg)] text-[--text-color] p-0 max-w-2xl max-h-[95vh] flex flex-col gap-0"
         style={{ zIndex: 1050 }}
         onPointerDownOutside={(e) => {
           // Allow interaction with toasts
@@ -499,7 +517,7 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
           </DialogDescription>
         </DialogHeader>
         
-        <div className="px-6 py-4 space-y-4 overflow-y-auto flex-grow">
+        <div className="px-6 py-4 space-y-4">
           <Tabs 
             value={activeTab} 
             onValueChange={(newTab) => { 
@@ -518,7 +536,7 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
                 onClick={() => !isProcessing && fileInputRef.current?.click()}
-                className={`p-6 py-10 border-2 border-dashed rounded-md text-center cursor-pointer transition-colors
+                className={`p-6 py-1 border-2 border-dashed rounded-md text-center cursor-pointer transition-colors
                   ${isDraggingOver ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/50'}
                   ${fileError ? 'border-destructive bg-destructive/5' : ''}
                   ${isProcessing ? 'cursor-not-allowed opacity-60' : ''}
@@ -586,52 +604,35 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
               </RadioGroup>
             </div>
           </Tabs>
-        </div> {/* End of main content area before results */}
+        </div>
 
-        {showResults && (
-          <div className="flex-grow overflow-y-auto px-6 pt-2 pb-2 border-t border-b border-[--border-color] min-h-[200px] max-h-[calc(90vh-300px)]"> {/* Adjusted max-h */} 
-            <Tabs value={activePreviewTab} onValueChange={(value) => setActivePreviewTab(value as 'summary' | 'fullText')} className="h-full flex flex-col">
-              <TabsList className="grid w-full grid-cols-2 shrink-0">
-                <TabsTrigger value="fullText" disabled={!extractedResult}>
-                  <FileText size={16} className="mr-2" /> Full Text
-                </TabsTrigger>
-                <TabsTrigger value="summary" disabled={!summarizedResult}>
-                   <BotMessageSquare size={16} className="mr-2" /> Summary
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="fullText" className="flex-grow overflow-y-auto mt-2 p-3 bg-[--input-bg] border border-[--border-color] rounded text-sm">
-                {extractedResult ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {extractedResult}
-                  </ReactMarkdown>
-                ) : <p className="text-[--muted-text-color]">No full text extracted or available.</p>}
-              </TabsContent>
-              <TabsContent value="summary" className="flex-grow overflow-y-auto mt-2 p-3 bg-[--input-bg] border border-[--border-color] rounded text-sm">
-                {summarizedResult ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {summarizedResult}
-                  </ReactMarkdown>
-                ) : <p className="text-[--muted-text-color]">No summary generated or available.</p>}
-              </TabsContent>
-            </Tabs>
-          </div>
-        )}
-
-        {isProcessing && processingStatus && (
-          <div className="px-6 py-4 border-b border-[--border-color] text-center">
-            <div className="flex items-center justify-center text-[--text-color]">
-              <Loader2 size={20} className="animate-spin mr-2" />
-              <span>{processingStatus}</span>
+        <div className="px-6 py-4 flex-grow overflow-y-auto min-h-[200px] border-t border-[--border-color]">
+          {isProcessing && processingStatus ? (
+            <div className="h-full flex flex-col items-center justify-center">
+              <Loader2 size={28} className="animate-spin text-[--text-color]" />
+              <p className="mt-3 text-sm text-[--muted-text-color]">{processingStatus}</p>
             </div>
-          </div>
-        )}
+          ) : showResults && extractedResult ? (
+            <div className="p-3 border border-[--border-color] rounded-md bg-[--input-bg] prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap break-words h-full">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{extractedResult}</ReactMarkdown>
+            </div>
+          ) : showResults && !extractedResult ? (
+            <div className="p-3 border border-[--border-color] rounded-md bg-[--input-bg] h-full flex items-center justify-center">
+              <p className="text-sm text-[--muted-text-color]">No content available to preview.</p>
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center">
+              <p className="text-sm text-[--muted-text-color]">PDF content will appear here after processing.</p>
+            </div>
+          )}
+        </div>
         
         <DialogFooter className="px-6 py-4 bg-[var(--subtle-bg)] border-t border-[--border-color] flex-wrap justify-between sm:justify-end gap-2">
           {!showResults ? (
             <>
               <Button
-                onClick={() => handleProcessPDF(apiProcessingType)} // Use mapped type for clarity
-                disabled={isSubmitButtonDisabled} // Keep existing disable logic for submit
+                onClick={() => handleProcessPDF(apiProcessingType)}
+                disabled={isSubmitButtonDisabled}
                 variant="default"
                 className="order-1 sm:order-2 flex-1 sm:flex-initial min-w-[150px]"
               >
@@ -680,7 +681,7 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
                 disabled={
                   isProcessing ||
                   (insertionTarget === 'current' && !hasActiveDocument) ||
-                  (!extractedResult && !summarizedResult) // Ensure there's something to insert
+                  (!extractedResult && !summarizedResult)
                 }
                 variant="default"
                 className="order-2 sm:order-3 flex-1 sm:flex-initial min-w-[180px]"
