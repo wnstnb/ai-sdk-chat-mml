@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, FilePlus2, FilePenLine } from 'lucide-react';
+import { X, FilePlus2, FilePenLine, Shovel, Loader2 } from 'lucide-react';
 import { useModalStore } from '@/stores/useModalStore';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import webScraperApiClient from '@/lib/services/webScrapeService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface ScrapedUrlResult {
   url: string;
@@ -260,14 +261,14 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-[var(--editor-bg)] p-6 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-[--text-color]">Web Scrape Content</h2>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close modal">
-            <X size={20} />
-          </Button>
-        </div>
+    <Dialog open={isOpen} onOpenChange={(openState) => { if (!openState) onClose(); }}>
+      <DialogContent 
+        className="bg-[var(--editor-bg)] text-[--text-color] p-6 max-w-2xl max-h-[90vh] flex flex-col"
+        style={{ zIndex: 1050 }}
+      >
+        <DialogHeader className="mb-4">
+          <DialogTitle className="text-xl font-semibold text-[--text-color]">Web Scrape Content</DialogTitle>
+        </DialogHeader>
 
         <div className="space-y-4 mb-4">
           <div>
@@ -304,6 +305,11 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
 
         <div className="flex space-x-2 mb-4">
           <Button onClick={handleScrape} disabled={isLoading} className="flex-1">
+            {isLoading ? (
+              <Loader2 size={16} className="mr-2 animate-spin" />
+            ) : (
+              <Shovel size={16} className="mr-2" />
+            )}
             {isLoading ? 'Scraping...' : 'Scrape Content'}
           </Button>
           <Button onClick={handleClear} variant="outline" disabled={isLoading}>
@@ -367,8 +373,8 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
             </Button>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

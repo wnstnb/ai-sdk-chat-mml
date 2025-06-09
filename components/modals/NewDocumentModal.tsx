@@ -9,6 +9,7 @@ import { useModalStore } from '@/stores/useModalStore';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // For default model
 import type { TaggedDocument } from '@/lib/types'; // Import TaggedDocument type
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 // Define a default model fallback (used if store isn't ready)
 const defaultModelFallback = 'gemini-1.5-flash'; // Or your preferred default
@@ -145,18 +146,14 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-[var(--editor-bg)] text-[--text-color] p-6 rounded-lg shadow-xl w-full max-w-2xl relative">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Create New Document</h2>
-          <button
-            onClick={onClose}
-            className="text-[--text-color-secondary] hover:text-[--text-color]"
-            aria-label="Close modal"
-          >
-            <X size={24} />
-          </button>
-        </div>
+    <Dialog open={isOpen} onOpenChange={(openState) => { if (!openState) onClose(); }}>
+      <DialogContent 
+        className="bg-[var(--editor-bg)] text-[--text-color] max-w-2xl" 
+        style={{ zIndex: 1050 }}
+      >
+        <DialogHeader>
+          <DialogTitle className="text-xl font-semibold">Create New Document</DialogTitle>
+        </DialogHeader>
         
         {creationError && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md dark:bg-red-900/30 dark:border-red-700/50 dark:text-red-400">
@@ -194,17 +191,9 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
         </form>
 
         <div className="flex justify-end space-x-2 mt-6">
-          <Button
-            type="button"
-            variant="modalSecondary"
-            onClick={onClose}
-            disabled={isCreating}
-          >
-            Cancel
-          </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

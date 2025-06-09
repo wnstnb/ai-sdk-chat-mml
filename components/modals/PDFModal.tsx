@@ -9,7 +9,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { X, UploadCloud, Link2, AlertCircle, Loader2, FileText, BotMessageSquare, FilePlus2, ChevronDown } from 'lucide-react';
+import { X, UploadCloud, Link2, AlertCircle, Loader2, FileText, BotMessageSquare, FilePlus2, ChevronDown, BookOpenText } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -470,10 +470,15 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
 
   const showResults = !!(extractedResult || summarizedResult);
 
+  // Determine the actual processing type for the API call
+  // 'extract' for "Full Text", 'summarize' for "Summarize (AI)"
+  const apiProcessingType = processingType; // Keep as is, or map if state values change
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { onClose(); } }}>
       <DialogContent 
         className="bg-[var(--editor-bg)] text-[--text-color] p-0 max-w-2xl max-h-[90vh] flex flex-col gap-0"
+        style={{ zIndex: 1050 }}
         onPointerDownOutside={(e) => {
           // Allow interaction with toasts
           if ((e.target as HTMLElement).closest('[data-sonner-toast]')) {
@@ -489,107 +494,102 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
       >
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-[--border-color]">
           <DialogTitle className="text-xl font-semibold">Process PDF</DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-sm text-[--muted-text-color]">
             Upload a PDF file or provide a URL to extract text or generate an AI summary.
           </DialogDescription>
-          <DialogClose asChild>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="absolute top-4 right-4 text-[--muted-text-color] hover:text-[--text-color]"
-              onClick={onClose} // Ensure onClose is called explicitly for the X button
-              aria-label="Close"
-            >
-              <X size={20} />
-            </Button>
-          </DialogClose>
         </DialogHeader>
         
-        <Tabs 
-          value={activeTab} 
-          onValueChange={(newTab) => { 
-            if (!isProcessing) setActiveTab(newTab); 
-          }} 
-          className="flex-grow flex flex-col"
-        >
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="file" disabled={isProcessing}><UploadCloud className="mr-2 h-4 w-4" /> Upload File</TabsTrigger>
-            <TabsTrigger value="url" disabled={isProcessing}><Link2 className="mr-2 h-4 w-4" /> From URL</TabsTrigger>
-          </TabsList>
-          <TabsContent value="file" className="mt-4">
-            <div
-              onDragEnter={handleDragEnter}
-              onDragLeave={handleDragLeave}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              onClick={() => !isProcessing && fileInputRef.current?.click()}
-              className={`p-6 py-10 border-2 border-dashed rounded-md text-center cursor-pointer transition-colors
-                ${isDraggingOver ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/50'}
-                ${fileError ? 'border-destructive bg-destructive/5' : ''}
-                ${isProcessing ? 'cursor-not-allowed opacity-60' : ''}
-              `}
-            >
-              <Input 
-                ref={fileInputRef} 
-                id="pdf-file-upload" 
-                type="file" 
-                accept={ACCEPTED_FILE_TYPES.join(',')} 
-                onChange={handleFileChange} 
-                disabled={isProcessing} 
-                className="hidden"
-              />
-              <UploadCloud 
-                className={`mx-auto h-10 w-10 mb-3
-                  ${isDraggingOver ? 'text-primary' : 'text-muted-foreground'}
-                  ${fileError ? 'text-destructive' : ''}
-                `} 
-              />
-              <p className="text-sm text-muted-foreground">
-                <span className={`font-medium ${isDraggingOver || fileError ? (fileError ? 'text-destructive': 'text-primary') : 'text-foreground'}`}>
-                  {isDraggingOver ? 'Drop your PDF here' : 'Drag & drop PDF or click to browse'}
-                </span>
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Max file size: {MAX_PDF_FILE_SIZE_BYTES / (1024 * 1024)}MB. Only .pdf files.
-              </p>
-              {selectedFile && !fileError && !isDraggingOver && (
-                <p className="mt-2 text-xs text-green-600 font-medium">
-                  Selected: {selectedFile.name}
+        <div className="px-6 py-4 space-y-4 overflow-y-auto flex-grow">
+          <Tabs 
+            value={activeTab} 
+            onValueChange={(newTab) => { 
+              if (!isProcessing) setActiveTab(newTab); 
+            }} 
+            className="flex flex-col"
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="file" disabled={isProcessing}><UploadCloud className="mr-2 h-4 w-4" /> Upload File</TabsTrigger>
+              <TabsTrigger value="url" disabled={isProcessing}><Link2 className="mr-2 h-4 w-4" /> From URL</TabsTrigger>
+            </TabsList>
+            <TabsContent value="file" className="mt-4">
+              <div
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onClick={() => !isProcessing && fileInputRef.current?.click()}
+                className={`p-6 py-10 border-2 border-dashed rounded-md text-center cursor-pointer transition-colors
+                  ${isDraggingOver ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/50'}
+                  ${fileError ? 'border-destructive bg-destructive/5' : ''}
+                  ${isProcessing ? 'cursor-not-allowed opacity-60' : ''}
+                `}
+              >
+                <Input 
+                  ref={fileInputRef} 
+                  id="pdf-file-upload" 
+                  type="file" 
+                  accept={ACCEPTED_FILE_TYPES.join(',')} 
+                  onChange={handleFileChange} 
+                  disabled={isProcessing} 
+                  className="hidden"
+                />
+                <UploadCloud 
+                  className={`mx-auto h-10 w-10 mb-3
+                    ${isDraggingOver ? 'text-primary' : 'text-muted-foreground'}
+                    ${fileError ? 'text-destructive' : ''}
+                  `} 
+                />
+                <p className="text-sm text-muted-foreground">
+                  <span className={`font-medium ${isDraggingOver || fileError ? (fileError ? 'text-destructive': 'text-primary') : 'text-foreground'}`}>
+                    {isDraggingOver ? 'Drop your PDF here' : 'Drag & drop PDF or click to browse'}
+                  </span>
                 </p>
-              )}
-              {fileError && !isDraggingOver && (
-                <p className="mt-2 text-sm text-destructive flex items-center justify-center">
-                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" /> {fileError}
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Max file size: {MAX_PDF_FILE_SIZE_BYTES / (1024 * 1024)}MB. Only .pdf files.
                 </p>
-              )}
+                {selectedFile && !fileError && !isDraggingOver && (
+                  <p className="mt-2 text-xs text-green-600 font-medium">
+                    Selected: {selectedFile.name}
+                  </p>
+                )}
+                {fileError && !isDraggingOver && (
+                  <p className="mt-2 text-sm text-destructive flex items-center justify-center">
+                    <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" /> {fileError}
+                  </p>
+                )}
+              </div>
+            </TabsContent>
+            <TabsContent value="url" className="mt-4">
+              <div className="space-y-2">
+                <Label htmlFor="pdf-url-input">PDF URL</Label>
+                <Input id="pdf-url-input" type="url" placeholder="https://example.com/document.pdf" value={pdfUrl} onChange={handleUrlChange} disabled={isProcessing} className={`${urlError ? 'border-destructive' : ''}`} />
+                {urlError && <p className="text-sm text-destructive flex items-center"><AlertCircle className="h-4 w-4 mr-1" /> {urlError}</p>}
+                <p className="text-xs text-muted-foreground pt-1">Enter the direct URL to a publicly accessible PDF file.</p>
+              </div>
+            </TabsContent>
+            <div className="space-y-2 mt-4">
+              <Label>Processing Type</Label>
+              <RadioGroup 
+                value={processingType} 
+                onValueChange={(value: string) => setProcessingType(value as ProcessingType)} 
+                className="flex space-x-4"
+                disabled={isProcessing || showResults} // Disable if processing or results are shown
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="extract" id="extract-text" />
+                  <Label htmlFor="extract-text" className="font-normal">Full Text</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="summarize" id="summarize-ai" />
+                  <Label htmlFor="summarize-ai" className="font-normal">Summarize (AI)</Label>
+                </div>
+              </RadioGroup>
             </div>
-          </TabsContent>
-          <TabsContent value="url" className="mt-4">
-            <div className="space-y-2">
-              <Label htmlFor="pdf-url-input">PDF URL</Label>
-              <Input id="pdf-url-input" type="url" placeholder="https://example.com/document.pdf" value={pdfUrl} onChange={handleUrlChange} disabled={isProcessing} className={`${urlError ? 'border-destructive' : ''}`} />
-              {urlError && <p className="text-sm text-destructive flex items-center"><AlertCircle className="h-4 w-4 mr-1" /> {urlError}</p>}
-              <p className="text-xs text-muted-foreground pt-1">Enter the direct URL to a publicly accessible PDF file.</p>
-            </div>
-          </TabsContent>
-        </Tabs>
-
-        <div className="space-y-2">
-          <Label>Processing Type</Label>
-          <RadioGroup defaultValue="extract" value={processingType} onValueChange={(value: string) => setProcessingType(value as ProcessingType)} className="flex space-x-4" disabled={isProcessing}>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="extract" id="extract" />
-              <Label htmlFor="extract" className="font-normal">Extract Text</Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="summarize" id="summarize" />
-              <Label htmlFor="summarize" className="font-normal">Summarize & Extract</Label>
-            </div>
-          </RadioGroup>
-        </div>
+          </Tabs>
+        </div> {/* End of main content area before results */}
 
         {showResults && (
-          <div className="flex-grow overflow-y-auto px-6 pt-2 pb-2 border-b border-[--border-color] min-h-[200px] max-h-[40vh]">
+          <div className="flex-grow overflow-y-auto px-6 pt-2 pb-2 border-t border-b border-[--border-color] min-h-[200px] max-h-[calc(90vh-300px)]"> {/* Adjusted max-h */} 
             <Tabs value={activePreviewTab} onValueChange={(value) => setActivePreviewTab(value as 'summary' | 'fullText')} className="h-full flex flex-col">
               <TabsList className="grid w-full grid-cols-2 shrink-0">
                 <TabsTrigger value="fullText" disabled={!extractedResult}>
@@ -626,31 +626,26 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
           </div>
         )}
         
-        <DialogFooter className="px-6 py-4 bg-[var(--subtle-bg)] border-t border-[--border-color] flex-wrap justify-between sm:justify-between gap-2">
+        <DialogFooter className="px-6 py-4 bg-[var(--subtle-bg)] border-t border-[--border-color] flex-wrap justify-between sm:justify-end gap-2">
           {!showResults ? (
             <>
               <Button
-                onClick={() => handleProcessPDF('extract')}
-                disabled={isSubmitButtonDisabled}
-                variant="outline"
-                className="flex-1 sm:flex-initial"
-              >
-                <FileText size={16} className="mr-2" />
-                Extract Text
-              </Button>
-              <Button
-                onClick={() => handleProcessPDF('summarize')}
-                disabled={isSubmitButtonDisabled}
+                onClick={() => handleProcessPDF(apiProcessingType)} // Use mapped type for clarity
+                disabled={isSubmitButtonDisabled} // Keep existing disable logic for submit
                 variant="default"
-                className="flex-1 sm:flex-initial"
+                className="order-1 sm:order-2 flex-1 sm:flex-initial min-w-[150px]"
               >
-                <BotMessageSquare size={16} className="mr-2" />
-                Generate Summary
+                {isProcessing ? (
+                  <Loader2 size={16} className="mr-2 animate-spin" /> 
+                ) : (
+                  <BookOpenText size={16} className="mr-2" />
+                )}
+                {isProcessing ? 'Processing...' : 'Process PDF'}
               </Button>
             </>
           ) : (
             <>
-              <div className="flex items-center rounded-md order-1 sm:order-none" role="radiogroup" aria-labelledby="target-document-label-pdf">
+              <div className="flex items-center rounded-md order-1 sm:order-2" role="radiogroup" aria-labelledby="target-document-label-pdf">
                 <span id="target-document-label-pdf" className="sr-only">Select target document</span>
                 <Button
                   onClick={() => setInsertionTarget('current')}
@@ -688,7 +683,7 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
                   (!extractedResult && !summarizedResult) // Ensure there's something to insert
                 }
                 variant="default"
-                className="order-2 sm:order-none flex-1 sm:flex-initial min-w-[180px]"
+                className="order-2 sm:order-3 flex-1 sm:flex-initial min-w-[180px]"
               >
                 <FilePlus2 size={16} className="mr-2" />
                 {insertionTarget === 'current' ? 'Insert to Current' : 'Create New Document'}
