@@ -98,7 +98,7 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
         </div>,
         <div key="section-pdf-summary-2">
           <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
-            <strong>Alternatively, provide a URL to a publicly accessible PDF.</strong> Our tool will fetch and process it, allowing you to extract text or generate summaries just as easily. Ideal for when you're working with online documents and want to bring their content into your workspace without downloading first.
+            <strong>Alternatively, provide a URL to a publicly accessible PDF.</strong> Our tool will fetch and process it, allowing you to extract text or generate summaries just as easily. Ideal for when you&apos;re working with online documents and want to bring their content into your workspace without downloading first.
           </p>
           <div className="flex justify-center mt-4">
             <img src="/PDF-summary-from-url.png" alt="PDF Summaries - From URL" className="w-full h-full object-cover rounded-xl max-w-xl" />
