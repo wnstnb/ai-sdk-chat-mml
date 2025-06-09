@@ -193,9 +193,7 @@ export default function EditorPage() {
     // --- NEW: State to track client-side tool processing ---
     const [isProcessingClientTools, setIsProcessingClientTools] = useState(false);
 
-    // --- PLACEHOLDER State for Client Chat Orchestrator output (REQ-3.1, REQ-3.2) ---
-    const [isChatInputBusy, setIsChatInputBusy] = useState<boolean>(false);
-    const [currentOperationStatusText, setCurrentOperationStatusText] = useState<string | null>(null); // To be replaced by orchestrator hook
+    // --- Note: isChatInputBusy and currentOperationStatusText now come from useChatInteractions ---
     // Example to test UI states:
     // useEffect(() => {
     //     // Simulate an operation
@@ -244,7 +242,7 @@ export default function EditorPage() {
         // EditorPage will use its own local state for this.
     } = useChatPane({}); // Pass empty object or relevant props if any are added back to UseChatPaneProps
     
-    const { files, isUploading, uploadError, uploadedImagePath, uploadedImageSignedUrl, handleFileSelectEvent, handleFilePasteEvent, handleFileDropEvent, clearPreview } = useFileUpload({ documentId });
+    const { files, isUploading, uploadError, uploadedImagePath, uploadedImageSignedUrl, handleFileSelectEvent, handleFilePasteEvent, handleFileDropEvent, clearPreview, uploadFileForOrchestrator, fetchDownloadUrlForPath } = useFileUpload({ documentId });
     
     // === DEBUG LOGGING FOR IMAGE UPLOAD STATE ===
     console.log("=== [EditorPage] IMAGE UPLOAD DEBUG START ===");
@@ -277,37 +275,62 @@ export default function EditorPage() {
     console.log("=== [EditorPage] CHAT INTERACTIONS INPUT DEBUG END ===");
     
     const {
-        messages: chatMessages, 
-        setMessages: setChatMessages, 
+        messages,
+        setMessages, // Allow direct setting of messages for history loading
         input,
         setInput,
         handleInputChange,
-        handleSubmit, 
-        isLoading: isChatLoading, 
+        sendMessage,
+        isLoading: isAiLoading, // Renamed to avoid conflict with document loading state
         reload,
-        stop,
+        stop, // Stop AI generation
         model,
         setModel,
+        // --- NEW AUDIO PROPS --- 
         isRecording,
         isTranscribing,
         micPermissionError,
-        startRecording,
-        stopRecording,
-        audioTimeDomainData,
+        handleMicrophoneClick,
+        handleStopRecording, 
+        audioTimeDomainData, // <<< NEW: Exposed audio data for visualization
+        // --- END NEW AUDIO PROPS ---
+        // --- NEW TAGGED DOCUMENTS PROPS ---
         taggedDocuments,
         setTaggedDocuments,
-        addToolResult, // Added for completing client-side tool calls
+        // --- END NEW TAGGED DOCUMENTS PROPS ---
+        addToolResult,
+        // --- NEW: Orchestrator-specific file upload handlers/state ---
+        handleFileUpload,
+        cancelFileUpload,
+        pendingFile,
+        isFileUploadInProgress,
+        // --- NEW: Orchestrator general busy state and status text ---
+        isChatInputBusy,
+        currentOperationStatusText,
     } = useChatInteractions({
         documentId,
         initialModel,
-        initialMessages: initialMessages as any, // Explicit type assertion
+        initialMessages, // Corrected: was initialChatMessages, should be initialMessages
         editorRef,
-        uploadedImagePath,
-        uploadedImageSignedUrl,
-        isUploading,
-        clearFileUploadPreview: clearPreview,
-        initialTaggedDocIdsString, // <-- Pass to the hook
+        uploadedImagePath, // From useFileUpload
+        uploadedImageSignedUrl, // From useFileUpload
+        isUploading, // From useFileUpload
+        clearFileUploadPreview: clearPreview, // From useFileUpload
+        initialTaggedDocIdsString, // From URL search params
+        uploadFileForOrchestrator,
+        fetchDownloadUrlForPath,
     });
+    
+    // Create aliases for missing functions expected by components
+    const startRecording = handleMicrophoneClick;
+    const stopRecording = handleStopRecording;
+    const orchestratorHandleFileUploadStart = handleFileUpload;
+    const orchestratorCancelFileUpload = cancelFileUpload;
+    const orchestratorPendingFile = pendingFile;
+    const orchestratorIsFileUploadInProgress = isFileUploadInProgress;
+    const orchestratorIsChatInputBusy = isChatInputBusy;
+    const orchestratorCurrentOperationStatusText = currentOperationStatusText;
+    
     const { followUpContext, setFollowUpContext } = useFollowUpStore();
 
     // ---> ADD LOG HERE <---
@@ -613,21 +636,21 @@ export default function EditorPage() {
 
     const handleKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
         console.log('[EditorPage handleKeyDown] Event triggered:', event.key, 'Shift:', event.shiftKey);
-        console.log('[EditorPage handleKeyDown] Conditions: isChatLoading:', isChatLoading, 'isUploading:', isUploading);
+        console.log('[EditorPage handleKeyDown] Conditions: isChatLoading:', isAiLoading, 'isUploading:', isUploading);
         console.log('[EditorPage handleKeyDown] Input content:', input.trim(), 'Uploaded image:', uploadedImagePath);
 
-        if (event.key === 'Enter' && !event.shiftKey && !isChatLoading && !isUploading) {
+        if (event.key === 'Enter' && !event.shiftKey && !isAiLoading && !isUploading) {
             console.log('[EditorPage handleKeyDown] Enter pressed without Shift, not loading/uploading.');
             event.preventDefault();
             if (input.trim() || uploadedImagePath) {
                 console.log('[EditorPage handleKeyDown] Valid input found. Calling handleSubmit from useChatInteractions.');
-                handleSubmit(); // Call the hook's handleSubmit directly
+                sendMessage(); // Call the hook's sendMessage directly
             } else {
                 toast.info("Please type a message or attach an image.");
                 console.log('[EditorPage handleKeyDown] No input or image to submit.');
             }
         }
-    }, [isChatLoading, isUploading, input, uploadedImagePath, handleSubmit]); // Added handleSubmit dependency
+    }, [isAiLoading, isUploading, input, uploadedImagePath, sendMessage]); // Updated dependency
 
     // Define getEditorMarkdownContent before handleSubmitWithContext
     // Note: This is async but not wrapped in useCallback as it's called within another useCallback
@@ -968,7 +991,7 @@ export default function EditorPage() {
 
     // --- MODIFIED useEffect for tool processing to handle mobile deferral ---
     useEffect(() => {
-        const lastMessage = chatMessages[chatMessages.length - 1];
+        const lastMessage = messages[messages.length - 1];
         if (lastMessage?.role === 'assistant' && lastMessage.parts && lastMessage.parts.length > 0) {
             const toolInvocationParts = lastMessage.parts.filter(
               (part): part is { type: 'tool-invocation'; toolInvocation: ToolInvocation & { state?: string } } => // Add state to type
@@ -994,7 +1017,21 @@ export default function EditorPage() {
             }
 
             if (callsToProcessThisRun.length > 0) {
-                callsToProcessThisRun.forEach(async (toolCall) => {
+                // Filter out server-side tools - they are handled by the backend and don't need frontend processing
+                const serverSideTools = ['webSearch', 'searchAndTagDocumentsTool'];
+                const clientSideCallsToProcess = callsToProcessThisRun.filter(toolCall => 
+                    !serverSideTools.includes(toolCall.toolName)
+                );
+
+                // Mark server-side tools as processed without executing them
+                callsToProcessThisRun.forEach(toolCall => {
+                    if (serverSideTools.includes(toolCall.toolName)) {
+                        console.log(`[ToolProcessing] Skipping server-side tool: ${toolCall.toolName} (ID: ${toolCall.toolCallId})`);
+                        idsToMarkAsProcessed.add(toolCall.toolCallId);
+                    }
+                });
+
+                clientSideCallsToProcess.forEach(async (toolCall) => {
                     // Add to idsToMarkAsProcessed immediately before attempting execution within this run.
                     // This set (idsToMarkAsProcessed) will be used to update the main processedToolCallIds state later.
                     idsToMarkAsProcessed.add(toolCall.toolCallId); 
@@ -1054,12 +1091,6 @@ export default function EditorPage() {
                                     addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'forwarded to client' } });
                                     break;
                                 case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); break;
-                                case 'webSearch': break; 
-                                case 'searchAndTagDocumentsTool': // Corrected case to match actual tool name
-                                    // This tool is handled by the backend; its results are rendered by ChatMessageItem.
-                                    // No further client-side execution needed in this loop.
-                                    console.log(`[ToolProcessing] Recognized backend-handled tool: ${toolName} (ID: ${toolCall.toolCallId})`);
-                                    break;
                                 default: 
                                     console.error(`Unknown tool: ${toolName}`); 
                                     toast.error(`Unknown tool: ${toolName}`);
@@ -1094,7 +1125,7 @@ export default function EditorPage() {
             }
         }
     }, [
-        chatMessages, 
+        messages, 
         processedToolCallIds, 
         executeAddContent, 
         executeModifyContent, 
@@ -1299,7 +1330,7 @@ export default function EditorPage() {
 
     useEffect(() => { /* Effect for scrolling chat */
          scrollToBottom(); 
-    }, [chatMessages, scrollToBottom]);
+    }, [messages, scrollToBottom]);
     
     useEffect(() => { /* Effect for Embedding generation */
         return () => {
@@ -1540,12 +1571,12 @@ export default function EditorPage() {
 
     // --- useEffect for Client-Side Tool Execution (OpenAI models) ---
     useEffect(() => {
-        const lastMessage = chatMessages[chatMessages.length - 1];
+        const lastMessage = messages[messages.length - 1];
 
         if (
             lastMessage?.role === 'assistant' &&
             lastMessage.toolInvocations?.length &&
-            !isChatLoading && // Not currently loading an AI response
+            !isAiLoading && // Not currently loading an AI response
             !isProcessingClientTools // Not already processing a batch of client tools
         ) {
             const clientToolNames = ['addContent', 'modifyContent', 'deleteContent', 'createChecklist', 'modifyTable'];
@@ -1624,8 +1655,8 @@ export default function EditorPage() {
             }
         }
     }, [
-        chatMessages, 
-        isChatLoading, 
+        messages, 
+        isAiLoading, 
         isProcessingClientTools, 
         addToolResult, 
         executeAddContent, 
@@ -1646,14 +1677,14 @@ export default function EditorPage() {
             return; // Only act if we are currently in a processing state.
         }
 
-        if (isChatLoading) {
+        if (isAiLoading) {
             return; // Don't unlock if the AI is currently generating a new response.
         }
 
         // Find the last assistant message that had tool_invocations
         let lastAssistantMessageWithTools: Message | undefined = undefined;
-        for (let i = chatMessages.length - 1; i >= 0; i--) {
-            const msg = chatMessages[i];
+        for (let i = messages.length - 1; i >= 0; i--) {
+            const msg = messages[i];
             if (msg.role === 'assistant' && msg.toolInvocations?.length) {
                 lastAssistantMessageWithTools = msg;
                 break;
@@ -1663,7 +1694,7 @@ export default function EditorPage() {
         if (lastAssistantMessageWithTools && lastAssistantMessageWithTools.toolInvocations) {
             // Check if all tool_calls from this assistant message have a corresponding 'tool' result message
             const allToolCallsHaveResults = lastAssistantMessageWithTools.toolInvocations.every(inv => {
-                return chatMessages.some(resultMsg => {
+                return messages.some(resultMsg => {
                     // Cast to any to bypass persistent linter error, assuming runtime structure is correct
                     const { role, tool_call_id } = resultMsg as any;
                     if (role === 'tool' && typeof tool_call_id === 'string') {
@@ -1685,14 +1716,14 @@ export default function EditorPage() {
             setIsProcessingClientTools(false);
             console.log('[Client Tool State] No assistant message with pending tool calls found. isProcessingClientTools set to false.');
         }
-    }, [chatMessages, isProcessingClientTools, isChatLoading, setIsProcessingClientTools]);
+    }, [messages, isProcessingClientTools, isAiLoading, setIsProcessingClientTools]);
 
     // --- Render Logic ---
     // Find the last assistant message to pass down
-    const lastAssistantMessage = [...chatMessages].reverse().find(msg => msg.role === 'assistant');
+    const lastAssistantMessage = [...messages].reverse().find(msg => msg.role === 'assistant');
 
     console.log('[Render Check] State before render:', {
-        totalMessages: chatMessages.length,
+        totalMessages: messages.length,
         // shouldShowLoadMore: false, // This was commented out, ensure it's intended
         isMobile, // Log mobile state
         mobileVisiblePane, // Log visible pane on mobile
@@ -1765,9 +1796,9 @@ export default function EditorPage() {
                 >
                     <div className="flex-1 overflow-y-auto styled-scrollbar p-2">
                         <ChatMessagesList 
-                            chatMessages={chatMessages}
+                            chatMessages={messages}
                             isLoadingMessages={isLoadingMessages} // Or a mini-specific loading state if different
-                            isChatLoading={isChatLoading} // Or a mini-specific loading state
+                            isChatLoading={isAiLoading} // Or a mini-specific loading state
                             handleSendToEditor={handleSendToEditor} // Actions should still work
                             messagesEndRef={messagesEndRef} // May need a separate ref for mini-pane scroll
                             onAddTaggedDocument={(doc) => { /* Define or pass handler */ }}
@@ -1820,8 +1851,8 @@ export default function EditorPage() {
                                         handleSendToEditor={handleSendToEditor}
                                         input={input}
                                         handleInputChange={handleInputChange}
-                                        handleSubmit={handleSubmit}
-                                        isLoading={isChatLoading}
+                                        sendMessage={sendMessage}
+                                        isLoading={isAiLoading}
                                         model={model}
                                         setModel={setModel}
                                         stop={stop}
@@ -1871,9 +1902,9 @@ export default function EditorPage() {
                              {/* ChatPaneWrapper becomes the child of MobileChatDrawer */}
                              <ChatPaneWrapper
                                 isChatCollapsed={false} // Chat is visible in the drawer, so not collapsed
-                                chatMessages={chatMessages}
+                                chatMessages={messages}
                                 isLoadingMessages={isLoadingMessages}
-                                isChatLoading={isChatLoading || isProcessingClientTools} // MODIFIED HERE
+                                isChatLoading={isAiLoading || isProcessingClientTools} // MODIFIED HERE
                                 handleSendToEditor={handleSendToEditor}
                                 messagesEndRef={messagesEndRef}
                                 messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
@@ -1882,7 +1913,7 @@ export default function EditorPage() {
                                 taggedDocuments={taggedDocuments}
                                 setTaggedDocuments={setTaggedDocuments}
                                 handleInputChange={handleInputChange}
-                                handleSubmit={handleSubmit}
+                                sendMessage={sendMessage}
                                 model={model}
                                 setModel={setModel}
                                 stop={stop}
@@ -1916,6 +1947,14 @@ export default function EditorPage() {
                                 isMobile={isMobile}
                                 activeMobilePane={mobileVisiblePane}
                                 onToggleMobilePane={handleToggleMobilePane}
+                                // --- NEW: Pass orchestrator props to mobile ChatPaneWrapper ---
+                                orchestratorHandleFileUploadStart={orchestratorHandleFileUploadStart}
+                                orchestratorCancelFileUpload={orchestratorCancelFileUpload}
+                                orchestratorPendingFile={orchestratorPendingFile}
+                                orchestratorIsFileUploadInProgress={orchestratorIsFileUploadInProgress}
+                                orchestratorIsChatInputBusy={orchestratorIsChatInputBusy}
+                                orchestratorCurrentOperationStatusText={orchestratorCurrentOperationStatusText}
+                                // --- END NEW ---
                             />
                          </MobileChatDrawer>
                     )}
@@ -1961,8 +2000,8 @@ export default function EditorPage() {
                                 handleSendToEditor={handleSendToEditor}
                                 input={input}
                                 handleInputChange={handleInputChange}
-                                handleSubmit={handleSubmit}
-                                isLoading={isChatLoading}
+                                sendMessage={sendMessage}
+                                isLoading={isAiLoading}
                                 model={model}
                                 setModel={setModel}
                                 stop={stop}
@@ -2049,9 +2088,9 @@ export default function EditorPage() {
                             >
                                 <ChatPaneWrapper
                                     isChatCollapsed={isChatPaneCollapsed} // Pass the correct state
-                                    chatMessages={chatMessages}
+                                    chatMessages={messages}
                                     isLoadingMessages={isLoadingMessages}
-                                    isChatLoading={isChatLoading || isProcessingClientTools} // MODIFIED HERE
+                                    isChatLoading={isAiLoading || isProcessingClientTools} // MODIFIED HERE
                                     handleSendToEditor={handleSendToEditor}
                                     messagesEndRef={messagesEndRef}
                                     messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
@@ -2060,7 +2099,7 @@ export default function EditorPage() {
                                     taggedDocuments={taggedDocuments}
                                     setTaggedDocuments={setTaggedDocuments}
                                     handleInputChange={handleInputChange}
-                                    handleSubmit={handleSubmit}
+                                    sendMessage={sendMessage}
                                     model={model}
                                     setModel={setModel}
                                     stop={stop}
@@ -2090,6 +2129,14 @@ export default function EditorPage() {
                                     isMainChatCollapsed={isChatPaneCollapsed && !isMiniPaneOpen} // Pass this new prop
                                     miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
                                     currentTheme={currentTheme} // Pass down the theme
+                                    // --- NEW: Pass orchestrator props to desktop ChatPaneWrapper ---
+                                    orchestratorHandleFileUploadStart={orchestratorHandleFileUploadStart}
+                                    orchestratorCancelFileUpload={orchestratorCancelFileUpload}
+                                    orchestratorPendingFile={orchestratorPendingFile}
+                                    orchestratorIsFileUploadInProgress={orchestratorIsFileUploadInProgress}
+                                    orchestratorIsChatInputBusy={orchestratorIsChatInputBusy}
+                                    orchestratorCurrentOperationStatusText={orchestratorCurrentOperationStatusText}
+                                    // --- END NEW ---
                                 />
                             </motion.div>
                         )}

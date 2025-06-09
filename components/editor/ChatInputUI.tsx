@@ -76,6 +76,15 @@ interface ChatInputUIProps {
     isMainChatCollapsed?: boolean;
     miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
     // --- END NEW ---
+
+    // --- NEW: Orchestrator file upload props ---
+    orchestratorHandleFileUploadStart?: (file: File) => Promise<string | null>;
+    orchestratorCancelFileUpload?: () => void;
+    orchestratorPendingFile?: any; // Will be properly typed later
+    orchestratorIsFileUploadInProgress?: () => boolean;
+    orchestratorIsChatInputBusy?: boolean;
+    orchestratorCurrentOperationStatusText?: string | null;
+    // --- END NEW ---
 }
 
 export const ChatInputUI: React.FC<ChatInputUIProps> = ({
@@ -120,6 +129,15 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     onToggleMiniPane,
     isMainChatCollapsed,
     miniPaneToggleRef, // Destructure the ref
+    // --- END NEW ---
+
+    // --- NEW: Destructure orchestrator props ---
+    orchestratorHandleFileUploadStart,
+    orchestratorCancelFileUpload,
+    orchestratorPendingFile,
+    orchestratorIsFileUploadInProgress,
+    orchestratorIsChatInputBusy,
+    orchestratorCurrentOperationStatusText,
     // --- END NEW ---
 }) => {
     // Tooltip state remains if needed elsewhere, otherwise remove

@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 // Import FileManager as per documentation
 import { FileManager } from '@cubone/react-file-manager'; 
 // Revert CSS path to the file confirmed to exist in node_modules
-import '@cubone/react-file-manager/dist/react-file-manager.css'; 
+import '@cubone/react-file-manager/dist/style.css'; 
 import { Document, Folder } from '@/types/supabase'; // Import types
 import { ChatInputUI } from '@/components/editor/ChatInputUI'; // Import the chat input UI
 // import { ModelSelector } from '@/components/ModelSelector'; // Import if needed directly, ChatInputUI uses it
@@ -771,33 +771,104 @@ export default function LaunchPage() {
 
       {/* Main Content Area */}
       <div className="flex-grow overflow-y-auto">
-        {/* Tabs component's value and onValueChange are no longer needed if only one content is shown */}
-        {/* Also, TabsList is removed */}
         <div className="pt-2 px-2 md:pt-4 md:px-4 h-full flex flex-col">
-          {/* <TabsList className="mb-4 print-hide grid w-full grid-cols-2 md:grid-cols-4">
-            <TabsTrigger value="preview-cards">Preview Cards</TabsTrigger>
-            <TabsTrigger value="new-document">New Document</TabsTrigger>
-            <TabsTrigger value="recent-files">Recent Files</TabsTrigger>
-            <TabsTrigger value="file-manager">File Manager</TabsTrigger>
-          </TabsList> */}
+          {/* Tabs Navigation */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-grow flex flex-col">
+            <TabsList className="mb-4 print-hide grid w-full grid-cols-2 md:grid-cols-2">
+              <TabsTrigger value="preview-cards">Browse Files</TabsTrigger>
+              <TabsTrigger value="new-document">New Document</TabsTrigger>
+            </TabsList>
 
-          {/* REMOVED Tab Content for "New Document" */}
-          {/* <TabsContent value="new-document" className="flex-grow flex flex-col outline-none ring-0 focus:ring-0 focus:outline-none" tabIndex={-1}> ... </TabsContent> */}
+            {/* Tab: Browse Files - Document Grid */}
+            <TabsContent value="preview-cards" className="mt-0 border-0 p-0 flex-grow">
+              <DocumentCardGrid />
+            </TabsContent>
 
-          {/* REMOVED Tab Content for "Recent Files" */}
-          {/* <TabsContent value="recent-files" className="flex-grow outline-none ring-0 focus:ring-0 focus:outline-none" tabIndex={-1}> ... </TabsContent> */}
+            {/* Tab: New Document - Chat Input Interface */}
+            <TabsContent value="new-document" className="flex-grow flex flex-col outline-none ring-0 focus:ring-0 focus:outline-none" tabIndex={-1}>
+              <div className="flex-grow flex flex-col items-center justify-center space-y-6 max-w-3xl mx-auto w-full px-4">
+                
+                {/* Header */}
+                <div className="text-center space-y-3">
+                  <h1 className="text-3xl font-bold text-[--text-color]">Start Writing</h1>
+                  <p className="text-[--muted-text-color] text-lg">
+                    Begin with a question, idea, or voice note to create a new document
+                  </p>
+                </div>
 
-          {/* REMOVED Tab Content for "File Manager" */}
-          {/* <TabsContent value="file-manager" className="flex-grow h-full outline-none ring-0 focus:ring-0 focus:outline-none" tabIndex={-1}> ... </TabsContent> */}
+                {/* Quick Action Buttons */}
+                <div className="grid grid-cols-2 gap-4 w-full max-w-lg">
+                  <Button
+                    onClick={() => openNewDocumentModal()}
+                    variant="outline"
+                    className="h-16 flex flex-col items-center gap-2 hover:bg-[--hover-bg]"
+                  >
+                    <FilePlus className="w-6 h-6" />
+                    <span className="text-sm">Blank Document</span>
+                  </Button>
+                  
+                  <Button
+                    onClick={() => inputRef.current?.focus()}
+                    variant="outline"
+                    className="h-16 flex flex-col items-center gap-2 hover:bg-[--hover-bg]"
+                  >
+                    <BookOpenText className="w-6 h-6" />
+                    <span className="text-sm">AI Assisted</span>
+                  </Button>
+                </div>
 
-          {/* Tab: Preview Cards - Existing File Browser / Document Grid */}
-          {/* The TabsContent wrapper might be removable if it's the only content */}
-          <div className="mt-0 border-0 p-0 flex-grow">
-            {/* REMOVED BUTTONS CONTAINER - Min 2x2 grid, 1x4 on lg, with glass effect, rounded-lg, shadow-md, and hover effects */}
-            
-            {/* Existing Document Card Grid - Placeholder */}
-            <DocumentCardGrid />
-          </div>
+                {/* Error Display */}
+                {error && (
+                  <div className="w-full p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-600 dark:text-red-400 text-sm">
+                    {error}
+                  </div>
+                )}
+
+                {/* Chat Input Form */}
+                <form ref={formRef} onSubmit={handleLaunchSubmit} className="w-full">
+                  <ChatInputUI 
+                    files={files} 
+                    fileInputRef={fileInputRef} 
+                    handleFileChange={handleFileChange} 
+                    inputRef={inputRef} 
+                    input={input} 
+                    handleInputChange={handleInputChange} 
+                    handleKeyDown={handleKeyDown} 
+                    handlePaste={handlePaste} 
+                    model={model} 
+                    setModel={setModel} 
+                    handleUploadClick={handleUploadClick} 
+                    isLoading={isSubmitting} 
+                    isUploading={isUploading} 
+                    uploadError={uploadError} 
+                    uploadedImagePath={uploadedImagePath} 
+                    onStop={() => setIsSubmitting(false)}
+                    // Audio props
+                    isRecording={isRecording}
+                    isTranscribing={isTranscribing}
+                    micPermissionError={micPermissionError}
+                    startRecording={() => {
+                      console.log("[LaunchPage] startRecording prop called!");
+                      return handleStartRecording();
+                    }}
+                    stopRecording={() => {
+                      console.log("[LaunchPage] stopRecording prop called!");
+                      return handleStopRecording();
+                    }}
+                    audioTimeDomainData={audioTimeDomainData}
+                    clearPreview={clearPreview}
+                    recordingDuration={recordingDuration}
+                    // Document tagging props
+                    taggedDocuments={taggedDocuments}
+                    onAddTaggedDocument={(doc) => setTaggedDocuments(prev => [...prev, doc])}
+                    onRemoveTaggedDocument={(docId) => setTaggedDocuments(prev => prev.filter(d => d.id !== docId))}
+                  />
+                </form>
+
+              </div>
+            </TabsContent>
+
+          </Tabs>
 
         </div>
       </div>

@@ -1,0 +1,1073 @@
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useChat, type Message } from 'ai/react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { useFollowUpStore } from '@/lib/stores/followUpStore';
+import { useClientChatOperationStore } from '@/lib/stores/useClientChatOperationStore';
+import { AIToolState, AudioState, FileUploadState } from '@/app/lib/clientChatOperationState';
+import { useClientChatOrchestrator, type PendingFileUpload } from '@/app/hooks/useClientChatOrchestrator';
+import type { BlockNoteEditor, Block } from '@blocknote/core';
+import { getInlineContentText } from '@/lib/editorUtils';
+import { tool } from 'ai';
+import { z } from 'zod';
+
+// Define the shape of the processed block with structural information
+interface ProcessedBlock {
+  id: string;
+  type: string;
+  contentSnippet: string;
+  level: number;
+  parentId: string | null;
+}
+
+// Define the shape of the editor context data expected by the submit handler
+interface EditorContextData {
+    editorMarkdownContent?: string;
+    editorBlocksContext?: ProcessedBlock[]; // Updated to use ProcessedBlock
+}
+
+// Define the type for tagged documents
+interface TaggedDocument {
+    id: string;
+    name: string;
+}
+
+interface UseChatInteractionsProps {
+    documentId: string;
+    initialModel: string; // Preferred model from preferences
+    initialMessages: Message[] | null; // <-- ADDED: Initial messages from history
+    editorRef: React.RefObject<BlockNoteEditor<any>>;
+    uploadedImagePath: string | null; // ADDED BACK: Storage path for DB
+    uploadedImageSignedUrl: string | null; // Signed download URL for AI/UI
+    isUploading: boolean; // From useFileUpload
+    clearFileUploadPreview: (options?: { deleteFromStorage?: boolean }) => Promise<void>; // From useFileUpload
+    apiEndpoint?: string; // Optional override for API endpoint
+    initialTaggedDocIdsString?: string | null; // <-- NEW: For pre-tagging from URL
+    uploadFileForOrchestrator: (file: File) => Promise<string>; // <-- NEW: For orchestrator
+    fetchDownloadUrlForPath: (filePath: string) => Promise<string>; // <-- NEW: For orchestrator to get signed URLs
+}
+
+// Define inline options type based on docs for append/handleSubmit
+interface ReloadOptions {
+    headers?: Record<string, string> | Headers;
+    body?: object; // Assuming a generic object is suitable
+    data?: any; // Assuming JSONValue or any
+    // attachments are likely not needed for reload, omitting for now
+}
+
+// Define the return type for the hook
+interface UseChatInteractionsReturn {
+    messages: Message[];
+    setMessages: (messages: Message[]) => void;
+    input: string;
+    setInput: (input: string) => void;
+    handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement> | React.ChangeEvent<HTMLInputElement>) => void;
+    sendMessage: (event?: React.FormEvent<HTMLFormElement>) => Promise<void>; // ADDED_LINE: New main send function
+    isLoading: boolean; 
+    reload: (options?: ReloadOptions | undefined) => Promise<string | null | undefined>;
+    stop: () => void;
+    model: string;
+    setModel: React.Dispatch<React.SetStateAction<string>>;
+    
+    // --- AUDIO PROPS (Refactored for Orchestrator) --- 
+    isRecording: boolean;
+    isTranscribing: boolean;
+    micPermissionError: boolean;
+    handleMicrophoneClick: () => void; // ADDED_LINE: Orchestrator delegated
+    handleStopRecording: () => void; // ADDED_LINE: Orchestrator delegated
+    audioTimeDomainData: AudioTimeDomainData;
+    
+    // --- TAGGED DOCUMENTS PROPS ---
+    taggedDocuments: TaggedDocument[];
+    setTaggedDocuments: React.Dispatch<React.SetStateAction<TaggedDocument[]>>;
+    
+    addToolResult: ({toolCallId, result}: {toolCallId: string; result: any;}) => void;
+    
+    // --- ORCHESTRATOR EXPOSED ITEMS (Aligned with Task 6 target) ---
+    handleFileUpload: (file: File) => Promise<void>; // ADDED_LINE
+    cancelFileUpload: () => void; // ADDED_LINE (was orchestratorCancelFileUpload)
+    isChatInputBusy: boolean; // ADDED_LINE (was orchestratorIsChatInputBusy)
+    currentOperationStatusText: string | null; // ADDED_LINE (was orchestratorCurrentOperationStatusText)
+    isFileUploadInProgress: () => boolean; // ADDED_LINE (was orchestratorIsFileUploadInProgress)
+
+    orchestratorPendingFile: PendingFileUpload | null; // Keep existing if needed
+    error: any; 
+}
+
+// Define Zod schemas for the editor tools (matching backend)
+const addContentSchema = z.object({
+  markdownContent: z.string().describe("The Markdown content to be added to the editor."),
+  targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert relative to (e.g., insert 'after'). If null, append or use current selection."),
+});
+
+const modifyContentSchema = z.object({
+  targetBlockId: z.string().describe("The ID of the block to modify."),
+  targetText: z.string().nullable().describe("The specific text within the block to modify. If null, the modification applies to the entire block's content."),
+  newMarkdownContent: z.string().describe("The new Markdown content for the block."),
+});
+
+const deleteContentSchema = z.object({
+  targetBlockId: z.string().describe("The ID of the block to remove."),
+  targetText: z.string().nullable().describe("The specific text within the targetBlockId block to delete. If null, the entire block is deleted."),
+});
+
+const modifyTableSchema = z.object({
+    tableBlockId: z.string().describe("The ID of the table block to modify."),
+    newTableMarkdown: z.string().describe("The COMPLETE, final Markdown content for the entire table after the requested modifications have been applied by the AI."),
+});
+
+const createChecklistSchema = z.object({
+  items: z.array(z.string()).describe("An array of plain text strings, where each string is the content for a new checklist item. The tool will handle Markdown formatting (e.g., prepending '* [ ]'). Do NOT include Markdown like '*[ ]' in these strings."),
+  targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert the new checklist after. If null, the checklist is appended to the document or inserted at the current selection."),
+});
+
+const searchAndTagDocumentsSchema = z.object({
+  searchQuery: z.string().describe("The user's query to search for in the documents.")
+});
+
+// Define client-side tools (no execute functions)
+const clientTools = {
+  addContent: tool({
+    description: "Adds new general Markdown content (e.g., paragraphs, headings, simple bullet/numbered lists, or single list/checklist items). For multi-item checklists, use createChecklist.",
+    parameters: addContentSchema,
+  }),
+  modifyContent: tool({
+    description: "Modifies content within specific NON-TABLE editor blocks. Can target a single block (with optional specific text replacement) or multiple blocks (replacing entire content of each with corresponding new Markdown from an array). Main tool for altering existing lists/checklists.",
+    parameters: modifyContentSchema,
+  }),
+  deleteContent: tool({
+    description: "Deletes one or more NON-TABLE blocks, or specific text within a NON-TABLE block, from the editor.",
+    parameters: deleteContentSchema,
+  }),
+  modifyTable: tool({
+    description: "Modifies an existing TABLE block by providing the complete final Markdown. Reads original from context, applies changes, returns result.",
+    parameters: modifyTableSchema,
+  }),
+  createChecklist: tool({
+    description: "Creates a new checklist with multiple items. Provide an array of plain text strings for the items (e.g., ['Buy milk', 'Read book']). Tool handles Markdown formatting.",
+    parameters: createChecklistSchema,
+  }),
+  searchAndTagDocumentsTool: tool({
+    description: 'Searches documents by title and semantic content. Returns a list of relevant documents that the user can choose to tag for context.',
+    parameters: searchAndTagDocumentsSchema,
+  }),
+};
+
+// Create adapter function to fix addToolResult signature mismatch
+const createAddToolResultAdapter = (addToolResultFn: ({toolCallId, result}: {toolCallId: string; result: any;}) => void) => {
+  return (toolCallId: string, result: any) => {
+    addToolResultFn({ toolCallId, result });
+  };
+};
+
+// Create mock tool executors for consistency checks (client-side tools are handled elsewhere)
+// These are placeholders for the orchestrator's consistency checking system
+const createMockToolExecutors = () => {
+  const mockExecutor = async (args: any) => {
+    console.log('[Mock Tool Executor] Tool execution delegated to editor page:', args);
+    return { success: true, status: 'delegated_to_editor_page', args };
+  };
+
+  return {
+    addContent: mockExecutor,
+    modifyContent: mockExecutor,
+    deleteContent: mockExecutor,
+    modifyTable: mockExecutor,
+    createChecklist: mockExecutor,
+    searchAndTagDocumentsTool: mockExecutor,
+  };
+};
+
+// Recursive helper function to process blocks and their children
+const processBlocksRecursive = async (
+    blocks: Block[],
+    currentLevel: number,
+    currentParentId: string | null,
+    editor: BlockNoteEditor<any> // Pass editor for blocksToMarkdownLossy
+): Promise<ProcessedBlock[]> => {
+    let processedBlocks: ProcessedBlock[] = [];
+
+    for (const b of blocks) {
+        // --- DEBUG LOGGING: Print the structure of each block --- 
+        console.log("[processBlocksRecursive] Processing block:", JSON.stringify(b, null, 2));
+        // --- END DEBUG LOGGING ---
+
+        let snippet = '';
+        if (b.type === 'table') {
+            try {
+                snippet = await editor.blocksToMarkdownLossy([b]);
+            } catch (mdError) {
+                console.error(`Failed to convert table block ${b.id} to Markdown:`, mdError);
+                snippet = `[table - Error generating Markdown snippet]`;
+            }
+        } else if (b.type === 'checkListItem') {
+            const isChecked = b.props?.checked === true;
+            const prefix = isChecked ? "[x] " : "[ ] ";
+            const itemText = Array.isArray(b.content) ? getInlineContentText(b.content) : '';
+            snippet = prefix + itemText;
+        } else {
+            snippet = (Array.isArray(b.content) ? getInlineContentText(b.content) : '') || `[${b.type}]`;
+        }
+
+        processedBlocks.push({
+            id: b.id,
+            type: b.type,
+            contentSnippet: snippet,
+            level: currentLevel,
+            parentId: currentParentId,
+        });
+
+        if (b.children && b.children.length > 0) {
+            const childBlocks = await processBlocksRecursive(
+                b.children,
+                currentLevel + 1,
+                b.id,
+                editor
+            );
+            processedBlocks = processedBlocks.concat(childBlocks);
+        }
+    }
+    return processedBlocks;
+};
+
+// --- NEW: Type for audio visualization data ---
+export type AudioTimeDomainData = Uint8Array | null; // Export the type
+
+export function useChatInteractions({
+    documentId,
+    initialModel,
+    initialMessages,
+    editorRef,
+    uploadedImagePath,
+    uploadedImageSignedUrl,
+    isUploading: isExternalUploading,
+    clearFileUploadPreview,
+    apiEndpoint = '/api/chat',
+    initialTaggedDocIdsString,
+    uploadFileForOrchestrator,
+    fetchDownloadUrlForPath,
+}: UseChatInteractionsProps): UseChatInteractionsReturn {
+    
+    // console.log('[useChatInteractions] Received initialMessages prop:', JSON.stringify(initialMessages, null, 2));
+    
+    // --- Internal State ---
+    const [model, setModel] = useState<string>(initialModel);
+    const [pendingInitialSubmission, setPendingInitialSubmission] = useState<string | null>(null);
+    const [pendingSubmissionMethod, setPendingSubmissionMethod] = useState<'audio' | 'text' | null>(null); // Track pending type
+    const [pendingWhisperDetails, setPendingWhisperDetails] = useState<any | null>(null); // Store whisper details
+    const initialMsgProcessedRef = useRef(false);
+
+    // --- LEGACY AUDIO STATE REMOVED: Now managed by orchestrator ---
+
+    // --- NEW: Tracked Tagged Documents State ---
+    const [taggedDocuments, setTaggedDocuments] = useState<TaggedDocument[]>([]);
+    // --- END NEW ---
+
+    // --- NEW: Silence Detection State ---
+    const SILENCE_THRESHOLD = 0.02; // RMS level considered as speech
+    const SILENCE_DURATION_MS = 1500; // 1.5 s of silence triggers autostop
+    const lastSoundTimeRef = useRef<number>(0); // Timestamp of last detected sound
+    const soundDetectedRef = useRef<boolean>(false); // Whether any sound above threshold occurred
+    const recordingStartTimeRef = useRef<number>(0); // Recording start timestamp
+    // --- END NEW ---
+
+    // --- NEW: MediaRecorder Ref ---
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    // --- END NEW ---
+
+    // --- ADDED: Access client chat operation store actions
+    const {
+        setAIToolState,
+        setAudioState,
+        setFileUploadState,
+        setCurrentToolCallId,
+        setCurrentOperationDescription,
+        resetChatOperationState,
+        setOperationStates, // Useful for setting multiple states at once
+    } = useClientChatOperationStore();
+
+    // ADDED: Selector for current AI tool state for the new useEffect
+    const currentAIToolState = useClientChatOperationStore(state => state.aiToolState);
+
+    // --- Effect to load initial tagged documents from URL string ---
+    useEffect(() => {
+        if (initialTaggedDocIdsString) {
+            const ids = initialTaggedDocIdsString.split(',').filter(id => id.trim() !== '');
+            if (ids.length > 0) {
+                console.log('[useChatInteractions] Initial tagged document IDs found:', ids);
+                // Placeholder: Fetch document names for these IDs
+                // Replace with your actual API call
+                const fetchTaggedDocuments = async () => {
+                    try {
+                        // Example: /api/documents-by-ids?ids=id1,id2,id3
+                        // Or modify /api/chat-tag-search to handle a list of IDs if q is not present
+                        const response = await fetch(`/api/chat-tag-search?docIds=${ids.join(',')}`); 
+                        if (!response.ok) {
+                            throw new Error(`Failed to fetch initial tagged documents: ${response.statusText}`);
+                        }
+                        const data = await response.json();
+                        if (data.documents && Array.isArray(data.documents)) {
+                            setTaggedDocuments(data.documents.map((doc: any) => ({ id: doc.id, name: doc.name })));
+                            console.log('[useChatInteractions] Successfully loaded initial tagged documents:', data.documents);
+                        } else {
+                            console.warn('[useChatInteractions] No documents found for initial IDs or invalid format.');
+                        }
+                    } catch (error) {
+                        console.error('[useChatInteractions] Error fetching initial tagged documents:', error);
+                        toast.error("Could not load initially tagged documents.");
+                    }
+                };
+                fetchTaggedDocuments();
+            }
+        }
+    }, [initialTaggedDocIdsString]);
+    // --- END NEW EFFECT ---
+
+    // --- External Hooks ---
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const { setFollowUpContext } = useFollowUpStore();
+    const followUpContext = useFollowUpStore((state) => state.followUpContext);
+
+    // --- Determine if current model needs onToolCall callback (OpenAI models only) ---
+    // const isOpenAIModel = model.toLowerCase().includes('gpt') || model.toLowerCase().includes('openai');
+    // const needsOnToolCallCallback = isOpenAIModel; 
+    // REVISED: Disable client-side onToolCall for all models to simplify tool handling
+    // and rely on server-streamed results for server tools, and useEffect + addToolResult for client tools.
+    const needsOnToolCallCallback = false; // This line can now be removed as onToolCall is fully removed below.
+    
+    console.log('[useChatInteractions] Provider-specific tool config: onToolCall is fully disabled.');
+
+    // --- LEGACY USECHAT AND GEMINI HANDLING REMOVED: Now managed by orchestrator ---
+    
+    // --- CHAT ORCHESTRATOR INTEGRATION ---
+    const toolExecutorMap = createMockToolExecutors();
+    
+    const orchestrator = useClientChatOrchestrator({
+        chatMessages: messages,
+        addToolResult: adaptedAddToolResult,
+        setInputValue: setInput,
+        isLoading,
+        toolExecutors: toolExecutorMap,
+        uploadFile: uploadFileForOrchestrator,
+        fetchSignedUrl: fetchDownloadUrlForPath,
+    });
+
+    // --- Editor Context Retrieval ---
+    const getEditorContext = useCallback(async (): Promise<EditorContextData> => {
+        const editor = editorRef.current;
+        if (!editor) {
+             console.warn("getEditorContext called but editorRef is null.");
+             return {};
+        }
+        let contextData: EditorContextData = {};
+        try {
+            const currentBlocks = editor.document;
+            if (currentBlocks?.length > 0) {
+                // Initiate the recursive processing
+                const allProcessedBlocks = await processBlocksRecursive(currentBlocks, 1, null, editor);
+                contextData = {
+                    editorBlocksContext: allProcessedBlocks
+                };
+            }
+        } catch (e) {
+            console.error('Failed to get editor snippets with structure:', e); // Updated error message
+            toast.error('⚠️ Error getting structured editor context.'); // Updated error message
+        }
+        return contextData;
+    }, [editorRef]);
+
+    // --- Audio Processing Logic (IMPLEMENTED) ---
+    const handleProcessRecordedAudio = useCallback(async () => {
+        console.log("handleProcessRecordedAudio called");
+        if (audioChunksRef.current.length === 0) {
+            console.warn("No audio chunks recorded.");
+            toast.info("No audio detected.");
+            // Ensure recording state is false if somehow called without stopping properly
+            setIsRecording(false); 
+            return;
+        }
+
+        setIsTranscribing(true);
+        console.log("Processing audio chunks...");
+
+        let audioBlob: Blob;
+        let mimeType: string | undefined;
+
+        try {
+            // Try to get mimeType from the recorder if available
+            mimeType = mediaRecorder?.mimeType;
+            const effectiveMimeType = mimeType || 'audio/webm'; // Default to webm if not available
+            console.log(`Creating Blob with effective mimeType: ${effectiveMimeType}`);
+            audioBlob = new Blob(audioChunksRef.current, { type: effectiveMimeType });
+
+             // Basic size check (e.g., < 1KB might be silence or glitch)
+            if (audioBlob.size < 1024) {
+                console.warn(`Audio blob size (${audioBlob.size} bytes) is very small. Aborting transcription.`);
+                toast.info("Recording too short or silent.");
+                setIsTranscribing(false); // Reset transcribing state
+                setIsRecording(false); // Ensure recording state is off
+                audioChunksRef.current = []; // Clear chunks
+                return;
+            }
+
+            audioChunksRef.current = []; // Reset chunks early
+            console.log(`Audio Blob created. Size: ${audioBlob.size}, Type: ${audioBlob.type}`);
+
+            const formData = new FormData();
+            // Construct filename using the effectiveMimeType's subtype
+            const fileExtension = effectiveMimeType.split('/')[1]?.split(';')[0] || 'webm';
+            const fileName = `audio.${fileExtension}`;
+            formData.append('audioFile', audioBlob, fileName);
+            console.log(`Appending blob to FormData with filename: ${fileName}, type: ${effectiveMimeType}`);
+
+            // Call the transcription API endpoint
+            console.log("Sending audio to /api/chat/transcribe...");
+            const response = await fetch('/api/chat/transcribe', { 
+                method: 'POST',
+                body: formData,
+            });
+
+            console.log(`Transcription API response status: ${response.status}`);
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => 'Failed to read error response');
+                console.error(`Transcription API error: ${response.statusText}`, errorText);
+                throw new Error(`Transcription failed: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            console.log("Transcription API response data:", result);
+
+            if (result?.transcription && typeof result.transcription === 'string') {
+                const transcribedText = result.transcription.trim();
+                if (transcribedText) {
+                    console.log(`Transcription successful: "${transcribedText}"`);
+                    
+                    // --- NEW: Validate duration & sound before processing ---
+                    const recordingDurationMs = Date.now() - (recordingStartTimeRef.current || Date.now());
+                    if (recordingDurationMs < SILENCE_DURATION_MS || !soundDetectedRef.current) {
+                        toast.info(recordingDurationMs < SILENCE_DURATION_MS ? 'Recording too short.' : 'No audio detected.');
+                        setIsTranscribing(false);
+                        setIsRecording(false);
+                        audioChunksRef.current = [];
+                        soundDetectedRef.current = false;
+                        return;
+                    }
+                    soundDetectedRef.current = false; // reset flag for future recordings
+                    
+                    // ---> NEW: Set pending state instead of direct submit <---
+                    setInput(transcribedText); // Set the input field
+                    setPendingInitialSubmission(transcribedText); // Mark for auto-submit
+                    setPendingSubmissionMethod('audio'); // Mark as audio
+                    setPendingWhisperDetails(result.whisperDetails || null); // Store details
+                    console.log("Set pending state for audio submission.");
+                    
+                } else {
+                    console.warn("Transcription result was empty after trimming.");
+                    toast.info("Could not understand audio.");
+                }
+            } else {
+                console.error("Invalid transcription response format:", result);
+                throw new Error("Received invalid transcription format from API.");
+            }
+
+        } catch (error: any) {
+            console.error("Error during audio processing or transcription:", error);
+            toast.error(`Transcription Error: ${error.message || 'An unknown error occurred'}`);
+            // Ensure recording state is false on error
+            setIsRecording(false);
+        } finally {
+            console.log("Finished processing audio. Resetting isTranscribing.");
+            setIsTranscribing(false);
+            // Explicitly clear chunks again in finally, just in case
+            audioChunksRef.current = []; 
+            // Explicitly clear recorder state in finally, as onstop might not have fired on error
+            if (mediaRecorder?.stream) {
+                console.log("Cleaning up media stream tracks in finally block.");
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
+            setMediaRecorder(null);
+        }
+    }, [audioChunksRef, mediaRecorder, setInput, setIsTranscribing, setIsRecording, setMediaRecorder]); // Removed handleSubmit as it's unlikely needed here and causes changes
+
+    // --- NEW: Function to handle the audio analysis loop ---
+    const analyseAudio = useCallback(() => {
+        // Use ref check for loop continuation, state check might be stale on first frame
+        if (!isRecordingRef.current) {
+            console.log("[analyseAudio] isRecordingRef is false, stopping loop.");
+            return; 
+        }
+
+        if (!analyserRef.current || !dataArrayRef.current) {
+            console.log("[analyseAudio] Analyser or data array not ready, skipping frame.");
+            // Still request next frame if recording is intended
+            if (isRecordingRef.current) {
+                 animationFrameRef.current = requestAnimationFrame(analyseAudio);
+            }
+            return; 
+        }
+
+        try {
+            analyserRef.current.getByteTimeDomainData(dataArrayRef.current);
+            const newData = new Uint8Array(dataArrayRef.current);
+            setAudioTimeDomainData(newData);
+
+            // --- Silence detection ---
+            let sumSq = 0;
+            for (let i = 0; i < newData.length; i++) {
+                const v = (newData[i] - 128) / 128; // Normalise –1..1
+                sumSq += v * v;
+            }
+            const rms = Math.sqrt(sumSq / newData.length);
+            const now = Date.now();
+            if (rms > SILENCE_THRESHOLD) {
+                soundDetectedRef.current = true;
+                lastSoundTimeRef.current = now;
+            } else if (now - lastSoundTimeRef.current > SILENCE_DURATION_MS && isRecordingRef.current) {
+                console.log('[analyseAudio] 1.5 s of silence → autostop');
+                handleStopRecording();
+                return; // stop scheduling further frames
+            }
+
+            // Continue the loop based on the ref
+            if (isRecordingRef.current) { 
+                animationFrameRef.current = requestAnimationFrame(analyseAudio);
+            } 
+            // No need for an else log here, the top check handles stopping
+
+        } catch (error) {
+            console.error("[analyseAudio] Error getting time domain data:", error);
+            // Optionally stop on error, or just log and try next frame
+            if (isRecordingRef.current) { // Still try next frame if recording
+                animationFrameRef.current = requestAnimationFrame(analyseAudio);
+            }
+        }
+    // Still include isRecording state in deps so the callback itself updates
+    // if the state is used for other logic within the hook/component.
+    // The ref handles the immediate loop continuation logic.
+    }, []); 
+
+    // --- LEGACY STOP RECORDING REMOVED: Using orchestrator version instead ---
+
+    // --- Start Recording Logic (MODIFIED) ---
+    const handleStartRecording = useCallback(async () => {
+        console.log("Attempting to start recording...");
+        setMicPermissionError(false); // Reset error state
+
+        // --- NEW: Clear previous audio data ---
+        setAudioTimeDomainData(null);
+        if (animationFrameRef.current) { // Cancel any lingering frame loop
+            cancelAnimationFrame(animationFrameRef.current);
+            animationFrameRef.current = null;
+        }
+        // --- END NEW ---
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+            toast.error("Audio recording is not supported by this browser.");
+            console.error("getUserMedia not supported");
+            setMicPermissionError(true); // Set error state
+            setIsRecording(false);
+            // Clear any pending submission if mic access fails
+            setPendingInitialSubmission(null);
+            setPendingSubmissionMethod(null);
+            setPendingWhisperDetails(null);
+            return;
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log("Microphone access granted.");
+
+            // --- NEW: Get Audio Track and Clone it --- 
+            const audioTracks = stream.getAudioTracks();
+            if (audioTracks.length === 0) {
+                throw new Error("No audio track found in the stream.");
+            }
+            const originalAudioTrack = audioTracks[0];
+            const clonedAudioTrack = originalAudioTrack.clone();
+            console.log("[handleStartRecording] Cloned audio track.");
+
+            // Create separate streams for AudioContext and MediaRecorder
+            const streamForContext = new MediaStream([originalAudioTrack]);
+            const streamForRecorder = new MediaStream([clonedAudioTrack]);
+            // --- END NEW TRACK CLONING --- 
+
+            // --- Initialize AudioContext and Analyser (Use streamForContext) ---
+            try {
+                 // Close existing context if any (e.g., from a previous failed attempt)
+                if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+                     console.log("[handleStartRecording] Closing existing AudioContext before creating new one.");
+                    await audioContextRef.current.close();
+                 }
+                 audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+                 console.log("[handleStartRecording] AudioContext created/resumed. State:", audioContextRef.current.state);
+
+                // <<< Use streamForContext here >>>
+                audioSourceNodeRef.current = audioContextRef.current.createMediaStreamSource(streamForContext);
+                analyserRef.current = audioContextRef.current.createAnalyser();
+
+                // Configure AnalyserNode
+                analyserRef.current.fftSize = 2048;
+                const bufferLength = analyserRef.current.frequencyBinCount;
+                console.log("[handleStartRecording] Analyser bufferLength:", bufferLength);
+                dataArrayRef.current = new Uint8Array(bufferLength);
+
+                // Connect the nodes: Source -> Analyser
+                audioSourceNodeRef.current.connect(analyserRef.current);
+                 console.log("[handleStartRecording] Audio nodes created and connected.");
+
+            } catch (audioSetupError) {
+                 console.error("[handleStartRecording] Failed to set up AudioContext/Analyser:", audioSetupError);
+                 toast.error("Failed to initialize audio analysis.");
+                 // Cleanup BOTH tracks if audio setup failed after getting stream
+                 originalAudioTrack.stop();
+                 clonedAudioTrack.stop();
+                 setIsRecording(false);
+                 setMicPermissionError(true);
+                 return;
+            }
+            // --- END AudioContext Setup ---
+
+            // Select MIME type for MediaRecorder (no change needed here)
+            const options: MediaRecorderOptions = {};
+            const preferredType = 'audio/webm';
+            if (MediaRecorder.isTypeSupported(preferredType)) {
+                options.mimeType = preferredType;
+                console.log(`Using preferred MIME type: ${preferredType}`);
+            } else {
+                console.log(`Preferred MIME type ${preferredType} not supported, using browser default.`);
+            }
+
+            // <<< Use streamForRecorder here >>>
+            const recorder = new MediaRecorder(streamForRecorder, options);
+            audioChunksRef.current = []; // Clear previous chunks
+
+            recorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                    // console.log(`Audio chunk received, size: ${event.data.size}, total chunks: ${audioChunksRef.current.length}`); // Less verbose log
+                }
+            };
+
+            // Use modified stop handler
+            recorder.onstop = () => {
+                 console.log("MediaRecorder onstop triggered.");
+                // handleProcessRecordedAudio handles transcription
+                 handleProcessRecordedAudio();
+                 // Explicitly call the main stop handler for cleanup consistency,
+                 // even though handleProcessRecordedAudio also cleans up some state.
+                 // The main handler ensures AudioContext/Analyser cleanup happens.
+                 // Pass false as it's not a timeout.
+                 // NOTE: Avoid calling handleStopRecording directly inside onstop if it causes issues.
+                 // The primary stop should happen via user action or timer.
+                 // Let's rely on the main handleStopRecording call triggered externally.
+                 // handleStopRecording(false); // <--- Let's REMOVE this to avoid double-stopping issues. Cleanup is handled by the external call.
+            };
+
+            recorder.onerror = (event) => {
+                // ... existing recorder error handling ...
+                 handleStopRecording(); // Ensure full cleanup on recorder error
+            };
+
+            setMediaRecorder(recorder);
+            recorder.start();
+            setIsRecording(true); // Set state AFTER recorder starts
+            isRecordingRef.current = true; // <<< Set ref to true
+            console.log("Recording started. State:", recorder.state);
+
+            // --- NEW: Start the analysis loop ---
+            console.log("[handleStartRecording] Starting audio analysis loop...");
+            animationFrameRef.current = requestAnimationFrame(analyseAudio);
+            // --- END NEW ---
+
+            // Start 30-second timer (no change)
+            const timerId = setTimeout(() => {
+                console.log("Recording timer (30s) finished.");
+                handleStopRecording(); // Pass false for non-timedOut
+            }, 30000);
+            setRecordingTimerId(timerId);
+            console.log(`Recording timer set with ID: ${timerId}`);
+
+            // --- NEW: Start Recording Timestamp ---
+            recordingStartTimeRef.current = Date.now();
+            lastSoundTimeRef.current = recordingStartTimeRef.current;
+            soundDetectedRef.current = false;
+            // --- END NEW ---
+
+            // After recorder creation, assign mediaRecorderRef.current = recorder;
+            mediaRecorderRef.current = recorder;
+            // After recorder.onstop, after setMediaRecorder(null) add mediaRecorderRef.current = null;
+            // mediaRecorderRef.current = null;
+
+        } catch (err: any) {
+            // ... existing getUserMedia error handling ...
+             handleStopRecording(); // Ensure full cleanup on getUserMedia error
+        }
+    // Added handleStopRecording, analyseAudio and audio refs dependencies
+    }, [handleProcessRecordedAudio, handleStopRecording, analyseAudio]); // Keep analyseAudio here
+
+    // --- Initial Message Processing ---
+    useEffect(() => {
+        if (!documentId || initialMsgProcessedRef.current) return;
+        const initialMsg = searchParams?.get('initialMsg');
+        if (initialMsg) {
+            const decodedMsg = decodeURIComponent(initialMsg);
+            setInput(decodedMsg);
+            setPendingInitialSubmission(decodedMsg);
+            const currentPath = window.location.pathname; 
+            router.replace(currentPath, { scroll: false }); 
+            initialMsgProcessedRef.current = true;
+        }
+    }, [documentId, searchParams, setInput, router]);
+
+    // --- Auto-Submit Initial Message ---
+    useEffect(() => {
+        if (pendingInitialSubmission && input === pendingInitialSubmission && !isLoading && !isRecording && !isTranscribing) { // Also check recording states
+            sendMessage(undefined);
+            setPendingInitialSubmission(null);
+        }
+    }, [input, pendingInitialSubmission, isLoading, isRecording, isTranscribing, sendMessage]); // Fixed reference to sendMessage
+
+    // --- SPLIT CLEANUP EFFECTS ---
+
+    // Effect specifically for cleaning up the recording timer when it changes or on unmount
+    useEffect(() => {
+        // Return a cleanup function for the timer
+        return () => {
+            if (recordingTimerId) {
+                console.log("[useChatInteractions Timer Cleanup] Clearing recording timer:", recordingTimerId);
+                clearTimeout(recordingTimerId);
+            }
+        };
+    }, [recordingTimerId]); // Only depend on the timer ID itself
+
+    // Effect for handling resource cleanup ONLY on component unmount
+    useEffect(() => {
+        // This function runs ONCE when the component mounts
+        // It returns a cleanup function that runs ONLY when the component unmounts
+        return () => {
+            console.log("[useChatInteractions UNMOUNT Cleanup] Cleaning up resources.");
+
+            // Ensure animation frame is cancelled
+            if (animationFrameRef.current) {
+                console.log("[useChatInteractions UNMOUNT Cleanup] Cancelling animation frame:", animationFrameRef.current);
+                cancelAnimationFrame(animationFrameRef.current);
+                animationFrameRef.current = null;
+            }
+
+            // Ensure recording stops if unmounting while active
+            // Access state/refs directly as this runs only at the very end
+            if (isRecording || mediaRecorder?.state === 'recording') {
+                console.log("[useChatInteractions UNMOUNT Cleanup] Stopping recording due to unmount.");
+                // Call stop directly - ensures tracks/recorder are stopped
+                // Note: handleStopRecording also tries to close context, which we do below anyway.
+                // Avoid calling handleStopRecording here if it causes double-closing issues.
+                // Let's try stopping the recorder and tracks directly first.
+                if (mediaRecorder) {
+                    if (mediaRecorder.stream) {
+                        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                        console.log("[useChatInteractions UNMOUNT Cleanup] Stopped media stream tracks.");
+                    }
+                    if (mediaRecorder.state === 'recording') {
+                         mediaRecorder.stop();
+                         console.log("[useChatInteractions UNMOUNT Cleanup] Stopped media recorder.");
+                    }
+                    // Don't call setMediaRecorder here - state updates are irrelevant during unmount
+                }
+                // No need to call setIsRecording - component is unmounting
+            }
+
+            // Ensure AudioContext is closed
+            if (audioContextRef.current) {
+                if (audioContextRef.current.state !== 'closed') {
+                    console.log("[useChatInteractions UNMOUNT Cleanup] Closing AudioContext. State:", audioContextRef.current.state);
+                    audioContextRef.current.close().catch(err => console.error("[UNMOUNT Cleanup] Error closing AudioContext:", err));
+                } else {
+                    console.log("[useChatInteractions UNMOUNT Cleanup] AudioContext was already closed.");
+                }
+                audioContextRef.current = null; // Clear ref
+            }
+
+            // Refs holding nodes are implicitly handled when context closes or stream stops.
+            audioSourceNodeRef.current = null;
+            analyserRef.current = null;
+            dataArrayRef.current = null;
+
+            // Clear refs/state that might persist (though usually unnecessary on unmount)
+            audioChunksRef.current = [];
+
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // <<< EMPTY DEPENDENCY ARRAY - Runs cleanup only on unmount
+
+    // --- Safeguard for AI SDK Compatibility Issues ---
+    useEffect(() => {
+        // Monitor for potential streaming parsing issues with Gemini models
+        if (!needsOnToolCallCallback && isLoading) {
+            console.log('[AI SDK Safeguard] Monitoring Gemini streaming response...');
+            
+            const timeoutId = setTimeout(() => {
+                if (isLoading) {
+                    console.warn('[AI SDK Safeguard] ⚠️ Gemini streaming response taking unusually long');
+                    console.warn('[AI SDK Safeguard] This might indicate a parsing issue with AI SDK v4.3.15');
+                    
+                    // Note: We can't automatically recover here since the backend is working
+                    // The user will need to manually retry or check if the response was actually successful
+                }
+            }, 20000); // 20 second timeout
+            
+            return () => clearTimeout(timeoutId);
+        }
+    }, [isLoading, needsOnToolCallCallback]);
+
+    // --- Effect to monitor successful backend completion vs frontend processing ---
+    useEffect(() => {
+        // This effect helps detect when backend succeeds but frontend fails to process
+        if (!needsOnToolCallCallback && !isLoading) {
+            console.log('[AI SDK Monitor] Gemini request completed. Loading state changed to false.');
+        }
+    }, [isLoading, needsOnToolCallCallback]);
+
+    // ADDED: useEffect to handle AI response after a tool result has been submitted
+    useEffect(() => {
+        if (currentAIToolState === AIToolState.AWAITING_RESULT_IN_STATE && messages.length > 0) {
+            const lastMessage = messages[messages.length - 1];
+            if (lastMessage.role === 'assistant' && (
+                !('tool_calls' in lastMessage) || 
+                !lastMessage.tool_calls || 
+                (Array.isArray(lastMessage.tool_calls) && lastMessage.tool_calls.length === 0)
+            )) {
+                console.log('[useChatInteractions] AI responded after tool result. Finalizing tool state.');
+                setAIToolState(AIToolState.PROCESSING_COMPLETE);
+                setTimeout(() => {
+                    setOperationStates({
+                        aiToolState: AIToolState.IDLE,
+                        currentToolCallId: undefined,
+                        currentOperationDescription: undefined,
+                    });
+                }, 100); // Short delay to allow UI to show "complete"
+            }
+        }
+    }, [messages, currentAIToolState, setAIToolState, setOperationStates]);
+
+    // --- Wrapped Stop Handler ---
+    const stop = useCallback(() => {
+        console.log('[useChatInteractions] stop called.');
+        stopAiGeneration();
+        resetChatOperationState(); // ADDED
+    }, [stopAiGeneration, resetChatOperationState]);
+
+    // --- Initialize useChat ---
+    const {
+        messages,
+        setMessages,
+        append,
+        reload,
+        stop,
+        isLoading: isUseChatLoading, // MODIFIED_LINE: Renamed to avoid conflict
+        input,
+        setInput,
+        error: useChatError, // MODIFIED_LINE: Renamed to avoid conflict
+        addToolResult: useChatAddToolResult, // MODIFIED_LINE: Renamed to avoid conflict
+        // Ensure other destructured items like experimental_onToolCall are handled (kept or removed based on need)
+    } = useChat({
+        api: apiEndpoint,
+        id: documentId,
+        initialMessages: initialMessages || undefined,
+        body: {
+            documentId,
+        },
+        experimental_onToolCall: clientToolHandler, // Assuming clientToolHandler is defined and handles editor tools
+        onFinish: (message) => {
+            // MODIFIED_LINE: Simplified onFinish to remove direct orchestrator calls
+            console.log('[useChat onFinish] Stream finished. Final message:', message);
+            if (message.role === 'assistant' && message.content) {
+                useFollowUpStore.getState().addFollowUp(documentId, message.content);
+            }
+            // The logic to call orchestrator.handleFileUploadComplete and setOperationType('idle')
+            // will need to be moved to a useEffect hook that observes `messages` or AI operation completion
+            // and has access to the `orchestrator` instance.
+            // For now, only essential non-orchestrator logic here:
+            useClientChatOperationStore.getState().setOperationType('idle'); // This might be okay if orchestrator also sets it.
+        },
+        onError: (error) => {
+            console.error('[useChat onError]', error);
+            toast.error(`Chat error: ${error.message}`);
+            useClientChatOperationStore.getState().setOperationType('idle');
+        },
+        generateId: () => `editor-chat-${documentId}-${Date.now()}`,
+    });
+
+    // States that will be updated by orchestrator's onStateChange
+    const [isRecordingInternal, setIsRecordingInternal] = useState(false);
+    const [isTranscribingInternal, setIsTranscribingInternal] = useState(false);
+    const [micPermissionErrorInternal, setMicPermissionErrorInternal] = useState(false);
+    const [audioTimeDomainDataInternal, setAudioTimeDomainDataInternal] = useState<AudioTimeDomainData>(null);
+
+    // Orchestrator Initialization (Ensure all props are correctly passed as per design)
+    const orchestrator = useClientChatOrchestrator({
+        chatMessages: messages,
+        addToolResult: createAddToolResultAdapter(useChatAddToolResult),
+        setInputValue: setInput,
+        startRecording: rawStartRecording,
+        stopRecording: rawStopRecording,  
+        transcribeAudio: rawTranscribeAudio,
+        uploadFile: uploadFileForOrchestrator,
+        toolExecutors: toolExecutors,
+        onStateChange: (newState, oldState) => {
+            if (newState.audio.state !== oldState.audio.state || 
+                newState.audio.timeDomainData !== oldState.audio.timeDomainData ||
+                newState.audio.permissionError !== oldState.audio.permissionError) {
+                setIsRecordingInternal(newState.audio.state === AudioState.RECORDING);
+                setIsTranscribingInternal(newState.audio.state === AudioState.TRANSCRIBING);
+                setAudioTimeDomainDataInternal(newState.audio.timeDomainData);
+                setMicPermissionErrorInternal(newState.audio.permissionError);
+            }
+        },
+        fetchDownloadUrlForPath,
+    });
+
+    const {
+        isChatInputBusy,
+        currentOperationStatusText,
+        handleAudioRecordingStart,
+        handleCompleteAudioFlow,
+        handleFileUploadStart: orchestratorHandleFileUploadStart,
+        handleFileUploadComplete: orchestratorHandleFileUploadComplete,
+        getPendingFilePath,
+        isFileUploadInProgress: orchestratorIsFileUploadInProgress,
+        cancelFileUpload: orchestratorCancelFileUpload,
+        pendingFile: orchestratorPendingFile, // Keep this name if UI uses it
+        isHistoryConsistentForAPICall,
+        // executeToolByName and processToolInvocations might be used by clientToolHandler
+        executeToolByName,
+        processToolInvocations 
+    } = orchestrator;
+
+    // useEffect to handle onFinish logic that requires orchestrator instance
+    useEffect(() => {
+        const lastMessage = messages[messages.length - 1];
+        if (lastMessage && lastMessage.role === 'assistant') { // Or some other condition indicating AI turn ended
+            const pendingPath = orchestrator.getPendingFilePath();
+            if (pendingPath) {
+                console.log('[useEffect messages] Clearing pending file path via orchestrator.');
+                orchestrator.handleFileUploadComplete(pendingPath, false); // false = not part of a user message submission
+            }
+        }
+    }, [messages, orchestrator]); // orchestrator added
+
+    // Effect for initialTaggedDocIdsString (Placeholder - assumed to be defined correctly elsewhere)
+    useEffect(() => { /* ... logic for initialTaggedDocIdsString ... */ }, [initialTaggedDocIdsString, documentId]);
+    
+    // Effect for initialMessages (Placeholder - assumed to be defined correctly elsewhere)
+    useEffect(() => { /* ... logic for initialMessages ... */ }, [initialMessages, setMessages]);
+
+
+    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement> | React.ChangeEvent<HTMLInputElement>) => {
+        setInput(e.target.value);
+    }, [setInput]);
+
+    const sendMessage = useCallback(async (e?: React.FormEvent<HTMLFormElement>) => {
+        e?.preventDefault();
+    
+        if (isChatInputBusy) {
+            toast.info("Please wait for the current operation to complete.");
+            return;
+        }
+    
+        if (!isHistoryConsistentForAPICall()) {
+            toast.error('Cannot send message: Chat history is inconsistent. Please try reloading.');
+            return;
+        }
+    
+        const filePath = getPendingFilePath();
+        let currentInput = input.trim();
+    
+        if (!currentInput && !filePath) return;
+    
+        let messageContent = currentInput;
+        const dataForApi: any = {
+            editorContext: await getEditorContext(),
+            documentId: documentId,
+            model: model, 
+            taggedDocumentIds: taggedDocuments.map(doc => doc.id),
+        };
+
+        if (filePath) {
+            let displayFileName = orchestratorPendingFile?.file?.name || 'Uploaded file';
+            let urlForAIMessage = filePath; 
+            if (fetchDownloadUrlForPath) {
+                try {
+                    urlForAIMessage = await fetchDownloadUrlForPath(filePath);
+                } catch (err) {
+                    console.error("Failed to get signed URL for AI message", err);
+                    toast.error("Failed to prepare uploaded file for AI.");
+                }
+            }
+            messageContent = `${currentInput}\n![${displayFileName}](${urlForAIMessage})`;
+            // Notify orchestrator that the file is being "consumed" by this message
+            orchestratorHandleFileUploadComplete(filePath, true); 
+        }
+    
+        await append(
+            { role: 'user', content: messageContent },
+            { data: dataForApi }
+        );
+    
+        setInput(''); 
+        if (filePath && clearFileUploadPreview) {
+            // If the external useFileUpload hook needs to be told to clear its specific UI preview
+            // This is different from the orchestrator's pending file state.
+            // await clearFileUploadPreview({ deleteFromStorage: false });
+        }
+    }, [
+        input, isChatInputBusy, isHistoryConsistentForAPICall, getPendingFilePath, append, setInput,
+        orchestratorHandleFileUploadComplete, documentId, model, taggedDocuments, getEditorContext,
+        orchestratorPendingFile, fetchDownloadUrlForPath, clearFileUploadPreview
+    ]);
+
+    const handleMicrophoneClick = useCallback(() => {
+        handleAudioRecordingStart(); 
+    }, [handleAudioRecordingStart]);
+
+    const handleStopRecording = useCallback(() => {
+        handleCompleteAudioFlow(); 
+    }, [handleCompleteAudioFlow]);
+
+    const handleFileUpload = useCallback(async (file: File) => {
+        // This is the user-facing action when they select a file to upload
+        await orchestratorHandleFileUploadStart(file);
+        // The orchestratorHandleFileUploadStart (from useClientChatOrchestrator)
+        // should handle calling the provided uploadFileForOrchestrator
+    }, [orchestratorHandleFileUploadStart]);
+
+    return {
+        messages,
+        setMessages,
+        input,
+        setInput,
+        handleInputChange,
+        sendMessage, 
+        isLoading: isUseChatLoading || isChatInputBusy, 
+        reload,
+        stop,
+        model,
+        setModel,
+        isRecording: isRecordingInternal,
+        isTranscribing: isTranscribingInternal,
+        micPermissionError: micPermissionErrorInternal,
+        audioTimeDomainData: audioTimeDomainDataInternal,
+        handleMicrophoneClick,
+        handleStopRecording,  
+        handleFileUpload,      
+        taggedDocuments,
+        setTaggedDocuments,
+        addToolResult: useChatAddToolResult,
+        cancelFileUpload: orchestratorCancelFileUpload, 
+        isChatInputBusy, 
+        currentOperationStatusText, 
+        isFileUploadInProgress: orchestratorIsFileUploadInProgress, 
+        orchestratorPendingFile,
+        error: useChatError, 
+    };
+} 

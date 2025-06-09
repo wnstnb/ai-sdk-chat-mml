@@ -35,7 +35,7 @@ interface ChatPaneWrapperProps {
     input: string;
     setInput: (value: string) => void;
     handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement> | React.ChangeEvent<HTMLInputElement>) => void;
-    handleSubmit: (event?: React.FormEvent<HTMLFormElement>, options?: { data?: any }) => Promise<void>;
+    sendMessage: (event?: React.FormEvent<HTMLFormElement>, options?: { data?: any }) => Promise<void>;
     model: string;
     setModel: React.Dispatch<React.SetStateAction<string>>;
     stop: () => void;
@@ -85,6 +85,15 @@ interface ChatPaneWrapperProps {
     isMobile?: boolean;
     activeMobilePane?: 'editor' | 'chat';
     onToggleMobilePane?: () => void;
+
+    // --- NEW: Orchestrator file upload props ---
+    orchestratorHandleFileUploadStart?: (file: File) => Promise<string | null>;
+    orchestratorCancelFileUpload?: () => void;
+    orchestratorPendingFile?: any; // Will be properly typed later
+    orchestratorIsFileUploadInProgress?: () => boolean;
+    orchestratorIsChatInputBusy?: boolean;
+    orchestratorCurrentOperationStatusText?: string | null;
+    // --- END NEW ---
 }
 
 export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
@@ -102,7 +111,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     input,
     setInput,
     handleInputChange,
-    handleSubmit,
+    sendMessage,
     model,
     setModel,
     stop,
@@ -140,6 +149,15 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     isMobile,
     activeMobilePane,
     onToggleMobilePane,
+
+    // --- NEW: Destructure orchestrator props ---
+    orchestratorHandleFileUploadStart,
+    orchestratorCancelFileUpload,
+    orchestratorPendingFile,
+    orchestratorIsFileUploadInProgress,
+    orchestratorIsChatInputBusy,
+    orchestratorCurrentOperationStatusText,
+    // --- END NEW ---
 }) => {
     // State to force remount of ChatInputArea after animation - Keep if still needed
     // const [inputAreaKey, setInputAreaKey] = useState(0);
@@ -204,7 +222,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                     input={input}
                     setInput={setInput}
                     handleInputChange={handleInputChange}
-                    handleSubmit={handleSubmit}
+                                            sendMessage={sendMessage}
                     handleKeyDown={handleKeyDown}
                     handlePaste={handlePaste}
                     model={model}
@@ -233,6 +251,15 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                     onToggleMiniPane={onToggleMiniPane}
                     isMainChatCollapsed={isMainChatCollapsed}
                     miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
+                    // --- END NEW ---
+
+                    // --- NEW: Pass orchestrator props to ChatInputArea ---
+                    orchestratorHandleFileUploadStart={orchestratorHandleFileUploadStart}
+                    orchestratorCancelFileUpload={orchestratorCancelFileUpload}
+                    orchestratorPendingFile={orchestratorPendingFile}
+                    orchestratorIsFileUploadInProgress={orchestratorIsFileUploadInProgress}
+                    orchestratorIsChatInputBusy={orchestratorIsChatInputBusy}
+                    orchestratorCurrentOperationStatusText={orchestratorCurrentOperationStatusText}
                     // --- END NEW ---
                 />
             </div>

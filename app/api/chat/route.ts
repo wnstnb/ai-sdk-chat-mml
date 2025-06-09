@@ -180,6 +180,8 @@ const defaultModelId = "gpt-4.1";
 // System Prompt updated for Tool Calling, Web Search, and direct Table Markdown modification
 const systemPrompt = `# SYSTEM PROMPT: Collaborative Editor AI Assistant
 
+**IMPORTANT: When a user explicitly asks you to add, modify, or delete specific content in the editor (e.g., "add X to the document", "remove Y", "change Z to W"), you MUST use the appropriate tool to execute the action. However, for general conversation, questions about content, or unclear requests, engage naturally and ask for clarification when needed.**
+
 ## ROLE: Your Collaborative Super-Assistant
 
 You are an exceptionally capable AI assistant and collaborative partner, integrated directly into the user's BlockNote editing environment. Think of yourself not just as a tool, but as a highly resourceful **super-assistant** embedded within their workflow. Your expertise spans understanding document content, writing, research, and data organization.
@@ -428,6 +430,20 @@ export async function POST(req: Request) {
         firstImageContentType,
     } = requestData || {};
 
+    // === ENHANCED DEBUGGING FOR DOCUMENT ID ISSUES ===
+    console.log("=== [API Chat] DOCUMENT ID DEBUGGING START ===");
+    console.log("[API Chat] Document ID validation:");
+    console.log("  - requestData exists:", !!requestData);
+    console.log("  - requestData type:", typeof requestData);
+    console.log("  - requestData keys:", requestData ? Object.keys(requestData) : 'null');
+    console.log("  - documentId value:", documentId);
+    console.log("  - documentId type:", typeof documentId);
+    console.log("  - documentId length:", typeof documentId === 'string' ? documentId.length : 'N/A');
+    console.log("  - documentId truthy:", !!documentId);
+    console.log("  - editorContext exists:", !!editorBlocksContext);
+    console.log("  - model from data:", modelIdFromData);
+    console.log("=== [API Chat] DOCUMENT ID DEBUGGING END ===");
+
     // === DETAILED LOGGING FOR IMAGE DIAGNOSIS ===
     console.log("=== [API Chat] IMAGE DIAGNOSIS LOGGING START ===");
     console.log("[API Chat] Request data image-related fields:");
@@ -454,7 +470,12 @@ export async function POST(req: Request) {
 
     // --- Existing Validation (Document ID, User Session) ---
     if (!documentId || typeof documentId !== 'string') {
-         return new Response(JSON.stringify({ error: { code: 'INVALID_INPUT', message: 'Missing or invalid documentId in request data.' } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        console.error("[API Chat] DocumentId validation failed:");
+        console.error("  - documentId received:", JSON.stringify(documentId));
+        console.error("  - documentId type:", typeof documentId);
+        console.error("  - requestData received:", JSON.stringify(requestData));
+        const errorMessage = `Missing or invalid documentId in request data. Received: ${JSON.stringify(documentId)} (type: ${typeof documentId})`;
+        return new Response(JSON.stringify({ error: { code: 'INVALID_INPUT', message: errorMessage } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
     const supabase = createSupabaseServerClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser(); 
@@ -777,7 +798,122 @@ export async function POST(req: Request) {
 
     // 4. Prepare and Convert Client Message History
     // Use a mutable copy for potential modification (e.g. adding image to last user message)
-    const historyToConvert: ClientMessage[] = JSON.parse(JSON.stringify(originalClientMessages)); 
+    const historyToConvert: ClientMessage[] = JSON.parse(JSON.stringify(originalClientMessages));
+    
+    // === ENHANCED DEBUG: Analyze message structure ===
+    console.log('[API Chat] === DETAILED MESSAGE STRUCTURE ANALYSIS ===');
+    historyToConvert.forEach((message, index) => {
+        console.log(`[API Chat] Message ${index}:`);
+        console.log(`  - Role: ${message.role}`);
+        console.log(`  - Content type: ${typeof message.content}`);
+        console.log(`  - Content is array: ${Array.isArray(message.content)}`);
+        console.log(`  - Has toolInvocations: ${!!message.toolInvocations}`);
+        console.log(`  - Has parts: ${!!message.parts}`);
+        
+        if (Array.isArray(message.content)) {
+            console.log(`  - Content parts count: ${message.content.length}`);
+            message.content.forEach((part, partIndex) => {
+                console.log(`    Part ${partIndex}: type=${part.type}, hasResult=${!!part.result}, toolCallId=${part.toolCallId || 'none'}, toolName=${part.toolName || 'none'}`);
+            });
+        }
+        
+        if (message.toolInvocations) {
+            console.log(`  - ToolInvocations count: ${message.toolInvocations.length}`);
+            message.toolInvocations.forEach((inv, invIndex) => {
+                console.log(`    Invocation ${invIndex}: toolName=${inv.toolName}, hasResult=${!!inv.result}, state=${inv.state || 'none'}`);
+            });
+        }
+        
+        if (message.parts) {
+            console.log(`  - Parts count: ${message.parts.length}`);
+            message.parts.forEach((part, partIndex) => {
+                console.log(`    Part ${partIndex}: type=${part.type}`);
+            });
+        }
+    });
+    console.log('[API Chat] === END MESSAGE STRUCTURE ANALYSIS ===');
+    
+    // === ENHANCED FIX: Clean up incomplete tool calls before conversion ===
+    console.log('[API Chat] Cleaning up incomplete tool calls in message history...');
+    const cleanedHistory = historyToConvert.map((message, index) => {
+        let modifiedMessage = { ...message };
+        let wasModified = false;
+        
+        // Handle tool calls in content array
+        if (message.role === 'assistant' && Array.isArray(message.content)) {
+            const hasIncompleteToolCalls = message.content.some(part => 
+                part.type === 'tool-call' && !part.result
+            );
+            
+            if (hasIncompleteToolCalls) {
+                console.log(`[API Chat] Found incomplete tool calls in content array for message ${index}`);
+                const filteredContent = message.content.filter(part => {
+                    if (part.type === 'tool-call' && !part.result) {
+                        console.log(`[API Chat] Removing incomplete tool call from content: ${part.toolName} (${part.toolCallId})`);
+                        return false;
+                    }
+                    return true;
+                });
+                
+                if (filteredContent.length === 0) {
+                    console.log(`[API Chat] No content left after filtering, converting to simple text message`);
+                    modifiedMessage.content = 'I was processing your request but the operation was interrupted. Please try again.';
+                } else {
+                    modifiedMessage.content = filteredContent;
+                }
+                wasModified = true;
+            }
+        }
+        
+        // Handle toolInvocations array
+        if (message.toolInvocations && Array.isArray(message.toolInvocations)) {
+            const hasIncompleteInvocations = message.toolInvocations.some(inv => !inv.result);
+            
+            if (hasIncompleteInvocations) {
+                console.log(`[API Chat] Found incomplete tool invocations for message ${index}`);
+                const filteredInvocations = message.toolInvocations.filter(inv => {
+                    if (!inv.result) {
+                        console.log(`[API Chat] Removing incomplete tool invocation: ${inv.toolName} (${inv.toolCallId})`);
+                        return false;
+                    }
+                    return true;
+                });
+                
+                modifiedMessage.toolInvocations = filteredInvocations.length > 0 ? filteredInvocations : undefined;
+                wasModified = true;
+            }
+        }
+        
+        // Handle parts array
+        if (message.parts && Array.isArray(message.parts)) {
+            const hasIncompletePartCalls = message.parts.some(part => 
+                part.type === 'tool-call' && !part.result
+            );
+            
+            if (hasIncompletePartCalls) {
+                console.log(`[API Chat] Found incomplete tool calls in parts array for message ${index}`);
+                const filteredParts = message.parts.filter(part => {
+                    if (part.type === 'tool-call' && !part.result) {
+                        console.log(`[API Chat] Removing incomplete tool call from parts: ${part.toolName} (${part.toolCallId})`);
+                        return false;
+                    }
+                    return true;
+                });
+                
+                modifiedMessage.parts = filteredParts.length > 0 ? filteredParts : undefined;
+                wasModified = true;
+            }
+        }
+        
+        if (wasModified) {
+            console.log(`[API Chat] Modified message ${index} to remove incomplete tool calls`);
+        }
+        
+        return modifiedMessage;
+    });
+    
+    console.log(`[API Chat] Message cleanup completed`);
+    // === END ENHANCED FIX === 
 
     console.log("=== [API Chat] IMAGE FOR AI PROCESSING START ===");
     let finalImageSignedUrlForConversion: URL | undefined = undefined;
@@ -895,7 +1031,7 @@ export async function POST(req: Request) {
     }
     console.log("=== [API Chat] IMAGE FOR AI PROCESSING END ===");
 
-    const slicedHistoryToConvert = historyToConvert.length > 10 ? historyToConvert.slice(-10) : historyToConvert;
+    const slicedHistoryToConvert = cleanedHistory.length > 10 ? cleanedHistory.slice(-10) : cleanedHistory;
     
     if (slicedHistoryToConvert.length > 0) {
         // === DEBUG: Log historyToConvert before conversion ===
@@ -927,7 +1063,77 @@ export async function POST(req: Request) {
         console.log("=== [API Chat] PRE-CONVERSION DEBUG END ===");
         
         // Cast to `any` to satisfy convertToCoreMessages if ClientMessage is not perfectly aligned with internal VercelAIMessage
-        const convertedHistoryMessages = convertToCoreMessages(slicedHistoryToConvert as any);
+        let convertedHistoryMessages: any[] = [];
+        try {
+            console.log("[API Chat] Attempting convertToCoreMessages...");
+            convertedHistoryMessages = convertToCoreMessages(slicedHistoryToConvert as any);
+            console.log("[API Chat] ✅ convertToCoreMessages succeeded");
+        } catch (conversionError: any) {
+            console.error("[API Chat] ❌ convertToCoreMessages failed:", conversionError);
+            console.error("  - Error type:", conversionError.constructor?.name);
+            console.error("  - Error message:", conversionError.message);
+            console.error("  - Error stack:", conversionError.stack);
+            
+            // Fallback: Skip problematic messages and try again with a safer subset
+            if (conversionError.message?.includes('ToolInvocation must have a result')) {
+                console.log("[API Chat] 🔧 Attempting fallback: removing messages with incomplete tool calls...");
+                
+                // Create a safer version by filtering out messages that might have incomplete tool calls
+                const safeMessages = slicedHistoryToConvert.filter((msg, index) => {
+                    // Skip assistant messages that might have incomplete tool calls
+                    if (msg.role === 'assistant') {
+                        const hasIncompleteToolCalls = 
+                            (Array.isArray(msg.content) && msg.content.some((part: any) => 
+                                part.type === 'tool-call' && !part.result
+                            )) ||
+                            (msg.toolInvocations && msg.toolInvocations.some((inv: any) => 
+                                !inv.result && inv.state !== 'result'
+                            )) ||
+                            (msg.parts && msg.parts.some((part: any) => 
+                                part.type === 'tool-call' && !part.result
+                            ));
+                        
+                        if (hasIncompleteToolCalls) {
+                            console.log(`[API Chat] Filtering out assistant message ${index} with incomplete tool calls`);
+                            return false;
+                        }
+                    }
+                    
+                    // Skip tool messages that might be incomplete
+                    if (msg.role === 'tool') {
+                        const hasIncompleteResults = Array.isArray(msg.content) && 
+                            msg.content.some((part: any) => 
+                                part.type === 'tool-result' && (part.result === undefined || part.result === null)
+                            );
+                        
+                        if (hasIncompleteResults) {
+                            console.log(`[API Chat] Filtering out tool message ${index} with incomplete results`);
+                            return false;
+                        }
+                    }
+                    
+                    return true;
+                });
+                
+                if (safeMessages.length > 0 && safeMessages.length < slicedHistoryToConvert.length) {
+                    try {
+                        console.log(`[API Chat] Fallback: trying convertToCoreMessages with ${safeMessages.length}/${slicedHistoryToConvert.length} messages...`);
+                        convertedHistoryMessages = convertToCoreMessages(safeMessages as any);
+                        console.log("[API Chat] ✅ Fallback conversion succeeded");
+                    } catch (fallbackError: any) {
+                        console.error("[API Chat] ❌ Fallback conversion also failed:", fallbackError);
+                        console.log("[API Chat] 🔧 Using empty history as last resort");
+                        convertedHistoryMessages = [];
+                    }
+                } else {
+                    console.log("[API Chat] 🔧 No safe messages found or no filtering needed, using empty history");
+                    convertedHistoryMessages = [];
+                }
+            } else {
+                console.log("[API Chat] 🔧 Non-tool-call error, using empty history as fallback");
+                convertedHistoryMessages = [];
+            }
+        }
         
         // === DEBUG: Log results after conversion ===
         console.log("=== [API Chat] POST-CONVERSION DEBUG START ===");
@@ -1019,19 +1225,8 @@ export async function POST(req: Request) {
                 content: `[Editor Context]\nCurrent editor block context (use IDs to target blocks):\n\`\`\`json\n${contextString}\n\`\`\``
             };
 
-            let lastUserMessageIdx = -1;
-            for (let i = finalMessagesForStreamText.length - 1; i >= 0; i--) {
-                if (finalMessagesForStreamText[i].role === 'user') {
-                    lastUserMessageIdx = i;
-                    break;
-                }
-            }
-            if (lastUserMessageIdx !== -1) {
-                finalMessagesForStreamText.splice(lastUserMessageIdx, 0, editorContextCoreMessage);
-            } else {
-                const firstHistoryMsgIndex = finalMessagesForStreamText.findIndex(msg => msg.role !== 'system');
-                finalMessagesForStreamText.splice(firstHistoryMsgIndex !== -1 ? firstHistoryMsgIndex : finalMessagesForStreamText.length, 0, editorContextCoreMessage);
-            }
+            // Add editor context AFTER the last user message, not before
+            finalMessagesForStreamText.push(editorContextCoreMessage);
             console.log("[API Chat] Added structured editor context to messages.");
         } else {
             console.warn("[API Chat] Received editorBlocksContext, but it had an invalid structure.");

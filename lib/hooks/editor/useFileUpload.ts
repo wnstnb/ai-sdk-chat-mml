@@ -16,6 +16,33 @@ interface UseFileUploadReturn {
     handleFilePasteEvent: (event: React.ClipboardEvent<Element>) => void; // Allow generic element for broader use
     handleFileDropEvent: (event: React.DragEvent<Element>) => void; // Allow generic element
     clearPreview: (options?: { deleteFromStorage?: boolean }) => Promise<void>;
+    uploadFileForOrchestrator: (file: File) => Promise<string>; // Expose for orchestrator
+    fetchDownloadUrlForPath: (filePath: string) => Promise<string>; // Expose for fetching download URL
+}
+
+// Helper function to fetch download URL - can be used by any consumer of the hook
+async function fetchDownloadUrlLogic(filePath: string): Promise<string> {
+    console.log(`[fetchDownloadUrlLogic] Fetching download URL for path: ${filePath}`);
+    // Optional: Add a small delay if needed, though can be handled by caller if specific
+    // await new Promise(resolve => setTimeout(resolve, 500)); 
+    
+    const downloadUrlRes = await fetch('/api/storage/signed-url/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath })
+    });
+
+    if (!downloadUrlRes.ok) {
+        const err = await downloadUrlRes.json().catch(() => ({}));
+        throw new Error(err.error?.message || `Failed to get download URL (${downloadUrlRes.status})`);
+    }
+
+    const { signedUrl: downloadUrl } = await downloadUrlRes.json();
+    if (!downloadUrl) {
+            throw new Error("Download URL response did not contain a signedUrl.");
+    }
+    console.log(`[fetchDownloadUrlLogic] Successfully obtained download URL for ${filePath}`);
+    return downloadUrl;
 }
 
 export function useFileUpload({
@@ -27,52 +54,43 @@ export function useFileUpload({
     const [uploadedImagePath, setUploadedImagePath] = useState<string | null>(null); // Storage path
     const [uploadedImageSignedUrl, setUploadedImageSignedUrl] = useState<string | null>(null); // Download URL
 
-    // Internal upload function (modified from page.tsx handleStartUpload)
-    const _handleStartUpload = useCallback(async (file: File) => {
+    // Internal upload function - refactored to return Promise<string> (storagePath) and throw errors
+    const _handleStartUpload = useCallback(async (file: File): Promise<string> => {
         if (!documentId) {
-            toast.error("Cannot upload: Document context missing.");
-            return;
+            throw new Error("Cannot upload: Document context missing.");
         }
-        // Note: We don't check isUploading here, as the caller (selectAndUploadFile)
-        // might decide how to handle concurrent requests if needed.
-        // However, setting state should prevent UI overlaps.
 
-        setIsUploading(true);
-        setUploadError(null);
-        // Keep existing file preview during upload, but reset path and signed URL
-        setUploadedImagePath(null);
-        setUploadedImageSignedUrl(null); // --> ADDED: Reset signed URL on new upload
-        toast.info(`Uploading ${file.name}...`);
+        // Reset path and signed URL for the new upload attempt via this raw function
+        // Consumers like selectAndUploadFile will manage their own state based on the outcome of this promise
+        // setUploadedImagePath(null); // Managed by caller
+        // setUploadedImageSignedUrl(null); // Managed by caller
 
-        let storagePath: string | null = null; // Variable to hold path after upload
+        let storagePath: string | null = null;
 
         try {
             // 1. Get Signed UPLOAD URL
-            console.log(`[useFileUpload] Fetching signed UPLOAD URL for: ${file.name}`);
+            console.log(`[useFileUpload _handleStartUpload] Fetching signed UPLOAD URL for: ${file.name}`);
             const signedUrlRes = await fetch('/api/storage/signed-url/upload', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fileName: file.name, contentType: file.type, documentId })
+                body: JSON.stringify({ fileName: file.name, contentType: file.type, documentId, fileSize: file.size })
             });
             if (!signedUrlRes.ok) {
                 const err = await signedUrlRes.json().catch(() => ({}));
                 throw new Error(err.error?.message || `Upload URL error for ${file.name} (${signedUrlRes.status})`);
             }
-            // --> Expect ONLY signedUrl (for upload) and path
             const { data: urlData } = await signedUrlRes.json();
             const { signedUrl: uploadUrl, path: returnedPath } = urlData;
 
             if (!uploadUrl || !returnedPath) {
                  throw new Error("Upload URL response missing required URL or path.");
             }
-            // Store the path immediately
             storagePath = returnedPath;
-            setUploadedImagePath(storagePath); // Store permanent path
-            setUploadedImageSignedUrl(null); // Reset download URL initially
-            console.log(`[useFileUpload] Received upload URL and path: ${storagePath}`);
+            // setUploadedImagePath(storagePath); // Managed by caller
+            console.log(`[useFileUpload _handleStartUpload] Received upload URL and path: ${storagePath}`);
 
             // 2. Upload File using Signed UPLOAD URL
-            console.log(`[useFileUpload] Uploading ${file.name} using signed upload URL...`);
+            console.log(`[useFileUpload _handleStartUpload] Uploading ${file.name} using signed upload URL...`);
             const uploadRes = await fetch(uploadUrl, {
                 method: 'PUT',
                 headers: { 'Content-Type': file.type },
@@ -80,57 +98,26 @@ export function useFileUpload({
             });
             if (!uploadRes.ok) {
                 const storageErrorText = await uploadRes.text();
-                console.error("Storage Upload Error Text:", storageErrorText);
+                console.error("[useFileUpload _handleStartUpload] Storage Upload Error Text:", storageErrorText);
                 throw new Error(`Upload failed for ${file.name} (${uploadRes.status})`);
             }
-            console.log(`[useFileUpload] Successfully uploaded ${file.name}. Path: ${storagePath}`);
+            console.log(`[useFileUpload _handleStartUpload] Successfully uploaded ${file.name}. Path: ${storagePath}`);
+            
+            // NOTE: We return the storagePath. The caller (orchestrator or selectAndUploadFile)
+            // will be responsible for fetching the download URL if needed for its specific use case.
+            // This simplifies _handleStartUpload to focus on getting the file into storage and returning its path.
 
-            // 3. Add Delay
-            console.log(`[useFileUpload] Waiting briefly before fetching download URL...`);
-            await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
-
-            // 4. Get Signed DOWNLOAD URL (Separate API Call)
-            if (!storagePath) {
-                 throw new Error("Consistency error: Storage path lost before fetching download URL.");
-            }
-            console.log(`[useFileUpload] Fetching download URL for path: ${storagePath}`);
-            const downloadUrlRes = await fetch('/api/storage/signed-url/download', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filePath: storagePath })
-            });
-
-            if (!downloadUrlRes.ok) {
-                const err = await downloadUrlRes.json().catch(() => ({}));
-                // Log specific error status from download endpoint
-                throw new Error(err.error?.message || `Failed to get download URL (${downloadUrlRes.status})`);
-            }
-
-            const { signedUrl: downloadUrl } = await downloadUrlRes.json();
-            if (!downloadUrl) {
-                 throw new Error("Download URL response did not contain a signedUrl.");
-            }
-
-            // 5. Success - Set download URL
-            console.log(`[useFileUpload] Successfully obtained download URL.`);
-            setUploadedImageSignedUrl(downloadUrl); // Store the usable download URL
-            toast.success(`${file.name} uploaded and processed!`); // Update success message slightly
+            return storagePath!;
 
         } catch (err: any) {
-            console.error(`Upload or Download URL error (${file.name}):`, err);
-            const errorMsg = `Failed to upload ${file.name}: ${err.message}`;
-            setUploadError(errorMsg);
-            toast.error(errorMsg);
-            setFiles(null); // Clear preview on error
-            setUploadedImagePath(null);
-            setUploadedImageSignedUrl(null); // --> ADDED: Ensure signed URL reset on error
-        } finally {
-            setIsUploading(false);
+            console.error(`[useFileUpload _handleStartUpload] Upload error (${file.name}):`, err);
+            // Re-throw the error for the caller to handle
+            throw err;
         }
     }, [documentId]);
 
     // Function to set preview and initiate upload
-    const selectAndUploadFile = useCallback((file: File) => {
+    const selectAndUploadFile = useCallback(async (file: File) => {
         if (isUploading) {
             toast.info("Please wait for the current upload to finish.");
             return;
@@ -144,11 +131,33 @@ export function useFileUpload({
         const dataTransfer = new DataTransfer();
         dataTransfer.items.add(file);
         setFiles(dataTransfer.files); // Set for preview
-        setUploadError(null); // Clear previous errors
-        setUploadedImagePath(null); // Clear previous path
-        setUploadedImageSignedUrl(null); // --> ADDED: Clear previous signed URL
-        _handleStartUpload(file); // Start the upload
+        
+        setIsUploading(true);
+        setUploadError(null);
+        setUploadedImagePath(null); 
+        setUploadedImageSignedUrl(null);
+        toast.info(`Uploading ${file.name}...`);
 
+        try {
+            const path = await _handleStartUpload(file); // Call the refactored internal upload function
+            setUploadedImagePath(path); // Store permanent path
+
+            // Now fetch the download URL using the common logic
+            const downloadUrl = await fetchDownloadUrlLogic(path);
+            setUploadedImageSignedUrl(downloadUrl);
+            toast.success(`${file.name} uploaded and processed!`);
+
+        } catch (err: any) {
+            console.error(`[useFileUpload selectAndUploadFile] Error during upload process (${file.name}):`, err);
+            const errorMsg = `Failed to upload ${file.name}: ${err.message}`;
+            setUploadError(errorMsg);
+            toast.error(errorMsg);
+            setFiles(null); // Clear preview on error
+            setUploadedImagePath(null);
+            setUploadedImageSignedUrl(null);
+        } finally {
+            setIsUploading(false);
+        }
     }, [isUploading, _handleStartUpload]);
 
     // Handler for file input change event
@@ -277,11 +286,13 @@ export function useFileUpload({
         isUploading,
         uploadError,
         uploadedImagePath,
-        uploadedImageSignedUrl, // --> MODIFIED: Return the signed download URL
+        uploadedImageSignedUrl,
         selectAndUploadFile,
         handleFileSelectEvent,
         handleFilePasteEvent,
         handleFileDropEvent,
         clearPreview,
+        uploadFileForOrchestrator: _handleStartUpload, // Expose the refactored upload function
+        fetchDownloadUrlForPath: fetchDownloadUrlLogic, // Expose the download URL fetching logic
     };
 } 

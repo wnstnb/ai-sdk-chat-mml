@@ -1,0 +1,80 @@
+# Chat UX Issues - Post Task 16
+
+This document tracks user experience issues discovered after completing task 16.
+
+## Active Issues
+
+### 1. Audio Transcription Not Working in Editor
+- **Issue**: Transcribed text not making it through after pressing record in the chat input while in the editor/viewing a document
+- **Status**: Under investigation
+- **Context**: Audio recording appears to work (waveform shows), but transcription doesn't complete and auto-submit doesn't trigger
+- **Expected Behavior**: After recording, audio should transcribe and automatically submit the message
+- **Actual Behavior**: Recording starts and stops, but no transcription or submission occurs
+
+### 2. DocumentId Error on Hard Refresh with Tool Call Messages
+- **Issue**: Get "Chat Error:" toast after hard refresh when tool calls are in message history. Once tool calls are in history, cannot interact with AI normally.
+- **Error Message**: Originally `MessageConversionError [AI_MessageConversionError]: ToolInvocation must have a result`
+- **Status**: MAJOR PROGRESS - Server-side working, investigating client-side error
+- **Context**: After fixing MessageConversionError, now getting "Chat error" toast on client but AI is responsive
+- **Expected Behavior**: Page should load normally and chat should work regardless of tool call history
+- **Actual Behavior**: Chat works and AI responds, but user still sees error toast
+- **Fix Applied**: 
+  - ✅ Fixed MessageConversionError with robust error handling around `convertToCoreMessages` 
+  - ✅ DocumentId validation now working correctly on server
+  - ✅ API calls complete successfully (200 status)
+  - ✅ AI responds normally after hard refresh
+  - 🔍 Added enhanced error logging to client-side useChat onError callback
+- **Current Investigation**: Client-side useChat hook shows error toast despite successful server response - investigating what triggers onError callback
+
+### 3. AI Cannot See Document Content + Infinite Re-renders
+- **Issue**: AI says it cannot see document content and cannot add anything. Page shows infinite re-rendering loops.
+- **Error Symptoms**: 
+  - Component initialization logs repeat dozens of times in console
+  - SendMessage function never called (no SEND MESSAGE DEBUG logs)
+  - AI responds generically about not having document access
+- **Status**: INVESTIGATING - Temporarily removed documentId guard to restore functionality
+- **Root Cause**: 
+  - Infinite re-rendering preventing normal message flow
+  - DocumentId guard may have been too strict, blocking legitimate requests
+  - Editor context not being properly passed to AI
+- **Evidence**: Console shows repeated hook initialization but no sendMessage calls
+- **Immediate Fix**: Temporarily disabled documentId guard to restore chat functionality
+- **Next Steps**: 
+  - Investigate cause of infinite re-renders
+  - Ensure editor context is properly generated and sent
+  - Re-implement documentId guard with better logic once core issue resolved
+
+### 4. Messaging the AI results in Assistant Message -> Follow up context:
+- **Issue**: The response from the AI results in follow-up context getting triggered, where its response is shown in the "Follow Up Context" bubble. Follow up context is a feature where users highlight text, click "Add to Follow Up Context" and have the AI focus just on that snippet.
+- **Status**: Under investigation
+- **Context**: The mechanic of adding text as Follow Up context works, but AI is not able to see Follow Up context as part of the message when I add it
+- **Expected Behavior**: Expected behavior is messaging the AI should just result in a bubble. The AI's response should not be included as follow-up context. Follow up context is an action user's have to enable AI to focus on a specific snippet of text.
+- **Actual Behavior**: Actual behavior is messaging the AI results in the AI's response being included as follow-up content, which is not expected. AI cannot see follow-up context at all in messages even when added.
+
+
+
+## Resolved Issues
+
+### 2. DocumentId Error on Hard Refresh with Tool Call Messages ❌
+- **Issue**: `MessageConversionError [AI_MessageConversionError]: ToolInvocation must have a result` when refreshing page with incomplete tool calls
+- **Root Cause**: AI SDK expected all tool calls to have results, but incomplete tool calls were causing conversion failures
+- **Attempted Fix**: Added cleanup logic to filter out incomplete tool calls before message conversion - **DID NOT WORK**
+- **Current Status**: Still experiencing "Chat Error:" toast after hard refresh and inability to interact with AI after tool calls in history
+
+## Investigation Notes
+
+### Audio Transcription Issue
+- Recording functionality works (audio visualization appears)
+- May be related to orchestrator transcription flow
+- Could be auto-submission logic not triggering
+- Need to check browser console logs during recording
+
+### DocumentId Error - RESOLVED
+- **Root Cause**: AI SDK's `convertToCoreMessages` function expected all tool calls to have results, but incomplete tool calls (without results) were causing MessageConversionError
+- **Error Details**: `MessageConversionError [AI_MessageConversionError]: ToolInvocation must have a result: {"toolCallId":"call_be735UNXv5dZJYbb3Gr7egtS","toolName":"addContent","args":{"targetBlockId":null,"markdownContent":"ABC"},"state":"call"}`
+- **Solution**: Added cleanup logic in `/api/chat/route.ts` that filters out incomplete tool calls before calling `convertToCoreMessages`
+- **Implementation**: 
+  - Scans message history for assistant messages with tool calls that lack results
+  - Removes incomplete tool calls while preserving other content
+  - Converts messages with no remaining content to fallback text
+  - Logs cleanup actions for debugging 

@@ -16,7 +16,7 @@ interface ChatInputAreaProps {
     input: string;
     setInput: (value: string) => void;
     handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement> | React.ChangeEvent<HTMLInputElement>) => void;
-    handleSubmit: (event?: React.FormEvent<HTMLFormElement>) => Promise<void>;
+    sendMessage: (event?: React.FormEvent<HTMLFormElement>) => Promise<void>;
     isLoading: boolean; // isChatLoading in page.tsx
     model: string;
     setModel: React.Dispatch<React.SetStateAction<string>>;
@@ -68,6 +68,15 @@ interface ChatInputAreaProps {
     isMainChatCollapsed?: boolean;
     miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
     // --- END NEW ---
+
+    // --- NEW: Orchestrator file upload props ---
+    orchestratorHandleFileUploadStart?: (file: File) => Promise<string | null>;
+    orchestratorCancelFileUpload?: () => void;
+    orchestratorPendingFile?: any; // Will be defined properly in types
+    orchestratorIsFileUploadInProgress?: () => boolean;
+    orchestratorIsChatInputBusy?: boolean;
+    orchestratorCurrentOperationStatusText?: string | null;
+    // --- END NEW ---
 }
 
 export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
@@ -75,7 +84,7 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     input,
     setInput,
     handleInputChange,
-    handleSubmit,
+    sendMessage,
     isLoading,
     model,
     setModel,
@@ -112,6 +121,15 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     onToggleMiniPane,
     isMainChatCollapsed,
     miniPaneToggleRef, // Destructure the ref
+    // --- END NEW ---
+
+    // --- NEW: Destructure orchestrator props ---
+    orchestratorHandleFileUploadStart,
+    orchestratorCancelFileUpload,
+    orchestratorPendingFile,
+    orchestratorIsFileUploadInProgress,
+    orchestratorIsChatInputBusy,
+    orchestratorCurrentOperationStatusText,
     // --- END NEW ---
 }) => {
     // const [showTagDropdown, setShowTagDropdown] = useState(false); // Removed
@@ -180,7 +198,7 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                 </div>
             )} */}
             
-            <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center">
+                            <form ref={formRef} onSubmit={sendMessage} className="w-full flex flex-col items-center">
                 {/* Follow Up Context Display */}
                 {followUpContext && (
                     <div className="w-full mb-2 p-2 border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 rounded-md relative text-sm text-blue-800 dark:text-blue-200">
@@ -234,6 +252,15 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     onToggleMiniPane={onToggleMiniPane}
                     isMainChatCollapsed={isMainChatCollapsed}
                     miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
+                    // --- END NEW ---
+
+                    // --- NEW: Pass orchestrator props to ChatInputUI ---
+                    orchestratorHandleFileUploadStart={orchestratorHandleFileUploadStart}
+                    orchestratorCancelFileUpload={orchestratorCancelFileUpload}
+                    orchestratorPendingFile={orchestratorPendingFile}
+                    orchestratorIsFileUploadInProgress={orchestratorIsFileUploadInProgress}
+                    orchestratorIsChatInputBusy={orchestratorIsChatInputBusy}
+                    orchestratorCurrentOperationStatusText={orchestratorCurrentOperationStatusText}
                     // --- END NEW ---
                 />
             </form>
