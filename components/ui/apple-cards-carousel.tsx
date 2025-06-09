@@ -376,7 +376,10 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
             ))}
           </p>
           {card.caption && (
-            <p className="text-sm text-[color:var(--muted-text-color)] text-center mt-2 mb-0 w-full">{card.caption}</p>
+            <p
+              className="text-sm text-[color:var(--muted-text-color)] text-center mt-2 mb-0 w-full"
+              dangerouslySetInnerHTML={{ __html: card.caption }}
+            />
           )}
         </div>
       </motion.button>
