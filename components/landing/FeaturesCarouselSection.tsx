@@ -2,18 +2,19 @@
 "use client";
 
 import React, { forwardRef } from "react";
-import { Carousel, Card } from "@/components/ui/apple-cards-carousel";
+// import { Carousel, Card } from "@/components/ui/apple-cards-carousel"; // Carousel removed
+import { Card } from "@/components/ui/apple-cards-carousel"; // Card is still used
 
 // Define props interface
 interface FeaturesCarouselSectionProps {
-  carouselRef: React.RefObject<HTMLDivElement>;
-  scrollToCarousel: () => void; // It's good practice to type this even if not used directly
+  // carouselRef: React.RefObject<HTMLDivElement>; // Removed
+  // scrollToCarousel: () => void; // Removed
 }
 
-const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSectionProps>(({ carouselRef, scrollToCarousel }, ref) => {
+const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSectionProps>(({ /* carouselRef, scrollToCarousel */ }, ref) => {
   const cards = [
     {
-      previewImageSrc: "/one_flow_one_canvas.png",
+      previewImageSrc: "/one-canvas-2.0.png",
       title: "One Flow,<br />One Canvas",
       caption: "Stay in flow by working on the same canvas as your AI.",
       // category: "Workflow",
@@ -24,7 +25,7 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
             <br />
           </p>
           <div className="flex justify-center mt-4">
-            <img src="/desktop-view2.png" alt="One Flow, One Canvas" className="w-full h-full object-cover rounded-xl max-w-xl" />
+            <img src="/one-canvas-3.png" alt="One Flow, One Canvas" className="w-full h-full object-cover rounded-xl max-w-xl" />
           </div>
         </div>,
         <div key="section2">
@@ -32,7 +33,7 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
             <strong>Whether you&apos;re on your phone or at your desk, the experience stays seamless.</strong> The same canvas adapts to your screen so you never lose your place. Start an idea on mobile, refine it on desktop, and pick up right where you left off. Your workflow stays fluid, no matter the device.
           </p>
           <div className="flex justify-center mt-4">
-            <img src="/mobile-view.png" alt="One Flow, One Canvas" className="w-auto h-full object-contain rounded-xl max-h-[400px]" />
+            <img src="/one-canvas-4.png" alt="One Flow, One Canvas" className="w-auto h-full object-contain rounded-xl max-h-[400px]" />
           </div>
         </div>
       ],
@@ -180,11 +181,20 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
     },
   ];
 
-  const items = cards.map((card, idx) => (
-    <Card key={idx} card={card} index={idx} />
-  ));
+  // const items = cards.map((card, idx) => (
+  // <Card key={idx} card={card} index={idx} />
+  // ));
 
-  return <Carousel items={items} ref={carouselRef} scrollToCarousel={scrollToCarousel} />;
+  // return <Carousel items={items} ref={carouselRef} scrollToCarousel={scrollToCarousel} />;
+  return (
+    <div ref={ref} className="py-10 md:py-20 px-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 max-w-7xl mx-auto">
+        {cards.map((cardData, idx) => (
+          <Card key={idx} card={cardData} index={idx} />
+        ))}
+      </div>
+    </div>
+  );
 });
 
 FeaturesCarouselSection.displayName = 'FeaturesCarouselSection';

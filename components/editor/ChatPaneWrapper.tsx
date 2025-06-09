@@ -6,6 +6,8 @@ import { ChatInputArea } from './ChatInputArea';
 // import { Resizable } from 're-resizable'; // No longer needed
 import { type ToolInvocation } from '@ai-sdk/ui-utils';
 import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions';
+import { useClientChatOperationStore } from '@/lib/stores/useClientChatOperationStore';
+import { isAnyOperationInProgress, getOperationStatusText } from '@/app/lib/clientChatOperationState';
 
 // Define TaggedDocument interface if not globally available (copy from ChatInputArea for now)
 interface TaggedDocument {
@@ -78,6 +80,11 @@ interface ChatPaneWrapperProps {
     miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
     // --- END NEW ---
     currentTheme: 'light' | 'dark'; // ADDED: For dynamic BlockNote theme
+
+    // --- NEW: Props for Mobile Chat Drawer integration ---
+    isMobile?: boolean;
+    activeMobilePane?: 'editor' | 'chat';
+    onToggleMobilePane?: () => void;
 }
 
 export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
@@ -128,6 +135,11 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     miniPaneToggleRef, // Destructure the ref
     // --- END NEW ---
     currentTheme, // ADDED: Destructure currentTheme
+
+    // --- NEW: Destructure Mobile Chat Drawer props ---
+    isMobile,
+    activeMobilePane,
+    onToggleMobilePane,
 }) => {
     // State to force remount of ChatInputArea after animation - Keep if still needed
     // const [inputAreaKey, setInputAreaKey] = useState(0);
@@ -140,6 +152,11 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     //         console.log('Chat pane animation complete (expanded), remounting input.');
     //     }
     // };
+
+    // ADDED: Consume client chat operation store
+    const operationState = useClientChatOperationStore();
+    const isBusyFromStore = isAnyOperationInProgress(operationState);
+    const statusTextFromStore = getOperationStatusText(operationState);
 
     // NEW: Handler for adding a tagged document
     const handleAddTaggedDocument = (docToAdd: TaggedDocument) => {
@@ -167,12 +184,18 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                 <ChatMessagesList
                     chatMessages={chatMessages}
                     isLoadingMessages={isLoadingMessages}
-                    isChatLoading={isChatLoading}
+                    isChatLoading={isChatLoading || isBusyFromStore}
                     handleSendToEditor={handleSendToEditor}
                     messagesEndRef={messagesEndRef}
                     {...(messageLoadBatchSize && { messageLoadBatchSize })}
                     onAddTaggedDocument={handleAddTaggedDocument}
                 />
+                {/* ADDED: Display operation status text */}
+                {statusTextFromStore && (
+                    <div className="p-2 text-sm text-center text-[--muted-text-color] bg-[--bg-secondary] border-t border-[--border-color]">
+                        {statusTextFromStore}
+                    </div>
+                )}
                 <ChatInputArea
                     // key={inputAreaKey} // Keep or remove based on testing if remount is still needed
                     formRef={formRef}
@@ -187,7 +210,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                     model={model}
                     setModel={setModel}
                     handleUploadClick={handleUploadClick}
-                    isLoading={isChatLoading}
+                    isLoading={isChatLoading || isBusyFromStore}
                     isUploading={isUploading}
                     uploadError={uploadError}
                     uploadedImagePath={uploadedImagePath}

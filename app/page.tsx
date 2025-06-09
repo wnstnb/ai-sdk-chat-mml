@@ -278,7 +278,7 @@ export default function LandingPageContent() {
     {
       icon: <Clock className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
       title: "Tag<br />Documents",
-      description: "Tag documents as context for AI<br /> and never start from zero."
+      description: "Tag documents as context for AI and never start from zero."
     },
     {
       icon: <Zap className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
@@ -479,7 +479,7 @@ export default function LandingPageContent() {
 
           {/* Features Carousel Section */}
           <section id="features-carousel" ref={carouselSectionRef} className="pt-6 pb-0 flex flex-col items-center">
-            <FeaturesCarouselSection scrollToCarousel={scrollToCarousel} carouselRef={carouselSectionRef} />
+            <FeaturesCarouselSection />
           </section>
 
           {/* Pricing Section */}

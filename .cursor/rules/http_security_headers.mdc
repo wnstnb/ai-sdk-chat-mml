@@ -3,3 +3,52 @@ description:
 globs:
 alwaysApply: false
 ---
+- **HTTP security headers and Cross-Origin Resource Sharing (CORS) policies MUST be configured globally in `next.config.mjs` (or `next.config.js`).**
+    - Avoid setting these headers manually in individual API routes or pages to ensure consistency and maintainability.
+
+- **Configure `headers` function in `next.config.mjs`:**
+    - Use the `async headers()` export to define custom headers for incoming requests.
+    - Apply security headers to all paths (`source: '/:path*')`.
+    - Apply CORS headers specifically to API paths (`source: '/api/:path*')`.
+
+- **Implement a Strict Content Security Policy (CSP):**
+    - **`Content-Security-Policy`**: Define a policy that restricts the sources from which content (scripts, styles, images, fonts, etc.) can be loaded.
+    - **Start Restrictive**: Begin with `default-src \'self\'` and incrementally add necessary sources for specific directives (e.g., `script-src`, `style-src`, `img-src`, `font-src`, `connect-src`, `frame-src`).
+    - **Avoid `unsafe-inline` and `unsafe-eval`**: Strive to eliminate these by refactoring inline scripts/styles and avoiding eval-like constructs. If absolutely necessary for third-party libraries or Next.js internals, document their use clearly and review alternatives. Consider nonce-based or hash-based approaches.
+    - **Key Directives to Configure:**
+        - `default-src`: Default policy for most resource types.
+        - `script-src`: Allowed sources for JavaScript.
+        - `style-src`: Allowed sources for CSS.
+        - `img-src`: Allowed sources for images.
+        - `font-src`: Allowed sources for fonts.
+        - `connect-src`: Allowed origins for XHR, WebSockets, etc. (e.g., your own API, Supabase, third-party APIs).
+        - `frame-src`: Allowed origins for iframes (e.g., Stripe, Captchas).
+        - `object-src`: Typically `\'none\'`.
+        - `base-uri`: Typically `\'self\'`.
+        - `form-action`: Typically `\'self\'`.
+        - `frame-ancestors`: Typically `\'self\'` (prevents clickjacking, similar to `X-Frame-Options: SAMEORIGIN`).
+        - `upgrade-insecure-requests`: Useful in production to upgrade HTTP requests to HTTPS.
+    - **Regularly Review and Update CSP**: As the application evolves and new resources are added, the CSP must be updated.
+    - Example: See the CSP implemented in `[next.config.mjs](mdc:next.config.mjs)`.
+
+- **Implement Other Essential Security Headers:**
+    - **`X-Frame-Options`**: `SAMEORIGIN` (or `DENY` if the application should never be framed). Redundant if `frame-ancestors` is used in CSP, but good for defense in depth.
+    - **`Strict-Transport-Security (HSTS)`**: `max-age=63072000; includeSubDomains; preload` (for production environments). Ensure the site is fully HTTPS capable before enabling HSTS with `preload`.
+    - **`X-Content-Type-Options`**: `nosniff` (prevents browsers from MIME-sniffing a response away from the declared content-type).
+    - **`Referrer-Policy`**: `strict-origin-when-cross-origin` (or other appropriate values like `no-referrer` or `same-origin`) to control how much referrer information is sent.
+    - **`Permissions-Policy`**: Define a policy to restrict browser features (e.g., `camera=(), microphone=(), geolocation=()`). Grant only necessary permissions.
+
+- **Configure CORS Policies:**
+    - **`Access-Control-Allow-Origin`**: MUST be restrictive. Allow only specific frontend domain(s), ideally from an environment variable (e.g., `process.env.NEXT_PUBLIC_APP_URL`). Avoid using `*` in production.
+    - **`Access-Control-Allow-Methods`**: Specify allowed HTTP methods (e.g., `GET, POST, PUT, DELETE, OPTIONS`).
+    - **`Access-Control-Allow-Headers`**: Specify allowed request headers (e.g., `Content-Type, Authorization, X-Requested-With`).
+    - **`Access-Control-Allow-Credentials`**: Set to `true` if your frontend needs to send credentials (like cookies or HTTP authentication) with cross-origin requests.
+
+- **Environment Variables for URLs:**
+    - Use environment variables (e.g., `NEXT_PUBLIC_APP_URL`) for specifying allowed origins in CORS policies and potentially in CSP directives to adapt to different deployment environments (development, staging, production).
+
+- **Refactor Local CORS Settings:**
+    - Remove any manual CORS header setting from individual API routes. Rely solely on the global configuration in `next.config.mjs`.
+    - Example refactoring done in:
+        - `[app/api/pdf/extract/route.ts](mdc:app/api/pdf/extract/route.ts)`
+        - `[app/api/pdf/summarize/route.ts](mdc:app/api/pdf/summarize/route.ts)`

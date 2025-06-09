@@ -3,6 +3,8 @@ import { useChat, type Message } from 'ai/react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useFollowUpStore } from '@/lib/stores/followUpStore';
+import { useClientChatOperationStore } from '@/lib/stores/useClientChatOperationStore';
+import { AIToolState, AudioState, FileUploadState } from '@/app/lib/clientChatOperationState';
 import type { BlockNoteEditor, Block } from '@blocknote/core';
 import { getInlineContentText } from '@/lib/editorUtils';
 import { tool } from 'ai';
@@ -199,7 +201,7 @@ export function useChatInteractions({
     editorRef,
     uploadedImagePath,
     uploadedImageSignedUrl,
-    isUploading,
+    isUploading: isUploadingFile, // Renamed to avoid conflict with store
     clearFileUploadPreview,
     apiEndpoint = '/api/chat',
     initialTaggedDocIdsString, // <-- NEW: Destructure prop
@@ -251,6 +253,20 @@ export function useChatInteractions({
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     // --- END NEW ---
 
+    // --- ADDED: Access client chat operation store actions
+    const {
+        setAIToolState,
+        setAudioState,
+        setFileUploadState,
+        setCurrentToolCallId,
+        setCurrentOperationDescription,
+        resetChatOperationState,
+        setOperationStates, // Useful for setting multiple states at once
+    } = useClientChatOperationStore();
+
+    // ADDED: Selector for current AI tool state for the new useEffect
+    const currentAIToolState = useClientChatOperationStore(state => state.aiToolState);
+
     // --- Effect to load initial tagged documents from URL string ---
     useEffect(() => {
         if (initialTaggedDocIdsString) {
@@ -288,14 +304,17 @@ export function useChatInteractions({
     // --- External Hooks ---
     const router = useRouter();
     const searchParams = useSearchParams();
+    const { setFollowUpContext } = useFollowUpStore();
     const followUpContext = useFollowUpStore((state) => state.followUpContext);
-    const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
 
     // --- Determine if current model needs onToolCall callback (OpenAI models only) ---
-    const isOpenAIModel = model.toLowerCase().includes('gpt') || model.toLowerCase().includes('openai');
-    const needsOnToolCallCallback = isOpenAIModel;
+    // const isOpenAIModel = model.toLowerCase().includes('gpt') || model.toLowerCase().includes('openai');
+    // const needsOnToolCallCallback = isOpenAIModel; 
+    // REVISED: Disable client-side onToolCall for all models to simplify tool handling
+    // and rely on server-streamed results for server tools, and useEffect + addToolResult for client tools.
+    const needsOnToolCallCallback = false; // This line can now be removed as onToolCall is fully removed below.
     
-    console.log('[useChatInteractions] Provider-specific tool config:', { model, isOpenAIModel, needsOnToolCallCallback });
+    console.log('[useChatInteractions] Provider-specific tool config: onToolCall is fully disabled.');
 
     // --- Vercel AI useChat Hook ---
     const {
@@ -315,20 +334,10 @@ export function useChatInteractions({
         id: documentId,
         // --- Pass initialMessages directly, fallback to empty array ---
         initialMessages: initialMessages || [],
-        // --- Provider-specific onToolCall: Only for OpenAI models ---
-        ...(needsOnToolCallCallback && {
-            onToolCall: async ({ toolCall }) => {
-                console.log('[useChat onToolCall] OpenAI tool call detected:', toolCall.toolName);
-                
-                // For server-side tools, acknowledge execution
-                if (toolCall.toolName === 'webSearch' || toolCall.toolName === 'searchAndTagDocumentsTool') {
-                    return `Server-side tool '${toolCall.toolName}' executed successfully.`;
-                }
-                
-                // For client-side tools, acknowledge they will be handled by editor
-                return `Client-side tool '${toolCall.toolName}' will be executed by the editor component.`;
-            }
-        }),
+        // --- Client-side onToolCall handler has been REMOVED --- 
+        // The logic for handling client-side tool execution and result reporting
+        // is now solely managed by the useEffect hook in app/editor/[documentId]/page.tsx,
+        // which observes tool_calls and uses addToolResult.
         onResponse: (res) => {
             console.log('[useChat onResponse] Received response:', res);
             console.log('[useChat onResponse] Response status:', res.status);
@@ -358,6 +367,9 @@ export function useChatInteractions({
             console.error('[useChat onError] Error stack:', err?.stack);
             console.error('[useChat onError] Timestamp:', new Date().toISOString());
             
+            // ADDED: Reset chat operation state on error
+            resetChatOperationState();
+
             // Check if this is a structured error response from our API
             if (err.message) {
                 try {
@@ -551,8 +563,8 @@ export function useChatInteractions({
         const imagePathForDb = isAudioSubmission ? null : uploadedImagePath; // Path only relevant for manual save, keep null for audio
         const currentModel = model;
 
-        if (isLoading || isUploading || (!finalInput?.trim() && !signedUrlToSend)) {
-             console.log('[useChatInteractions handleSubmit] Submission prevented:', { isLoading, isUploading, finalInput, signedUrlToSend });
+        if (isLoading || isUploadingFile || (!finalInput?.trim() && !signedUrlToSend)) {
+             console.log('[useChatInteractions handleSubmit] Submission prevented:', { isLoading, isUploadingFile, finalInput, signedUrlToSend });
             return;
         }
 
@@ -669,7 +681,7 @@ export function useChatInteractions({
         
     }, [
         documentId, followUpContext, input, model, uploadedImagePath, uploadedImageSignedUrl,
-        isLoading, isUploading, getEditorContext, clearFileUploadPreview,
+        isLoading, isUploadingFile, getEditorContext, clearFileUploadPreview,
         setFollowUpContext, setInput, messages,
         append,
         pendingInitialSubmission, pendingSubmissionMethod, pendingWhisperDetails,
@@ -1195,6 +1207,35 @@ export function useChatInteractions({
         }
     }, [isLoading, needsOnToolCallCallback]);
 
+    // ADDED: useEffect to handle AI response after a tool result has been submitted
+    useEffect(() => {
+        if (currentAIToolState === AIToolState.AWAITING_RESULT_IN_STATE && messages.length > 0) {
+            const lastMessage = messages[messages.length - 1];
+            if (lastMessage.role === 'assistant' && (
+                !('tool_calls' in lastMessage) || 
+                !lastMessage.tool_calls || 
+                (Array.isArray(lastMessage.tool_calls) && lastMessage.tool_calls.length === 0)
+            )) {
+                console.log('[useChatInteractions] AI responded after tool result. Finalizing tool state.');
+                setAIToolState(AIToolState.PROCESSING_COMPLETE);
+                setTimeout(() => {
+                    setOperationStates({
+                        aiToolState: AIToolState.IDLE,
+                        currentToolCallId: undefined,
+                        currentOperationDescription: undefined,
+                    });
+                }, 100); // Short delay to allow UI to show "complete"
+            }
+        }
+    }, [messages, currentAIToolState, setAIToolState, setOperationStates]);
+
+    // --- Wrapped Stop Handler ---
+    const stop = useCallback(() => {
+        console.log('[useChatInteractions] stop called.');
+        stopAiGeneration();
+        resetChatOperationState(); // ADDED
+    }, [stopAiGeneration, resetChatOperationState]);
+
     // Return updated hook values
     return {
         messages,
@@ -1214,7 +1255,7 @@ export function useChatInteractions({
         handleSubmit,
         isLoading,
         reload,
-        stop: stopAiGeneration, // Return renamed stop function
+        stop, // MODIFIED: Return wrapped stop
         model,
         setModel,
         // --- NEW AUDIO PROPS ---
