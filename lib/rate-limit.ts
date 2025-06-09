@@ -97,6 +97,23 @@ export const getFileBrowserRateLimiter = () => {
   return mockLimiter; // Fallback to mock if not configured
 };
 
+// Rate limiter for authenticated user actions
+export const userActionRateLimiter = redisClient
+  ? new Ratelimit({
+      redis: redisClient,
+      limiter: Ratelimit.slidingWindow(200, "60 s"), // 200 requests from the same user ID in 60 seconds
+      analytics: true,
+      prefix: "ratelimit_user_action",
+    })
+  : null;
+
+export const getUserActionRateLimiter = () => {
+  if (userActionRateLimiter) {
+    return userActionRateLimiter;
+  }
+  return mockLimiter; // Fallback to mock if not configured
+};
+
 /**
  * Helper function to get the IP address from the request.
  * Tries to get the IP from 'x-forwarded-for' header (common with proxies/Vercel),

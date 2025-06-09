@@ -7,6 +7,7 @@ import { SearchModal } from '@/components/search/SearchModal';
 import NewDocumentModal from '@/components/modals/NewDocumentModal';
 import PreferencesModal from '@/components/modals/PreferencesModal';
 import { VoiceSummaryModal } from '@/components/modals/VoiceSummaryModal';
+import { PDFModal } from '@/components/modals/PDFModal';
 
 interface ModalManagerProps {
   children: React.ReactNode;
@@ -27,6 +28,9 @@ const ModalManager: React.FC<ModalManagerProps> = ({ children }) => {
 
   const isVoiceSummaryModalOpen = useModalStore((state) => state.isVoiceSummaryModalOpen);
   const closeVoiceSummaryModal = useModalStore((state) => state.closeVoiceSummaryModal);
+
+  const isPDFModalOpen = useModalStore((state) => state.isPDFModalOpen);
+  const closePDFModal = useModalStore((state) => state.closePDFModal);
 
   return (
     <>
@@ -50,6 +54,10 @@ const ModalManager: React.FC<ModalManagerProps> = ({ children }) => {
       <VoiceSummaryModal
         isOpen={isVoiceSummaryModalOpen}
         onClose={closeVoiceSummaryModal}
+      />
+      <PDFModal
+        isOpen={isPDFModalOpen}
+        onClose={closePDFModal}
       />
       {/* Other modals will be added here */}
     </>

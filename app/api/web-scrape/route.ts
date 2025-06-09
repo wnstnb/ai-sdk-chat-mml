@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import Exa from 'exa-js'; // Import Exa
+import { isURL } from 'validator'; // Added import
 
 // Define the expected structure for frontend compatibility
 interface ScrapedUrlResult {
@@ -76,6 +77,30 @@ export async function POST(request: NextRequest) {
         results: [],
         overallError: 'Invalid processing type.',
         processingTimeMs: Date.now() - startTime
+      } as ScrapedDataResponse, { status: 400 });
+    }
+
+    // Validate URLs
+    const invalidUrls = urls.filter(url => !isURL(url, { 
+      protocols: ['http', 'https'], 
+      require_protocol: true, 
+      require_host: true, 
+      require_valid_protocol: true,
+      disallow_auth: true, // Do not allow username/password in URL
+      // TODO: Consider adding require_tld: true if it makes sense for your use case
+    }));
+
+    if (invalidUrls.length > 0) {
+      const errorMessages = invalidUrls.map(url => `Invalid or unsupported URL format: ${url}. Please provide a valid HTTP/HTTPS URL.`);
+      return NextResponse.json({
+        results: urls.map(url => ({
+          url,
+          status: 'error',
+          error: invalidUrls.includes(url) ? `Invalid or unsupported URL format: ${url}. Please provide a valid HTTP/HTTPS URL.` : undefined,
+          processedDate: new Date().toISOString(),
+        })),
+        overallError: `Invalid URLs provided: ${invalidUrls.join(', ')}. ${errorMessages.join(' ')}`,
+        processingTimeMs: Date.now() - startTime,
       } as ScrapedDataResponse, { status: 400 });
     }
 

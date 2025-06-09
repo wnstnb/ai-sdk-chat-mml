@@ -20,7 +20,7 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
       content: [
         <div key="section1">
           <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
-          <strong>Working on the same canvas as your AI means you&apos;re not jumping between tools, tabs, or mental contexts.</strong> Everything you and the AI generate stays unified. This eliminates the friction of switching modes, so your flow remains uninterrupted. The result is faster iteration, clearer collaboration, and a workspace that actually feels collaborative.
+          <strong>Working on the same canvas as your AI means you&apos;re not jumping between tools, tabs, or mental contexts.</strong> Everything you and the AI generate stays unified. This eliminates the friction of switching modes, so your flow remains uninterrupted. The result is faster iteration and a workspace that actually feels collaborative.
             <br />
           </p>
           <div className="flex justify-center mt-4">
@@ -84,14 +84,37 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
       ],
     },
     {
+      previewImageSrc: "/PDF-summary-1.png",
+      title: "PDF<br />Summaries",
+      caption: "Extract text or get summaries from PDF documents.",
+      content: [
+        <div key="section-pdf-summary-1">
+          <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
+            <strong>Easily process PDF documents by uploading the file directly.</strong> Whether you need the full text extracted or a concise AI-powered summary, you can quickly integrate PDF content into your notes and projects. This feature is perfect for research, reviewing reports, or incorporating academic papers into your workflow when you have the file handy.
+          </p>
+          <div className="flex justify-center mt-4">
+            <img src="/PDF-summary-from-file.png" alt="PDF Summaries - Upload File" className="w-full h-full object-cover rounded-xl max-w-xl" />
+          </div>
+        </div>,
+        <div key="section-pdf-summary-2">
+          <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
+            <strong>Alternatively, provide a URL to a publicly accessible PDF.</strong> Our tool will fetch and process it, allowing you to extract text or generate summaries just as easily. Ideal for when you&apos;re working with online documents and want to bring their content into your workspace without downloading first.
+          </p>
+          <div className="flex justify-center mt-4">
+            <img src="/PDF-summary-from-url.png" alt="PDF Summaries - From URL" className="w-full h-full object-cover rounded-xl max-w-xl" />
+          </div>
+        </div>
+      ],
+    },
+    {
       previewImageSrc: "/tag_docs_2.png",
       title: "Tag<br />Documents",
-      caption: "Tag documents as context for AI and never start from zero.",
+      caption: "Tag documents as context for AI<br />and never start from zero.",
       // category: "Context",
       content: [
         <div key="section-tag-docs">
           <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
-            <strong>Tagging previous notes gives your AI instant context, so it knows what matters to you without needing a long explanation.</strong> Whether it's a typed note, a recorded voice memo, an AI-generated voice summary, or even a web page you've scraped: if it's in your notes, it can be tagged and used as context. You avoid repeating yourself and get more relevant results, faster. It turns your past work into a living knowledge base you can build on.
+            <strong>Tagging previous notes gives your AI instant context, so it knows what matters to you without needing a long explanation.</strong> Whether it&apos;s a typed note, a recorded voice memo, an AI-generated voice summary, or even a web page you&apos;ve scraped: if it&apos;s in your notes, it can be tagged and used as context. You avoid repeating yourself and get more relevant results, faster. It turns your past work into a living knowledge base you can build upon.
           </p>
           <div className="flex justify-center mt-4">
             <img src="/tag-documents.png" alt="Tag Documents" className="w-full h-full object-cover rounded-xl max-w-xl" />
@@ -115,7 +138,7 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
       content: [
         <div key="section-interact-your-way">
         <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
-          <strong>Engage with your AI editor however you think.</strong> Speak it, type it, or show it. Your ideas come through. The result is faster expression and less friction between you and your thoughts.
+          <strong>Engage with your AI editor in the way you best express yourself.</strong> Speak it, type it, or show it. Your ideas will come through. The result is faster expression and less friction between you and your thoughts.
         </p>
         <div className="flex justify-center mt-4">
           <img src="/audio_usage_1.png" alt="Interact Your Way" className="w-full h-full object-cover rounded-xl max-w-xl" />

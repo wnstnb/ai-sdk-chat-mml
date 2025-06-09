@@ -37,7 +37,8 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     closeVoiceSummaryModal,
     isMobileSidebarOpen,
     openMobileSidebar,
-    closeMobileSidebar
+    closeMobileSidebar,
+    openPDFModal
   } = useModalStore();
 
   const [isWebScrapingModalOpen, setIsWebScrapingModalOpen] = useState(false);
@@ -118,7 +119,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
           onVoiceSummary={openVoiceSummaryModal}
           isVoiceSummaryLoading={false}
           isVoiceSummaryDisabled={false}
-          onPdfSummary={() => toast.info('PDF Summary clicked')}
+          onPdfSummary={openPDFModal}
           isPdfSummaryLoading={false}
           isPdfSummaryDisabled={false}
           onWebScrape={openWebScrapingModal}

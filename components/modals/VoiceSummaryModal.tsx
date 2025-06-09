@@ -4,6 +4,12 @@ import { X, Mic, Square as StopIcon, FileText as NotesIcon, ChevronDown, Eraser,
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -945,10 +951,6 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
 
   // --- NEW: Handler for creating a new document with content ---
   const handleCreateNewDocumentWithContent = async (contentToSave: string) => {
-    if (!editorRef?.current) {
-      toast.error("Editor instance not available. Cannot format content for new document.");
-      return;
-    }
     if (!contentToSave || contentToSave.trim() === '') {
       toast.error("No content available to create a new document.");
       return;
@@ -957,28 +959,42 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
     setIsCreatingNewDocument(true);
     toast.info("Creating new document...");
 
-    try {
-      let blocksToInsert: PartialBlock[] = await editorRef.current.tryParseMarkdownToBlocks(contentToSave);
+    let blocksToInsert: PartialBlock[];
 
-      if (blocksToInsert.length === 0 && contentToSave.trim() !== '') {
-        // If parsing fails but content exists, create a simple paragraph block
+    if (editorRef?.current) {
+      try {
+        blocksToInsert = await editorRef.current.tryParseMarkdownToBlocks(contentToSave);
+        if (blocksToInsert.length === 0 && contentToSave.trim() !== '') {
+          blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
+        }
+      } catch (parseError) {
+        console.error("[VoiceSummaryModal] Error parsing markdown to blocks with editor, falling back to simple paragraph:", parseError);
+        toast.info("Could not fully parse content for new document; formatting will be simplified.");
         blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
       }
-      
-      if (blocksToInsert.length === 0) {
-          toast.info("No content to insert after formatting.");
-          setIsCreatingNewDocument(false);
-          return;
-      }
+    } else {
+      console.warn("[VoiceSummaryModal] Editor instance not available for tryParseMarkdownToBlocks. Creating document with content in a single paragraph. Advanced formatting may be lost.");
+      // No toast here, proceed with simplified blocks if on /launch
+      blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
+    }
+    
+    // Ensure blocksToInsert is not empty if contentToSave was just whitespace or parsing failed completely
+    if (blocksToInsert.length === 0 && contentToSave.trim() !== '') {
+      blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
+    } else if (blocksToInsert.length === 0) {
+        toast.info("Content is effectively empty. Cannot create new document.");
+        setIsCreatingNewDocument(false);
+        return;
+    }
 
+    try {
       const response = await fetch('/api/documents/create-with-content', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          // Title can be added here if needed, e.g., from a new input field or derived
-          // title: `Voice Note - ${new Date().toLocaleString()}`, 
+          title: `Voice Note - ${new Date().toLocaleDateString()}`,
           content: blocksToInsert, // Send BlockNote JSON content
         }),
       });
@@ -1013,23 +1029,27 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
   const notesAvailable = !!generatedNotes;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4" aria-hidden={!isOpen}>
+    <Dialog open={isOpen} onOpenChange={(openState) => { if (!openState) handleCloseModal(); }}>
       <div className="sr-only" aria-live="polite" id="voice-summary-status"></div>
-      <div
-        ref={modalContentRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="voiceSummaryModalTitle"
-        className="bg-[var(--editor-bg)] text-[--text-color] p-6 rounded-lg shadow-xl w-full max-w-lg relative flex flex-col max-h-[90vh] animate-modalFadeIn"
+      <DialogContent 
+        className="bg-[var(--editor-bg)] text-[--text-color] p-6 w-full max-w-lg flex flex-col max-h-[90vh]"
+        style={{ zIndex: 1050 }}
+        onPointerDownOutside={(e) => {
+          // Allow interaction with toasts
+          if ((e.target as HTMLElement).closest('[data-sonner-toast]')) {
+            e.preventDefault();
+          }
+        }}
+        onInteractOutside={(e) => {
+            // Allow interaction with toasts
+          if ((e.target as HTMLElement).closest('[data-sonner-toast]')) {
+            e.preventDefault();
+          }
+        }}
       >
-        <button
-          onClick={handleCloseModal}
-          className="absolute top-3 right-3 p-1 rounded-full hover:bg-[--hover-bg] text-[--text-color]"
-          aria-label="Close voice summary modal"
-        >
-          <X size={20} />
-        </button>
-        <h2 id="voiceSummaryModalTitle" className="text-xl font-semibold mb-4 text-center">Voice Summary</h2>
+        <DialogHeader className="mb-4">
+          <DialogTitle id="voiceSummaryModalTitle" className="text-xl font-semibold text-center">Voice Summary</DialogTitle>
+        </DialogHeader>
         
         {/* Audio Visualizer - Placed above tabs for visibility during recording */}
         {isRecordingRef.current && (
@@ -1250,8 +1270,8 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
             </Button>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 
@@ -1263,17 +1283,6 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = (props) => {
   return (
     <>
       <ActualVoiceSummaryModal isOpen={isOpen} onClose={onClose} />
-      {isOpen && (
-        <style jsx global>{`
-          @keyframes modalFadeIn {
-            from { opacity: 0; transform: scale(0.95); }
-            to { opacity: 1; transform: scale(1); }
-          }
-          .animate-modalFadeIn {
-            animation: modalFadeIn 0.3s ease-out forwards;
-          }
-        `}</style>
-      )}
     </>
   );
 };

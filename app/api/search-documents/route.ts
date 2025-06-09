@@ -62,7 +62,10 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
         const userId = user.id;
-        console.log(`[API Search] User ${userId} searching for: "${query}"`);
+        // Sanitize query for logging to prevent log injection issues (e.g. newline characters)
+        const sanitizedQueryForLogging = query.replace(/\r\n|\r|\n/g, ' ').trim();
+        const logQueryDisplay = sanitizedQueryForLogging.length > 100 ? sanitizedQueryForLogging.substring(0, 97) + '...' : sanitizedQueryForLogging;
+        console.log(`[API Search] User ${userId} searching for: "${logQueryDisplay}" (Original length: ${query.length})`);
 
         // 2. Generate query embedding using Gemini REST API
         console.log(`[API Search] Generating query embedding...`);

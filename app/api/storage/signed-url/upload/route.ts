@@ -7,6 +7,31 @@ import { createClient } from '@supabase/supabase-js'; // Keep for admin client i
 const UPLOAD_URL_EXPIRY = 60 * 5; // Expiry for UPLOAD URL (if needed by method)
 const DOWNLOAD_URL_EXPIRY = 60 * 5; // Expiry for DOWNLOAD URL
 const BUCKET_NAME = process.env.SUPABASE_STORAGE_BUCKET_NAME || 'documents'; // Use env var or default
+const MAX_GENERAL_UPLOAD_SIZE_BYTES = 25 * 1024 * 1024; // 25MB
+const ALLOWED_CONTENT_TYPES = [
+  // Images
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/svg+xml',
+  // Documents
+  'application/pdf',
+  'application/msword', // .doc
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+  'application/vnd.ms-excel', // .xls
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+  'application/vnd.ms-powerpoint', // .ppt
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+  'application/vnd.oasis.opendocument.text', // .odt
+  'application/vnd.oasis.opendocument.spreadsheet', // .ods
+  'application/vnd.oasis.opendocument.presentation', // .odp
+  // Text
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  // TODO: Add other types as needed by the application
+];
 
 // Helper function to get Supabase URL and Key (Only needed if using admin client)
 // function getSupabaseCredentials() { ... } // Keep if needed elsewhere
@@ -39,12 +64,40 @@ export async function POST(request: Request) {
 
         let body;
         try { body = await request.json(); } catch (e) { return NextResponse.json({ error: { code: 'INVALID_INPUT', message: 'Invalid JSON body.' } }, { status: 400 }); }
-        // --> REMOVED documentId extraction as it wasn't used
-        const { fileName, contentType } = body;
-        if (!fileName || typeof fileName !== 'string') { return NextResponse.json({ error: { code: 'VALIDATION_ERROR', message: 'fileName is required.' } }, { status: 400 }); }
-        if (!contentType || typeof contentType !== 'string') { return NextResponse.json({ error: { code: 'VALIDATION_ERROR', message: 'contentType is required.' } }, { status: 400 }); }
+        
+        const { fileName, contentType, fileSize } = body; // Added fileSize
 
-        const uniqueFileName = `${uuidv4()}-${fileName.replace(/\s+/g, '_')}`;
+        if (!fileName || typeof fileName !== 'string' || fileName.trim() === '') { 
+            return NextResponse.json({ error: { code: 'VALIDATION_ERROR', message: 'fileName is required and must be a non-empty string.' } }, { status: 400 }); 
+        }
+        if (!contentType || typeof contentType !== 'string') { 
+            return NextResponse.json({ error: { code: 'VALIDATION_ERROR', message: 'contentType is required.' } }, { status: 400 }); 
+        }
+        if (fileSize === undefined || typeof fileSize !== 'number' || fileSize <= 0) {
+            return NextResponse.json({ error: { code: 'VALIDATION_ERROR', message: 'fileSize is required and must be a positive number (bytes).' } }, { status: 400 });
+        }
+
+        // Validate fileSize
+        if (fileSize > MAX_GENERAL_UPLOAD_SIZE_BYTES) {
+            return NextResponse.json({ 
+                error: { 
+                    code: 'VALIDATION_ERROR', 
+                    message: `File size (${(fileSize / (1024*1024)).toFixed(2)}MB) exceeds the maximum allowed limit of ${(MAX_GENERAL_UPLOAD_SIZE_BYTES / (1024*1024))}MB.` 
+                } 
+            }, { status: 413 }); // 413 Payload Too Large
+        }
+
+        // Validate contentType
+        if (!ALLOWED_CONTENT_TYPES.includes(contentType.toLowerCase())) {
+            return NextResponse.json({ 
+                error: { 
+                    code: 'VALIDATION_ERROR', 
+                    message: `Unsupported file type: ${contentType}. Allowed types are: ${ALLOWED_CONTENT_TYPES.join(', ')}.`
+                } 
+            }, { status: 415 }); // 415 Unsupported Media Type
+        }
+
+        const uniqueFileName = `${uuidv4()}-${fileName.replace(/\s+/g, '_')}`.replace(/[^a-zA-Z0-9_.-]/g, ''); // Added stricter sanitization for uniqueFileName
         const filePath = `${userId}/${uniqueFileName}`;
 
         // Create signed UPLOAD URL using User Client

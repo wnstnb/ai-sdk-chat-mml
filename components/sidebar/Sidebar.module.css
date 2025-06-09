@@ -225,19 +225,24 @@ html[data-theme="dark"] .toggleButtonLogo {
   cursor: pointer;
   font-size: 0.85rem; /* Reduced font size */
   text-align: center;
-  transition: background-color 0.2s ease, border-color 0.2s ease; 
+  /* Updated transition */
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease; 
   display: flex; 
   align-items: center;
   justify-content: center;
   gap: 8px; /* Changed from 6px to 8px */
   appearance: none; /* Reset default browser styles */
   -webkit-appearance: none; /* For Safari */
+  /* Added for raised effect */
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
 
 .actionButton:hover {
   background-color: var(--primary-color-dark); /* Updated */
   border-color: var(--primary-color-dark); /* Updated */
-  /* color: var(--text-color); Already set, should remain consistent */
+  /* Added for raised hover effect */
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }
 
 .actionButton:focus-visible { /* Added focus state */
@@ -247,7 +252,9 @@ html[data-theme="dark"] .toggleButtonLogo {
 
 .actionButton:active { /* Added active state */
   background-color: var(--primary-color-dark);
-  transform: scale(0.98);
+  /* Updated for pressed effect */
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .actionButton:disabled,

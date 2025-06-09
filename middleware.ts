@@ -1,7 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { hasSubscriptionAccess } from './lib/subscription-utils'
-import { getRateLimiter, getIP } from './lib/rate-limit'
+import { getRateLimiter, getAuthRateLimiter, getFileBrowserRateLimiter, getUserActionRateLimiter, getIP } from './lib/rate-limit'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -111,35 +111,104 @@ export async function middleware(request: NextRequest) {
   // For API routes, check authentication (subscription checking can be done per endpoint as needed)
   if (pathname.startsWith('/api/')) {
     // Apply rate limiting first for API routes
-    const ip = getIP(request)
+    const ip = getIP(request);
+    let limiterResponse: { success: boolean; limit: number; remaining: number; reset: number; } | null = null;
+    let specificLimiterApplied = false;
+    let chosenLimiterType = 'default'; // For logging
+
     if (ip) {
-      const limiter = getRateLimiter()
+      let limiter;
+      // Apply specific limiters first
+      if (pathname.startsWith('/api/auth/') && !pathname.includes('signup-user') && !pathname.includes('complete-social-signup') && !pathname.startsWith('/api/auth/callback')) {
+        limiter = getAuthRateLimiter();
+        chosenLimiterType = 'auth';
+      } else if (pathname.startsWith('/api/file-manager/') || pathname.startsWith('/api/folders/')) {
+        limiter = getFileBrowserRateLimiter();
+        chosenLimiterType = 'fileBrowser';
+      } else {
+        limiter = getRateLimiter(); // Default for other API routes
+        chosenLimiterType = 'default';
+      }
+
       if (limiter) {
-        const { success, limit, remaining, reset } = await limiter.limit(ip)
-        if (!success) {
+        console.log(`RateLimit: Applying ${chosenLimiterType} Rate Limiter to ${pathname} for IP ${ip}`);
+        limiterResponse = await limiter.limit(ip);
+        specificLimiterApplied = true; // Even if it's the default, a limiter was chosen and applied
+      }
+
+      if (limiterResponse) {
+        // Always set rate limit headers on the response if a limiter was effectively used
+        // Note: response object might be replaced if a 429 is returned, so headers are set on the final response.
+        const headersToSet = {
+          'X-RateLimit-Limit': limiterResponse.limit.toString(),
+          'X-RateLimit-Remaining': limiterResponse.remaining.toString(),
+          'X-RateLimit-Reset': new Date(limiterResponse.reset).toISOString(), // Format reset time as ISO string
+        };
+
+        if (!limiterResponse.success) {
+          console.log(`RateLimit: Denied for IP ${ip} on path ${pathname} using ${chosenLimiterType} limiter. Limit: ${limiterResponse.limit}, Remaining: ${limiterResponse.remaining}`);
           return new NextResponse('Too Many Requests', {
             status: 429,
             headers: {
-              'X-RateLimit-Limit': limit.toString(),
-              'X-RateLimit-Remaining': remaining.toString(),
-              'X-RateLimit-Reset': reset.toString(),
+              ...headersToSet,
+              'Retry-After': Math.ceil((limiterResponse.reset - Date.now()) / 1000).toString(), // Seconds until reset
             },
-          })
+          });
         }
-      } else if (process.env.NODE_ENV === 'production') {
-        // If limiter is null in production, it means Upstash is not configured.
-        // Log an error, as rate limiting is critical.
-        console.error('CRITICAL: API Rate Limiter not configured in production. Requests are not being rate-limited.');
+        console.log(`RateLimit: Allowed for IP ${ip} on path ${pathname} using ${chosenLimiterType} limiter. Limit: ${limiterResponse.limit}, Remaining: ${limiterResponse.remaining}`);
+        // Apply headers to the ongoing response if request is allowed
+        Object.entries(headersToSet).forEach(([key, value]) => response.headers.set(key, value));
+      } else if (process.env.NODE_ENV === 'production' && (!getAuthRateLimiter() || !getFileBrowserRateLimiter() || !getRateLimiter())) {
+        console.error('CRITICAL: API Rate Limiter (Upstash) not configured properly in production. Requests might not be rate-limited as expected.');
       }
     } else {
-      // If IP cannot be determined, log a warning. 
-      // You might want to block these requests in production if IP is essential for rate limiting.
-      console.warn('RateLimit: Could not determine IP for an API request. This request will not be rate-limited.');
+      console.warn('RateLimit: Could not determine IP for an API request. This request will not be rate-limited by IP.');
     }
 
-    if (!user || error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // If IP-based rate limiting passed, and user is authenticated, apply user-based rate limiting
+    if (user && !error) {
+      const userLimiter = getUserActionRateLimiter();
+      if (userLimiter) {
+        console.log(`RateLimit: Applying User Action Rate Limiter to ${pathname} for User ${user.id}`);
+        const userLimiterResponse = await userLimiter.limit(user.id);
+
+        // Update overall response headers with the user-specific limit information if it's more restrictive or if IP limit was not hit
+        // The X-RateLimit-* headers will reflect the last active limiter that was checked.
+        const headersToSetUser = {
+          'X-RateLimit-Limit-User': userLimiterResponse.limit.toString(), // Using a distinct header for clarity
+          'X-RateLimit-Remaining-User': userLimiterResponse.remaining.toString(),
+          'X-RateLimit-Reset-User': new Date(userLimiterResponse.reset).toISOString(),
+        };
+        Object.entries(headersToSetUser).forEach(([key, value]) => response.headers.set(key, value));
+
+        if (!userLimiterResponse.success) {
+          console.log(`RateLimit: Denied for User ${user.id} on path ${pathname}. Limit: ${userLimiterResponse.limit}, Remaining: ${userLimiterResponse.remaining}`);
+          return new NextResponse('Too Many Requests (user limit)', {
+            status: 429,
+            headers: {
+              // Include IP limit headers if they were set and available from previous checks
+              ...(response.headers.has('X-RateLimit-Limit') && {
+                'X-RateLimit-Limit-IP': response.headers.get('X-RateLimit-Limit')!,
+                'X-RateLimit-Remaining-IP': response.headers.get('X-RateLimit-Remaining')!,
+                'X-RateLimit-Reset-IP': response.headers.get('X-RateLimit-Reset')!,
+              }),
+              ...headersToSetUser,
+              'Retry-After': Math.ceil((userLimiterResponse.reset - Date.now()) / 1000).toString(),
+            },
+          });
+        }
+        console.log(`RateLimit: Allowed for User ${user.id} on path ${pathname}. Limit: ${userLimiterResponse.limit}, Remaining: ${userLimiterResponse.remaining}`);
+      } else if (process.env.NODE_ENV === 'production') {
+        console.error('CRITICAL: User Action Rate Limiter (Upstash) not configured properly in production.');
+      }
+    } else if (!user || error) { // This handles the case where user is NOT authenticated for an API route
+      // For unauthenticated API access (if any routes allow it beyond the initial IP rate limit)
+      // we might want to ensure this doesn't bypass the auth check further down.
+      // The existing `if (!user || error)` check AFTER this block handles the 401 correctly.
+      // No specific user to rate limit here, so we proceed to the auth check.
+       console.log(`RateLimit: No authenticated user for ${pathname}, user-based rate limiting skipped.`);
     }
+
     // Add HSTS header in production for API responses as well if not already set
     if (process.env.NODE_ENV === 'production' && !response.headers.has('Strict-Transport-Security')) {
       response.headers.set(
