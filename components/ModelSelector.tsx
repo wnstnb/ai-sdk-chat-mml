@@ -35,6 +35,7 @@ export function ModelSelector({
         <option value="gpt-4o">GPT‑4o</option>
         <option value="gpt-4.1">GPT-4.1</option>
         <option value="o4-mini">o4-mini</option>
+        <option value="o3">o3</option>
         <option value="claude-3-7-sonnet-latest">Claude 3.7 Sonnet</option>
         <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
         {/* <option value="gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash</option> */}

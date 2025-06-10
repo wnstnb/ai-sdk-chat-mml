@@ -24,7 +24,7 @@ const items = [
   {
     id: "3",
     title: "What models are currently available for use?",
-    content: "Currently: GPT-4o, GPT-4.1, o4-mini, Claude 3.5 Sonnet, and Claude 3.7 Sonnet. We have tested an assortment of models and have narrowed it down to models where tool usage with the app and interaction with the editor has been fairly consistent. This list may change going forward. Gemini 2.5 Flash is the default model, but you can change this in preferences.",
+    content: "Currently: GPT-4o, GPT-4.1, o4-mini, o3, Claude 3.5 Sonnet, and Claude 3.7 Sonnet. We have tested an assortment of models and have narrowed it down to models where tool usage with the app and interaction with the editor has been fairly consistent. This list may change going forward. Gemini 2.5 Flash is the default model, but you can change this in preferences.",
   },
   {
     id: "4",
