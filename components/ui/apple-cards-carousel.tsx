@@ -329,7 +329,7 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
           "relative z-10 flex flex-col items-start justify-start overflow-hidden rounded-3xl",
           "bg-[color:var(--card-bg)]/70 backdrop-blur-lg border border-[color:var(--border-color)]/25", 
           "transition-all duration-300 ease-in-out hover:scale-[1.02] hover:border-[color:var(--accent-color)]",
-          "w-full h-[26rem] md:h-[28rem]"
+          "w-full h-[20rem] md:h-[22rem]"
         )}
       >
         {card.previewImageSrc && (

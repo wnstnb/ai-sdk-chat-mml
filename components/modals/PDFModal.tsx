@@ -59,6 +59,24 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
   const [insertionTarget, setInsertionTarget] = useState<InsertionTarget>('current');
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
 
+  // Helper function to check if there is unsaved content
+  const hasUnsavedContent = useCallback(() => {
+    return (extractedResult && extractedResult.trim() !== '') || (summarizedResult && summarizedResult.trim() !== '');
+  }, [extractedResult, summarizedResult]);
+
+  // Enhanced close handler with confirmation
+  const handleCloseModal = useCallback(() => {
+    if (hasUnsavedContent() && !isProcessing) {
+      if (window.confirm('You have processed PDF content that hasn\'t been saved. Discard this content and close?')) {
+        onClose();
+      }
+      // If user chooses not to discard, modal remains open
+    } else {
+      // No unsaved content or currently processing, close immediately
+      onClose();
+    }
+  }, [hasUnsavedContent, isProcessing, onClose]);
+
   const convertFileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -92,12 +110,22 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
   }, []);
 
   const resetAllStates = useCallback(() => {
-    resetInputStates();
-    resetProcessingAndResults();
-    setActiveTab('file');
-    setProcessingType('extract');
-    setInsertionTarget('current');
-  }, [resetInputStates, resetProcessingAndResults]);
+    if (hasUnsavedContent()) {
+      if (window.confirm('This will clear all processed content. Are you sure?')) {
+        resetInputStates();
+        resetProcessingAndResults();
+        setActiveTab('file');
+        setProcessingType('extract');
+        setInsertionTarget('current');
+      }
+    } else {
+      resetInputStates();
+      resetProcessingAndResults();
+      setActiveTab('file');
+      setProcessingType('extract');
+      setInsertionTarget('current');
+    }
+  }, [resetInputStates, resetProcessingAndResults, hasUnsavedContent]);
 
   const validateFile = (file: File | null): boolean => {
     if (isProcessing) return true;
@@ -493,7 +521,7 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
   const apiProcessingType = processingType; // Keep as is, or map if state values change
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { onClose(); } }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { handleCloseModal(); } }}>
       <DialogContent 
         className="bg-[var(--editor-bg)] text-[--text-color] p-0 max-w-2xl max-h-[95vh] flex flex-col gap-0"
         style={{ zIndex: 1050 }}
