@@ -160,6 +160,7 @@ export default function EditorPage() {
     const miniPaneRef = useRef<HTMLDivElement>(null);
     const miniPaneToggleRef = useRef<HTMLButtonElement>(null); // Assuming ChatInputUI renders a button we can get a ref to, or adjust as needed
     const desktopResizeDragStartRef = useRef<{ x: number; initialWidth: number } | null>(null); // NEW Ref for desktop resizing
+    const editorPaneRef = useRef<HTMLDivElement>(null); // For scroll syncing
 
     // --- State Variables --- (Declare state early)
     const { default_model: preferredModel, isInitialized: isPreferencesInitialized } = usePreferenceStore();
@@ -244,16 +245,7 @@ export default function EditorPage() {
     
     const { files, isUploading, uploadError, uploadedImagePath, uploadedImageSignedUrl, handleFileSelectEvent, handleFilePasteEvent, handleFileDropEvent, clearPreview, uploadFileForOrchestrator, fetchDownloadUrlForPath } = useFileUpload({ documentId });
     
-    // === DEBUG LOGGING FOR IMAGE UPLOAD STATE ===
-    console.log("=== [EditorPage] IMAGE UPLOAD DEBUG START ===");
-    console.log("[EditorPage] Current image upload state:");
-    console.log("  - files:", files);
-    console.log("  - isUploading:", isUploading);
-    console.log("  - uploadError:", uploadError);
-    console.log("  - uploadedImagePath:", uploadedImagePath);
-    console.log("  - uploadedImageSignedUrl:", uploadedImageSignedUrl);
-    console.log("  - documentId:", documentId);
-    console.log("=== [EditorPage] IMAGE UPLOAD DEBUG END ===");
+    // Debug: Image upload state (removed due to infinite loop)
     
     const { isLoadingMessages, initialMessages } = useInitialChatMessages({
         documentId,
@@ -263,16 +255,7 @@ export default function EditorPage() {
     const initialTaggedDocIdsString = searchParams.get('taggedDocIds');
     // --- END NEW ---
     
-    // === DEBUG LOGGING FOR CHAT INTERACTIONS INPUT ===
-    console.log("=== [EditorPage] CHAT INTERACTIONS INPUT DEBUG START ===");
-    console.log("[EditorPage] Values being passed to useChatInteractions:");
-    console.log("  - documentId:", documentId);
-    console.log("  - initialModel:", initialModel);
-    console.log("  - uploadedImagePath:", uploadedImagePath);
-    console.log("  - uploadedImageSignedUrl:", uploadedImageSignedUrl);
-    console.log("  - isUploading:", isUploading);
-    console.log("  - initialTaggedDocIdsString:", initialTaggedDocIdsString);
-    console.log("=== [EditorPage] CHAT INTERACTIONS INPUT DEBUG END ===");
+    // Debug: Chat interactions input (removed due to infinite loop)
     
     const {
         messages,
@@ -332,11 +315,6 @@ export default function EditorPage() {
     const orchestratorCurrentOperationStatusText = currentOperationStatusText;
     
     const { followUpContext, setFollowUpContext } = useFollowUpStore();
-
-    // ---> ADD LOG HERE <---
-    console.log('[EditorPage] Received initialMessages from useInitialChatMessages:', JSON.stringify(initialMessages, null, 2));
-    // NEW: Log mobile state
-    console.log('[EditorPage] Mobile detection:', { isMobile });
 
     // --- ADDED: Effect to set initial star status ---
     useEffect(() => {
@@ -1722,12 +1700,13 @@ export default function EditorPage() {
     // Find the last assistant message to pass down
     const lastAssistantMessage = [...messages].reverse().find(msg => msg.role === 'assistant');
 
-    console.log('[Render Check] State before render:', {
-        totalMessages: messages.length,
-        // shouldShowLoadMore: false, // This was commented out, ensure it's intended
-        isMobile, // Log mobile state
-        mobileVisiblePane, // Log visible pane on mobile
-    });
+    // --- Render Check --- (This was the original console.log, now commented out. Uncommenting might cause infinite loops)
+    // console.log('[Render Check] State before render:', {
+    //     totalMessages: messages.length,
+    //     // shouldShowLoadMore: false, 
+    //     isMobile, 
+    //     mobileVisiblePane,
+    // });
 
     // --- NEW: Calculations for ARIA attributes for resize handle ---
     let currentWidthPxCalculated = 0;

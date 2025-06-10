@@ -415,7 +415,12 @@ export function useClientChatOrchestrator({
   }, [transcribeAudio, audioBlob, setOperationStates]);
   
   const handleAudioTranscriptionComplete = useCallback((transcript: string | null, error?: any) => {
-    console.log('[Orchestrator] Audio transcription complete handler called', { transcript, error });
+    console.log('[Orchestrator] Audio transcription complete handler called', { 
+      transcript: transcript?.substring(0, 100) + (transcript && transcript.length > 100 ? '...' : ''), 
+      transcriptLength: transcript?.length,
+      hasError: !!error,
+      error 
+    });
     if (error) {
       console.error('[Orchestrator] Audio transcription process resulted in error:', error);
       setOperationStates({
@@ -424,6 +429,7 @@ export function useClientChatOrchestrator({
       });
       setAudioBlob(null); // Clear the blob
     } else if (transcript && transcript.trim()) {
+      console.log('[Orchestrator] Setting input value to transcribed text:', transcript.trim());
       setInputValue(transcript.trim());
       setOperationStates({
         audioState: AudioState.PROCESSING_COMPLETE,

@@ -246,16 +246,7 @@ export function useChatInteractions({
     fetchDownloadUrlForPath,
 }: UseChatInteractionsProps): UseChatInteractionsReturn {
     
-    // === DEBUG: Log hook initialization ===
-    console.log("=== [useChatInteractions] HOOK INITIALIZATION DEBUG START ===");
-    console.log("[useChatInteractions] Props received:");
-    console.log("  - documentId:", documentId);
-    console.log("  - documentId type:", typeof documentId);
-    console.log("  - initialModel:", initialModel);
-    console.log("  - initialMessages length:", initialMessages?.length);
-    console.log("  - apiEndpoint:", apiEndpoint);
-    console.log("  - initialTaggedDocIdsString:", initialTaggedDocIdsString);
-    console.log("=== [useChatInteractions] HOOK INITIALIZATION DEBUG END ===");
+    // Debug: Hook initialization (removed due to infinite loop)
     
     // Internal State
     const [model, setModel] = useState<string>(initialModel);
@@ -344,8 +335,10 @@ export function useChatInteractions({
         generateId: () => `editor-chat-${documentId}-${Date.now()}`,
     });
 
-    // Create tool executors for orchestrator
-    const toolExecutorMap = createMockToolExecutors();
+    // Create tool executors for orchestrator - exclude editor tools to prevent conflicts
+    const allMockExecutors = createMockToolExecutors();
+    const { addContent, modifyContent, deleteContent, modifyTable, createChecklist, ...nonEditorExecutors } = allMockExecutors;
+    const toolExecutorMap = nonEditorExecutors;
     
     // Audio recording state and refs for simpler MediaRecorder implementation
     const [audioTimeDomainDataState, setAudioTimeDomainDataState] = useState<AudioTimeDomainData>(null);
@@ -483,7 +476,13 @@ export function useChatInteractions({
             console.log('[Editor Audio] Starting transcription of blob:', audioBlob.size, 'bytes, type:', audioBlob.type);
             const result = await transcribeAudio(audioBlob);
             console.log('[Editor Audio] Transcription result:', result);
-            return result;
+            if (result && result.trim()) {
+                console.log('[Editor Audio] Successfully transcribed:', result.length, 'characters');
+                return result;
+            } else {
+                console.warn('[Editor Audio] Transcription returned empty or null result');
+                return null;
+            }
         } catch (error) {
             console.error('[Editor Audio] Transcription failed:', error);
             return null;
@@ -508,7 +507,7 @@ export function useChatInteractions({
     const {
         isChatInputBusy,
         currentOperationStatusText,
-        handleAudioRecordingStart,
+        handleAudioRecordingStart: orchestratorHandleAudioRecordingStart,
         handleCompleteAudioFlow,
         handleFileUploadStart,
         handleFileUploadComplete,
@@ -571,8 +570,6 @@ export function useChatInteractions({
         }
     }, [input, pendingInitialSubmission, isUseChatLoading, isRecording, isTranscribing, documentId]);
 
-
-
     // Effect to handle AI response after a tool result has been submitted
     useEffect(() => {
         if (currentAIToolState === AIToolState.AWAITING_RESULT_IN_STATE && messages.length > 0) {
@@ -609,10 +606,17 @@ export function useChatInteractions({
 
     // Wrapped Stop Handler
     const stop = useCallback(() => {
-        console.log('[useChatInteractions] stop called.');
+        console.log('[useChatInteractions] stop called. Current states:', {
+            isUseChatLoading,
+            isChatInputBusy,
+            audioState: operationState.audioState, // from orchestrator
+            currentAIToolState,
+            currentOperationDescription: operationState.currentOperationDescription
+        });
+        // debugger; // You can uncomment this to pause execution in browser dev tools and inspect the call stack
         stopAiGeneration();
         resetChatOperationState();
-    }, [stopAiGeneration, resetChatOperationState]);
+    }, [stopAiGeneration, resetChatOperationState, isUseChatLoading, isChatInputBusy, operationState, currentAIToolState]);
 
     const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement> | React.ChangeEvent<HTMLInputElement>) => {
         setInput(e.target.value);
@@ -708,24 +712,37 @@ export function useChatInteractions({
 
     // Auto-Submit After Transcription
     const [wasTranscribing, setWasTranscribing] = useState(false);
+    const [audioTranscriptionPending, setAudioTranscriptionPending] = useState(false);
     
     useEffect(() => {
         // Track when transcription state changes
         if (isTranscribing) {
             setWasTranscribing(true);
-        } else if (wasTranscribing && !isTranscribing && input.trim() && documentId) {
+            setAudioTranscriptionPending(true);
+            console.log('[Editor Audio] Transcription started, marking as pending...');
+        } else if (wasTranscribing && !isTranscribing && audioTranscriptionPending && input.trim() && documentId) {
             // If we just finished transcribing and there's input text AND documentId is available, auto-submit
             console.log('[Editor Audio] Auto-submitting transcribed text:', input.trim(), 'with documentId:', documentId);
+            setAudioTranscriptionPending(false);
             setTimeout(() => {
                 sendMessage(undefined);
                 setWasTranscribing(false);
             }, 100); // Small delay to ensure UI is updated
+        } else if (!isTranscribing && wasTranscribing && !input.trim()) {
+            // If transcription finished but no input, just reset states
+            console.log('[Editor Audio] Transcription finished but no input text, resetting states');
+            setWasTranscribing(false);
+            setAudioTranscriptionPending(false);
         }
-    }, [isTranscribing, wasTranscribing, input, sendMessage, documentId]);
+    }, [isTranscribing, wasTranscribing, audioTranscriptionPending, input, sendMessage, documentId]);
 
     const handleMicrophoneClick = useCallback(() => {
-        handleAudioRecordingStart(); 
-    }, [handleAudioRecordingStart]);
+        console.log('[Editor Audio] handleMicrophoneClick called, preparing to start recording...');
+        // Reset stale transcription states before starting a new recording via the orchestrator's handler
+        setWasTranscribing(false);
+        setAudioTranscriptionPending(false);
+        orchestratorHandleAudioRecordingStart(); 
+    }, [orchestratorHandleAudioRecordingStart]);
 
     const handleStopRecording = useCallback(() => {
         console.log('[Editor Audio] handleStopRecording called, triggering complete audio flow');

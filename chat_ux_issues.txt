@@ -2,6 +2,78 @@
 
 This document tracks user experience issues discovered after completing task 16.
 
+## MAJOR BREAKTHROUGH - Resolved Issues
+
+### 🎯 **Issue 2: DocumentId Error on Hard Refresh with Tool Call Messages** ✅ **FULLY RESOLVED**
+- **Issue**: Multiple critical problems after hard refresh causing AI to be completely unresponsive
+- **Status**: ✅ **COMPLETELY FIXED**
+
+#### **Problem #1: Editor Context Injection Order** ✅ **FIXED**
+- **Root Cause**: Editor context was being injected BEFORE user messages, causing AI to respond to context instead of user's actual message
+- **Symptoms**: AI would always say "Thanks for sharing your current document structure..." and ignore user requests
+- **Fix**: Changed editor context injection from BEFORE to AFTER user messages in API route
+- **File**: `app/api/chat/route.ts` line 1220+
+- **Code Change**: `finalMessagesForStreamText.push(editorContextCoreMessage);` instead of `splice(lastUserMessageIdx, 0, ...)`
+
+#### **Problem #2: Follow-Up Context Auto-Population** ✅ **FIXED**  
+- **Root Cause**: AI responses were automatically being added to follow-up context instead of manual user selection
+- **Symptoms**: Every AI response appeared in "Follow-up Context" section incorrectly
+- **Fix**: Removed automatic `setFollowUpContext(message.content)` from `onFinish` callback
+- **File**: `lib/hooks/editor/useChatInteractions.ts`
+- **Additional Fix**: Added proper follow-up context integration to `sendMessage` function so manually added context is actually sent to AI
+
+#### **Problem #3: Server-Side Tool State Corruption** ✅ **FIXED**
+- **Root Cause**: Frontend was incorrectly trying to process server-side tools (`webSearch`, `searchAndTagDocumentsTool`) causing state corruption when interrupted
+- **Symptoms**: After websearch interruption + hard refresh, AI would be completely unresponsive  
+- **Fix**: Added proper tool architecture separation in frontend processing
+- **File**: `app/editor/[documentId]/page.tsx`
+- **Code Change**: Filter out server-side tools from client-side processing loop, mark them as processed without execution
+
+#### **Problem #4: DocumentId Guard Issues** ✅ **FIXED**
+- **Root Cause**: DocumentId validation was blocking legitimate requests after hard refresh
+- **Symptoms**: Messages wouldn't send at all, no API calls in network logs
+- **Fix**: Re-enabled documentId guard with console.warn instead of toast errors to avoid user annoyance
+- **File**: `lib/hooks/editor/useChatInteractions.ts`
+
+#### **Problem #5: Toast Spam on Page Load** ✅ **FIXED**
+- **Root Cause**: Error toasts showing on normal page initialization when editor context not immediately available
+- **Symptoms**: "Editor Context Not Available" and "Chat error: documentId undefined" toasts on every page load
+- **Fix**: Changed error toasts to console.warn for initialization errors
+- **File**: `lib/hooks/editor/useChatInteractions.ts`
+
+#### **Problem #6: Editor Context Not Being Sent** ✅ **FIXED**
+- **Root Cause**: Frontend was sending `editorContext` but API expected `editorBlocksContext`
+- **Symptoms**: AI couldn't see document content at all
+- **Fix**: Changed data structure to send `editorBlocksContext: editorContext.editorBlocksContext`
+- **File**: `lib/hooks/editor/useChatInteractions.ts` line 653-662
+
+### **💡 Key Architectural Discoveries**
+
+#### **Tool Architecture Clarification**
+- **Client-Side Tools**: `addContent`, `modifyContent`, `deleteContent`, `modifyTable`, `createChecklist`
+  - No `execute` function in API definition
+  - Processed by frontend tool loop in `EditorPage.tsx`  
+  - Must call `addToolResult()` to complete execution
+  
+- **Server-Side Tools**: `webSearch`, `searchAndTagDocumentsTool`
+  - Have `execute` functions that run on backend
+  - Results automatically streamed to frontend
+  - Should NOT be processed by frontend tool loop
+  - Results rendered by `ChatMessageItem.tsx`
+
+#### **Message Flow Architecture**
+- **Correct Order**: System Message → Previous History → User Message → [Editor Context] 
+- **Previous Broken Order**: System Message → Previous History → [Editor Context] → User Message
+
+### 🎯 **Issue 4: Follow-Up Context Integration** ✅ **PARTIALLY RESOLVED**
+- **Problem #1**: AI responses auto-added to follow-up context ✅ **FIXED**
+- **Problem #2**: Manually added follow-up context not sent to AI ✅ **FIXED**
+- **Implementation**: 
+  - Follow-up context now properly appended to user messages before sending
+  - Format: `Follow-up Context: {context}\n\n---\n\n{user_message}`
+  - Automatically cleared after sending message
+- **File**: `lib/hooks/editor/useChatInteractions.ts`
+
 ## Active Issues
 
 ### 1. Audio Transcription Not Working in Editor
@@ -11,55 +83,10 @@ This document tracks user experience issues discovered after completing task 16.
 - **Expected Behavior**: After recording, audio should transcribe and automatically submit the message
 - **Actual Behavior**: Recording starts and stops, but no transcription or submission occurs
 
-### 2. DocumentId Error on Hard Refresh with Tool Call Messages
-- **Issue**: Get "Chat Error:" toast after hard refresh when tool calls are in message history. Once tool calls are in history, cannot interact with AI normally.
-- **Error Message**: Originally `MessageConversionError [AI_MessageConversionError]: ToolInvocation must have a result`
-- **Status**: MAJOR PROGRESS - Server-side working, investigating client-side error
-- **Context**: After fixing MessageConversionError, now getting "Chat error" toast on client but AI is responsive
-- **Expected Behavior**: Page should load normally and chat should work regardless of tool call history
-- **Actual Behavior**: Chat works and AI responds, but user still sees error toast
-- **Fix Applied**: 
-  - ✅ Fixed MessageConversionError with robust error handling around `convertToCoreMessages` 
-  - ✅ DocumentId validation now working correctly on server
-  - ✅ API calls complete successfully (200 status)
-  - ✅ AI responds normally after hard refresh
-  - 🔍 Added enhanced error logging to client-side useChat onError callback
-- **Current Investigation**: Client-side useChat hook shows error toast despite successful server response - investigating what triggers onError callback
-
-### 3. AI Cannot See Document Content + Infinite Re-renders
-- **Issue**: AI says it cannot see document content and cannot add anything. Page shows infinite re-rendering loops.
-- **Error Symptoms**: 
-  - Component initialization logs repeat dozens of times in console
-  - SendMessage function never called (no SEND MESSAGE DEBUG logs)
-  - AI responds generically about not having document access
-- **Status**: INVESTIGATING - Temporarily removed documentId guard to restore functionality
-- **Root Cause**: 
-  - Infinite re-rendering preventing normal message flow
-  - DocumentId guard may have been too strict, blocking legitimate requests
-  - Editor context not being properly passed to AI
-- **Evidence**: Console shows repeated hook initialization but no sendMessage calls
-- **Immediate Fix**: Temporarily disabled documentId guard to restore chat functionality
-- **Next Steps**: 
-  - Investigate cause of infinite re-renders
-  - Ensure editor context is properly generated and sent
-  - Re-implement documentId guard with better logic once core issue resolved
-
-### 4. Messaging the AI results in Assistant Message -> Follow up context:
-- **Issue**: The response from the AI results in follow-up context getting triggered, where its response is shown in the "Follow Up Context" bubble. Follow up context is a feature where users highlight text, click "Add to Follow Up Context" and have the AI focus just on that snippet.
-- **Status**: Under investigation
-- **Context**: The mechanic of adding text as Follow Up context works, but AI is not able to see Follow Up context as part of the message when I add it
-- **Expected Behavior**: Expected behavior is messaging the AI should just result in a bubble. The AI's response should not be included as follow-up context. Follow up context is an action user's have to enable AI to focus on a specific snippet of text.
-- **Actual Behavior**: Actual behavior is messaging the AI results in the AI's response being included as follow-up content, which is not expected. AI cannot see follow-up context at all in messages even when added.
-
-
-
-## Resolved Issues
-
-### 2. DocumentId Error on Hard Refresh with Tool Call Messages ❌
-- **Issue**: `MessageConversionError [AI_MessageConversionError]: ToolInvocation must have a result` when refreshing page with incomplete tool calls
-- **Root Cause**: AI SDK expected all tool calls to have results, but incomplete tool calls were causing conversion failures
-- **Attempted Fix**: Added cleanup logic to filter out incomplete tool calls before message conversion - **DID NOT WORK**
-- **Current Status**: Still experiencing "Chat Error:" toast after hard refresh and inability to interact with AI after tool calls in history
+### 3. AI Cannot See Document Content + Infinite Re-renders ✅ **RESOLVED**
+- **Status**: ✅ **COMPLETELY FIXED** - Was part of the major breakthrough above
+- **Root Causes**: Multiple issues including editor context injection order, data structure mismatch, and tool processing problems
+- **All Symptoms Resolved**: Infinite re-renders stopped, AI can see document content, tool calls work properly
 
 ## Investigation Notes
 
@@ -69,12 +96,10 @@ This document tracks user experience issues discovered after completing task 16.
 - Could be auto-submission logic not triggering
 - Need to check browser console logs during recording
 
-### DocumentId Error - RESOLVED
-- **Root Cause**: AI SDK's `convertToCoreMessages` function expected all tool calls to have results, but incomplete tool calls (without results) were causing MessageConversionError
-- **Error Details**: `MessageConversionError [AI_MessageConversionError]: ToolInvocation must have a result: {"toolCallId":"call_be735UNXv5dZJYbb3Gr7egtS","toolName":"addContent","args":{"targetBlockId":null,"markdownContent":"ABC"},"state":"call"}`
-- **Solution**: Added cleanup logic in `/api/chat/route.ts` that filters out incomplete tool calls before calling `convertToCoreMessages`
-- **Implementation**: 
-  - Scans message history for assistant messages with tool calls that lack results
-  - Removes incomplete tool calls while preserving other content
-  - Converts messages with no remaining content to fallback text
-  - Logs cleanup actions for debugging 
+## Resolved Issues Archive
+
+### DocumentId Error - LEGACY ISSUE ❌ **SUPERSEDED**
+- **Note**: This was actually multiple distinct issues that have been individually resolved above
+- **Legacy Root Cause**: AI SDK's `convertToCoreMessages` function expected all tool calls to have results
+- **Legacy Solution**: Added cleanup logic in `/api/chat/route.ts` that filters out incomplete tool calls
+- **Current Status**: ✅ **All underlying issues identified and fixed individually** 

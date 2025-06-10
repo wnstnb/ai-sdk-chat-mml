@@ -183,6 +183,14 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
 
     // Simplified Mic button handler (check if functions exist)
     const handleMicButtonClick = () => {
+        console.log('[ChatInputUI] handleMicButtonClick called! State:', {
+            isRecording,
+            canRecord,
+            micAvailable,
+            hasStartRecording: !!startRecording,
+            hasStopRecording: !!stopRecording
+        });
+        
         if (isRecording && stopRecording) {
             console.log('[ChatInputUI] Stop button clicked. Calling stopRecording().');
             stopRecording();
@@ -206,36 +214,46 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     let buttonOnClick: (() => void) | undefined = undefined;
     let buttonClassName = `w-full h-full flex items-center justify-center rounded-full text-[--muted-text-color] focus:outline-none`;
     let showLoadingSpinner = isLoading;
+    
+    // Debug: Log button state determination (removed due to infinite loop)
     // let showPulsingIndicator = isRecording; // Removed as it's not used directly in the JSX below, pulsing is handled by CustomAudioVisualizer
 
-    if (isLoading) {
-        buttonIcon = <StopIcon aria-hidden="true" />;
-        buttonTitle = "Stop generating";
-        buttonDisabled = false; // Always allow stopping
-        buttonType = "button";
-        buttonClassName += ` bg-[--hover-bg]`;
-        buttonOnClick = onStop; // Use onStop handler for the loading state
-    } else if (isRecording) { // Check isRecording state first
+    // --- Button State Determination --- 
+    // NEW ORDER: Prioritize recording state for the mic button's direct action
+    if (isRecording) { 
+        // console.log('[ChatInputUI] Button state: RECORDING/STOP'); // Debug removed
         buttonIcon = <StopCircleIcon aria-hidden="true" />;
         buttonTitle = "Stop recording";
-        buttonDisabled = !stopRecording; // Disable if stop function isn't provided
+        buttonDisabled = !stopRecording; 
         buttonType = "button";
         buttonClassName += ` bg-red-500/20 text-red-500 hover:bg-red-500/30`;
-        buttonOnClick = handleMicButtonClick;
-    } else if (micAvailable && !input.trim() && !uploadedImagePath) { // Mic available & input empty
-        buttonIcon = <MicIcon aria-hidden="true" />;
-        buttonTitle = micPermissionError ? "Mic permission denied" : (isTranscribing ? "Transcribing..." : "Record audio input");
-        buttonDisabled = !canRecord || isTranscribing; // Use canRecord which checks availability
+        buttonOnClick = handleMicButtonClick; // This calls the recording stop flow
+    } else if (isLoading) { // General loading state (e.g., AI responding or file uploading)
+        // console.log('[ChatInputUI] Button state: LOADING/STOP'); // Debug removed
+        showLoadingSpinner = true; // Ensure spinner is shown if generally loading but not recording
+        buttonIcon = <StopIcon aria-hidden="true" />;
+        buttonTitle = "Stop generating";
+        buttonDisabled = false; 
         buttonType = "button";
-        buttonClassName += buttonDisabled ? ` opacity-50 cursor-not-allowed` : ` enabled:hover:bg-[--hover-bg] enabled:hover:text-[--text-color]`;
-        buttonOnClick = handleMicButtonClick;
-    } else { // Input has text, image, OR mic is unavailable -> show Send/Submit logic
+        buttonClassName += ` bg-[--hover-bg]`;
+        buttonOnClick = onStop; // This calls the general AI/operation stop flow
+    } else if (micAvailable && !input.trim() && !uploadedImagePath) { 
+        // console.log('[ChatInputUI] Button state: MICROPHONE'); // Debug removed
+        buttonIcon = <MicIcon aria-hidden="true" />;
+        buttonTitle = micPermissionError ? "Mic permission denied" : "Start recording";
+        buttonDisabled = !canRecord || micPermissionError;
+        buttonType = "button";
+        buttonClassName += micPermissionError ? ` cursor-not-allowed` : ` hover:bg-[--hover-bg]`;
+        buttonOnClick = handleMicButtonClick; // This calls the recording start flow
+    } else { // Send Message Mode
+        // console.log('[ChatInputUI] Button state: SEND'); // Debug removed
+        showLoadingSpinner = false; // Explicitly no spinner in send mode
         buttonIcon = <Send aria-hidden="true" />;
         buttonTitle = "Send message";
-        // Disable if cannot submit OR if recording/transcribing is happening (even if mic isn't primary action now)
-        buttonDisabled = !canSubmitText || isTranscribing || isRecording || isLoading || isUploading; 
+        buttonDisabled = !input.trim() && !uploadedImagePath;
         buttonType = "submit";
-        buttonClassName += buttonDisabled ? ` opacity-50 cursor-not-allowed` : ` enabled:hover:bg-[--hover-bg] enabled:hover:text-[--text-color]`;
+        buttonClassName += ` hover:bg-[--hover-bg]`;
+        buttonOnClick = undefined; // Form submission handles it
     }
 
     return (
