@@ -128,33 +128,47 @@ export function useAllDocuments(): UseMappedDocumentListReturn { // Updated retu
   // Realtime subscription for changes
   useEffect(() => {
     const client = createClient();
-    const channel = client
-      .channel('all-documents-realtime-channel')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'documents' },
-        (payload) => {
-          // console.log('[useAllDocuments] Realtime change received:', payload); // Optional: for debugging
-          // Re-fetch documents when a change occurs
-          // No need to check payload specifics for now, just refresh the list
-          // This handles inserts, updates, and deletes
-          toast.info('Document list updated.', { duration: 2000 }); // Notify user
-          fetchDocuments();
-        }
-      )
-      .subscribe((status, err) => {
-        if (status === 'SUBSCRIBED') {
-          // console.log('[useAllDocuments] Subscribed to realtime documents changes!'); // Optional: for debugging
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.error('[useAllDocuments] Realtime subscription error:', err);
-          toast.error('Realtime update connection issue.');
-        }
-      });
+    let isSubscribed = false;
+    let channel: any = null;
+    
+    try {
+      channel = client
+        .channel('all-documents-realtime-channel')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'documents' },
+          (payload) => {
+            // console.log('[useAllDocuments] Realtime change received:', payload); // Optional: for debugging
+            // Re-fetch documents when a change occurs
+            // No need to check payload specifics for now, just refresh the list
+            // This handles inserts, updates, and deletes
+            toast.info('Document list updated.', { duration: 2000 }); // Notify user
+            fetchDocuments();
+          }
+        )
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            isSubscribed = true;
+            // console.log('[useAllDocuments] Subscribed to realtime documents changes!'); // Optional: for debugging
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.error('[useAllDocuments] Realtime subscription error:', err);
+            toast.error('Realtime update connection issue.');
+          }
+        });
+    } catch (error) {
+      console.error('[useAllDocuments] Error setting up subscription:', error);
+    }
 
     // Cleanup subscription on component unmount
     return () => {
       // console.log('[useAllDocuments] Unsubscribing from realtime documents changes.'); // Optional: for debugging
-      client.removeChannel(channel);
+      if (channel && isSubscribed) {
+        try {
+          client.removeChannel(channel);
+        } catch (error) {
+          console.error('[useAllDocuments] Error removing channel:', error);
+        }
+      }
     };
   }, [fetchDocuments]); // fetchDocuments is stable due to useCallback with empty deps
 

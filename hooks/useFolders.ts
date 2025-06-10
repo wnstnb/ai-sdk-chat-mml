@@ -607,27 +607,42 @@ export function useFolders(): UseFoldersReturn {
   // Realtime subscription for folder changes
   useEffect(() => {
     const client = createClient();
-    const channel = client
-      .channel('folders-realtime-channel')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'folders' },
-        (payload) => {
-          // Re-fetch folders when a change occurs
-          toast.info('Folder list updated.', { duration: 2000 });
-          fetchFolders();
-        }
-      )
-      .subscribe((status, err) => {
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.error('[useFolders] Realtime subscription error:', err);
-          toast.error('Realtime update connection issue.');
-        }
-      });
+    let isSubscribed = false;
+    let channel: any = null;
+    
+    try {
+      channel = client
+        .channel('folders-realtime-channel')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'folders' },
+          (payload) => {
+            // Re-fetch folders when a change occurs
+            toast.info('Folder list updated.', { duration: 2000 });
+            fetchFolders();
+          }
+        )
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            isSubscribed = true;
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.error('[useFolders] Realtime subscription error:', err);
+            toast.error('Realtime update connection issue.');
+          }
+        });
+    } catch (error) {
+      console.error('[useFolders] Error setting up subscription:', error);
+    }
 
     // Cleanup subscription on component unmount
     return () => {
-      client.removeChannel(channel);
+      if (channel && isSubscribed) {
+        try {
+          client.removeChannel(channel);
+        } catch (error) {
+          console.error('[useFolders] Error removing channel:', error);
+        }
+      }
     };
   }, [fetchFolders]);
 

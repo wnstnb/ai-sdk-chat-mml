@@ -1,7 +1,7 @@
 {
   "meta": {
-    "generatedAt": "2025-06-08T20:25:59.933Z",
-    "tasksAnalyzed": 14,
+    "generatedAt": "2025-06-09T05:28:46.537Z",
+    "tasksAnalyzed": 15,
     "totalTasks": 15,
     "analysisCount": 20,
     "thresholdScore": 5,
@@ -51,123 +51,123 @@
     },
     {
       "taskId": 1,
-      "taskTitle": "Refactor useChatPane Hook",
-      "complexityScore": 8,
-      "recommendedSubtasks": 7,
-      "expansionPrompt": "Break down the refactor of the useChatPane hook into subtasks for: (1) replacing width-based logic with binary state, (2) removing resizable logic, (3) adding localStorage persistence, (4) implementing tab drag-to-expand, (5) tracking/restoring previous width, (6) ensuring mobile compatibility, and (7) writing comprehensive unit tests.",
-      "reasoning": "This task involves significant state management changes, persistent storage, UI interaction logic (drag-to-expand), and mobile compatibility, each with potential edge cases and testing requirements. The breadth of changes and the need for robust error handling and testing increase its complexity."
+      "taskTitle": "Create Client Chat Operation State Machine",
+      "complexityScore": 7,
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Break down the design and implementation of the client chat operation state machine into: (1) defining enums and types for each operation, (2) implementing state utility functions, (3) integrating with the chat UI, (4) writing unit tests for state logic, and (5) documenting the state machine usage.",
+      "reasoning": "This task involves designing a granular state machine with multiple enums, utility functions, and integration points. It requires careful modeling and robust testing, making it moderately complex. Subtasks are needed for type definition, logic implementation, integration, testing, and documentation."
     },
     {
       "taskId": 2,
-      "taskTitle": "Implement PDFProcessingService with Gemini-2.5-Flash integration",
+      "taskTitle": "Implement Client Chat Orchestrator Hook",
       "complexityScore": 8,
       "recommendedSubtasks": 6,
-      "expansionPrompt": "Break down the PDFProcessingService implementation into subtasks including: 1) SDK setup and configuration, 2) PDF text extraction core functionality, 3) PDF table extraction and Markdown conversion, 4) Text summarization implementation, 5) Error handling and validation, 6) Caching implementation",
-      "reasoning": "This task involves integrating with a complex external API (Gemini-2.5-Flash), handling multiple file formats, implementing error handling, and building caching mechanisms. The technical complexity is high due to the need to process PDFs, convert tables to Markdown, and implement proper error handling for various failure scenarios."
+      "expansionPrompt": "Expand the orchestrator hook implementation into: (1) setting up state and derived values, (2) implementing AI tool handlers, (3) implementing audio handlers, (4) implementing file upload handlers, (5) integrating consistency checks, and (6) writing comprehensive unit tests.",
+      "reasoning": "This hook is the central manager for all chat operations, requiring coordination of multiple asynchronous flows, state management, and integration with other hooks. The complexity is high due to the need for atomicity, extensibility, and robust error handling."
     },
     {
       "taskId": 3,
-      "taskTitle": "Develop API routes for PDF extraction and summarization",
+      "taskTitle": "Implement Audio Operation Handlers in Orchestrator",
       "complexityScore": 6,
       "recommendedSubtasks": 4,
-      "expansionPrompt": "Break down the API routes development into subtasks including: 1) PDF extraction endpoint implementation, 2) Text summarization endpoint implementation, 3) Input validation and error handling, 4) Security features including rate limiting and CORS",
-      "reasoning": "This task involves creating Next.js API routes that interface with the PDFProcessingService. While less complex than the core service implementation, it still requires proper input validation, error handling, rate limiting, and security considerations."
+      "expansionPrompt": "Decompose the audio operation handler implementation into: (1) recording logic, (2) transcription logic, (3) state transitions and error handling, and (4) integration tests.",
+      "reasoning": "Audio operations involve asynchronous recording and transcription, error handling, and state transitions. While not trivial, the scope is focused and can be modularized into a few clear subtasks."
     },
     {
       "taskId": 4,
-      "taskTitle": "Design and implement modal component UI",
-      "complexityScore": 7,
-      "recommendedSubtasks": 5,
-      "expansionPrompt": "Break down the modal component UI implementation into subtasks including: 1) Basic modal structure and layout, 2) Tab interface for URL and file upload, 3) Form validation and input handling, 4) Progress indicators and status messages, 5) Preview area and result display",
-      "reasoning": "This task involves creating a complex UI component with multiple tabs, form validation, progress indicators, and preview functionality. It needs to be consistent with existing modals and requires careful attention to accessibility and responsiveness."
+      "taskTitle": "Implement File Upload Operation Handlers in Orchestrator",
+      "complexityScore": 6,
+      "recommendedSubtasks": 4,
+      "expansionPrompt": "Expand file upload handler implementation into: (1) upload initiation and progress tracking, (2) state management and error handling, (3) integration with chat message flow, and (4) unit tests for upload scenarios.",
+      "reasoning": "File upload handling requires managing asynchronous uploads, state transitions, and error cases, but is conceptually straightforward and can be split into a few focused subtasks."
     },
     {
       "taskId": 5,
-      "taskTitle": "Integrate modal component with existing application",
-      "complexityScore": 5,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Break down the modal integration into subtasks including: 1) Adding modal launch button to application toolbar, 2) Implementing modal state management and visibility control, 3) Integrating with existing document management utilities",
-      "reasoning": "This task involves integrating the new modal with the existing application, reusing helper functions, and ensuring proper state management. It's moderately complex but leverages existing patterns and utilities."
+      "taskTitle": "Implement AI Tool Execution Handlers in Orchestrator",
+      "complexityScore": 7,
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Break down AI tool execution handler implementation into: (1) tool detection and invocation, (2) execution and result integration, (3) error handling, (4) state updates, and (5) unit tests for tool flows.",
+      "reasoning": "AI tool execution involves dynamic invocation, error handling, and integration with chat state, requiring careful coordination and robust testing. The complexity is moderate to high."
     },
     {
       "taskId": 6,
-      "taskTitle": "Implement PDF URL ingestion functionality",
-      "complexityScore": 6,
-      "recommendedSubtasks": 4,
-      "expansionPrompt": "Break down the PDF URL ingestion functionality into subtasks including: 1) URL input field with validation, 2) API integration for URL-based extraction, 3) Progress and status display implementation, 4) Error handling for various failure scenarios",
-      "reasoning": "This task involves implementing URL validation, making API calls, handling loading states, and displaying extraction progress. It requires careful error handling for various scenarios like invalid URLs and oversized PDFs."
+      "taskTitle": "Refactor useChatInteractions Hook to Use Orchestrator",
+      "complexityScore": 7,
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Divide the refactor into: (1) analyzing current hook usage, (2) integrating orchestrator for chat, audio, and file flows, (3) updating message send logic, (4) updating UI event handlers, and (5) regression testing.",
+      "reasoning": "Refactoring an existing hook to use a new orchestrator requires careful analysis, integration, and thorough testing to avoid regressions, making it moderately complex."
     },
     {
       "taskId": 7,
-      "taskTitle": "Implement PDF file upload functionality",
-      "complexityScore": 7,
-      "recommendedSubtasks": 4,
-      "expansionPrompt": "Break down the PDF file upload functionality into subtasks including: 1) File upload UI with drag-and-drop support, 2) Client-side file validation, 3) File conversion and API integration, 4) Upload progress and error handling",
-      "reasoning": "This task involves implementing file upload with drag-and-drop, client-side validation, file conversion to base64, and proper progress indication. It's more complex than URL ingestion due to the additional client-side processing required."
+      "taskTitle": "Implement Tool Execution Error Handling",
+      "complexityScore": 5,
+      "recommendedSubtasks": 3,
+      "expansionPrompt": "Expand error handling implementation into: (1) formatting and reporting errors, (2) updating orchestrator state on errors, and (3) testing error scenarios and retries.",
+      "reasoning": "This task is focused on error handling logic for tool execution, which is important but can be modularized and is less complex than orchestrator-wide changes."
     },
     {
       "taskId": 8,
-      "taskTitle": "Implement summarization functionality",
+      "taskTitle": "Implement Visual Feedback for Client Operations",
       "complexityScore": 5,
       "recommendedSubtasks": 3,
-      "expansionPrompt": "Break down the summarization functionality into subtasks including: 1) Summarization UI controls, 2) API integration for text summarization, 3) Toggle functionality between full text and summary",
-      "reasoning": "This task involves adding summarization capabilities to the modal, making API calls, and implementing toggle functionality. It's moderately complex but builds on the existing extraction functionality."
+      "expansionPrompt": "Break down visual feedback implementation into: (1) creating status components, (2) integrating feedback into chat UI, and (3) testing UI states and accessibility.",
+      "reasoning": "Visual feedback involves UI component creation and integration, which is straightforward but requires attention to UX and accessibility."
     },
     {
       "taskId": 9,
-      "taskTitle": "Implement insertion and new document creation",
+      "taskTitle": "Implement Chat History Consistency Checks",
       "complexityScore": 6,
       "recommendedSubtasks": 4,
-      "expansionPrompt": "Break down the insertion and document creation functionality into subtasks including: 1) Current document insertion implementation, 2) New document creation functionality, 3) Markdown parsing and BlockNote integration, 4) Error handling and user feedback",
-      "reasoning": "This task involves implementing functionality to insert content into the current document or create a new document. It requires integration with existing document management logic and proper handling of Markdown content from the Gemini API."
+      "expansionPrompt": "Expand consistency check implementation into: (1) defining consistency criteria, (2) implementing check and reporting functions, (3) integrating with orchestrator and send logic, and (4) testing edge cases.",
+      "reasoning": "Consistency checks require careful logic to ensure chat integrity, but the scope is well-defined and can be split into logical subtasks."
     },
     {
       "taskId": 10,
-      "taskTitle": "Implement security measures",
-      "complexityScore": 8,
-      "recommendedSubtasks": 5,
-      "expansionPrompt": "Break down the security implementation into subtasks including: 1) URL sanitization and validation, 2) File upload security measures, 3) API security with CORS and secure headers, 4) Rate limiting implementation, 5) Input sanitization and validation",
-      "reasoning": "This task involves implementing comprehensive security measures to protect against various threats. It requires expertise in web security, input validation, and protection against common vulnerabilities."
+      "taskTitle": "Refactor useFileUpload Hook for Chat Integration",
+      "complexityScore": 5,
+      "recommendedSubtasks": 3,
+      "expansionPrompt": "Divide the refactor into: (1) updating upload logic for atomicity, (2) integrating with orchestrator, and (3) testing upload flows and error handling.",
+      "reasoning": "Refactoring the file upload hook for orchestrator integration is a focused task with moderate complexity, mainly involving API and state changes."
     },
     {
       "taskId": 11,
-      "taskTitle": "Implement accessibility features",
-      "complexityScore": 7,
-      "recommendedSubtasks": 4,
-      "expansionPrompt": "Break down the accessibility implementation into subtasks including: 1) Keyboard navigation and focus management, 2) ARIA attributes and screen reader support, 3) Color contrast and visual accessibility, 4) Testing with assistive technologies",
-      "reasoning": "This task involves ensuring the feature is fully accessible according to WCAG standards. It requires specialized knowledge of accessibility best practices and testing with various assistive technologies."
+      "taskTitle": "Refactor Audio Transcription Logic",
+      "complexityScore": 5,
+      "recommendedSubtasks": 3,
+      "expansionPrompt": "Expand the refactor into: (1) creating a dedicated audio transcription hook, (2) integrating with orchestrator, and (3) testing recording and transcription flows.",
+      "reasoning": "This is a focused refactor to modularize audio logic, with moderate complexity and clear boundaries."
     },
     {
       "taskId": 12,
-      "taskTitle": "Optimize performance",
-      "complexityScore": 8,
-      "recommendedSubtasks": 5,
-      "expansionPrompt": "Break down the performance optimization into subtasks including: 1) Server-side caching implementation, 2) API call optimization, 3) Frontend performance improvements, 4) Progressive loading for large PDFs, 5) Performance testing and monitoring",
-      "reasoning": "This task involves optimizing both frontend and backend performance through various techniques like caching, code splitting, and progressive loading. It requires deep understanding of performance optimization strategies."
+      "taskTitle": "Update Chat Component to Use Orchestrator",
+      "complexityScore": 6,
+      "recommendedSubtasks": 4,
+      "expansionPrompt": "Break down the update into: (1) integrating orchestrator state and handlers, (2) updating UI for feedback and disabled states, (3) regression testing, and (4) updating documentation if needed.",
+      "reasoning": "Updating the main chat component for orchestrator integration involves UI and state changes, with moderate complexity due to the need for regression testing."
     },
     {
       "taskId": 13,
-      "taskTitle": "Implement logging and analytics",
-      "complexityScore": 5,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Break down the logging and analytics implementation into subtasks including: 1) Application logging setup, 2) Error tracking integration, 3) Analytics and metrics implementation",
-      "reasoning": "This task involves setting up logging, error tracking, and analytics to monitor usage and performance. It's moderately complex but follows established patterns for monitoring and analytics."
+      "taskTitle": "Implement Comprehensive Testing Suite",
+      "complexityScore": 8,
+      "recommendedSubtasks": 6,
+      "expansionPrompt": "Expand the testing suite into: (1) unit tests for orchestrator logic, (2) unit tests for audio/file hooks, (3) unit tests for UI components, (4) integration tests for chat flows, (5) edge case and error scenario tests, and (6) test documentation.",
+      "reasoning": "A comprehensive testing suite covering all orchestrator logic, hooks, and UI components is a large and complex task, requiring significant planning and coverage."
     },
     {
       "taskId": 14,
-      "taskTitle": "Conduct thorough testing",
-      "complexityScore": 9,
-      "recommendedSubtasks": 6,
-      "expansionPrompt": "Break down the testing process into subtasks including: 1) Unit testing implementation, 2) Integration testing, 3) End-to-end testing, 4) Cross-browser and device testing, 5) Security and performance testing, 6) Accessibility and user acceptance testing",
-      "reasoning": "This task involves comprehensive testing across multiple dimensions including unit, integration, end-to-end, security, performance, and accessibility testing. It requires expertise in various testing methodologies and tools."
+      "taskTitle": "Implement Integration Tests for End-to-End Flows",
+      "complexityScore": 7,
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Break down integration testing into: (1) setting up test environment and mocks, (2) writing tests for message flow, (3) writing tests for audio and file flows, (4) writing tests for AI tool execution, and (5) reporting and CI integration.",
+      "reasoning": "End-to-end integration testing is complex due to the need for environment setup, mocking, and coverage of all user flows, but is essential for system reliability."
     },
     {
       "taskId": 15,
-      "taskTitle": "Prepare for deployment and launch",
-      "complexityScore": 7,
-      "recommendedSubtasks": 5,
-      "expansionPrompt": "Break down the deployment preparation into subtasks including: 1) Final code review and documentation, 2) CI/CD pipeline setup, 3) Staging deployment and QA, 4) Monitoring and alerting configuration, 5) Launch coordination and communication",
-      "reasoning": "This task involves finalizing all aspects of the feature and preparing for production deployment. It requires coordination across multiple teams and careful planning to ensure a smooth launch."
+      "taskTitle": "Document the Client Chat Orchestrator",
+      "complexityScore": 4,
+      "recommendedSubtasks": 3,
+      "expansionPrompt": "Expand documentation into: (1) writing usage and integration guides, (2) documenting API and best practices, and (3) reviewing and updating troubleshooting sections.",
+      "reasoning": "Documentation is less technically complex but requires thoroughness and clarity. It can be split into writing, API reference, and review subtasks."
     }
   ]
 }

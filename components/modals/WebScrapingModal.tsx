@@ -49,6 +49,24 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
   const prevIsOpenRef = React.useRef<boolean>(isOpen);
   const scrapedContentAreaRef = useRef<HTMLDivElement>(null);
 
+  // Helper function to check if there is unsaved content
+  const hasUnsavedContent = useCallback(() => {
+    return scrapedResults && scrapedResults.length > 0 && scrapedResults.some(result => result.status === 'success' && result.content);
+  }, [scrapedResults]);
+
+  // Enhanced close handler with confirmation
+  const handleCloseModal = useCallback(() => {
+    if (hasUnsavedContent() && !isLoading) {
+      if (window.confirm('You have scraped content that hasn\'t been saved. Discard this content and close?')) {
+        onClose();
+      }
+      // If user chooses not to discard, modal remains open
+    } else {
+      // No unsaved content or currently loading, close immediately
+      onClose();
+    }
+  }, [hasUnsavedContent, isLoading, onClose]);
+
   useEffect(() => {
     if (isOpen) {
       if (!prevIsOpenRef.current) {
@@ -247,9 +265,17 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
   };
 
   const handleClear = () => {
-    setUrls('');
-    setScrapedResults(null);
-    toast.info("Cleared URLs and scraped content.");
+    if (hasUnsavedContent()) {
+      if (window.confirm('This will clear all scraped content. Are you sure?')) {
+        setUrls('');
+        setScrapedResults(null);
+        toast.info("Cleared URLs and scraped content.");
+      }
+    } else {
+      setUrls('');
+      setScrapedResults(null);
+      toast.info("Cleared URLs and scraped content.");
+    }
   };
 
   useEffect(() => {
@@ -261,7 +287,7 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(openState) => { if (!openState) onClose(); }}>
+    <Dialog open={isOpen} onOpenChange={(openState) => { if (!openState) handleCloseModal(); }}>
       <DialogContent 
         className="bg-[var(--editor-bg)] text-[--text-color] p-6 max-w-2xl max-h-[90vh] flex flex-col"
         style={{ zIndex: 1050 }}

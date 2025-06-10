@@ -180,6 +180,8 @@ const defaultModelId = "gpt-4.1";
 // System Prompt updated for Tool Calling, Web Search, and direct Table Markdown modification
 const systemPrompt = `# SYSTEM PROMPT: Collaborative Editor AI Assistant
 
+**IMPORTANT: When a user explicitly asks you to add, modify, or delete specific content in the editor (e.g., "add X to the document", "remove Y", "change Z to W"), you MUST use the appropriate tool to execute the action. However, for general conversation, questions about content, or unclear requests, engage naturally and ask for clarification when needed.**
+
 ## ROLE: Your Collaborative Super-Assistant
 
 You are an exceptionally capable AI assistant and collaborative partner, integrated directly into the user's BlockNote editing environment. Think of yourself not just as a tool, but as a highly resourceful **super-assistant** embedded within their workflow. Your expertise spans understanding document content, writing, research, and data organization.
@@ -220,7 +222,11 @@ Engage naturally in conversation. While you have powerful capabilities, includin
 3.  **Follow-up Context (Optional):** Additional text provided by the user specifically for the current query.
 4.  **Tagged Documents (Optional):** Items labeled with [Tagged Document Context], which the user wants to use as reference for their query.
 
-**!IMPORTANT: Block ID Handling:** Do not mention raw block IDs (e.g., 'id-xyz') *to the user* in your conversational responses. However, you MUST use the correct block IDs internally and when specifying targets for tool calls.
+**!CRITICAL: Block ID Handling:** 
+- Do not mention raw block IDs (e.g., 'id-xyz') *to the user* in your conversational responses. 
+- However, you MUST use the correct block IDs internally and when specifying targets for tool calls.
+- **NEVER invent, guess, or hallucinate block IDs.** You can ONLY use block IDs that are explicitly provided in the \`editorBlocksContext\`. 
+- If you cannot find the appropriate block ID in the provided context for a user's request, ask the user to clarify which specific content they want to modify rather than guessing an ID.
 
 ## PRIMARY TASKS & WORKFLOW
 
@@ -428,6 +434,20 @@ export async function POST(req: Request) {
         firstImageContentType,
     } = requestData || {};
 
+    // === ENHANCED DEBUGGING FOR DOCUMENT ID ISSUES ===
+    console.log("=== [API Chat] DOCUMENT ID DEBUGGING START ===");
+    console.log("[API Chat] Document ID validation:");
+    console.log("  - requestData exists:", !!requestData);
+    console.log("  - requestData type:", typeof requestData);
+    console.log("  - requestData keys:", requestData ? Object.keys(requestData) : 'null');
+    console.log("  - documentId value:", documentId);
+    console.log("  - documentId type:", typeof documentId);
+    console.log("  - documentId length:", typeof documentId === 'string' ? documentId.length : 'N/A');
+    console.log("  - documentId truthy:", !!documentId);
+    console.log("  - editorContext exists:", !!editorBlocksContext);
+    console.log("  - model from data:", modelIdFromData);
+    console.log("=== [API Chat] DOCUMENT ID DEBUGGING END ===");
+
     // === DETAILED LOGGING FOR IMAGE DIAGNOSIS ===
     console.log("=== [API Chat] IMAGE DIAGNOSIS LOGGING START ===");
     console.log("[API Chat] Request data image-related fields:");
@@ -454,7 +474,12 @@ export async function POST(req: Request) {
 
     // --- Existing Validation (Document ID, User Session) ---
     if (!documentId || typeof documentId !== 'string') {
-         return new Response(JSON.stringify({ error: { code: 'INVALID_INPUT', message: 'Missing or invalid documentId in request data.' } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        console.error("[API Chat] DocumentId validation failed:");
+        console.error("  - documentId received:", JSON.stringify(documentId));
+        console.error("  - documentId type:", typeof documentId);
+        console.error("  - requestData received:", JSON.stringify(requestData));
+        const errorMessage = `Missing or invalid documentId in request data. Received: ${JSON.stringify(documentId)} (type: ${typeof documentId})`;
+        return new Response(JSON.stringify({ error: { code: 'INVALID_INPUT', message: errorMessage } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
     const supabase = createSupabaseServerClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser(); 
@@ -728,17 +753,18 @@ export async function POST(req: Request) {
     };
 
     // --- REFACTORED MESSAGE PREPARATION ---
-    const finalMessagesForStreamText: CoreMessage[] = [];
+    const finalMessagesForAIAssembly: CoreMessage[] = []; // Use a temporary assembly array
 
     // 1. Add System Prompt(s)
-    finalMessagesForStreamText.push({
+    finalMessagesForAIAssembly.push({
         role: 'system',
         content: taskHint === 'summarize_and_cite_outline'
             ? systemPrompt + summarizationStrategyPrompt
             : systemPrompt
     });
+    console.log('[API Chat] Added main system prompt.');
 
-    // 2. Add Tagged Documents Context (if available)
+    // 2. Add Tagged Documents Context (if available) - as SYSTEM
     let taggedDocumentsContentString: string = '';
     if (Array.isArray(taggedDocumentIds) && taggedDocumentIds.length > 0) {
         try {
@@ -750,15 +776,15 @@ export async function POST(req: Request) {
         } catch (error) { console.error('[API Chat] Unexpected error fetching tagged docs:', error); }
 
         if (taggedDocumentsContentString) {
-            finalMessagesForStreamText.push({
+            finalMessagesForAIAssembly.push({
                 role: 'system', 
-                content: `[Tagged Document Context]\n${taggedDocumentsContentString}`
+                content: `IMPORTANT CONTEXT FROM TAGGED DOCUMENTS:\n${taggedDocumentsContentString}`
             });
-            console.log('[API Chat] Added tagged documents context message.');
+            console.log('[API Chat] Added tagged documents context as system message.');
         }
     }
 
-    // 3. Add Conversation Summary Context (if available)
+    // 3. Add Conversation Summary Context (if available) - as SYSTEM
     let abstractSummaryVal = '';
     let extractiveSummaryVal = '';
      try {
@@ -771,471 +797,186 @@ export async function POST(req: Request) {
         let summaryContent = '[Conversation Summary]\n';
         if (abstractSummaryVal) summaryContent += `Abstract: ${abstractSummaryVal}\n`;
         if (extractiveSummaryVal) summaryContent += `Extractive:\n${extractiveSummaryVal}\n`;
-        finalMessagesForStreamText.push({ role: 'system', content: summaryContent });
+        finalMessagesForAIAssembly.push({ role: 'system', content: summaryContent });
         console.log('[API Chat Summary Context] Added conversation summary context message.');
     }
 
-    // 4. Prepare and Convert Client Message History
-    // Use a mutable copy for potential modification (e.g. adding image to last user message)
-    const historyToConvert: ClientMessage[] = JSON.parse(JSON.stringify(originalClientMessages)); 
+    // --- Process client messages, integrate context, and add to final assembly ---
 
-    console.log("=== [API Chat] IMAGE FOR AI PROCESSING START ===");
-    let finalImageSignedUrlForConversion: URL | undefined = undefined;
+    // Make a deep copy of original client messages to avoid mutating the request body.
+    const clientMessagesCopy: ClientMessage[] = JSON.parse(JSON.stringify(originalClientMessages));
+
+    // 1. Clean up incomplete tool calls from the copied history
+    console.log('[API Chat] Cleaning up incomplete tool calls in message history...');
+    const cleanedHistory: ClientMessage[] = clientMessagesCopy.map((message, index) => {
+        let modifiedMessage = { ...message };
+        let wasModified = false;
+        
+        if (message.role === 'assistant' && Array.isArray(message.content)) {
+            const hasIncompleteToolCalls = message.content.some(part => part.type === 'tool-call' && !part.result);
+            if (hasIncompleteToolCalls) {
+                const filteredContent = message.content.filter(part => !(part.type === 'tool-call' && !part.result));
+                modifiedMessage.content = filteredContent.length > 0 ? filteredContent : 'I was processing your request but the operation was interrupted. Please try again.';
+                wasModified = true;
+            }
+        }
+        if (message.toolInvocations && Array.isArray(message.toolInvocations)) {
+            const hasIncompleteInvocations = message.toolInvocations.some(inv => !inv.result);
+            if (hasIncompleteInvocations) {
+                const filteredInvocations = message.toolInvocations.filter(inv => !!inv.result);
+                modifiedMessage.toolInvocations = filteredInvocations.length > 0 ? filteredInvocations : undefined;
+                wasModified = true;
+            }
+        }
+        if (message.parts && Array.isArray(message.parts)) {
+            const hasIncompletePartCalls = message.parts.some(part => part.type === 'tool-call' && !part.result);
+            if (hasIncompletePartCalls) {
+                const filteredParts = message.parts.filter(part => !(part.type === 'tool-call' && !part.result));
+                modifiedMessage.parts = filteredParts.length > 0 ? filteredParts : undefined;
+                wasModified = true;
+            }
+        }
+        if (wasModified) {
+            console.log(`[API Chat] Modified message ${index} due to incomplete tool calls.`);
+        }
+        return modifiedMessage;
+    });
+    console.log('[API Chat] Message cleanup completed.');
+
+    // 2. Prepare image part if firstImageSignedUrl is present
+    console.log("=== [API Chat] IMAGE FOR AI PROCESSING START === ");
     let imagePartForAI: ImagePart | null = null;
-    
     if (typeof firstImageSignedUrl === 'string' && firstImageSignedUrl.trim() !== '') {
         console.log('[API Chat Image Processing] Processing image for AI consumption...');
-        console.log('  - Input firstImageSignedUrl:', firstImageSignedUrl);
-        console.log('  - firstImageSignedUrl type:', typeof firstImageSignedUrl);
-        console.log('  - firstImageSignedUrl length:', firstImageSignedUrl.length);
-        console.log('  - Timestamp:', new Date().toISOString());
-        console.log('  - Document ID:', documentId);
-        console.log('  - User ID:', userId);
-        
         try {
-            console.log('[API Chat Image Processing] Attempting to parse signed URL...');
-            finalImageSignedUrlForConversion = new URL(firstImageSignedUrl);
+            const parsedSignedUrl = new URL(firstImageSignedUrl);
             console.log('✅ [API Chat Image Processing] Successfully parsed signed URL');
-            console.log('  - Parsed URL hostname:', finalImageSignedUrlForConversion.hostname);
-            console.log('  - Parsed URL pathname:', finalImageSignedUrlForConversion.pathname);
-            console.log('  - Parsed URL search params:', finalImageSignedUrlForConversion.search);
-        } catch (e) {
-            console.error('❌ [API Chat Image Processing] Failed to parse signed URL:', e);
-            console.error(`  - Invalid URL provided: ${firstImageSignedUrl}`);
-            console.error('  - Error type:', e instanceof Error ? e.constructor.name : typeof e);
-            console.error('  - Error message:', e instanceof Error ? e.message : String(e));
-            finalImageSignedUrlForConversion = undefined;
-        }
-        
-        // === ENHANCED: Fetch image and convert to base64 ===
-        if (finalImageSignedUrlForConversion) {
-            console.log('[API Chat Image Processing] Starting image fetch and base64 conversion...');
-            
-            try {
-                console.log('[API Chat Image Processing] Fetching image from signed URL...');
-                console.log('  - Fetch URL:', finalImageSignedUrlForConversion.toString());
-                console.log('  - Fetch start time:', new Date().toISOString());
-                
-                const imageResponse = await fetch(finalImageSignedUrlForConversion.toString());
-                
-                console.log('[API Chat Image Processing] Image fetch response received');
-                console.log('  - Response status:', imageResponse.status);
-                console.log('  - Response statusText:', imageResponse.statusText);
-                console.log('  - Response ok:', imageResponse.ok);
-                console.log('  - Response headers content-type:', imageResponse.headers.get('content-type'));
-                console.log('  - Response headers content-length:', imageResponse.headers.get('content-length'));
-                console.log('  - Fetch complete time:', new Date().toISOString());
-                
-                if (!imageResponse.ok) {
-                    console.error('❌ [API Chat Image Processing] Image fetch failed');
-                    console.error('  - Status code:', imageResponse.status);
-                    console.error('  - Status text:', imageResponse.statusText);
-                    console.error('  - Response URL:', imageResponse.url);
-                    throw new Error(`Failed to fetch image: ${imageResponse.status} ${imageResponse.statusText}`);
-                }
-                
-                console.log('[API Chat Image Processing] Converting response to ArrayBuffer...');
-                const imageArrayBuffer = await imageResponse.arrayBuffer();
-                console.log('✅ [API Chat Image Processing] Image fetched successfully');
-                console.log('  - Image size (bytes):', imageArrayBuffer.byteLength);
-                console.log('  - Image size (KB):', Math.round(imageArrayBuffer.byteLength / 1024 * 100) / 100);
-                console.log('  - ArrayBuffer conversion time:', new Date().toISOString());
-                
-                // Convert to base64
-                console.log('[API Chat Image Processing] Converting ArrayBuffer to base64...');
-                const base64 = Buffer.from(imageArrayBuffer).toString('base64');
-                console.log('✅ [API Chat Image Processing] Base64 conversion successful');
-                console.log('  - Base64 length:', base64.length);
-                console.log('  - Base64 size (KB):', Math.round(base64.length / 1024 * 100) / 100);
-                console.log('  - Base64 prefix (first 50 chars):', base64.substring(0, 50));
-                console.log('  - Base64 conversion time:', new Date().toISOString());
-                
-                // Determine MIME type from response or fallback to jpeg
-                const contentType = imageResponse.headers.get('content-type') || firstImageContentType || 'image/jpeg';
-                console.log('[API Chat Image Processing] Setting up image part for AI');
-                console.log('  - Detected/fallback MIME type:', contentType);
-                
-                // Create image part with base64 data URL format
-                const base64DataUrl = `data:${contentType};base64,${base64}`;
-                imagePartForAI = { 
-                    type: 'image', 
-                    image: base64DataUrl 
-                };
-                
-                console.log('✅ [API Chat Image Processing] Image part created for AI');
-                console.log('  - Data URL prefix:', base64DataUrl.substring(0, 100));
-                console.log('  - Total data URL size (KB):', Math.round(base64DataUrl.length / 1024 * 100) / 100);
-                
+            const response = await fetch(parsedSignedUrl.href);
+            if (!response.ok) {
+                console.error(`[API Chat Image Processing] Failed to fetch image: ${response.status} ${response.statusText}`);
+                throw new Error(`HTTP error ${response.status}`);
+            }
+            const imageBuffer = await response.arrayBuffer();
+            const base64Image = Buffer.from(imageBuffer).toString('base64');
+            let detectedMimeType = firstImageContentType || response.headers.get('content-type') || 'image/jpeg';
+            if (!detectedMimeType.startsWith('image/')) {
+                detectedMimeType = 'image/jpeg';
+            }
+            imagePartForAI = { type: 'image', image: `data:${detectedMimeType};base64,${base64Image}`, mimeType: detectedMimeType };
+            console.log('✅ [API Chat Image Processing] Successfully fetched and converted image to base64 for AI.');
             } catch (error) {
-                console.error('❌ [API Chat Image Processing] Error processing image for AI:', error);
-                console.error('  - Error type:', error instanceof Error ? error.constructor.name : typeof error);
-                console.error('  - Error message:', error instanceof Error ? error.message : String(error));
-                console.error('  - Error stack:', error instanceof Error ? error.stack : 'No stack available');
-                console.error('  - Error time:', new Date().toISOString());
-                
-                console.log('[API Chat Image Processing] Falling back to URL method for image...');
-                // Fall back to URL method, but with better error handling
-                try {
-                    imagePartForAI = { 
-                        type: 'image', 
-                        image: finalImageSignedUrlForConversion.toString() 
-                    };
-                    console.log('✅ [API Chat Image Processing] Fallback to URL method successful');
-                    console.log('  - Using image URL:', finalImageSignedUrlForConversion.toString());
-                } catch (fallbackError) {
-                    console.error('❌ [API Chat Image Processing] Fallback to URL method also failed:', fallbackError);
+            console.error('❌ [API Chat Image Processing] Error fetching or converting image:', error);
                     imagePartForAI = null;
-                }
-            }
         }
     } else {
-        console.log('[API Chat Image Processing] No image URL provided for AI processing');
-        console.log('  - firstImageSignedUrl value:', firstImageSignedUrl);
-        console.log('  - firstImageSignedUrl type:', typeof firstImageSignedUrl);
+        console.log('[API Chat Image Processing] No firstImageSignedUrl provided, or it was empty.');
     }
-    console.log("=== [API Chat] IMAGE FOR AI PROCESSING END ===");
+    console.log("=== [API Chat] IMAGE FOR AI PROCESSING END === ");
 
-    const slicedHistoryToConvert = historyToConvert.length > 10 ? historyToConvert.slice(-10) : historyToConvert;
-    
-    if (slicedHistoryToConvert.length > 0) {
-        // === DEBUG: Log historyToConvert before conversion ===
-        console.log("=== [API Chat] PRE-CONVERSION DEBUG START ===");
-        console.log("[API Chat] slicedHistoryToConvert before convertToCoreMessages:");
-        console.log("  - Length:", slicedHistoryToConvert.length);
-        
-        // Debug the last message in historyToConvert (most likely to have image)
-        const lastHistoryMsg = slicedHistoryToConvert[slicedHistoryToConvert.length - 1];
-        if (lastHistoryMsg) {
-            console.log("[API Chat] Last message in historyToConvert:");
-            console.log("  - Role:", lastHistoryMsg.role);
-            console.log("  - Content type:", typeof lastHistoryMsg.content);
-            console.log("  - Content is array:", Array.isArray(lastHistoryMsg.content));
-            
-            if (Array.isArray(lastHistoryMsg.content)) {
-                console.log("  - Content parts count:", lastHistoryMsg.content.length);
-                lastHistoryMsg.content.forEach((part, idx) => {
-                    console.log(`    Part ${idx}: type=${part.type}, hasImage=${!!part.image}, hasText=${!!part.text}`);
-                    if (part.type === 'image' && part.image) {
-                        const imageValue = typeof part.image === 'string' ? part.image : part.image.toString();
-                        console.log(`      Image info: format=${imageValue.startsWith('data:') ? 'base64' : 'url'}, length=${imageValue.length}`);
-                    }
-                });
+    // 3. Separate the last user message and the rest of the history
+    let lastUserMessageFromHistory: ClientMessage | null = null;
+    const historyWithoutLastUserMessage: ClientMessage[] = [];
+
+    if (cleanedHistory.length > 0) {
+        const potentialLastUserMessage = cleanedHistory[cleanedHistory.length - 1];
+        if (potentialLastUserMessage.role === 'user') {
+            lastUserMessageFromHistory = { ...potentialLastUserMessage }; // Deep copy
+            historyWithoutLastUserMessage.push(...cleanedHistory.slice(0, -1));
             } else {
-                console.log("  - String content preview:", typeof lastHistoryMsg.content === 'string' ? lastHistoryMsg.content.substring(0, 100) : 'not-string');
-            }
-        }
-        console.log("=== [API Chat] PRE-CONVERSION DEBUG END ===");
-        
-        // Cast to `any` to satisfy convertToCoreMessages if ClientMessage is not perfectly aligned with internal VercelAIMessage
-        const convertedHistoryMessages = convertToCoreMessages(slicedHistoryToConvert as any);
-        
-        // === DEBUG: Log results after conversion ===
-        console.log("=== [API Chat] POST-CONVERSION DEBUG START ===");
-        console.log("[API Chat] convertedHistoryMessages after convertToCoreMessages:");
-        console.log("  - Length:", convertedHistoryMessages.length);
-        
-        // Debug the last converted message
-        const lastConvertedMsg = convertedHistoryMessages[convertedHistoryMessages.length - 1];
-        if (lastConvertedMsg) {
-            console.log("[API Chat] Last converted message:");
-            console.log("  - Role:", lastConvertedMsg.role);
-            console.log("  - Content type:", typeof lastConvertedMsg.content);
-            console.log("  - Content is array:", Array.isArray(lastConvertedMsg.content));
-            
-            if (Array.isArray(lastConvertedMsg.content)) {
-                console.log("  - Content parts count:", lastConvertedMsg.content.length);
-                lastConvertedMsg.content.forEach((part: any, idx: number) => {
-                    console.log(`    Part ${idx}: type=${part.type}, hasImage=${!!(part as any).image}, hasText=${!!(part as any).text}`);
-                    if (part.type === 'image' && (part as any).image) {
-                        const imagePart = part as any;
-                        const imageValue = typeof imagePart.image === 'string' ? imagePart.image : imagePart.image.toString();
-                        console.log(`      Image info: format=${imageValue.startsWith('data:') ? 'base64' : 'url'}, length=${imageValue.length}`);
-                    }
-                });
-            } else {
-                console.log("  - String content preview:", typeof lastConvertedMsg.content === 'string' ? lastConvertedMsg.content.substring(0, 100) : 'not-string');
-            }
-        }
-        console.log("=== [API Chat] POST-CONVERSION DEBUG END ===");
-        
-        finalMessagesForStreamText.push(...convertedHistoryMessages);
-        console.log(`[API Chat] Added ${convertedHistoryMessages.length} converted history messages.`);
-        
-        // === CRITICAL FIX: Add image to the last user message AFTER conversion ===
-        if (imagePartForAI && convertedHistoryMessages.length > 0) {
-            const lastConvertedIndex = finalMessagesForStreamText.length - 1;
-            const lastConvertedMessage = finalMessagesForStreamText[lastConvertedIndex];
-            
-            if (lastConvertedMessage?.role === 'user') {
-                console.log('🔧 [API Chat Image Fix] Adding image to last converted message...');
-                console.log('  - Last message index in final array:', lastConvertedIndex);
-                console.log('  - Current content type:', typeof lastConvertedMessage.content);
-                console.log('  - Current content is array:', Array.isArray(lastConvertedMessage.content));
-                
-                // Extract text content from the converted message
-                let userTextContent = '';
-                if (typeof lastConvertedMessage.content === 'string') {
-                    userTextContent = lastConvertedMessage.content;
-                } else if (Array.isArray(lastConvertedMessage.content)) {
-                    const textPart = lastConvertedMessage.content.find(part => part.type === 'text');
-                    userTextContent = textPart && 'text' in textPart ? (textPart as any).text : '';
-                }
-                
-                // Replace the content with multimodal array
-                finalMessagesForStreamText[lastConvertedIndex] = {
-                    ...lastConvertedMessage,
-                    content: [
-                        { type: 'text', text: userTextContent },
-                        imagePartForAI
-                    ]
-                };
-                
-                console.log('✅ [API Chat Image Fix] Successfully added image to last converted message');
-                console.log('  - Final message content parts:', finalMessagesForStreamText[lastConvertedIndex].content.length);
-                console.log('  - Text part length:', userTextContent.length);
-                console.log('  - Image part type:', imagePartForAI.type);
-                const imageValue = typeof imagePartForAI.image === 'string' ? imagePartForAI.image : imagePartForAI.image?.toString() || '';
-                console.log('  - Image data method:', imageValue.startsWith('data:') ? 'base64' : 'url');
-            } else {
-                console.warn('⚠️ [API Chat Image Fix] Last converted message is not a user message - cannot add image');
-                console.warn('  - Last message role:', lastConvertedMessage?.role);
-            }
-        } else if (imagePartForAI) {
-            console.warn('⚠️ [API Chat Image Fix] Have image part but no converted messages to attach to');
-        } else {
-            console.log('[API Chat Image Fix] No image part to add - skipping image fix');
+            historyWithoutLastUserMessage.push(...cleanedHistory);
         }
     }
 
-    // 5. Add Editor Blocks Context (if provided) - Injected before the last user message from history
-    if (Array.isArray(editorBlocksContext) && editorBlocksContext.length > 0) {
-        const isValidContext = editorBlocksContext.every(block =>
-            typeof block === 'object' && block !== null && 'id' in block && 'contentSnippet' in block
-        );
-        if (isValidContext) {
-            const contextString = JSON.stringify(editorBlocksContext, null, 2);
-            const editorContextCoreMessage: CoreMessage = {
-                role: 'user', 
-                content: `[Editor Context]\nCurrent editor block context (use IDs to target blocks):\n\`\`\`json\n${contextString}\n\`\`\``
+    // 4. Add the historical messages (all messages except the last user message, if it exists)
+    if (historyWithoutLastUserMessage.length > 0) {
+        const coreCompatibleHistory = historyWithoutLastUserMessage.map(msg => {
+            // Explicitly map to properties expected by CoreMessage or Omit<Message, 'id'>
+            const mappedMsg: { role: 'user' | 'assistant' | 'system' | 'tool'; content: string | Array<any>; tool_calls?: any; tool_results?: any; } = {
+                role: msg.role as 'user' | 'assistant' | 'system' | 'tool', // Cast if ClientMessage role is wider
+                content: msg.content as string | Array<any> // Ensure content aligns with CoreMessagePart[] if array
             };
-
-            let lastUserMessageIdx = -1;
-            for (let i = finalMessagesForStreamText.length - 1; i >= 0; i--) {
-                if (finalMessagesForStreamText[i].role === 'user') {
-                    lastUserMessageIdx = i;
-                    break;
-                }
+            // Add tool_calls if they exist and are valid for 'assistant' role
+            if (msg.role === 'assistant' && (msg as any).tool_calls) { // Assuming tool_calls is the correct property name from ClientMessage
+                mappedMsg.tool_calls = (msg as any).tool_calls;
             }
-            if (lastUserMessageIdx !== -1) {
-                finalMessagesForStreamText.splice(lastUserMessageIdx, 0, editorContextCoreMessage);
+            // Add tool_results if they exist and are valid for 'tool' role
+            if (msg.role === 'tool' && (msg as any).tool_results) { // Assuming tool_results is the correct property name from ClientMessage
+                 mappedMsg.tool_results = (msg as any).tool_results;
+            }
+            return mappedMsg;
+        });
+        finalMessagesForAIAssembly.push(...convertToCoreMessages(coreCompatibleHistory as any));
+        console.log(`[API Chat] Added ${historyWithoutLastUserMessage.length} historical messages.`);
+         }
+
+    // 5. Inject Editor Context (if it exists) as a *user-role message* BEFORE the actual last user message
+    if (editorBlocksContext && Array.isArray(editorBlocksContext) && editorBlocksContext.length > 0) {
+        const contextSnippets = editorBlocksContext.map((block: any) => {
+            const content = block.contentSnippet || `Block Type: ${block.type}`;
+            return `- [ID: ${block.id}] ${content}`;
+        });
+        const contextString = contextSnippets.join('\n');
+        const editorContextUserMessageContent = `Here is the current content of the editor for my reference (DO NOT display this verbatim in your response, use it as context only):
+\`\`\`markdown
+${contextString}
+\`\`\`
+What follows is my actual immediate question or instruction.`;
+        
+        finalMessagesForAIAssembly.push({
+                role: 'user', 
+            content: editorContextUserMessageContent
+        });
+        console.log('[API Chat] Added editor context as a preceding user message.');
             } else {
-                const firstHistoryMsgIndex = finalMessagesForStreamText.findIndex(msg => msg.role !== 'system');
-                finalMessagesForStreamText.splice(firstHistoryMsgIndex !== -1 ? firstHistoryMsgIndex : finalMessagesForStreamText.length, 0, editorContextCoreMessage);
-            }
-            console.log("[API Chat] Added structured editor context to messages.");
-        } else {
-            console.warn("[API Chat] Received editorBlocksContext, but it had an invalid structure.");
-        }
+        console.log('[API Chat] No editor context provided or context was empty.');
     }
-    // --- END REFACTORED MESSAGE PREPARATION ---
 
-    const generationConfig: any = {};
-
-    console.log(`[API Chat] Calling streamText with ${finalMessagesForStreamText.length} prepared messages. Last message role: ${finalMessagesForStreamText[finalMessagesForStreamText.length - 1]?.role}`);
-    
-    // === ENHANCED MESSAGE STRUCTURE VALIDATION ===
-    console.log("=== [API Chat] FINAL MESSAGE VALIDATION START ===");
-    console.log("[API Chat] Validating final message structure before sending to AI...");
-    console.log("  - Total messages:", finalMessagesForStreamText.length);
-    console.log("  - Validation timestamp:", new Date().toISOString());
-    
-    // Validate each message in the final payload
-    finalMessagesForStreamText.forEach((message, index) => {
-        console.log(`[API Chat Validation] Message ${index}:`);
-        console.log(`  - Role: ${message.role}`);
-        console.log(`  - Content type: ${typeof message.content}`);
-        console.log(`  - Content is array: ${Array.isArray(message.content)}`);
-        
-        if (Array.isArray(message.content)) {
-            console.log(`  - Content parts count: ${message.content.length}`);
-            message.content.forEach((part, partIndex) => {
-                console.log(`    Part ${partIndex}:`);
-                console.log(`      - Type: ${part.type}`);
-                
-                if (part.type === 'text') {
-                    const textPart = part as any;
-                    console.log(`      - Text length: ${textPart.text?.length || 0}`);
-                    console.log(`      - Text preview: ${textPart.text?.substring(0, 50) || 'empty'}...`);
-                    
-                    // Validate text part structure
-                    if (!textPart.text || typeof textPart.text !== 'string') {
-                        console.warn(`      ⚠️ WARNING: Text part has invalid or missing text property`);
-                    }
-                } else if (part.type === 'image') {
-                    const imagePart = part as any;
-                    console.log(`      - Image type: ${typeof imagePart.image}`);
-                    console.log(`      - Image value length: ${imagePart.image?.length || 0}`);
-                    
-                    if (imagePart.image?.startsWith('data:')) {
-                        console.log(`      - Image format: base64 data URL`);
-                        const mimeMatch = imagePart.image.match(/^data:([^;]+);base64,/);
-                        if (mimeMatch) {
-                            console.log(`      - MIME type: ${mimeMatch[1]}`);
-                            const base64Data = imagePart.image.split(',')[1];
-                            console.log(`      - Base64 data length: ${base64Data?.length || 0}`);
-                            console.log(`      - Estimated image size (KB): ${Math.round((base64Data?.length || 0) * 0.75 / 1024 * 100) / 100}`);
-                            
-                            // Validate base64 data format
-                            if (!base64Data || base64Data.length === 0) {
-                                console.error(`      ❌ ERROR: Base64 data is empty or invalid`);
-                            } else {
-                                try {
-                                    // Test if it's valid base64
-                                    Buffer.from(base64Data, 'base64');
-                                    console.log(`      ✅ Base64 data format is valid`);
-                                } catch (e) {
-                                    console.error(`      ❌ ERROR: Invalid base64 data format:`, e);
-                                }
-                            }
-                        } else {
-                            console.error(`      ❌ ERROR: Invalid data URL format - missing MIME type`);
-                        }
-                    } else if (imagePart.image?.startsWith('http')) {
-                        console.log(`      - Image format: URL`);
-                        console.log(`      - Image URL: ${imagePart.image}`);
-                        
-                        // Validate URL format
-                        try {
-                            new URL(imagePart.image);
-                            console.log(`      ✅ Image URL format is valid`);
-                        } catch (e) {
-                            console.error(`      ❌ ERROR: Invalid URL format:`, e);
-                        }
-                    } else {
-                        console.error(`      ❌ ERROR: Image part has unrecognized format`);
-                        console.error(`      - Image value: ${imagePart.image?.substring(0, 100)}...`);
-                    }
-                    
-                    // Validate image part structure
-                    if (!imagePart.image) {
-                        console.error(`      ❌ ERROR: Image part has missing image property`);
-                    }
-                } else {
-                    console.log(`      - Other part type: ${part.type}`);
-                    console.log(`      - Part keys:`, Object.keys(part));
+    // 6. Prepare and add the final user message (with image if applicable)
+    if (lastUserMessageFromHistory) {
+        if (imagePartForAI && lastUserMessageFromHistory.role === 'user') {
+            const newContentParts: ({type: 'text', text: string} | {type: 'image', image: string, mimeType?: string})[] = [];
+            if (typeof lastUserMessageFromHistory.content === 'string') {
+                if (lastUserMessageFromHistory.content.trim() !== '') {
+                    newContentParts.push({ type: 'text', text: lastUserMessageFromHistory.content });
                 }
-            });
-        } else if (typeof message.content === 'string') {
-            console.log(`  - String content length: ${message.content.length}`);
-            console.log(`  - String content preview: ${message.content.substring(0, 100)}...`);
-        } else {
-            console.warn(`  ⚠️ WARNING: Unexpected content type: ${typeof message.content}`);
-        }
-        
-        console.log(`  - Message validation complete for index ${index}`);
-    });
-    
-    // Special validation for the last user message (most likely to have images)
-    const lastMessage = finalMessagesForStreamText[finalMessagesForStreamText.length - 1];
-    if (lastMessage && lastMessage.role === 'user') {
-        console.log("[API Chat Validation] DETAILED LAST MESSAGE ANALYSIS:");
-        console.log("  - Last message role:", lastMessage.role);
-        console.log("  - Content structure:", Array.isArray(lastMessage.content) ? 'multipart array' : 'single content');
-        
-        if (Array.isArray(lastMessage.content)) {
-            const textParts = lastMessage.content.filter(part => part.type === 'text');
-            const imageParts = lastMessage.content.filter(part => part.type === 'image');
-            
-            console.log("  - Text parts count:", textParts.length);
-            console.log("  - Image parts count:", imageParts.length);
-            
-            if (imageParts.length > 0) {
-                console.log("  ✅ MULTIMODAL MESSAGE DETECTED:");
-                imageParts.forEach((imagePart, idx) => {
-                    const imgPart = imagePart as any;
-                    console.log(`    Image ${idx}:`);
-                    console.log(`      - Format: ${imgPart.image?.startsWith('data:') ? 'base64' : 'URL'}`);
-                    console.log(`      - Size estimate: ${imgPart.image?.length ? Math.round(imgPart.image.length / 1024) + 'KB' : 'unknown'}`);
+            } else if (Array.isArray(lastUserMessageFromHistory.content)) {
+                lastUserMessageFromHistory.content.forEach(part => {
+                    if (part.type === 'text' && typeof part.text === 'string' && part.text.trim() !== '') {
+                        newContentParts.push({ type: 'text', text: part.text });
+                    }
                 });
             }
-            
-            // Check for potential multimodal format issues
-            if (textParts.length === 0 && imageParts.length > 0) {
-                console.warn("  ⚠️ WARNING: Message has images but no text content");
+            newContentParts.push({ type: 'image', image: imagePartForAI.image as string, mimeType: imagePartForAI.mimeType });
+            if (newContentParts.length > 0) {
+                lastUserMessageFromHistory.content = newContentParts;
+                        } else {
+                lastUserMessageFromHistory.content = ""; 
             }
+            console.log('[API Chat] Image part processed for the last user message.');
         }
+        if (lastUserMessageFromHistory.role === 'user' && Array.isArray(lastUserMessageFromHistory.content) && lastUserMessageFromHistory.content.length === 0) {
+            console.warn("[API Chat] Last user message content was an empty array after all processing, setting to empty string to prevent errors.");
+            lastUserMessageFromHistory.content = ""; // Prevent sending content: [] for a user message
+        }
+
+        finalMessagesForAIAssembly.push(...convertToCoreMessages([lastUserMessageFromHistory] as any));
+        console.log('[API Chat] Added final user message to assembly.');
     }
-    
-    console.log("=== [API Chat] FINAL MESSAGE VALIDATION END ===");
-    
-    console.log("[API Chat] Final messages payload for AI SDK:", JSON.stringify(finalMessagesForStreamText, null, 2));
-    const lastMessageForLog = finalMessagesForStreamText[finalMessagesForStreamText.length - 1];
-    if (lastMessageForLog) {
-        console.log("[API Chat] Content of LAST message being sent to AI SDK (Role: " + lastMessageForLog.role + "):", 
-            typeof lastMessageForLog.content === 'string' ? lastMessageForLog.content : JSON.stringify(lastMessageForLog.content)
-        );
-    } else {
-        console.log("[API Chat] No messages found to send to AI SDK.");
+    else {
+        console.log('[API Chat] No final user message from history to add.');
     }
 
-    console.log("[API Chat] About to call streamText with model:", modelId);
-    console.log("[API Chat] IMPLEMENTING: Provider-Specific Tool Architecture");
-    
-    // Provider-specific tool configuration
-    const isGeminiModel = modelId.toLowerCase().includes('gemini');
-    const isOpenAIModel = modelId.toLowerCase().includes('gpt') || modelId.toLowerCase().includes('openai');
-    const isClaudeModel = modelId.toLowerCase().includes('claude') || modelId.toLowerCase().includes('anthropic');
-    
-    console.log("[API Chat] Provider detection:", { modelId, isGeminiModel, isOpenAIModel, isClaudeModel });
-    
-    // Define server-side tools (all have execute functions)
-    const serverOnlyToolsForStream = {
-        webSearch: rateLimitedWebSearch,
-        searchAndTagDocumentsTool: serverTools.searchAndTagDocumentsTool,
-    };
-    
-    // Mixed tools for OpenAI (server tools + client tools for onToolCall)
-    const openaiMixedTools = {
-        ...serverOnlyToolsForStream,
-        ...clientSideTools,  // Client-side tools handled by onToolCall callback
-    };
-    
-    // Provider-specific tool selection
-    let toolsToUse;
-    
-    // ENABLE ALL TOOLS FOR ALL MODELS (per user request)
-    const allToolsEnabled = {
-        ...serverOnlyToolsForStream,
-        ...clientSideTools,  // All editor tools
-    };
-    
-    if (isGeminiModel) {
-        // Enable all tools for Gemini models (user requested all tools enabled)
-        toolsToUse = allToolsEnabled;
-        console.log("[API Chat] GEMINI: All tools ENABLED - per user request");
-    } else if (isOpenAIModel) {
-        toolsToUse = allToolsEnabled;
-        console.log("[API Chat] OPENAI: All tools ENABLED");
-    } else if (isClaudeModel) {
-        toolsToUse = allToolsEnabled;
-        console.log("[API Chat] CLAUDE: All tools ENABLED");
-    } else {
-        // Default fallback - enable all tools
-        toolsToUse = allToolsEnabled;
-        console.log("[API Chat] UNKNOWN MODEL: All tools ENABLED");
-    }
-    
-    console.log("[API Chat] Final tools configuration:", { 
-        provider: isGeminiModel ? 'Gemini' : isOpenAIModel ? 'OpenAI' : isClaudeModel ? 'Claude' : 'Unknown',
-        toolsEnabled: !!toolsToUse,
-        toolCount: toolsToUse ? Object.keys(toolsToUse).length : 0, 
-        tools: toolsToUse ? Object.keys(toolsToUse) : []
-    });
-    
-    const result = streamText({
+    const generationConfig: any = {}; // Define generationConfig
+
+    // `finalMessagesForAIAssembly` is now the array of CoreMessages to send to streamText
+    console.log(`[API Chat] Total messages prepared for AI: ${finalMessagesForAIAssembly.length}`);
+    console.log("[API Chat] Final messages array before streamText:", JSON.stringify(finalMessagesForAIAssembly, null, 2));
+
+    // Call streamText with the final messages and tools
+    const result = await streamText({
         model: aiModel,
-        messages: finalMessagesForStreamText,
-        ...(toolsToUse && { tools: toolsToUse }), // Only include tools if toolsToUse is defined
+        messages: finalMessagesForAIAssembly, // Use the carefully assembled array
+        tools: combinedToolsWithRateLimit, // Assuming combinedToolsWithRateLimit is defined correctly
         maxSteps: 10,
         ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
         
@@ -1303,19 +1044,16 @@ export async function POST(req: Request) {
                     if (typeof message.content === 'string') {
                         if (message.content.trim()) assistantParts.push({ type: 'text', text: message.content.trim() });
                     } else if (Array.isArray(message.content)) {
-                        // Explicitly type part here for the filter callback
                         assistantParts = message.content.filter((part: any): part is TextPart | ToolCallPart => part.type === 'text' || part.type === 'tool-call');
                     }
                     finalAssistantTurn.accumulatedParts.push(...assistantParts);
                 } else if (message.role === 'tool') {
                     if (Array.isArray(message.content)) {
-                        // Explicitly type part here for the filter callback
                         const results = message.content.filter((part: any): part is ToolResultPart => part.type === 'tool-result');
                         results.forEach(result => {
                             if (result.toolCallId) finalAssistantTurn.toolResults[result.toolCallId] = result.result;
                         });
                     }
-                    // Check if message.content exists and is an array before checking its length
                     if(message.content && Array.isArray(message.content) && message.content.length > 0) finalAssistantTurn.hasData = true; 
                 }
             }

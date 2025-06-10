@@ -3,3 +3,50 @@ description:
 globs:
 alwaysApply: false
 ---
+- **All API routes MUST be protected by rate limiting.**
+    - This is crucial for preventing abuse, denial-of-service attacks, and ensuring fair usage of resources.
+    - The primary implementation should reside in `middleware.ts` for broad coverage.
+
+- **Use `@upstash/ratelimit` with Redis for a scalable and persistent solution.**
+    - Configure the Redis client and Ratelimit instances in a dedicated utility file (e.g., `[lib/rate-limit.ts](mdc:lib/rate-limit.ts)`).
+    - Ensure environment variables for Upstash Redis (URL and Token) are properly handled, with fallbacks or warnings for development environments if not configured.
+
+- **Implement Multiple Rate Limiting Strategies:**
+    - **IP-Based Limiting (First Layer):**
+        - Apply as the first check for all API requests.
+        - Use a helper function (e.g., `getIP(request)`) to reliably determine the client's IP address, considering headers like `x-forwarded-for` and `x-vercel-forwarded-for`.
+        - Define different IP-based limiter configurations for various route categories:
+            - **Default Limiter**: A general limit for most API routes (e.g., 100 requests per 10 seconds).
+            - **Stricter Auth Limiter**: For sensitive authentication routes (e.g., `/api/auth/...` excluding signup/callbacks) with lower thresholds (e.g., 5 requests per 1 minute).
+            - **Specific Feature Limiter**: For resource-intensive or specific features like file browsing (e.g., `/api/file-manager/`, `/api/folders/`) with tailored limits (e.g., 100 requests per 10 seconds, but separate from default).
+        - Example implementation in `[middleware.ts](mdc:middleware.ts)` shows conditional application of these limiters.
+    - **User-Based Limiting (Second Layer for Authenticated Users):**
+        - After successful IP-based limiting and user authentication, apply an additional rate limit based on the authenticated `user.id`.
+        - Define a specific `userActionRateLimiter` (e.g., 200 requests per 60 seconds per user).
+        - This adds a layer of protection against token abuse or compromised accounts.
+        - Example implementation in `[middleware.ts](mdc:middleware.ts)` after user object is available.
+
+- **Configure Proper Response Headers:**
+    - When a rate limit is checked (whether IP or user-based, and whether the request is allowed or denied), the response MUST include standard rate limiting headers.
+    - **For IP-based limits:**
+        - `X-RateLimit-Limit`: The total number of requests allowed in the current window for the IP.
+        - `X-RateLimit-Remaining`: The number of requests remaining in the current window for the IP.
+        - `X-RateLimit-Reset`: A UTC timestamp (ISO 8601 string) indicating when the limit will reset for the IP.
+    - **For User-based limits (use distinct headers to avoid confusion):**
+        - `X-RateLimit-Limit-User`: Total requests allowed for the user.
+        - `X-RateLimit-Remaining-User`: Requests remaining for the user.
+        - `X-RateLimit-Reset-User`: Reset time for the user limit.
+    - **`Retry-After`**: If a request is denied (HTTP 429), this header MUST be included, indicating the number of seconds until the client can retry.
+    - Set these headers in `middleware.ts` when handling the limiter's response.
+
+- **Consolidate Rate Limiting Logic:**
+    - Avoid using multiple, disparate rate limiting mechanisms. Consolidate to a single, robust solution (like Upstash via middleware).
+    - Ensure any older, in-memory, or per-route rate limiters are removed and their routes are covered by the global middleware solution.
+    - Example: Removed `lib/utils/rate-limiter.ts` and updated PDF routes.
+
+- **Logging:**
+    - Log rate limiting decisions (applied limiter type, IP/user, allowed/denied, current counts) for monitoring and debugging.
+    - Log critical errors if the rate limiting service (e.g., Upstash) is not configured in production.
+
+- **Consideration for Progressive Penalties (Advanced):**
+    - While not implemented by default with `@upstash/ratelimit` simple windowing, for very high-security needs, consider custom logic for progressive penalties (e.g., temporary bans for IPs/users that repeatedly hit limits). This typically requires additional state management.

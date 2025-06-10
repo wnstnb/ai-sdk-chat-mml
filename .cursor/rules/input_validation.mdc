@@ -3,3 +3,111 @@ description:
 globs:
 alwaysApply: false
 ---
+- **All URLs originating from external sources (e.g., user input, request bodies, query parameters) MUST be validated on the server-side before being used.**
+    - This is crucial for preventing security vulnerabilities such as Server-Side Request Forgery (SSRF), open redirect, and issues arising from malformed URLs.
+- **Use the `validator` library for URL validation.**
+    - Install it and its types if not already present:
+      ```bash
+      pnpm add validator
+      pnpm add -D @types/validator
+      ```
+- **Employ strict validation options with `isURL`.**
+    - The recommended options are:
+      ```typescript
+      import { isURL } from 'validator';
+
+      // Example: const { urlToValidate } = await request.json();
+      // Example: const urlToValidate = request.nextUrl.searchParams.get('url');
+
+      const userInputUrl = "https://example.com"; // Assume this comes from an external source
+
+      const isValid = isURL(userInputUrl, {
+        protocols: ['http', 'https'],    // Allow only http and https
+        require_protocol: true,          // URL must have a protocol
+        require_host: true,              // URL must have a host (ensures it's not a relative path or mailto:, etc.)
+        require_valid_protocol: true,    // Protocol must be one of those specified in `protocols`
+        disallow_auth: true,             // Disallow username:password in URL (prevents credential leakage)
+        // require_tld: true,            // Consider enabling if a Top-Level Domain is always expected for your use cases.
+                                         // The library defaults to true.
+      });
+
+      if (!isValid) {
+        // Handle invalid URL appropriately. For API routes, this typically means
+        // returning an HTTP 400 Bad Request response.
+        // Example:
+        // return NextResponse.json(
+        //   { error: `Invalid or unsupported URL format: ${userInputUrl}. Please provide a valid HTTP/HTTPS URL.` },
+        //   { status: 400 }
+        // );
+        throw new Error("Invalid or unsupported URL format provided."); // Or handle as per application's error strategy
+      }
+      // If valid, proceed with using the userInputUrl
+      ```
+- **Apply this validation in all API route handlers and any server-side service functions that accept or process external URLs.**
+    - Ensure validation occurs *before* the URL is used in any operation (e.g., fetching content, passing to other services).
+    - Example files where this pattern has been applied:
+        - `[app/api/web-scrape/route.ts](mdc:app/api/web-scrape/route.ts)`
+        - `[app/api/pdf/extract/route.ts](mdc:app/api/pdf/extract/route.ts)`
+- **Return a clear and secure error response if URL validation fails.**
+    - For API endpoints, an HTTP 400 status code is appropriate.
+    - Error messages should be informative to the client but avoid echoing back arbitrary user input in a way that could be misused if error messages are rendered directly in HTML (though less of a risk for JSON APIs).
+
+- **General Principles:**
+    - **Validate on the Server:** Always validate and sanitize data on the server-side, even if client-side validation is present. Client-side checks are for UX, server-side checks are for security.
+    - **Be Specific:** Validate data against the expected type, format, length, and range.
+    - **Defense in Depth:** Employ multiple layers of security.
+    - **Secure by Default:** Rely on frameworks and libraries that have built-in security features (e.g., Supabase for SQLi, BlockNote for rich text XSS).
+
+- **SQL Injection Prevention (Subtask 10.5 Assessment):**
+    - **Rely on Supabase Client Libraries:**
+        - **Status:** Generally Low Risk / Covered.
+        - **Practice:** Use standard Supabase client methods (e.g., `.eq()`, `.select()`, `.insert()`, `.update()`, `.rpc()`). These libraries are designed to use parameterized queries, which is the primary defense against SQL injection.
+        - **Avoid:** Manually constructing SQL queries with string concatenation of user inputs. If complex queries are needed, prefer creating SQL functions/procedures in the database and calling them via `.rpc()` with parameters.
+
+- **XSS Prevention (Subtask 10.5 Assessment & Actions):**
+    - **Rich Text Content (e.g., BlockNote):**
+        - **Status:** Handled by Library.
+        - **Practice:** For rich text editors like BlockNote, rely on the library's built-in mechanisms for rendering content safely (e.g., `BlockNoteView` from `@blocknote/mantine`). These libraries are designed to sanitize their JSON-based data structure or construct HTML securely, preventing XSS from the editor content itself.
+    - **Simple String Inputs (e.g., Document Titles, Names):**
+        - **Status:** Implemented where identified (e.g., document titles).
+        - **Practice:** For user-supplied string inputs that might be rendered as HTML (and are not handled by a rich text rendering library), sanitize them on the server-side before storing or rendering.
+        - **Tool:** Use a dedicated library like `sanitize-html`.
+        - **Configuration for Stripping All HTML:**
+            ```typescript
+            import sanitizeHtml from 'sanitize-html';
+
+            const sanitizedText = sanitizeHtml(userInputString, {
+              allowedTags: [],       // No tags allowed
+              allowedAttributes: {}, // No attributes allowed
+            });
+            ```
+        - **Example:** Applied in `app/api/documents/create-with-content/route.ts` for document titles.
+        - **Important:** Always consider the context where data is rendered. If data is rendered into an HTML attribute, a JavaScript block, or CSS context, different sanitization rules apply. Stripping tags is mainly for preventing HTML structure injection.
+    - **`dangerouslySetInnerHTML`:**
+        - **Status:** Use With Extreme Caution.
+        - **Practice:** Avoid if possible. If used, ensure the HTML being set is **never** derived from user input and is from a trusted, static source. Current uses in `app/page.tsx` (static feature descriptions) and `app/layout.tsx` (anti-flicker script) are acceptable as they meet this criterion.
+
+- **General Server-Side Input Validation (Subtask 10.5 Actions):**
+    - **Presence & Type Checks:** Always check for the presence of required fields and validate their types (e.g., string, number, boolean, object structure for JSON).
+        - Example: `if (typeof title !== 'string') { ... return 400 error ... }`
+    - **Trimming Whitespace:** For string inputs, trim leading/trailing whitespace (e.g., `userInput.trim()`).
+    - **Length Checks:** Enforce reasonable length limits for string inputs to prevent overly long data and potential denial-of-service or database issues.
+    - **Format Checks (Specific Cases):**
+        - Folder IDs, User IDs, etc., if they are UUIDs, the database will typically enforce this. If they are passed to external systems, validate the format there too.
+
+- **Sanitization for Logging (Subtask 10.5 Action):**
+    - **Prevent Log Injection/Spoofing:** When logging user-supplied input (e.g., search queries, free-form text fields), sanitize it to prevent log injection or spoofing.
+    - **Practice:**
+        - Replace newline characters (`\r\n`, `\r`, `\n`) with spaces or remove them.
+        - Trim whitespace.
+        - Consider truncating very long strings to keep logs readable and prevent excessive log data.
+    - **Example:** Applied in `app/api/search-documents/route.ts` for logging search queries:
+        ```typescript
+        const sanitizedQueryForLogging = query.replace(/\r\n|\r|\n/g, ' ').trim();
+        const logQueryDisplay = sanitizedQueryForLogging.length > 100 ? sanitizedQueryForLogging.substring(0, 97) + '...' : sanitizedQueryForLogging;
+        console.log(`User searching for: "${logQueryDisplay}"`);
+        ```
+
+- **Error Handling:**
+    - **Structured Errors:** Return structured JSON error responses from API routes (e.g., `{ error: { code: 'VALIDATION_ERROR', message: 'Detailed message.' } }`).
+    - **Avoid Leaking Sensitive Info:** Do not include raw stack traces or overly detailed internal system information in error messages sent to the client, especially in production.

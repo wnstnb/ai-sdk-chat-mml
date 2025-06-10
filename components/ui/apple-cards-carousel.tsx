@@ -177,7 +177,6 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        // If a zoomed image is open, close only that.
         if (zoomedImage) {
           setZoomedImage(null);
         } else {
@@ -197,7 +196,6 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
   }, [open, zoomedImage]);
 
   useOutsideClick(containerRef, () => {
-    // Only close the card if no image is zoomed
     if (!zoomedImage) {
       handleClose();
     }
@@ -213,11 +211,10 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
   const handleClose = () => {
     setOpen(false);
     onCardClose(index);
+    setZoomedImage(null);
   };
 
-  // Helper to render content with clickable images
   function renderContentWithZoom(content: React.ReactNode) {
-    // If content is an array, map recursively
     if (Array.isArray(content)) {
       return content.map((section, i) => (
         <div key={i} className="bg-[color:var(--card-bg)] p-8 md:p-14 rounded-3xl mb-4">
@@ -225,12 +222,9 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
         </div>
       ));
     }
-    // If content is a React element, clone and add onClick to images
     if (React.isValidElement(content)) {
-      // If it's an image, add onClick and effects via a wrapper
       if (content.type === 'img') {
         const originalImageProps = content.props;
-
         return (
           <div
             onClick={(e: React.MouseEvent) => {
@@ -239,42 +233,29 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
             }}
             className="inline-block cursor-zoom-in shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all duration-200 ease-in-out rounded-md overflow-hidden"
           >
-            {/* Clone the original image, ensuring it fits inside the wrapper */}
             {React.cloneElement(content, {
               ...originalImageProps,
-              className: cn(originalImageProps.className), // Keep original classes
+              className: cn(originalImageProps.className),
               style: {
-                ...(originalImageProps.style || {}), // Keep original styles
-                display: 'block',                   // Ensure image is block for layout
-                maxWidth: '100%',                   // Image fills wrapper width-wise
-                maxHeight: '300px',                  // <-- SET explicit maxHeight ON IMAGE
-                objectFit: 'contain',               // Maintain aspect ratio
+                ...(originalImageProps.style || {}),
+                display: 'block',
+                maxWidth: '100%',
+                maxHeight: '300px',
               },
-              onClick: undefined, // onClick is handled by the wrapper
             })}
           </div>
         );
       }
-      // Otherwise, recursively process children
-      if (content.type === 'p') {
-        return React.cloneElement(content, {
-          className: cn(content.props.className, "text-left"),
-        },
-          React.Children.map(content.props.children, renderContentWithZoom)
-        );
+      if (content.props.children) {
+        const children = React.Children.map(content.props.children, (child) => renderContentWithZoom(child));
+        return React.cloneElement(content, { ...content.props }, children);
       }
-      // For other elements, just process children
-      return React.cloneElement(content, {},
-        React.Children.map(content.props.children, renderContentWithZoom)
-      );
     }
-    // Otherwise, return as is
     return content;
   }
 
   return (
     <>
-      {/* Expanded view */}
       <AnimatePresence>
         {open && (
           <div className="fixed inset-0 z-50 h-screen overflow-auto">
@@ -292,7 +273,6 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
               layoutId={layout ? `card-${card.title}` : undefined}
               className="relative z-[60] mx-auto my-10 h-fit max-w-2xl rounded-3xl bg-[color:var(--editor-bg)] p-4 font-sans md:p-10"
             >
-              {/* Close button */}
               <button
                 className="sticky top-4 right-0 ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-black dark:bg-white"
                 onClick={handleClose}
@@ -300,7 +280,6 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
                 <X className="h-6 w-6 text-neutral-100 dark:text-neutral-900" />
               </button>
 
-              {/* Popup content wrapper */}
               <div className="popup-card-content">
                 <motion.p
                   layoutId={layout ? `category-${card.title}` : undefined}
@@ -312,22 +291,20 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
                   layoutId={layout ? `title-${card.title}` : undefined}
                   className="text-2xl md:text-3xl font-semibold text-center mb-4 text-[color:var(--accent-color)] font-newsreader w-full"
                 >
-                  {card.title.split(/<br *\/?>/i).map((line, index, arr) => (
+                  {card.title.split(/<br *\/?\s*>/gi).map((line, index, arr) => (
                     <React.Fragment key={index}>
                       {line}
                       {index < arr.length - 1 && <br />}
                     </React.Fragment>
                   ))}
                 </motion.p>
-                {/* Wrap each content block in a styled div, matching the example */}
                 {renderContentWithZoom(card.content)}
               </div>
             </motion.div>
-            {/* Zoomed image modal overlay */}
             {zoomedImage && (
               <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90"
                 onClick={(e) => {
-                  e.stopPropagation(); // Prevent click from propagating to useOutsideClick
+                  e.stopPropagation(); 
                   setZoomedImage(null);
                 }}
               >
@@ -345,13 +322,16 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
         )}
       </AnimatePresence>
 
-      {/* Collapsed card */}
       <motion.button
         layoutId={layout ? `card-${card.title}` : undefined}
         onClick={handleOpen}
-        className="relative z-10 flex h-80 w-56 flex-col items-start justify-start overflow-hidden rounded-3xl bg-[color:var(--card-bg)]/70 backdrop-blur-lg border border-[color:var(--border-color)]/25 md:h-[30rem] md:w-96 transition-all duration-300 ease-in-out hover:scale-[1.02] hover:border-[color:var(--accent-color)]"
+        className={cn(
+          "relative z-10 flex flex-col items-start justify-start overflow-hidden rounded-3xl",
+          "bg-[color:var(--card-bg)]/70 backdrop-blur-lg border border-[color:var(--border-color)]/25", 
+          "transition-all duration-300 ease-in-out hover:scale-[1.02] hover:border-[color:var(--accent-color)]",
+          "w-full h-[20rem] md:h-[22rem]"
+        )}
       >
-        {/* Image masked to bottom half only */}
         {card.previewImageSrc && (
           <img
             src={card.previewImageSrc}
@@ -364,11 +344,10 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
             }}
           />
         )}
-        {/* Card content above mask */}
-        <div className="relative z-10 w-full flex flex-col items-center px-3">
-          <p className="text-left font-sans text-sm font-medium text-[color:var(--muted-text-color)] md:text-base mb-2 w-full">{card.category}</p>
-          <p className="text-2xl md:text-3xl font-semibold text-center mb-1 text-[color:var(--accent-color)] font-newsreader w-full">
-            {card.title.split(/<br *\/?>/i).map((line, index, arr) => (
+        <div className="relative z-10 w-full flex flex-col items-center px-3 pt-6 text-center">
+          {card.category && <p className="font-sans text-sm font-medium text-[color:var(--muted-text-color)] md:text-base mb-2 w-full">{card.category}</p>}
+          <p className="text-2xl md:text-3xl font-semibold mb-1 text-[color:var(--accent-color)] font-newsreader w-full">
+            {typeof card.title === 'string' && card.title.split(/<br *\/?\s*>/gi).map((line, index, arr) => (
               <React.Fragment key={index}>
                 {line}
                 {index < arr.length - 1 && <br />}
@@ -377,7 +356,7 @@ export const Card: React.FC<CardProps> = ({ card, index, layout = false }) => {
           </p>
           {card.caption && (
             <p
-              className="text-sm text-[color:var(--muted-text-color)] text-center mt-2 mb-0 w-full"
+              className="text-sm text-[color:var(--muted-text-color)] mt-2 mb-0 w-full"
               dangerouslySetInnerHTML={{ __html: card.caption }}
             />
           )}

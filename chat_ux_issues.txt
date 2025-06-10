@@ -1,0 +1,105 @@
+# Chat UX Issues - Post Task 16
+
+This document tracks user experience issues discovered after completing task 16.
+
+## MAJOR BREAKTHROUGH - Resolved Issues
+
+### 🎯 **Issue 2: DocumentId Error on Hard Refresh with Tool Call Messages** ✅ **FULLY RESOLVED**
+- **Issue**: Multiple critical problems after hard refresh causing AI to be completely unresponsive
+- **Status**: ✅ **COMPLETELY FIXED**
+
+#### **Problem #1: Editor Context Injection Order** ✅ **FIXED**
+- **Root Cause**: Editor context was being injected BEFORE user messages, causing AI to respond to context instead of user's actual message
+- **Symptoms**: AI would always say "Thanks for sharing your current document structure..." and ignore user requests
+- **Fix**: Changed editor context injection from BEFORE to AFTER user messages in API route
+- **File**: `app/api/chat/route.ts` line 1220+
+- **Code Change**: `finalMessagesForStreamText.push(editorContextCoreMessage);` instead of `splice(lastUserMessageIdx, 0, ...)`
+
+#### **Problem #2: Follow-Up Context Auto-Population** ✅ **FIXED**  
+- **Root Cause**: AI responses were automatically being added to follow-up context instead of manual user selection
+- **Symptoms**: Every AI response appeared in "Follow-up Context" section incorrectly
+- **Fix**: Removed automatic `setFollowUpContext(message.content)` from `onFinish` callback
+- **File**: `lib/hooks/editor/useChatInteractions.ts`
+- **Additional Fix**: Added proper follow-up context integration to `sendMessage` function so manually added context is actually sent to AI
+
+#### **Problem #3: Server-Side Tool State Corruption** ✅ **FIXED**
+- **Root Cause**: Frontend was incorrectly trying to process server-side tools (`webSearch`, `searchAndTagDocumentsTool`) causing state corruption when interrupted
+- **Symptoms**: After websearch interruption + hard refresh, AI would be completely unresponsive  
+- **Fix**: Added proper tool architecture separation in frontend processing
+- **File**: `app/editor/[documentId]/page.tsx`
+- **Code Change**: Filter out server-side tools from client-side processing loop, mark them as processed without execution
+
+#### **Problem #4: DocumentId Guard Issues** ✅ **FIXED**
+- **Root Cause**: DocumentId validation was blocking legitimate requests after hard refresh
+- **Symptoms**: Messages wouldn't send at all, no API calls in network logs
+- **Fix**: Re-enabled documentId guard with console.warn instead of toast errors to avoid user annoyance
+- **File**: `lib/hooks/editor/useChatInteractions.ts`
+
+#### **Problem #5: Toast Spam on Page Load** ✅ **FIXED**
+- **Root Cause**: Error toasts showing on normal page initialization when editor context not immediately available
+- **Symptoms**: "Editor Context Not Available" and "Chat error: documentId undefined" toasts on every page load
+- **Fix**: Changed error toasts to console.warn for initialization errors
+- **File**: `lib/hooks/editor/useChatInteractions.ts`
+
+#### **Problem #6: Editor Context Not Being Sent** ✅ **FIXED**
+- **Root Cause**: Frontend was sending `editorContext` but API expected `editorBlocksContext`
+- **Symptoms**: AI couldn't see document content at all
+- **Fix**: Changed data structure to send `editorBlocksContext: editorContext.editorBlocksContext`
+- **File**: `lib/hooks/editor/useChatInteractions.ts` line 653-662
+
+### **💡 Key Architectural Discoveries**
+
+#### **Tool Architecture Clarification**
+- **Client-Side Tools**: `addContent`, `modifyContent`, `deleteContent`, `modifyTable`, `createChecklist`
+  - No `execute` function in API definition
+  - Processed by frontend tool loop in `EditorPage.tsx`  
+  - Must call `addToolResult()` to complete execution
+  
+- **Server-Side Tools**: `webSearch`, `searchAndTagDocumentsTool`
+  - Have `execute` functions that run on backend
+  - Results automatically streamed to frontend
+  - Should NOT be processed by frontend tool loop
+  - Results rendered by `ChatMessageItem.tsx`
+
+#### **Message Flow Architecture**
+- **Correct Order**: System Message → Previous History → User Message → [Editor Context] 
+- **Previous Broken Order**: System Message → Previous History → [Editor Context] → User Message
+
+### 🎯 **Issue 4: Follow-Up Context Integration** ✅ **PARTIALLY RESOLVED**
+- **Problem #1**: AI responses auto-added to follow-up context ✅ **FIXED**
+- **Problem #2**: Manually added follow-up context not sent to AI ✅ **FIXED**
+- **Implementation**: 
+  - Follow-up context now properly appended to user messages before sending
+  - Format: `Follow-up Context: {context}\n\n---\n\n{user_message}`
+  - Automatically cleared after sending message
+- **File**: `lib/hooks/editor/useChatInteractions.ts`
+
+## Active Issues
+
+### 1. Audio Transcription Not Working in Editor
+- **Issue**: Transcribed text not making it through after pressing record in the chat input while in the editor/viewing a document
+- **Status**: Under investigation
+- **Context**: Audio recording appears to work (waveform shows), but transcription doesn't complete and auto-submit doesn't trigger
+- **Expected Behavior**: After recording, audio should transcribe and automatically submit the message
+- **Actual Behavior**: Recording starts and stops, but no transcription or submission occurs
+
+### 3. AI Cannot See Document Content + Infinite Re-renders ✅ **RESOLVED**
+- **Status**: ✅ **COMPLETELY FIXED** - Was part of the major breakthrough above
+- **Root Causes**: Multiple issues including editor context injection order, data structure mismatch, and tool processing problems
+- **All Symptoms Resolved**: Infinite re-renders stopped, AI can see document content, tool calls work properly
+
+## Investigation Notes
+
+### Audio Transcription Issue
+- Recording functionality works (audio visualization appears)
+- May be related to orchestrator transcription flow
+- Could be auto-submission logic not triggering
+- Need to check browser console logs during recording
+
+## Resolved Issues Archive
+
+### DocumentId Error - LEGACY ISSUE ❌ **SUPERSEDED**
+- **Note**: This was actually multiple distinct issues that have been individually resolved above
+- **Legacy Root Cause**: AI SDK's `convertToCoreMessages` function expected all tool calls to have results
+- **Legacy Solution**: Added cleanup logic in `/api/chat/route.ts` that filters out incomplete tool calls
+- **Current Status**: ✅ **All underlying issues identified and fixed individually** 

@@ -39,7 +39,7 @@ interface EditorPaneWrapperProps {
     // From useChatInteractions
     input: string;
     handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement> | React.ChangeEvent<HTMLInputElement>) => void;
-    handleSubmit: (event?: React.FormEvent<HTMLFormElement>) => Promise<void>;
+    sendMessage: (event?: React.FormEvent<HTMLFormElement>) => Promise<void>;
     isLoading: boolean; 
     model: string;
     setModel: React.Dispatch<React.SetStateAction<string>>;
@@ -101,7 +101,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     // Destructure all props needed for collapsed ChatInputUI
     input,
     handleInputChange,
-    handleSubmit,
+    sendMessage,
     isLoading,
     model,
     setModel,
@@ -288,7 +288,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
 
                     {/* Pinned Input Area - Remove max-width/centering from here */}
                     <div className="pt-4 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0 w-full">
-                        <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center">
+                        <form ref={formRef} onSubmit={sendMessage} className="w-full flex flex-col items-center">
                             {/* Use ChatInputUI directly here */}
                             <ChatInputUI 
                                 key={isChatCollapsed ? 'collapsed-input' : 'unmounted'}

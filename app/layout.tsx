@@ -20,7 +20,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.tuon.io"),
   title: "Tuon | Everything your notes app should be",
-  description: "Tuon helps you write, store, and retrieve documents with AI assistance. Clean interface. Version control. No clutter.",
+  description: "Tuon empowers you keep better notes. Upload and extract PDFs. Transcribe live audio. Save and summarize web pages. Track every version of your notes. All in one place.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -43,10 +43,10 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     site: "@DoDataThings",
     title: "Tuon | Everything your notes app should be",
-    description: "Write better, stay organized, and bring AI into your flow. Try Tuon for free.",
+    description: "Upload and extract PDFs. Transcribe live audio. Save and summarize web pages. Track every version of your notes. All in one place. Try Tuon for free.",
     images: [
       {
-        url: "https://www.tuon.io/landing-page.png",
+        url: "https://www.tuon.io/landing-page-2.png",
         width: 1200,
         height: 630,
         alt: "Tuon landing page hero image",
@@ -59,7 +59,7 @@ export const metadata: Metadata = {
     description: "AI-powered document writing and versioning.",
     images: [
       {
-        url: "https://www.tuon.io/landing-page.png",
+        url: "https://www.tuon.io/landing-page-2.png",
         width: 1200,
         height: 630,
         alt: "Tuon landing page hero image",

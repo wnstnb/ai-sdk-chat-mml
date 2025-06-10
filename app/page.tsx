@@ -239,7 +239,6 @@ const FeatureListSection = () => {
 
 // Renamed component to avoid conflict with default export naming conventions if needed elsewhere
 export default function LandingPageContent() {
-  console.log("LandingPageContent rendering..."); // Add log here
   const [activeTabIndex, setActiveTabIndex] = useState(0); // New state for active tab
   const featuresSectionRef = useRef<HTMLDivElement>(null); // New ref for the features section
   const carouselSectionRef = useRef<HTMLDivElement>(null); // Declare carouselSectionRef
@@ -278,7 +277,7 @@ export default function LandingPageContent() {
     {
       icon: <Clock className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
       title: "Tag<br />Documents",
-      description: "Tag documents as context for AI<br /> and never start from zero."
+      description: "Tag documents as context for AI and never start from zero."
     },
     {
       icon: <Zap className="h-8 w-8 text-[color:var(--muted-text-color)]" />, // Use CSS variable
@@ -451,27 +450,36 @@ export default function LandingPageContent() {
                   variants={headingVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Stop fragmented workflows<br />Keep it all in one place
+                  The notes app that<br />brings it all together
                 </motion.h1>
                 <motion.p 
                   className="text-lg md:text-xl text-[color:var(--primary-color)]/90 mb-12 max-w-2xl leading-relaxed mx-auto"
                   variants={contentVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Tuon removes the friction between AI and organic creative workflows.<br />Start, finish, manage, and iterate on your notes and documents<br />all in one place
+                  Upload and extract PDFs. Transcribe live audio. Save and summarize web pages. Track every version of your notes.<br />All in one place.
+
                 </motion.p>
                 <motion.div 
                   className="flex flex-col sm:flex-row gap-4 justify-center"
                   variants={buttonVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  {/* <Button className="bg-[color:var(--primary-color)] text-[color:var(--bg-color)] hover:bg-[color:var(--accent-color)] px-8 py-6 text-base">
-                    Try the Demo
-                    <ArrowRight className="ml-2 h-5 w-5" />
-                  </Button>
-                  <Button variant="ghost" className="border border-[color:var(--primary-color)]/20 text-[color:var(--primary-color)] hover:bg-[color:var(--hover-bg)]/20 hover:text-[color:var(--accent-color)] px-8 py-6 text-base">
-                    Explore Features
-                  </Button> */}
+                  <Link href="/signup">
+                    <Button variant="landing" className="px-8 py-6 text-base">
+                      Try Free For 7 Days
+                      <ArrowRight className="ml-2 h-5 w-5" />
+                    </Button>
+                  </Link>
+                  <Link 
+                    href="#features-carousel" 
+                    onClick={(e) => handleSmoothScroll(e, 'features-carousel')}
+                  >
+                    <Button variant="ghost" className="bg-[color:var(--card-bg)]/70 backdrop-blur-lg border border-[color:var(--border-color)]/25 text-[color:var(--primary-color)] hover:bg-[color:var(--card-bg)]/80 hover:text-[color:var(--accent-color)] hover:border-[color:var(--accent-color)]/50 px-8 py-6 text-base transition-all duration-300">
+                      Explore Features
+                      <ArrowRight className="ml-2 h-5 w-5" />
+                    </Button>
+                  </Link>
                 </motion.div>
               </motion.div>
             </section>
@@ -479,7 +487,7 @@ export default function LandingPageContent() {
 
           {/* Features Carousel Section */}
           <section id="features-carousel" ref={carouselSectionRef} className="pt-6 pb-0 flex flex-col items-center">
-            <FeaturesCarouselSection scrollToCarousel={scrollToCarousel} carouselRef={carouselSectionRef} />
+            <FeaturesCarouselSection />
           </section>
 
           {/* Pricing Section */}
