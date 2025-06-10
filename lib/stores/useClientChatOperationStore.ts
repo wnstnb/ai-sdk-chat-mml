@@ -5,6 +5,9 @@ import {
   AIToolState,
   AudioState,
   FileUploadState,
+  BlockStatus,
+  BlockStatusEntry,
+  BlockStatusMap
 } from '@/app/lib/clientChatOperationState'; // Adjusted import path
 
 interface ClientChatOperationStore extends ClientChatOperationState {
@@ -15,6 +18,17 @@ interface ClientChatOperationStore extends ClientChatOperationState {
   setCurrentOperationDescription: (description?: string) => void;
   resetChatOperationState: () => void;
   setOperationStates: (states: Partial<ClientChatOperationState>) => void;
+
+  // ---- NEW ACTIONS FOR EDITOR BLOCK STATUS ----
+  setBlockStatus: (
+    blockId: string,
+    status: BlockStatus,
+    action?: 'insert' | 'update' | 'delete',
+    message?: string
+  ) => void;
+  clearBlockStatus: (blockId: string) => void;
+  clearAllBlockStatuses: () => void;
+  // ---- END NEW ACTIONS ----
 }
 
 export const useClientChatOperationStore = create<ClientChatOperationStore>((set) => ({
@@ -27,4 +41,26 @@ export const useClientChatOperationStore = create<ClientChatOperationStore>((set
     set({ currentOperationDescription }),
   resetChatOperationState: () => set(initialClientChatOperationState),
   setOperationStates: (states) => set((prevState) => ({ ...prevState, ...states })),
+
+  // ---- IMPLEMENTATION OF NEW ACTIONS ----
+  setBlockStatus: (blockId, status, action, message) =>
+    set((state) => ({
+      editorBlockStatuses: {
+        ...state.editorBlockStatuses,
+        [blockId]: {
+          status,
+          action,
+          message,
+          timestamp: Date.now(),
+        } as BlockStatusEntry,
+      },
+    })),
+  clearBlockStatus: (blockId) =>
+    set((state) => {
+      const { [blockId]: _, ...rest } = state.editorBlockStatuses;
+      return { editorBlockStatuses: rest };
+    }),
+  clearAllBlockStatuses: () =>
+    set({ editorBlockStatuses: {} }),
+  // ---- END IMPLEMENTATION ----
 })); 

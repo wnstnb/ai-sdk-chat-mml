@@ -167,7 +167,7 @@ const modelProviders: Record<string, () => LanguageModel> = {
     "gpt-4.1": () => openai("gpt-4.1"),
   "gpt-4o": () => openai("gpt-4o"),
   "o4-mini": () => openai("o4-mini"),
-  "o3": () => openai("o3-2025-04-16"),
+  "o3": () => openai("o3"),
 //   "gemini-2.5-flash-preview-05-20": () => google("gemini-2.5-flash-preview-05-20"),
 //   "gemini-2.5-pro-preview-05-06": () => google("gemini-2.5-pro-preview-05-06"),
   "claude-3-7-sonnet-latest": () => anthropic("claude-3-7-sonnet-latest"),
