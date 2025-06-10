@@ -75,11 +75,33 @@ import {
     deleteTextInInlineContent,
     getTextFromDataUrl,
 } from '@/lib/editorUtils'; // Import the extracted helpers
+import {
+    validateToolOperation,
+    BlockValidationResult
+} from '@/lib/blockValidation';
+import {
+    createSafeOperationPlan,
+    generateSafetyErrorReport,
+    BlockSafetyResult
+} from '@/lib/blockSafety';
+import {
+    ToolErrorHandler,
+    CommonErrors,
+    SuccessFeedback,
+    ErrorUtils
+} from '@/lib/errorHandling';
+import {
+    checkContentPreservation,
+    ContentPreservationResult,
+    createContentSnapshot,
+    ContentSnapshot
+} from '@/lib/contentPreservation';
 
 // Zustand Store
 import { useFollowUpStore } from '@/lib/stores/followUpStore';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // Import preference store
-import { useModalStore } from '@/stores/useModalStore'; // Added for Live Summaries
+import { useModalStore } from '@/stores/useModalStore'; // Corrected Path
+
 
 // --- NEW: Import the hooks ---
 import { useDocument } from '@/app/lib/hooks/editor/useDocument';
@@ -89,7 +111,7 @@ import { useTitleManagement } from '@/lib/hooks/editor/useTitleManagement'; // C
 // --- NEW: Import the useChatPane hook ---
 import { useChatPane } from '@/lib/hooks/editor/useChatPane';
 // --- NEW: Import the useFileUpload hook ---
-import { useFileUpload } from '@/lib/hooks/editor/useFileUpload';
+import { useFileUpload } from '@/lib/hooks/editor/useFileUpload'; // Corrected Path
 // --- NEW: Import the useChatInteractions hook ---
 import { useChatInteractions } from '@/lib/hooks/editor/useChatInteractions';
 import { ChatInputArea } from '@/components/editor/ChatInputArea'; // Import the new component
@@ -651,37 +673,139 @@ export default function EditorPage() {
         }
     };
 
+    // Helper function to handle validation results
+    const handleValidationResult = (validation: BlockValidationResult, operation: string): boolean => {
+        if (!validation.isValid) {
+            console.error(`[${operation}] Validation failed:`, validation.errorMessage);
+            toast.error(`${operation} failed: ${validation.errorMessage}`);
+            return false;
+        }
+
+        if (validation.warnings && validation.warnings.length > 0) {
+            validation.warnings.forEach(warning => {
+                console.warn(`[${operation}] Warning:`, warning);
+                toast.warning(warning);
+            });
+        }
+
+        return true;
+    };
+
     // Define execute* functions (not wrapped in useCallback as they are called within useEffect)
     const executeAddContent = async (args: any) => {
         const editor = editorRef.current;
         if (!editor) { toast.error('Editor not available to add content.'); return; }
+        
         try {
             const { markdownContent, targetBlockId } = args;
-            if (typeof markdownContent !== 'string') { toast.error("Invalid content provided for addContent."); return; }
+            
+            if (typeof markdownContent !== 'string') { 
+                toast.error("Invalid content provided for addContent."); 
+                return; 
+            }
+
+            // Handle multiple insertion points if targetBlockId is an array
+            const targetBlockIds = Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId];
+            const results: {
+                success: Array<{ targetId: string; insertedCount: number; referenceId?: string }>;
+                failed: Array<{ targetId: string; reason: string }>;
+                totalInserted: number;
+            } = { success: [], failed: [], totalInserted: 0 };
+            
+            // Parse markdown content once for reuse
             let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(markdownContent);
             if (blocksToInsert.length === 0 && markdownContent.trim() !== '') {
                 blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: markdownContent, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
-            } else if (blocksToInsert.length === 0) return;
-            let referenceBlock: Block | PartialBlock | undefined | null = targetBlockId ? editor.getBlock(targetBlockId) : editor.getTextCursorPosition().block;
-            let placement: 'before' | 'after' = 'after';
-            if (!referenceBlock) {
-                referenceBlock = editor.document[editor.document.length - 1];
-                placement = 'after';
-                if (!referenceBlock) {
-                    editor.replaceBlocks(editor.document, blocksToInsert);
-                    toast.success("Content added from AI.");
-                    handleEditorChange(editor);
-                    return;
+            } else if (blocksToInsert.length === 0) {
+                toast.error("No content to insert.");
+                return;
+            }
+            
+            // Process each target block ID
+            for (let i = 0; i < targetBlockIds.length; i++) {
+                const currentTargetId = targetBlockIds[i];
+                
+                try {
+                    // Enhanced validation and safety using new utilities for each target
+                    const safetyPlan = createSafeOperationPlan(editor, {
+                        type: 'add',
+                        content: markdownContent,
+                        referenceBlockId: currentTargetId
+                    });
+                    
+                    if (!safetyPlan.isValid) {
+                        const errorReport = generateSafetyErrorReport('addContent', safetyPlan, { ...args, targetBlockId: currentTargetId });
+                        console.error(errorReport);
+                        results.failed.push({ targetId: currentTargetId, reason: safetyPlan.errorMessage || 'Safety validation failed' });
+                        continue;
+                    }
+
+                    // Log safety information
+                    if (safetyPlan.fallbackUsed) {
+                        console.info(`[addContent] Using fallback for target ${currentTargetId}: ${safetyPlan.fallbackReason}`);
+                    }
+                    
+                    if (!handleValidationResult(safetyPlan, 'addContent')) {
+                        results.failed.push({ targetId: currentTargetId, reason: 'Validation failed' });
+                        continue;
+                    }
+                    
+                    // Use the safely resolved reference block from the safety plan
+                    const resolvedReferenceId = safetyPlan.operationPlan?.resolvedReference || currentTargetId;
+                    let referenceBlock: Block | PartialBlock | undefined | null = resolvedReferenceId ? editor.getBlock(resolvedReferenceId) : editor.getTextCursorPosition().block;
+                    let placement: 'before' | 'after' = 'after';
+                    
+                    if (!referenceBlock) {
+                        referenceBlock = editor.document[editor.document.length - 1];
+                        placement = 'after';
+                        if (!referenceBlock) {
+                            // Only for first target, replace document
+                            if (i === 0) {
+                                editor.replaceBlocks(editor.document, blocksToInsert);
+                                results.success.push({ targetId: 'document-root', insertedCount: blocksToInsert.length });
+                                results.totalInserted += blocksToInsert.length;
+                            } else {
+                                results.failed.push({ targetId: currentTargetId, reason: 'Empty document, content already inserted' });
+                            }
+                            continue;
+                        }
+                    }
+                    
+                    if (referenceBlock && referenceBlock.id) {
+                        editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
+                        results.success.push({ targetId: currentTargetId, insertedCount: blocksToInsert.length, referenceId: referenceBlock.id });
+                        results.totalInserted += blocksToInsert.length;
+                    } else {
+                        results.failed.push({ targetId: currentTargetId, reason: 'Could not find reference block' });
+                    }
+                    
+                } catch (error: any) {
+                    console.error(`Failed to insert content at target ${currentTargetId}:`, error);
+                    results.failed.push({ targetId: currentTargetId, reason: error.message });
                 }
             }
-            if (referenceBlock && referenceBlock.id) {
-                editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
-                toast.success('Content added from AI.');
+            
+            // Provide feedback based on results
+            if (results.failed.length === 0) {
+                toast.success(`Content added at ${results.success.length} location(s). Total blocks inserted: ${results.totalInserted}`);
                 handleEditorChange(editor);
+            } else if (results.success.length === 0) {
+                toast.error(`Failed to add content at any of the ${targetBlockIds.length} target location(s).`);
             } else {
-                 toast.error("Failed to insert content: could not find reference block.");
+                toast.warning(`Partial success: Content added at ${results.success.length} location(s), failed at ${results.failed.length} location(s).`);
+                handleEditorChange(editor);
             }
-        } catch (error: any) { console.error('Failed to execute addContent:', error); toast.error(`Error adding content: ${error.message}`); }
+            
+            return { 
+                status: 'forwarded to client', 
+                results,
+                insertedBlockIds: results.success.flatMap(s => Array.from({ length: s.insertedCount }, (_, idx) => `${s.referenceId}_${idx}`))
+            };
+            
+        } catch (error: any) { 
+            console.error('Failed to execute addContent:', error); 
+            toast.error(`Error adding content: ${error.message}`); 
+        }
     };
     const executeModifyContent = async (args: any) => {
         const editor = editorRef.current;
@@ -696,7 +820,26 @@ export default function EditorPage() {
           return;
         }
 
-        const blockIds = Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId];
+        // Enhanced validation and safety using new utilities
+        const safetyPlan = createSafeOperationPlan(editor, {
+            type: 'modify',
+            targetBlockIds: targetBlockId,
+            content: newMarkdownContent
+        });
+        
+        if (!safetyPlan.isValid) {
+            const errorReport = generateSafetyErrorReport('modifyContent', safetyPlan, args);
+            console.error(errorReport);
+            toast.error(`modifyContent failed: ${safetyPlan.errorMessage}`);
+            return;
+        }
+
+        if (!handleValidationResult(safetyPlan, 'modifyContent')) {
+            return;
+        }
+
+        // Use resolved targets from safety plan
+        const blockIds = safetyPlan.operationPlan?.resolvedTargets || (Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId]);
         const contents = Array.isArray(newMarkdownContent) ? newMarkdownContent : [newMarkdownContent];
 
         if (blockIds.length !== contents.length && Array.isArray(targetBlockId) && Array.isArray(newMarkdownContent)) {
@@ -708,17 +851,21 @@ export default function EditorPage() {
         // Define listTypes using string literals as per standard BlockNote usage if schema access is problematic
         const listTypes = ["bulletListItem", "numberedListItem", "checkListItem"];
 
-        let successCount = 0;
-        let errorCount = 0;
+        // Enhanced results tracking for batch operations
+        const results: {
+            success: Array<{ targetId: string; blockType?: string }>;
+            failed: Array<{ targetId: string; reason: string }>;
+        } = { success: [], failed: [] };
 
         for (let i = 0; i < blockIds.length; i++) {
           const id = blockIds[i];
           const originalBlock = editor.getBlock(id);
 
           if (!originalBlock) {
-            toast.error(`Modification failed: Block ID ${id} not found.`);
-            console.warn(`Block ID ${id} not found during modifyContent.`);
-            errorCount++;
+            const errorHandler = ToolErrorHandler.getInstance();
+            const errorContext = CommonErrors.targetNotFound('modifyContent', id);
+            errorHandler.reportError(errorContext);
+            results.failed.push({ targetId: id, reason: 'Block not found' });
             continue;
           }
 
@@ -728,61 +875,75 @@ export default function EditorPage() {
 
           let blockDefinitionToUpdate: PartialBlock | undefined = undefined;
 
-          if (checklistMatch) {
-            const isChecked = checklistMatch[1].toLowerCase() === 'x';
-            const textContent = checklistMatch[2] || "";
-            
-            blockDefinitionToUpdate = {
-              type: "checkListItem", // Use string literal for type
-              props: { ...originalBlock.props, checked: isChecked }, // Ensure 'isChecked' is boolean if schema expects boolean
-              content: textContent ? [{ type: "text", text: textContent, styles: {} }] : [], // Use string literal for type "text"
-              children: [] 
-            };
-          } else {
-            const parsedBlocks = await editor.tryParseMarkdownToBlocks(currentMarkdown);
-            if (parsedBlocks && parsedBlocks.length > 0) {
-              const { id: parsedId, ...restOfParsedBlock } = parsedBlocks[0];
-              blockDefinitionToUpdate = { ...restOfParsedBlock };
+          try {
+            if (checklistMatch) {
+              const isChecked = checklistMatch[1].toLowerCase() === 'x';
+              const textContent = checklistMatch[2] || "";
+              
+              blockDefinitionToUpdate = {
+                type: "checkListItem", // Use string literal for type
+                props: { ...originalBlock.props, checked: isChecked }, // Ensure 'isChecked' is boolean if schema expects boolean
+                content: textContent ? [{ type: "text", text: textContent, styles: {} }] : [], // Use string literal for type "text"
+                children: [] 
+              };
+            } else {
+              const parsedBlocks = await editor.tryParseMarkdownToBlocks(currentMarkdown);
+              if (parsedBlocks && parsedBlocks.length > 0) {
+                const { id: parsedId, ...restOfParsedBlock } = parsedBlocks[0];
+                blockDefinitionToUpdate = { ...restOfParsedBlock };
 
-              if (listTypes.includes(blockDefinitionToUpdate.type as string)) {
-                if (!blockDefinitionToUpdate.props) {
-                  blockDefinitionToUpdate.props = {};
-                }
-                const listItemProps = blockDefinitionToUpdate.props as { level?: string; [key: string]: any };
-                
-                if (listItemProps.level === undefined) {
-                  const originalBlockIsList = listTypes.includes(originalBlock.type as string);
-                  if (originalBlockIsList && originalBlock.props && (originalBlock.props as any).level !== undefined) {
-                    listItemProps.level = (originalBlock.props as any).level;
-                  } else {
-                    listItemProps.level = "0"; 
+                if (listTypes.includes(blockDefinitionToUpdate.type as string)) {
+                  if (!blockDefinitionToUpdate.props) {
+                    blockDefinitionToUpdate.props = {};
+                  }
+                  const listItemProps = blockDefinitionToUpdate.props as { level?: string; [key: string]: any };
+                  
+                  if (listItemProps.level === undefined) {
+                    const originalBlockIsList = listTypes.includes(originalBlock.type as string);
+                    if (originalBlockIsList && originalBlock.props && (originalBlock.props as any).level !== undefined) {
+                      listItemProps.level = (originalBlock.props as any).level;
+                    } else {
+                      listItemProps.level = "0"; 
+                    }
                   }
                 }
+              } else {
+                const errorHandler = ToolErrorHandler.getInstance();
+                const errorContext = CommonErrors.invalidContent('modifyContent', 'markdown');
+                errorContext.details = `Failed to parse markdown: "${currentMarkdown}"`;
+                errorContext.targetId = id;
+                errorHandler.reportError(errorContext);
+                results.failed.push({ targetId: id, reason: 'Markdown parsing failed' });
+                continue;
               }
-            } else {
-              toast.error(`Failed to parse Markdown for block ID ${id}: "${currentMarkdown}"`);
-              console.warn(`Markdown parsing failed for block ${id}:`, currentMarkdown);
-              errorCount++;
-              continue;
             }
-          }
 
-          if (blockDefinitionToUpdate) {
-            const { id: payloadId, ...finalPayload } = blockDefinitionToUpdate as PartialBlock & {id?: string};
-            editor.updateBlock(id, finalPayload as PartialBlock);
-            successCount++;
+            if (blockDefinitionToUpdate) {
+              const { id: payloadId, ...finalPayload } = blockDefinitionToUpdate as PartialBlock & {id?: string};
+              editor.updateBlock(id, finalPayload as PartialBlock);
+              results.success.push({ targetId: id, blockType: blockDefinitionToUpdate.type as string });
+            }
+          } catch (error: any) {
+            const errorHandler = ToolErrorHandler.getInstance();
+            const errorContext = CommonErrors.systemError('modifyContent', error);
+            errorContext.targetId = id;
+            errorHandler.reportError(errorContext);
+            results.failed.push({ targetId: id, reason: ErrorUtils.extractErrorMessage(error) });
           }
         }
 
-        if (successCount > 0) {
-          toast.success(`${successCount} block(s) modified.`);
+        // Enhanced feedback using new error handling system
+        if (results.failed.length === 0 && results.success.length > 0) {
+          SuccessFeedback.single('modifyContent', `${results.success.length} block(s) modified successfully`);
           handleEditorChange(editor); 
-        }
-        if (errorCount > 0) {
-          toast.error(`${errorCount} block(s) could not be modified.`);
-        }
-        if (successCount === 0 && errorCount === 0 && blockIds.length > 0) {
-            toast.info("No changes applied to blocks.");
+        } else if (results.success.length === 0 && results.failed.length > 0) {
+          // All failures already reported individually above
+          console.error(`[modifyContent] All ${results.failed.length} modification(s) failed`);
+        } else if (results.success.length > 0 && results.failed.length > 0) {
+          SuccessFeedback.partial('modifyContent', results.success.length, results.failed.length);
+          handleEditorChange(editor);
+        } else if (blockIds.length > 0) {
+          toast.info("No changes applied to blocks.");
         }
     };
     const executeDeleteContent = async (args: any) => {
@@ -791,26 +952,110 @@ export default function EditorPage() {
         try {
             const { targetBlockId, targetText } = args;
             if (!targetBlockId) { toast.error('Deletion failed: Missing target block ID(s).'); return; }
-            const blockIdsToDelete = Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId];
+            
+            // Enhanced validation and safety using new utilities
+            const safetyPlan = createSafeOperationPlan(editor, {
+                type: 'delete',
+                targetBlockIds: targetBlockId
+            });
+            
+            if (!safetyPlan.isValid) {
+                const errorReport = generateSafetyErrorReport('deleteContent', safetyPlan, args);
+                console.error(errorReport);
+                toast.error(`deleteContent failed: ${safetyPlan.errorMessage}`);
+                return;
+            }
+
+            if (!handleValidationResult(safetyPlan, 'deleteContent')) {
+                return;
+            }
+
+            // Use resolved targets from safety plan
+            const blockIdsToDelete = safetyPlan.operationPlan?.resolvedTargets || (Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId]);
+            
+            // Enhanced results tracking for batch operations
+            const results: {
+                success: Array<{ targetId: string; operation: 'text_deleted' | 'block_removed' }>;
+                failed: Array<{ targetId: string; reason: string }>;
+            } = { success: [], failed: [] };
+
             if (targetText && blockIdsToDelete.length === 1) {
-                const targetBlock = editor.getBlock(blockIdsToDelete[0]);
-                if (!targetBlock) { toast.error(`Deletion failed: Block ID ${blockIdsToDelete[0]} not found.`); return; }
-                if (!targetBlock.content || !Array.isArray(targetBlock.content)) { toast.error(`Deletion failed: Block ${targetBlock.id} has no deletable content.`); return; }
+                // Single block text deletion
+                const id = blockIdsToDelete[0];
+                const targetBlock = editor.getBlock(id);
+                
+                if (!targetBlock) { 
+                    const errorHandler = ToolErrorHandler.getInstance();
+                    const errorContext = CommonErrors.targetNotFound('deleteContent', id);
+                    errorHandler.reportError(errorContext);
+                    return; 
+                }
+                
+                if (!targetBlock.content || !Array.isArray(targetBlock.content)) { 
+                    const errorHandler = ToolErrorHandler.getInstance();
+                    const errorContext = CommonErrors.invalidContent('deleteContent', 'block content');
+                    errorContext.details = `Block ${targetBlock.id} has no deletable content`;
+                    errorContext.targetId = id;
+                    errorHandler.reportError(errorContext);
+                    return; 
+                }
+                
                 const updatedContent = deleteTextInInlineContent(targetBlock.content, targetText);
                 if (updatedContent !== null) {
                     if (editor.getBlock(targetBlock.id)) {
                         const newText = getInlineContentText(updatedContent);
-                        if (!newText.trim()) { editor.removeBlocks([targetBlock.id]); toast.success(`Removed block ${targetBlock.id}.`); handleEditorChange(editor); }
-                        else { editor.updateBlock(targetBlock.id, { content: updatedContent }); toast.success(`Text "${targetText}" deleted.`); handleEditorChange(editor); }
-                    } else { toast.error(`Deletion failed: Target block ${targetBlock.id} disappeared.`); }
-                } else { toast.warning(`Could not find text "${targetText}" to delete in block ${targetBlock.id}.`); }
+                        if (!newText.trim()) { 
+                            editor.removeBlocks([targetBlock.id]); 
+                            SuccessFeedback.single('deleteContent', `Removed block ${targetBlock.id}`);
+                            handleEditorChange(editor); 
+                        } else { 
+                            editor.updateBlock(targetBlock.id, { content: updatedContent }); 
+                            SuccessFeedback.single('deleteContent', `Text "${targetText}" deleted`);
+                            handleEditorChange(editor); 
+                        }
+                    } else { 
+                        const errorHandler = ToolErrorHandler.getInstance();
+                        const errorContext = CommonErrors.systemError('deleteContent', new Error(`Target block ${targetBlock.id} disappeared during operation`));
+                        errorHandler.reportError(errorContext);
+                    }
+                } else { 
+                    toast.warning(`Could not find text "${targetText}" to delete in block ${targetBlock.id}.`); 
+                }
             } else {
-                if (targetText) { toast.warning("Cannot delete specific text across multiple blocks. Deleting blocks instead."); }
-                const existingBlockIds = blockIdsToDelete.filter(id => editor.getBlock(id));
-                if (existingBlockIds.length === 0) { toast.error("Deletion failed: Target blocks disappeared."); return; }
-                if (existingBlockIds.length !== blockIdsToDelete.length) { toast.warning("Some target blocks were missing, removing the ones found."); }
+                // Multi-block deletion
+                if (targetText) { 
+                    toast.warning("Cannot delete specific text across multiple blocks. Deleting blocks instead."); 
+                }
+                
+                // Check which blocks exist
+                for (const id of blockIdsToDelete) {
+                    const block = editor.getBlock(id);
+                    if (block) {
+                        results.success.push({ targetId: id, operation: 'block_removed' });
+                    } else {
+                        results.failed.push({ targetId: id, reason: 'Block not found or disappeared' });
+                    }
+                }
+                
+                if (results.success.length === 0) { 
+                    const errorHandler = ToolErrorHandler.getInstance();
+                    const errorContext = CommonErrors.targetNotFound('deleteContent', 'all targets');
+                    errorContext.details = 'All target blocks disappeared';
+                    errorHandler.reportError(errorContext);
+                    return; 
+                }
+                
+                const existingBlockIds = results.success.map(r => r.targetId);
                 editor.removeBlocks(existingBlockIds);
-                toast.success(`Removed ${existingBlockIds.length} block(s).`);
+                
+                // Enhanced feedback
+                if (results.failed.length === 0) {
+                    SuccessFeedback.single('deleteContent', `Removed ${results.success.length} block(s)`);
+                } else {
+                    SuccessFeedback.partial('deleteContent', results.success.length, results.failed.length);
+                    console.warn(`[deleteContent] Some blocks were missing:`, results.failed);
+                }
+                
                 handleEditorChange(editor);
             }
         } catch (error: any) { console.error('Failed to execute deleteContent:', error); toast.error(`Error deleting content: ${error.message}`); }
@@ -836,58 +1081,121 @@ export default function EditorPage() {
                 return;
             }
 
+            // Handle multiple insertion points if targetBlockId is an array
+            const targetBlockIds = Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId];
+            const results: {
+                success: Array<{ targetId: string; insertedCount: number; referenceId?: string }>;
+                failed: Array<{ targetId: string; reason: string }>;
+                totalInserted: number;
+            } = { success: [], failed: [], totalInserted: 0 };
+
+            // Create checklist blocks once for reuse
             const blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = items.map(itemText => ({
                 type: 'checkListItem',
                 props: { checked: false }, // BlockNote uses boolean false for unchecked
                 content: itemText ? [{ type: 'text', text: itemText, styles: {} }] : [],
             }));
 
-            let referenceBlock: Block | PartialBlock | undefined | null = targetBlockId ? editor.getBlock(targetBlockId) : editor.getTextCursorPosition().block;
-            let placement: 'before' | 'after' = 'after';
-
-            if (!referenceBlock) {
-                const lastBlock = editor.document[editor.document.length - 1];
-                if (lastBlock) {
-                    referenceBlock = lastBlock;
-                    placement = 'after';
-                } else {
-                    // Document is empty, replace all blocks (which is none)
-                    editor.replaceBlocks(editor.document, blocksToInsert);
-                    toast.success(`${blocksToInsert.length} checklist item(s) added.`);
-                    handleEditorChange(editor);
-                    return;
-                }
-            }
-            
-            // Ensure the reference block still exists if it was fetched by ID
-            if (targetBlockId && !editor.getBlock(targetBlockId)){
-                toast.error("Failed to create checklist: reference block not found or disappeared.");
-                // Fallback: try inserting at the end or current cursor
-                const currentPosBlock = editor.getTextCursorPosition().block;
-                if (currentPosBlock && currentPosBlock.id) {
-                    referenceBlock = currentPosBlock;
-                } else {
-                    const lastDocBlock = editor.document[editor.document.length - 1];
-                    if (lastDocBlock && lastDocBlock.id) referenceBlock = lastDocBlock;
-                    else {
-                         editor.replaceBlocks(editor.document, blocksToInsert); // if all else fails
-                         toast.success(`${blocksToInsert.length} checklist item(s) added.`);
-                         handleEditorChange(editor);
-                         return;
+            // Process each target block ID
+            for (let i = 0; i < targetBlockIds.length; i++) {
+                const currentTargetId = targetBlockIds[i];
+                
+                try {
+                    // Enhanced validation and safety using new utilities for each target
+                    const safetyPlan = createSafeOperationPlan(editor, {
+                        type: 'createChecklist',
+                        content: items,
+                        referenceBlockId: currentTargetId
+                    });
+                    
+                    if (!safetyPlan.isValid) {
+                        const errorReport = generateSafetyErrorReport('createChecklist', safetyPlan, { ...args, targetBlockId: currentTargetId });
+                        console.error(errorReport);
+                        results.failed.push({ targetId: currentTargetId, reason: safetyPlan.errorMessage || 'Safety validation failed' });
+                        continue;
                     }
+
+                    // Log safety information
+                    if (safetyPlan.fallbackUsed) {
+                        console.info(`[createChecklist] Using fallback for target ${currentTargetId}: ${safetyPlan.fallbackReason}`);
+                    }
+
+                    if (!handleValidationResult(safetyPlan, 'createChecklist')) {
+                        results.failed.push({ targetId: currentTargetId, reason: 'Validation failed' });
+                        continue;
+                    }
+
+                    // Use the safely resolved reference block from the safety plan
+                    const resolvedReferenceId = safetyPlan.operationPlan?.resolvedReference || currentTargetId;
+                    let referenceBlock: Block | PartialBlock | undefined | null = resolvedReferenceId ? editor.getBlock(resolvedReferenceId) : editor.getTextCursorPosition().block;
+                    let placement: 'before' | 'after' = 'after';
+
+                    if (!referenceBlock) {
+                        const lastBlock = editor.document[editor.document.length - 1];
+                        if (lastBlock) {
+                            referenceBlock = lastBlock;
+                            placement = 'after';
+                        } else {
+                            // Only for first target, replace document
+                            if (i === 0) {
+                                editor.replaceBlocks(editor.document, blocksToInsert);
+                                results.success.push({ targetId: 'document-root', insertedCount: blocksToInsert.length });
+                                results.totalInserted += blocksToInsert.length;
+                            } else {
+                                results.failed.push({ targetId: currentTargetId, reason: 'Empty document, checklist already inserted' });
+                            }
+                            continue;
+                        }
+                    }
+                    
+                    // Ensure the reference block still exists if it was fetched by ID
+                    if (currentTargetId && !editor.getBlock(currentTargetId)) {
+                        console.warn(`Reference block ${currentTargetId} not found or disappeared.`);
+                        // Fallback: try inserting at the end or current cursor
+                        const currentPosBlock = editor.getTextCursorPosition().block;
+                        if (currentPosBlock && currentPosBlock.id) {
+                            referenceBlock = currentPosBlock;
+                        } else {
+                            const lastDocBlock = editor.document[editor.document.length - 1];
+                            if (lastDocBlock && lastDocBlock.id) {
+                                referenceBlock = lastDocBlock;
+                            } else {
+                                results.failed.push({ targetId: currentTargetId, reason: 'No valid reference block found' });
+                                continue;
+                            }
+                        }
+                    }
+
+                    if (referenceBlock && referenceBlock.id) {
+                        editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
+                        results.success.push({ targetId: currentTargetId, insertedCount: blocksToInsert.length, referenceId: referenceBlock.id });
+                        results.totalInserted += blocksToInsert.length;
+                    } else {
+                        results.failed.push({ targetId: currentTargetId, reason: 'Could not find reference block' });
+                    }
+
+                } catch (error: any) {
+                    console.error(`Failed to insert checklist at target ${currentTargetId}:`, error);
+                    results.failed.push({ targetId: currentTargetId, reason: error.message });
                 }
             }
 
-            if (referenceBlock && referenceBlock.id) {
-                editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
-                toast.success(`${blocksToInsert.length} checklist item(s) added.`);
+            // Provide feedback based on results
+            if (results.failed.length === 0) {
+                toast.success(`Checklist created at ${results.success.length} location(s). Total items inserted: ${results.totalInserted}`);
                 handleEditorChange(editor);
+            } else if (results.success.length === 0) {
+                toast.error(`Failed to create checklist at any of the ${targetBlockIds.length} target location(s).`);
             } else {
-                // Fallback if referenceBlock.id is somehow still null (e.g. text cursor in non-block context)
-                editor.replaceBlocks(editor.document, blocksToInsert); 
-                toast.success(`${blocksToInsert.length} checklist item(s) added to the end.`);
+                toast.warning(`Partial success: Checklist created at ${results.success.length} location(s), failed at ${results.failed.length} location(s).`);
                 handleEditorChange(editor);
             }
+
+            return { 
+                status: 'forwarded to client', 
+                results,
+                insertedBlockIds: results.success.flatMap(s => Array.from({ length: s.insertedCount }, (_, idx) => `${s.referenceId}_checklist_${idx}`))
+            };
 
         } catch (error: any) {
             console.error('Error processing createChecklist tool call:', error);
@@ -907,6 +1215,24 @@ export default function EditorPage() {
             if (typeof tableBlockId !== 'string' || typeof newTableMarkdown !== 'string') {
                 toast.error('Invalid arguments for modifyTable.');
                 console.error('Invalid args for modifyTable:', args);
+                return;
+            }
+
+            // Enhanced validation and safety using new utilities
+            const safetyPlan = createSafeOperationPlan(editor, {
+                type: 'modifyTable',
+                targetBlockIds: [tableBlockId],
+                content: newTableMarkdown
+            });
+            
+            if (!safetyPlan.isValid) {
+                const errorReport = generateSafetyErrorReport('modifyTable', safetyPlan, args);
+                console.error(errorReport);
+                toast.error(`modifyTable failed: ${safetyPlan.errorMessage}`);
+                return;
+            }
+
+            if (!handleValidationResult(safetyPlan, 'modifyTable')) {
                 return;
             }
 
