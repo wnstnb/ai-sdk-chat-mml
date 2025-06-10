@@ -777,7 +777,7 @@ export async function POST(req: Request) {
 
         if (taggedDocumentsContentString) {
             finalMessagesForAIAssembly.push({
-                role: 'system',
+                role: 'system', 
                 content: `IMPORTANT CONTEXT FROM TAGGED DOCUMENTS:\n${taggedDocumentsContentString}`
             });
             console.log('[API Chat] Added tagged documents context as system message.');
@@ -864,9 +864,9 @@ export async function POST(req: Request) {
             }
             imagePartForAI = { type: 'image', image: `data:${detectedMimeType};base64,${base64Image}`, mimeType: detectedMimeType };
             console.log('✅ [API Chat Image Processing] Successfully fetched and converted image to base64 for AI.');
-        } catch (error) {
+            } catch (error) {
             console.error('❌ [API Chat Image Processing] Error fetching or converting image:', error);
-            imagePartForAI = null;
+                    imagePartForAI = null;
         }
     } else {
         console.log('[API Chat Image Processing] No firstImageSignedUrl provided, or it was empty.');
@@ -882,7 +882,7 @@ export async function POST(req: Request) {
         if (potentialLastUserMessage.role === 'user') {
             lastUserMessageFromHistory = { ...potentialLastUserMessage }; // Deep copy
             historyWithoutLastUserMessage.push(...cleanedHistory.slice(0, -1));
-        } else {
+            } else {
             historyWithoutLastUserMessage.push(...cleanedHistory);
         }
     }
@@ -923,11 +923,11 @@ ${contextString}
 What follows is my actual immediate question or instruction.`;
         
         finalMessagesForAIAssembly.push({
-            role: 'user', 
+                role: 'user', 
             content: editorContextUserMessageContent
         });
         console.log('[API Chat] Added editor context as a preceding user message.');
-    } else {
+            } else {
         console.log('[API Chat] No editor context provided or context was empty.');
     }
 
@@ -949,7 +949,7 @@ What follows is my actual immediate question or instruction.`;
             newContentParts.push({ type: 'image', image: imagePartForAI.image as string, mimeType: imagePartForAI.mimeType });
             if (newContentParts.length > 0) {
                 lastUserMessageFromHistory.content = newContentParts;
-            } else {
+                        } else {
                 lastUserMessageFromHistory.content = ""; 
             }
             console.log('[API Chat] Image part processed for the last user message.');
