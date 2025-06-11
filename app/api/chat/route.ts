@@ -166,9 +166,16 @@ const serverSideEditorTools = {
 const modelProviders: Record<string, () => LanguageModel> = {
     "gpt-4.1": () => openai("gpt-4.1"),
   "gpt-4o": () => openai("gpt-4o"),
-  "o4-mini": () => openai("o4-mini"),
-  "o3": () => openai("o3"),
-//   "gemini-2.5-flash-preview-05-20": () => google("gemini-2.5-flash-preview-05-20"),
+  // Reasoning models disabled - they don't support tool execution properly
+  // "o4-mini": () => openai("o4-mini", {
+  //   structuredOutputs: true,
+  //   reasoningEffort: "medium"
+  // }),
+  // "o3": () => openai("o3", {
+  //   structuredOutputs: true,
+  //   reasoningEffort: "medium"
+  // }),
+//// "gemini-2.5-flash-preview-05-20": () => google("gemini-2.5-flash-preview-05-20"),
 //   "gemini-2.5-pro-preview-05-06": () => google("gemini-2.5-pro-preview-05-06"),
   "claude-3-7-sonnet-latest": () => anthropic("claude-3-7-sonnet-latest"),
   "claude-3-5-sonnet-latest": () => anthropic("claude-3-5-sonnet-latest"),
@@ -728,11 +735,50 @@ export async function POST(req: Request) {
     }
     // --- END: Handle Audio Transcription Tool Call Logging ---
 
+    // Model selection with detailed logging
+    console.log("[API Chat Model] Model selection process:");
+    console.log("  - modelIdFromData:", modelIdFromData);
+    console.log("  - modelIdFromData type:", typeof modelIdFromData);
+    console.log("  - Available models:", Object.keys(modelProviders));
+    console.log("  - Model exists in providers:", modelIdFromData in modelProviders);
+    
     const modelId = typeof modelIdFromData === 'string' && modelIdFromData in modelProviders
         ? modelIdFromData
         : defaultModelId;
+    
+    console.log("  - Selected modelId:", modelId);
+    console.log("  - Using default model?", modelId === defaultModelId);
+    
     const getModelProvider = modelProviders[modelId];
-    const aiModel = getModelProvider();
+    if (!getModelProvider) {
+        console.error("[API Chat Model] No model provider found for:", modelId);
+        return new Response(
+            JSON.stringify({ 
+                error: { 
+                    code: 'INVALID_MODEL', 
+                    message: `Invalid model: ${modelId}. Available models: ${Object.keys(modelProviders).join(', ')}` 
+                } 
+            }), 
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+        );
+    }
+    
+    let aiModel;
+    try {
+        aiModel = getModelProvider();
+        console.log("  - Model provider created successfully");
+    } catch (modelError: any) {
+        console.error("[API Chat Model] Error creating model provider:", modelError);
+        return new Response(
+            JSON.stringify({ 
+                error: { 
+                    code: 'MODEL_INITIALIZATION_ERROR', 
+                    message: `Failed to initialize model ${modelId}: ${modelError.message}` 
+                } 
+            }), 
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+    }
 
     // Rate limiting wrapper for the webSearch tool only (server tools need rate limiting)
     const rateLimitedWebSearch = tool({
@@ -974,109 +1020,190 @@ What follows is my actual immediate question or instruction.`;
     console.log("[API Chat] Final messages array before streamText:", JSON.stringify(finalMessagesForAIAssembly, null, 2));
 
     // Call streamText with the final messages and tools
-    const result = await streamText({
-        model: aiModel,
-        messages: finalMessagesForAIAssembly, // Use the carefully assembled array
-        tools: combinedToolsWithRateLimit, // Assuming combinedToolsWithRateLimit is defined correctly
-        maxSteps: 10,
-        ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
+    let result;
+    try {
+        console.log("[API Chat] About to call streamText with:");
+        console.log("  - Model ID selected:", modelId);
+        console.log("  - Model provider type:", aiModel.constructor.name);
+        console.log("  - Total messages:", finalMessagesForAIAssembly.length);
+        console.log("  - Tools available:", Object.keys(combinedToolsWithRateLimit));
         
-        // Add detailed logging for tool execution
-        onStepFinish({ response, finishReason, usage, warnings }) {
-            console.log("[API Chat onStepFinish] Step completed:");
-            console.log("  - Finish reason:", finishReason);
-            console.log("  - Usage:", usage);
-            console.log("  - Warnings:", warnings);
-            console.log("  - Response messages count:", response.messages?.length || 0);
-            
-            // Log response messages details
-            if (response.messages?.length > 0) {
-                console.log("[API Chat onStepFinish] Response messages:");
-                response.messages.forEach((msg: any, index: number) => {
-                    console.log(`    Message ${index}:`);
-                    console.log(`      - Role: ${msg.role}`);
-                    console.log(`      - Content type:`, typeof msg.content);
-                    
-                    if (Array.isArray(msg.content)) {
-                        msg.content.forEach((part: any, partIndex: number) => {
-                            console.log(`        Part ${partIndex}: ${part.type}`);
-                            if (part.type === 'tool-call') {
-                                console.log(`          Tool: ${part.toolName} (ID: ${part.toolCallId})`);
-                                console.log(`          Args:`, JSON.stringify(part.args, null, 2));
-                            } else if (part.type === 'tool-result') {
-                                console.log(`          Tool Result ID: ${part.toolCallId}`);
-                                console.log(`          Result:`, JSON.stringify(part.result, null, 2));
-                            }
-                        });
-                    }
-                });
-            }
-        },
+        // Check if this is a reasoning model
+        const isReasoningModel = modelId === 'o3' || modelId === 'o4-mini' || modelId === 'o3-mini';
+        console.log("  - Is reasoning model:", isReasoningModel);
         
-        async onFinish({ usage, response }) {
-            console.log("[onFinish] Stream finished. Usage:", JSON.stringify(usage));
-            console.log("[onFinish] Response object:", JSON.stringify(response, null, 2));
-            console.log("[onFinish] Response.messages:", response.messages?.map(msg => ({
-                role: msg.role,
-                content: msg.content
-            })));
+        // Configure streamText based on model type
+        const streamTextConfig: any = {
+            model: aiModel,
+            messages: finalMessagesForAIAssembly,
+            maxSteps: 10,
+            ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
+        };
+        
+        // Add tools only for non-reasoning models or configure differently for reasoning models
+        if (!isReasoningModel) {
+            streamTextConfig.tools = combinedToolsWithRateLimit;
+        } else {
+            console.log("  - Reasoning model detected: configuring without tools");
+            // Reasoning models might have limitations with tools, configure accordingly
+            // You can add reasoning-specific provider options here if needed
+        }
+        
+        result = await streamText({
+            ...streamTextConfig,
+        
+            // Add detailed logging for tool execution
+            onStepFinish({ response, finishReason, usage, warnings }) {
+                console.log("[API Chat onStepFinish] Step completed:");
+                console.log("  - Finish reason:", finishReason);
+                console.log("  - Usage:", usage);
+                console.log("  - Warnings:", warnings);
+                console.log("  - Response messages count:", response.messages?.length || 0);
+                
+                // Log response messages details
+                if (response.messages?.length > 0) {
+                    console.log("[API Chat onStepFinish] Response messages:");
+                    response.messages.forEach((msg: any, index: number) => {
+                        console.log(`    Message ${index}:`);
+                        console.log(`      - Role: ${msg.role}`);
+                        console.log(`      - Content type:`, typeof msg.content);
+                        
+                        if (Array.isArray(msg.content)) {
+                            msg.content.forEach((part: any, partIndex: number) => {
+                                console.log(`        Part ${partIndex}: ${part.type}`);
+                                if (part.type === 'tool-call') {
+                                    console.log(`          Tool: ${part.toolName} (ID: ${part.toolCallId})`);
+                                    console.log(`          Args:`, JSON.stringify(part.args, null, 2));
+                                } else if (part.type === 'tool-result') {
+                                    console.log(`          Tool Result ID: ${part.toolCallId}`);
+                                    console.log(`          Result:`, JSON.stringify(part.result, null, 2));
+                                }
+                            });
+                        }
+                    });
+                }
+            },
             
-            // === EXISTING SAVING LOGIC ===
-            const assistantMetadata = { usage: usage, raw_content: response.messages };
-            const allResponseMessages: CoreMessage[] = response.messages;
-            if (!userId) {
-                console.error("[onFinish] Cannot save messages: User ID somehow became unavailable.");
-                return;
-            }
-            if (allResponseMessages.length === 0) {
-                console.log("[onFinish] No response messages from AI to process.");
-                return;
-            }
-            let finalAssistantTurn = {
-                accumulatedParts: [] as Array<TextPart | ToolCallPart>,
-                metadata: assistantMetadata,
-                toolResults: {} as { [toolCallId: string]: any },
-                hasData: false
-            };
-             for (const message of allResponseMessages) {
-                if (message.role === 'assistant') {
-                    finalAssistantTurn.hasData = true;
-                    let assistantParts: Array<TextPart | ToolCallPart> = [];
-                    if (typeof message.content === 'string') {
-                        if (message.content.trim()) assistantParts.push({ type: 'text', text: message.content.trim() });
-                    } else if (Array.isArray(message.content)) {
-                        assistantParts = message.content.filter((part: any): part is TextPart | ToolCallPart => part.type === 'text' || part.type === 'tool-call');
+            async onFinish({ usage, response }) {
+                console.log("[onFinish] Stream finished. Usage:", JSON.stringify(usage));
+                console.log("[onFinish] Response object keys:", Object.keys(response));
+                console.log("[onFinish] Response.messages count:", response.messages?.length || 0);
+                console.log("[onFinish] Response.messages:", response.messages?.map(msg => ({
+                    role: msg.role,
+                    contentType: typeof msg.content,
+                    contentLength: Array.isArray(msg.content) ? msg.content.length : (typeof msg.content === 'string' ? msg.content.length : 'unknown')
+                })));
+                
+                // Log any unusual properties in the response
+                const responseProps = Object.keys(response);
+                console.log("[onFinish] All response properties:", responseProps);
+                
+                // === EXISTING SAVING LOGIC ===
+                const assistantMetadata = { usage: usage, raw_content: response.messages };
+                const allResponseMessages: CoreMessage[] = response.messages;
+                if (!userId) {
+                    console.error("[onFinish] Cannot save messages: User ID somehow became unavailable.");
+                    return;
+                }
+                if (allResponseMessages.length === 0) {
+                    console.log("[onFinish] No response messages from AI to process.");
+                    return;
+                }
+                let finalAssistantTurn = {
+                    accumulatedParts: [] as Array<TextPart | ToolCallPart>,
+                    metadata: assistantMetadata,
+                    toolResults: {} as { [toolCallId: string]: any },
+                    hasData: false
+                };
+                 for (const message of allResponseMessages) {
+                    if (message.role === 'assistant') {
+                        finalAssistantTurn.hasData = true;
+                        let assistantParts: Array<TextPart | ToolCallPart> = [];
+                        if (typeof message.content === 'string') {
+                            if (message.content.trim()) assistantParts.push({ type: 'text', text: message.content.trim() });
+                        } else if (Array.isArray(message.content)) {
+                            assistantParts = message.content.filter((part: any): part is TextPart | ToolCallPart => part.type === 'text' || part.type === 'tool-call');
+                        }
+                        finalAssistantTurn.accumulatedParts.push(...assistantParts);
+                    } else if (message.role === 'tool') {
+                        if (Array.isArray(message.content)) {
+                            const results = message.content.filter((part: any): part is ToolResultPart => part.type === 'tool-result');
+                            results.forEach(result => {
+                                if (result.toolCallId) finalAssistantTurn.toolResults[result.toolCallId] = result.result;
+                            });
+                        }
+                        if(message.content && Array.isArray(message.content) && message.content.length > 0) finalAssistantTurn.hasData = true; 
                     }
-                    finalAssistantTurn.accumulatedParts.push(...assistantParts);
-                } else if (message.role === 'tool') {
-                    if (Array.isArray(message.content)) {
-                        const results = message.content.filter((part: any): part is ToolResultPart => part.type === 'tool-result');
-                        results.forEach(result => {
-                            if (result.toolCallId) finalAssistantTurn.toolResults[result.toolCallId] = result.result;
-                        });
-                    }
-                    if(message.content && Array.isArray(message.content) && message.content.length > 0) finalAssistantTurn.hasData = true; 
+                }
+                if (finalAssistantTurn.hasData) {
+                    const partsWithResults = finalAssistantTurn.accumulatedParts.map(part => {
+                        if (part.type === 'tool-call' && finalAssistantTurn.toolResults.hasOwnProperty(part.toolCallId)) {
+                            return { ...part, result: finalAssistantTurn.toolResults[part.toolCallId] };
+                        }
+                        return part;
+                    });
+                    const messageData = { document_id: documentId, user_id: userId!, role: 'assistant' as const, content: partsWithResults, metadata: finalAssistantTurn.metadata } as any;
+                    const { data: savedMsgData, error: msgError } = await supabase.from('messages').insert(messageData).select('id').single();
+                    if (msgError || !savedMsgData?.id) console.error(`[onFinish SaveTurn] Error saving accumulated assistant message:`, msgError);
+                    else console.log(`[onFinish SaveTurn] Saved accumulated assistant message ID: ${savedMsgData.id}`);
+                } else {
+                    console.log("[onFinish SaveTurn] No assistant data found in the response to save.");
                 }
             }
-            if (finalAssistantTurn.hasData) {
-                const partsWithResults = finalAssistantTurn.accumulatedParts.map(part => {
-                    if (part.type === 'tool-call' && finalAssistantTurn.toolResults.hasOwnProperty(part.toolCallId)) {
-                        return { ...part, result: finalAssistantTurn.toolResults[part.toolCallId] };
+        });
+    } catch (error: any) {
+        console.error("\n=== [API Chat] STREAMTEXT ERROR DETAILS ===");
+        console.error("[API Chat] Error during streamText call:", error);
+        console.error("[API Chat] Error name:", error.name);
+        console.error("[API Chat] Error message:", error.message);
+        console.error("[API Chat] Error code:", error.code);
+        console.error("[API Chat] Error status:", error.status);
+        console.error("[API Chat] Error cause:", error.cause);
+        console.error("[API Chat] Error stack:", error.stack);
+        console.error("[API Chat] Model used:", modelIdFromData || defaultModelId);
+        console.error("[API Chat] Model provider function:", typeof aiModel);
+        console.error("[API Chat] Full error object:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+        
+        // Log additional context
+        console.error("[API Chat] Request context:");
+        console.error("  - User ID:", userId);
+        console.error("  - Document ID:", documentId);
+        console.error("  - Messages count:", finalMessagesForAIAssembly.length);
+        console.error("  - Available model providers:", Object.keys(modelProviders));
+        console.error("=== END ERROR DETAILS ===\n");
+        
+        // Return a more detailed error response
+        return new Response(
+            JSON.stringify({ 
+                error: { 
+                    code: 'AI_MODEL_ERROR', 
+                    message: `AI model error: ${error.message}`,
+                    details: {
+                        model: modelIdFromData || defaultModelId,
+                        errorType: error.name,
+                        errorCode: error.code,
+                        timestamp: new Date().toISOString()
                     }
-                    return part;
-                });
-                const messageData = { document_id: documentId, user_id: userId!, role: 'assistant' as const, content: partsWithResults, metadata: finalAssistantTurn.metadata } as any;
-                const { data: savedMsgData, error: msgError } = await supabase.from('messages').insert(messageData).select('id').single();
-                if (msgError || !savedMsgData?.id) console.error(`[onFinish SaveTurn] Error saving accumulated assistant message:`, msgError);
-                else console.log(`[onFinish SaveTurn] Saved accumulated assistant message ID: ${savedMsgData.id}`);
-            } else {
-                console.log("[onFinish SaveTurn] No assistant data found in the response to save.");
+                } 
+            }), 
+            { 
+                status: 500, 
+                headers: { 'Content-Type': 'application/json' } 
             }
-        }
-    }); 
+        );
+    }
 
     console.log("[API Chat] streamText call successful, returning data stream response");
-    return result.toDataStreamResponse();
+    
+    // Log the actual stream data for debugging
+    console.log("[API Chat] Stream result object keys:", Object.keys(result));
+    console.log("[API Chat] Stream result type:", typeof result);
+    
+    const response = result.toDataStreamResponse();
+    console.log("[API Chat] Data stream response created, headers:", Object.fromEntries(response.headers.entries()));
+    console.log("[API Chat] Data stream response status:", response.status);
+    
+    return response;
 }
 
 // Define ToolInvocation type (if not already globally defined)

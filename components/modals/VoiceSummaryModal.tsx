@@ -29,6 +29,7 @@ import { useRouter } from 'next/navigation';
 interface VoiceSummaryModalProps {
   isOpen: boolean;
   onClose: () => void;
+  setBlockStatus?: (blockId: string, status: any, action?: 'insert' | 'update' | 'delete', message?: string) => void;
 }
 
 type TargetDocumentType = 'current' | 'new'; // Define type for target selection
@@ -68,8 +69,10 @@ class AudioProcessor extends AudioWorkletProcessor {
 registerProcessor('audio-processor', AudioProcessor);
 `;
 
-const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onClose }) => {
+const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onClose, setBlockStatus: propSetBlockStatus }) => {
   const editorRef = useModalStore(state => state.editorRef);
+  const storeSetBlockStatus = useModalStore(state => state.setBlockStatus);
+  const setBlockStatus = propSetBlockStatus || storeSetBlockStatus;
   const hasActiveDocument = !!editorRef?.current; // Derived state for active document
   const router = useRouter();
   const prevIsOpenRef = React.useRef<boolean>(isOpen); // <-- Add ref to track previous isOpen state
@@ -934,10 +937,20 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
         referenceBlockId = editor.document[editor.document.length - 1]?.id;
       }
 
+      let insertedBlocks: any = [];
       if (referenceBlockId) {
-        editor.insertBlocks(blocksToInsert, referenceBlockId, 'after');
+        insertedBlocks = editor.insertBlocks(blocksToInsert, referenceBlockId, 'after');
       } else {
-        editor.replaceBlocks(editor.document, blocksToInsert);
+        insertedBlocks = editor.replaceBlocks(editor.document, blocksToInsert);
+      }
+      
+      // Trigger highlighting for manually added content from voice modal
+      if (setBlockStatus && Array.isArray(insertedBlocks)) {
+        insertedBlocks.forEach((block: any) => {
+          if (block?.id) {
+            setBlockStatus(block.id, 'MODIFIED', 'insert');
+          }
+        });
       }
       
       toast.success('Content added to editor.');
@@ -1276,13 +1289,13 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
 };
 
 export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = (props) => {
-  const { isOpen, onClose } = props;
+  const { isOpen, onClose, setBlockStatus } = props;
 
   if (!isOpen) return null;
 
   return (
     <>
-      <ActualVoiceSummaryModal isOpen={isOpen} onClose={onClose} />
+      <ActualVoiceSummaryModal isOpen={isOpen} onClose={onClose} setBlockStatus={setBlockStatus} />
     </>
   );
 };

@@ -58,7 +58,8 @@ export const BlockHighlightWrapper: React.FC<BlockHighlightWrapperProps> = ({
              // Determine action type for color selection
        const action = status.status === BlockStatus.ERROR ? 'error' : 
                      status.action === 'insert' ? 'insert' :
-                     status.action === 'update' ? 'update' : 'update';
+                     status.action === 'update' ? 'update' :
+                     status.action === 'delete' ? 'delete' : 'update';
       
       const colors = getHighlightColors(action, isDarkTheme);
       
@@ -109,18 +110,28 @@ export const BlockHighlightWrapper: React.FC<BlockHighlightWrapperProps> = ({
           border-radius: 8px;
           background: linear-gradient(
             135deg, 
-            ${colors.background}20 0%, 
-            ${colors.background}15 100%
+            ${colors.background}30 0%, 
+            ${colors.background}25 100%
           );
-          border: 1px solid ${colors.border}40;
+          border: 1px solid ${colors.border}50;
         `;
         overlay.appendChild(gradientOverlay);
 
-        // Add accent bar with enhanced styling
+        // Add delete styling for delete actions
+        if (action === 'delete') {
+          // Apply strikethrough and opacity directly to the block content
+          const blockElement = editorRef.current?.querySelector(`[data-id="${blockId}"]`);
+          if (blockElement) {
+            (blockElement as HTMLElement).style.textDecoration = 'line-through';
+            (blockElement as HTMLElement).style.opacity = '0.7';
+          }
+        }
+
+        // Add accent bar with enhanced styling (offset from text like IDE diffs)
         const accentBar = document.createElement('div');
         accentBar.style.cssText = `
           position: absolute;
-          left: 0;
+          left: -12px;
           top: 0;
           bottom: 0;
           width: 4px;
@@ -129,7 +140,7 @@ export const BlockHighlightWrapper: React.FC<BlockHighlightWrapperProps> = ({
             ${colors.accent},
             ${colors.border}
           );
-          border-radius: 8px 0 0 8px;
+          border-radius: 8px;
           box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
         `;
         overlay.appendChild(accentBar);
@@ -152,6 +163,16 @@ export const BlockHighlightWrapper: React.FC<BlockHighlightWrapperProps> = ({
           e.preventDefault();
           e.stopPropagation();
           console.log(`[BlockHighlight] User clicked to dismiss highlight for ${blockId}`);
+          
+          // Cleanup delete styling if dismissing a delete action
+          if (action === 'delete') {
+            const blockElement = editorRef.current?.querySelector(`[data-id="${blockId}"]`);
+            if (blockElement) {
+              (blockElement as HTMLElement).style.textDecoration = '';
+              (blockElement as HTMLElement).style.opacity = '';
+            }
+          }
+          
           clearBlockStatus(blockId);
         });
 
@@ -162,27 +183,63 @@ export const BlockHighlightWrapper: React.FC<BlockHighlightWrapperProps> = ({
 
         // Create progress update interval
         const startTime = Date.now();
-        const duration = 3000; // 3 seconds
+        const holdDuration = 4000; // Hold at full opacity for 0.5 seconds
+        const fadeDuration = 1000; // Then fade for 2.5 seconds
+        const totalDuration = holdDuration + fadeDuration; // Total 3 seconds
         
         const interval = setInterval(() => {
           const elapsed = Date.now() - startTime;
-          const progress = Math.min(elapsed / duration, 1);
-          const opacity = 0.6 - (progress * 0.5); // Fade from 0.6 to 0.1
+          let opacity = 0.6;
+          
+          if (elapsed < holdDuration) {
+            // Hold period - maintain full opacity
+            opacity = 0.6;
+          } else {
+            // Fade period - calculate fade progress
+            const fadeElapsed = elapsed - holdDuration;
+            const fadeProgress = Math.min(fadeElapsed / fadeDuration, 1);
+            opacity = 0.6 - (fadeProgress * 0.5); // Fade from 0.6 to 0.1
+          }
+          
+          const totalProgress = Math.min(elapsed / totalDuration, 1);
           
           if (overlay.parentNode) {
             overlay.style.opacity = opacity.toString();
             
-            // Update development indicator if present
-            const devIndicator = overlay.querySelector('.dev-indicator');
-            if (devIndicator && process.env.NODE_ENV === 'development') {
-              (devIndicator as HTMLElement).textContent = 
-                `${action} (${Math.round((1 - progress) * 100)}%)`;
-            }
+            // Development indicator updates (disabled)
+            // const devIndicator = overlay.querySelector('.dev-indicator');
+            // if (devIndicator && process.env.NODE_ENV === 'development') {
+            //   (devIndicator as HTMLElement).textContent = 
+            //     `${action} (${Math.round((1 - totalProgress) * 100)}%)`;
+            // }
           }
 
-          if (progress >= 1) {
+          if (totalProgress >= 1) {
             console.log(`[BlockHighlight] Auto-dismissing highlight for ${blockId} after timeout`);
             clearInterval(interval);
+            
+            // Handle delete action - actually remove the block
+            if (action === 'delete') {
+              const blockElement = editorRef.current?.querySelector(`[data-id="${blockId}"]`);
+              if (blockElement) {
+                console.log(`[BlockHighlight] Removing block ${blockId} after delete preview`);
+                // Trigger block removal through editor
+                const deleteEvent = new CustomEvent('block-delete-confirmed', {
+                  detail: { blockId }
+                });
+                document.dispatchEvent(deleteEvent);
+              }
+            }
+            
+            // Cleanup delete styling if it was applied
+            if (action === 'delete') {
+              const blockElement = editorRef.current?.querySelector(`[data-id="${blockId}"]`);
+              if (blockElement) {
+                (blockElement as HTMLElement).style.textDecoration = '';
+                (blockElement as HTMLElement).style.opacity = '';
+              }
+            }
+            
             overlay.remove();
             currentHighlights.delete(blockId);
             clearBlockStatus(blockId);
@@ -197,26 +254,26 @@ export const BlockHighlightWrapper: React.FC<BlockHighlightWrapperProps> = ({
 
         currentHighlights.set(blockId, highlight);
 
-        // Add development indicator in dev mode
-        if (process.env.NODE_ENV === 'development') {
-          const devIndicator = document.createElement('div');
-          devIndicator.className = 'dev-indicator';
-          devIndicator.style.cssText = `
-            position: absolute;
-            top: 4px;
-            right: 4px;
-            background: ${colors.accent};
-            color: ${colors.text};
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 10px;
-            font-weight: 600;
-            pointer-events: none;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-          `;
-          devIndicator.textContent = `${action} (100%)`;
-          highlight.overlay.appendChild(devIndicator);
-        }
+        // Development indicator creation (disabled)
+        // if (process.env.NODE_ENV === 'development') {
+        //   const devIndicator = document.createElement('div');
+        //   devIndicator.className = 'dev-indicator';
+        //   devIndicator.style.cssText = `
+        //     position: absolute;
+        //     top: 4px;
+        //     right: 4px;
+        //     background: ${colors.accent};
+        //     color: ${colors.text};
+        //     padding: 2px 6px;
+        //     border-radius: 4px;
+        //     font-size: 10px;
+        //     font-weight: 600;
+        //     pointer-events: none;
+        //     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        //   `;
+        //   devIndicator.textContent = `${action} (100%)`;
+        //   highlight.overlay.appendChild(devIndicator);
+        // }
 
         console.log(`[BlockHighlight] Applied ${action} highlight to block ${blockId}`);
       }

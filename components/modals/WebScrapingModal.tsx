@@ -26,6 +26,7 @@ interface ScrapedUrlResult {
 interface WebScrapingModalProps {
   isOpen: boolean;
   onClose: () => void;
+  setBlockStatus?: (blockId: string, status: any, action?: 'insert' | 'update' | 'delete', message?: string) => void;
 }
 
 type TargetDocumentType = 'current' | 'new';
@@ -35,8 +36,11 @@ const BNSchema = BlockNoteSchema.create({ blockSpecs: defaultBlockSpecs });
 export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
   isOpen,
   onClose,
+  setBlockStatus: propSetBlockStatus,
 }) => {
   const editorRef = useModalStore(state => state.editorRef as React.RefObject<BlockNoteEditor | null> | null);
+  const storeSetBlockStatus = useModalStore(state => state.setBlockStatus);
+  const setBlockStatus = propSetBlockStatus || storeSetBlockStatus;
   const hasActiveDocument = !!editorRef?.current;
   const router = useRouter();
 
@@ -227,7 +231,17 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
             const activeEditor = editorRef.current;
             const currentPosition = activeEditor.getTextCursorPosition();
             const referenceBlock = currentPosition.block || activeEditor.document[activeEditor.document.length - 1];
-            activeEditor.insertBlocks(allBlocksToInsert, referenceBlock || activeEditor.document[0], referenceBlock ? 'after' : 'before');
+            const insertedBlocks = activeEditor.insertBlocks(allBlocksToInsert, referenceBlock || activeEditor.document[0], referenceBlock ? 'after' : 'before');
+            
+            // Trigger highlighting for manually added web scraped content
+            if (setBlockStatus && Array.isArray(insertedBlocks)) {
+              insertedBlocks.forEach((block: any) => {
+                if (block?.id) {
+                  setBlockStatus(block.id, 'MODIFIED', 'insert');
+                }
+              });
+            }
+            
             toast.success('Content inserted into current document.');
             onClose();
         } catch (error) {

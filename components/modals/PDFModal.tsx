@@ -37,10 +37,13 @@ type InsertionTarget = 'current' | 'new';
 interface PDFModalProps {
   isOpen: boolean;
   onClose: () => void;
+  setBlockStatus?: (blockId: string, status: any, action?: 'insert' | 'update' | 'delete', message?: string) => void;
 }
 
-export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
+export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose, setBlockStatus: propSetBlockStatus }) => {
   const editorRef = useModalStore(state => state.editorRef);
+  const storeSetBlockStatus = useModalStore(state => state.setBlockStatus);
+  const setBlockStatus = propSetBlockStatus || storeSetBlockStatus;
   const router = useRouter();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const hasActiveDocument = !!editorRef?.current;
@@ -417,17 +420,28 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
       }
 
       const currentDocumentBlocks = editorRef.current.document;
+      let insertedBlocks: any = [];
       if (currentDocumentBlocks.length === 0) {
-        editorRef.current.insertBlocks(blocksToInsert, editorRef.current.getTextCursorPosition().block, 'before');
+        insertedBlocks = editorRef.current.insertBlocks(blocksToInsert, editorRef.current.getTextCursorPosition().block, 'before');
       } else {
         const lastBlock = currentDocumentBlocks[currentDocumentBlocks.length - 1];
         if (lastBlock) {
-          editorRef.current.insertBlocks(blocksToInsert, lastBlock.id, 'after');
+          insertedBlocks = editorRef.current.insertBlocks(blocksToInsert, lastBlock.id, 'after');
         } else {
           // Fallback if lastBlock is somehow undefined, though currentDocumentBlocks.length > 0
-          editorRef.current.insertBlocks(blocksToInsert, editorRef.current.getTextCursorPosition().block, 'before');
+          insertedBlocks = editorRef.current.insertBlocks(blocksToInsert, editorRef.current.getTextCursorPosition().block, 'before');
         }
       }
+      
+      // Trigger highlighting for manually added PDF content
+      if (setBlockStatus && Array.isArray(insertedBlocks)) {
+        insertedBlocks.forEach((block: any) => {
+          if (block?.id) {
+            setBlockStatus(block.id, 'MODIFIED', 'insert');
+          }
+        });
+      }
+      
       toast.success("Content inserted into the editor.");
       onClose();
     } catch (error) {

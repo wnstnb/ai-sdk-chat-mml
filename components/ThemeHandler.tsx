@@ -130,9 +130,9 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
       <main className="flex-1 flex flex-col overflow-y-auto">
         {children}
       </main>
-      <VoiceSummaryModal 
-        isOpen={isVoiceSummaryModalOpen} 
-        onClose={closeVoiceSummaryModal} 
+      <VoiceSummaryModal
+        isOpen={isVoiceSummaryModalOpen}
+        onClose={closeVoiceSummaryModal}
       />
       <WebScrapingModal
         isOpen={isWebScrapingModalOpen}

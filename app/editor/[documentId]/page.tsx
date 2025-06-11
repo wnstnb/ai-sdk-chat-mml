@@ -251,7 +251,7 @@ export default function EditorPage() {
     const isMobile = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
 
     // Added for Live Summaries
-    const { openVoiceSummaryModal, setEditorRef } = useModalStore(); // Get setEditorRef
+    const { openVoiceSummaryModal, setEditorRef, setBlockStatusFunction } = useModalStore(); // Get setEditorRef
     const { currentTitle, isEditingTitle, newTitleValue, isInferringTitle, handleEditTitleClick, handleCancelEditTitle, handleSaveTitle, handleTitleInputKeyDown, handleInferTitle, setNewTitleValue } = useTitleManagement({
         documentId,
         initialName: documentData?.name || '',
@@ -276,6 +276,81 @@ export default function EditorPage() {
         documentId,
         setPageError
     });
+
+    // --- NEW: Initialize processedToolCallIds with completed tool calls from initial messages ---
+    useEffect(() => {
+        if (!initialMessages || initialMessages.length === 0) return;
+
+        const completedToolCallIds = new Set<string>();
+
+        console.log('[ToolInit] Processing initial messages for completed tool calls:', initialMessages.length);
+
+        // Create a map of all tool result messages for quick lookup
+        const toolResultMessages = new Map<string, any>();
+        for (const message of initialMessages) {
+            const msgAny = message as any;
+            if (msgAny.role === 'tool' && msgAny.tool_call_id) {
+                toolResultMessages.set(msgAny.tool_call_id, msgAny);
+                console.log(`[ToolInit] Found tool result message for call ID: ${msgAny.tool_call_id}`);
+            }
+        }
+
+        // Check for tool calls that already have results in the initial messages
+        for (const message of initialMessages) {
+            console.log(`[ToolInit] Checking message ${message.id}, role: ${message.role}, content type: ${typeof message.content}`);
+            
+            if (message.role === 'assistant') {
+                // Check parts-based tool invocations (AI SDK format)
+                if (message.content && Array.isArray(message.content)) {
+                    console.log(`[ToolInit] Message ${message.id} has ${message.content.length} content parts`);
+                    for (const part of message.content) {
+                        console.log(`[ToolInit] Part type: ${part.type}`);
+                        if (part.type === 'tool-invocation' && part.toolInvocation) {
+                            const toolCallId = part.toolInvocation.toolCallId;
+                            // Mark as completed if it has state 'result' OR if there's a corresponding tool result message
+                            if (part.toolInvocation.state === 'result' || toolResultMessages.has(toolCallId)) {
+                                console.log(`[ToolInit] Found completed tool call in parts: ${toolCallId} (state: ${part.toolInvocation.state}, hasResult: ${toolResultMessages.has(toolCallId)})`);
+                                completedToolCallIds.add(toolCallId);
+                            }
+                        }
+                    }
+                }
+                
+                // Check toolInvocations-based format (legacy format)
+                const msgAny = message as any;
+                if (msgAny.toolInvocations && Array.isArray(msgAny.toolInvocations)) {
+                    console.log(`[ToolInit] Message ${message.id} has ${msgAny.toolInvocations.length} toolInvocations`);
+                    for (const toolInvocation of msgAny.toolInvocations) {
+                        console.log(`[ToolInit] ToolInvocation: ${toolInvocation.toolName} (${toolInvocation.toolCallId})`);
+                        // Check if there's a corresponding tool result message
+                        if (toolResultMessages.has(toolInvocation.toolCallId)) {
+                            console.log(`[ToolInit] Found result message for tool call: ${toolInvocation.toolCallId}`);
+                            completedToolCallIds.add(toolInvocation.toolCallId);
+                        }
+                    }
+                }
+
+                // Also check for tool_calls array (another possible format)
+                if (msgAny.tool_calls && Array.isArray(msgAny.tool_calls)) {
+                    console.log(`[ToolInit] Message ${message.id} has ${msgAny.tool_calls.length} tool_calls`);
+                    for (const toolCall of msgAny.tool_calls) {
+                        if (toolCall.id && toolResultMessages.has(toolCall.id)) {
+                            console.log(`[ToolInit] Found result message for tool_calls format: ${toolCall.id}`);
+                            completedToolCallIds.add(toolCall.id);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (completedToolCallIds.size > 0) {
+            console.log('[ToolInit] Setting processedToolCallIds with completed tool calls:', Array.from(completedToolCallIds));
+            setProcessedToolCallIds(completedToolCallIds);
+        } else {
+            console.log('[ToolInit] No completed tool calls found in initial messages');
+        }
+    }, [initialMessages]);
+
     // --- NEW: Get initialTaggedDocIdsString from searchParams ---
     const initialTaggedDocIdsString = searchParams.get('taggedDocIds');
     // --- END NEW ---
@@ -529,13 +604,15 @@ export default function EditorPage() {
         // We set this object into the store so other components can access it.
         console.log('[EditorPage useEffect] Setting editorRef in store. editorRef object:', editorRef);
         setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
+        setBlockStatusFunction(setBlockStatus); // Register setBlockStatus function
         
         // Cleanup to nullify the ref in store when EditorPage unmounts
         return () => {
             console.log('[EditorPage useEffect Cleanup] Setting editorRef in store to null.');
             setEditorRef(null);
+            setBlockStatusFunction(null); // Clear setBlockStatus function
         };
-    }, [setEditorRef]); // Dependency on setEditorRef ensures it runs if the store setter changes, editorRef object itself is stable.
+    }, [setEditorRef, setBlockStatusFunction]); // Dependency on setEditorRef ensures it runs if the store setter changes, editorRef object itself is stable.
 
     const handleRestoreEditorContent = useCallback((restoredBlocks: PartialBlock[]) => {
         const editor = editorRef.current;
@@ -1036,9 +1113,11 @@ export default function EditorPage() {
                     if (editor.getBlock(targetBlock.id)) {
                         const newText = getInlineContentText(updatedContent);
                         if (!newText.trim()) { 
-                            editor.removeBlocks([targetBlock.id]); 
-                            SuccessFeedback.single('deleteContent', `Removed block ${targetBlock.id}`);
-                            handleEditorChange(editor); 
+                            // Set delete preview status instead of removing immediately
+                            setBlockStatus(targetBlock.id, BlockStatus.MODIFIED, 'delete');
+                            // editor.removeBlocks([targetBlock.id]); 
+                            SuccessFeedback.single('deleteContent', `Marked block ${targetBlock.id} for removal`);
+                            // handleEditorChange(editor); 
                         } else { 
                             editor.updateBlock(targetBlock.id, { content: updatedContent }); 
                             SuccessFeedback.single('deleteContent', `Text "${targetText}" deleted`);
@@ -1077,7 +1156,14 @@ export default function EditorPage() {
                 }
                 
                 const existingBlockIds = results.success.map(r => r.targetId);
-                editor.removeBlocks(existingBlockIds);
+                
+                // Set delete preview status for each block instead of removing immediately
+                existingBlockIds.forEach(blockId => {
+                    setBlockStatus(blockId, BlockStatus.MODIFIED, 'delete');
+                });
+                
+                // Store the blocks to delete for later cleanup (commented out immediate deletion)
+                // editor.removeBlocks(existingBlockIds);
                 
                 // Enhanced feedback
                 if (results.failed.length === 0) {
@@ -1370,16 +1456,28 @@ export default function EditorPage() {
 
             for (const part of toolInvocationParts) {
                 const toolCall = part.toolInvocation;
+                const toolCallId = toolCall.toolCallId;
+                
+                // Check if this tool call already has a result message in the current messages
+                const hasResultMessage = messages.some(msg => {
+                    const msgAny = msg as any;
+                    return msgAny.role === 'tool' && msgAny.tool_call_id === toolCallId;
+                });
+                
                 // If it's from initial messages and marked as 'result', ensure it's in processedToolCallIds
                 // but don't add to callsToProcessThisRun.
-                if (toolCall.state === 'result') {
-                    idsToMarkAsProcessed.add(toolCall.toolCallId); // Ensure it's considered processed
+                if (toolCall.state === 'result' || hasResultMessage) {
+                    console.log(`[ToolProcessing] Tool call ${toolCallId} already completed (state: ${toolCall.state}, hasResult: ${hasResultMessage})`);
+                    idsToMarkAsProcessed.add(toolCallId); // Ensure it's considered processed
                     continue; // Don't re-process
                 }
 
                 // If it's not marked as 'result' and not yet processed (globally), add it for processing.
-                if (!processedToolCallIds.has(toolCall.toolCallId)) {
+                if (!processedToolCallIds.has(toolCallId)) {
+                    console.log(`[ToolProcessing] Adding tool call ${toolCallId} for processing`);
                     callsToProcessThisRun.push(toolCall);
+                } else {
+                    console.log(`[ToolProcessing] Tool call ${toolCallId} already processed, skipping`);
                 }
             }
 
@@ -1639,6 +1737,34 @@ export default function EditorPage() {
         setPendingMobileEditorToolCall
     ]);
 
+    // --- NEW: Event listener for confirmed block deletion after preview ---
+    useEffect(() => {
+        const handleBlockDeleteConfirmed = (event: CustomEvent) => {
+            const { blockId } = event.detail;
+            const editor = editorRef.current;
+            
+            if (editor && blockId) {
+                console.log(`[EditorPage] Confirming deletion of block ${blockId} after preview`);
+                const blockExists = editor.getBlock(blockId);
+                if (blockExists) {
+                    editor.removeBlocks([blockId]);
+                    handleEditorChange(editor);
+                    console.log(`[EditorPage] Successfully removed block ${blockId}`);
+                } else {
+                    console.warn(`[EditorPage] Block ${blockId} not found for deletion`);
+                }
+            }
+        };
+        
+        // Add event listener
+        document.addEventListener('block-delete-confirmed', handleBlockDeleteConfirmed as EventListener);
+        
+        // Cleanup
+        return () => {
+            document.removeEventListener('block-delete-confirmed', handleBlockDeleteConfirmed as EventListener);
+        };
+    }, [handleEditorChange]);
+
     useEffect(() => { /* Effect for beforeunload */
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
             if (autosaveStatus === 'unsaved' || autosaveTimerId) {
@@ -1791,8 +1917,23 @@ export default function EditorPage() {
             const { block: currentBlock } = editor.getTextCursorPosition();
             let referenceBlockId: string | undefined = currentBlock?.id;
             if (!referenceBlockId) { referenceBlockId = editor.document[editor.document.length - 1]?.id; }
-            if (referenceBlockId) { editor.insertBlocks(blocksToInsert, referenceBlockId, 'after'); }
-            else { editor.replaceBlocks(editor.document, blocksToInsert); } 
+            let insertedBlocks: any = [];
+            if (referenceBlockId) { 
+                insertedBlocks = editor.insertBlocks(blocksToInsert, referenceBlockId, 'after'); 
+            }
+            else { 
+                insertedBlocks = editor.replaceBlocks(editor.document, blocksToInsert); 
+            }
+            
+            // Trigger highlighting for manually added content
+            if (Array.isArray(insertedBlocks)) {
+                insertedBlocks.forEach((block: any) => {
+                    if (block?.id) {
+                        setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                    }
+                });
+            }
+            
             toast.success('Content successfully added to editor.');
             handleEditorChange(editor);
         } catch (error: any) { 
@@ -1881,11 +2022,22 @@ export default function EditorPage() {
                             if (!referenceBlockId && editor.document.length > 0) {
                                 referenceBlockId = editor.document[editor.document.length - 1]?.id;
                             }
+                            let insertedBlocks: any = [];
                             if (referenceBlockId) {
-                                editor.insertBlocks(blocksToInsert, referenceBlockId, 'after');
+                                insertedBlocks = editor.insertBlocks(blocksToInsert, referenceBlockId, 'after');
                             } else {
-                                editor.replaceBlocks(editor.document, blocksToInsert);
+                                insertedBlocks = editor.replaceBlocks(editor.document, blocksToInsert);
                             }
+                            
+                            // Trigger highlighting for manually added content (mobile)
+                            if (Array.isArray(insertedBlocks)) {
+                                insertedBlocks.forEach((block: any) => {
+                                    if (block?.id) {
+                                        setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                                    }
+                                });
+                            }
+                            
                             toast.success('Content added to editor.');
                             handleEditorChange(editor); // Ensure changes are saved/propagated
                         }
@@ -1940,15 +2092,40 @@ export default function EditorPage() {
     useEffect(() => {
         const lastMessage = messages[messages.length - 1];
 
+        console.log('[ToolProcessing2] Checking last message:', {
+            messageId: lastMessage?.id,
+            role: lastMessage?.role,
+            hasToolInvocations: !!(lastMessage as any)?.toolInvocations?.length,
+            toolInvocationsCount: (lastMessage as any)?.toolInvocations?.length || 0,
+            isAiLoading,
+            isProcessingClientTools,
+            processedToolCallIds: Array.from(processedToolCallIds)
+        });
+
         if (
             lastMessage?.role === 'assistant' &&
-            lastMessage.toolInvocations?.length &&
+            (lastMessage as any).toolInvocations?.length &&
             !isAiLoading && // Not currently loading an AI response
             !isProcessingClientTools // Not already processing a batch of client tools
         ) {
             const clientToolNames = ['addContent', 'modifyContent', 'deleteContent', 'createChecklist', 'modifyTable'];
-            const invocationsToProcess = lastMessage.toolInvocations.filter(
-                (inv) => clientToolNames.includes(inv.toolName) && !processedToolCallIds.has(inv.toolCallId)
+            const invocationsToProcess = (lastMessage as any).toolInvocations.filter(
+                (inv: any) => {
+                    // Skip if already processed
+                    if (processedToolCallIds.has(inv.toolCallId)) return false;
+                    // Skip if not a client-side tool
+                    if (!clientToolNames.includes(inv.toolName)) return false;
+                    // Skip if there's already a tool result message for this tool call
+                    const hasResultMessage = messages.some(msg => {
+                        const msgAny = msg as any;
+                        return msgAny.role === 'tool' && msgAny.tool_call_id === inv.toolCallId;
+                    });
+                    if (hasResultMessage) {
+                        console.log(`[ToolProcessing] Skipping ${inv.toolName} (ID: ${inv.toolCallId}) - already has result message`);
+                        return false;
+                    }
+                    return true;
+                }
             );
 
             if (invocationsToProcess.length > 0) {
@@ -1959,11 +2136,11 @@ export default function EditorPage() {
                     // Add all current tool call IDs to processed set immediately to prevent re-entry for this batch
                     setProcessedToolCallIds(prev => {
                         const newSet = new Set(prev);
-                        invocationsToProcess.forEach(inv => newSet.add(inv.toolCallId));
+                        invocationsToProcess.forEach((inv: any) => newSet.add(inv.toolCallId));
                         return newSet;
                     });
 
-                    for (const toolInvocation of invocationsToProcess) {
+                    for (const toolInvocation of invocationsToProcess as any[]) {
                         // ADDED: Set initial AI tool state when tool call is detected
                         setOperationStates({
                             aiToolState: AIToolState.DETECTED,
