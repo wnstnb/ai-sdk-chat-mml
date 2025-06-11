@@ -53,32 +53,84 @@ const createChecklistSchema = z.object({
   targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert the new checklist after. If null, the checklist is appended to the document or inserted at the current selection."),
 });
 
-// CLIENT-SIDE TOOL DEFINITIONS (no execute functions - dispatched to client)
+// CLIENT-SIDE TOOL DEFINITIONS (with synthetic execute functions to prevent incomplete tool calls)
 const clientSideTools = {
   addContent: tool({
     description: "Adds new general Markdown content (e.g., paragraphs, headings, simple bullet/numbered lists, or single list/checklist items). For multi-item checklists, use createChecklist.",
     parameters: addContentSchema,
-    // No execute function - handled client-side
+    execute: async ({ markdownContent, targetBlockId }) => {
+      // Synthetic execute function to complete the tool call server-side
+      console.log('[ServerSide-ClientTool] addContent called with args:', { markdownContent, targetBlockId });
+      return {
+        type: 'client-side-tool-call',
+        toolName: 'addContent',
+        instruction: 'This tool will be executed on the client side',
+        markdownContent,
+        targetBlockId,
+        completed: true
+      };
+    },
   }),
   modifyContent: tool({
     description: "Modifies content within specific NON-TABLE editor blocks. Can target a single block (with optional specific text replacement) or multiple blocks (replacing entire content of each with corresponding new Markdown from an array). Main tool for altering existing lists/checklists.",
     parameters: modifyContentSchema,
-    // No execute function - handled client-side
+    execute: async ({ targetBlockId, targetText, newMarkdownContent }) => {
+      console.log('[ServerSide-ClientTool] modifyContent called with args:', { targetBlockId, targetText, newMarkdownContent });
+      return {
+        type: 'client-side-tool-call',
+        toolName: 'modifyContent',
+        instruction: 'This tool will be executed on the client side',
+        targetBlockId,
+        targetText,
+        newMarkdownContent,
+        completed: true
+      };
+    },
   }),
   deleteContent: tool({
     description: "Deletes one or more NON-TABLE blocks, or specific text within a NON-TABLE block, from the editor.",
     parameters: deleteContentSchema,
-    // No execute function - handled client-side
+    execute: async ({ targetBlockId, targetText }) => {
+      console.log('[ServerSide-ClientTool] deleteContent called with args:', { targetBlockId, targetText });
+      return {
+        type: 'client-side-tool-call',
+        toolName: 'deleteContent',
+        instruction: 'This tool will be executed on the client side',
+        targetBlockId,
+        targetText,
+        completed: true
+      };
+    },
   }),
   modifyTable: tool({
     description: "Modifies an existing TABLE block by providing the complete final Markdown. Reads original from context, applies changes, returns result.",
     parameters: modifyTableSchema,
-    // No execute function - handled client-side
+    execute: async ({ tableBlockId, newTableMarkdown }) => {
+      console.log('[ServerSide-ClientTool] modifyTable called with args:', { tableBlockId, newTableMarkdown });
+      return {
+        type: 'client-side-tool-call',
+        toolName: 'modifyTable',
+        instruction: 'This tool will be executed on the client side',
+        tableBlockId,
+        newTableMarkdown,
+        completed: true
+      };
+    },
   }),
   createChecklist: tool({
     description: "Creates a new checklist with multiple items. Provide an array of plain text strings for the items (e.g., ['Buy milk', 'Read book']). Tool handles Markdown formatting.",
     parameters: createChecklistSchema,
-    // No execute function - handled client-side
+    execute: async ({ items, targetBlockId }) => {
+      console.log('[ServerSide-ClientTool] createChecklist called with args:', { items, targetBlockId });
+      return {
+        type: 'client-side-tool-call',
+        toolName: 'createChecklist',
+        instruction: 'This tool will be executed on the client side',
+        items,
+        targetBlockId,
+        completed: true
+      };
+    },
   }),
 };
 
@@ -855,6 +907,7 @@ export async function POST(req: Request) {
 
     // 1. Clean up incomplete tool calls from the copied history
     console.log('[API Chat] Cleaning up incomplete tool calls in message history...');
+    console.log('[API Chat] Original message count:', clientMessagesCopy.length);
     const cleanedHistory: ClientMessage[] = clientMessagesCopy.map((message, index) => {
         let modifiedMessage = { ...message };
         let wasModified = false;

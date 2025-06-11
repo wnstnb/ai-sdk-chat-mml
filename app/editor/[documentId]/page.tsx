@@ -279,7 +279,11 @@ export default function EditorPage() {
 
     // --- NEW: Initialize processedToolCallIds with completed tool calls from initial messages ---
     useEffect(() => {
-        if (!initialMessages || initialMessages.length === 0) return;
+        console.log('[ToolInit] useEffect triggered. initialMessages length:', initialMessages?.length || 0);
+        if (!initialMessages || initialMessages.length === 0) {
+            console.log('[ToolInit] No initial messages to process');
+            return;
+        }
 
         const completedToolCallIds = new Set<string>();
 
@@ -298,12 +302,27 @@ export default function EditorPage() {
         // Check for tool calls that already have results in the initial messages
         for (const message of initialMessages) {
             console.log(`[ToolInit] Checking message ${message.id}, role: ${message.role}, content type: ${typeof message.content}`);
+            console.log(`[ToolInit] Message content:`, message.content);
             
             if (message.role === 'assistant') {
+                // Handle different content formats
+                let messageContent = message.content;
+                
+                // If content is a string, try to parse it as JSON
+                if (typeof messageContent === 'string') {
+                    try {
+                        messageContent = JSON.parse(messageContent);
+                        console.log(`[ToolInit] Parsed string content to:`, messageContent);
+                    } catch (e) {
+                        console.log(`[ToolInit] Failed to parse string content as JSON:`, e);
+                        // Keep as string if parsing fails
+                    }
+                }
+                
                 // Check parts-based tool invocations (AI SDK format)
-                if (message.content && Array.isArray(message.content)) {
-                    console.log(`[ToolInit] Message ${message.id} has ${message.content.length} content parts`);
-                    for (const part of message.content) {
+                if (messageContent && Array.isArray(messageContent)) {
+                    console.log(`[ToolInit] Message ${message.id} has ${messageContent.length} content parts`);
+                    for (const part of messageContent) {
                         console.log(`[ToolInit] Part type: ${part.type}`);
                         if (part.type === 'tool-invocation' && part.toolInvocation) {
                             const toolCallId = part.toolInvocation.toolCallId;
@@ -311,6 +330,19 @@ export default function EditorPage() {
                             if (part.toolInvocation.state === 'result' || toolResultMessages.has(toolCallId)) {
                                 console.log(`[ToolInit] Found completed tool call in parts: ${toolCallId} (state: ${part.toolInvocation.state}, hasResult: ${toolResultMessages.has(toolCallId)})`);
                                 completedToolCallIds.add(toolCallId);
+                            }
+                        }
+                        // NEW: Check for tool-call content parts (incomplete tool calls)
+                        else if (part.type === 'tool-call') {
+                            const toolCall = part as any;
+                            const toolCallId = toolCall.toolCallId;
+                            if (toolResultMessages.has(toolCallId)) {
+                                console.log(`[ToolInit] Found completed tool-call: ${toolCallId} (${toolCall.toolName})`);
+                                completedToolCallIds.add(toolCallId);
+                            } else {
+                                console.log(`[ToolInit] ⚠️  INCOMPLETE TOOL CALL DETECTED: ${toolCallId} (${toolCall.toolName}) - NO RESULT MESSAGE FOUND`);
+                                console.log(`[ToolInit] This is likely the source of duplicate execution on page refresh!`);
+                                // DON'T mark as completed - let it re-execute to complete the conversation
                             }
                         }
                     }
@@ -520,6 +552,8 @@ export default function EditorPage() {
     }, []);
 
     const handleEditorChange = useCallback((editor: BlockNoteEditorType) => {
+        console.log('[handleEditorChange] CALLED - document length:', editor.document.length);
+        console.log('[handleEditorChange] Stack trace:', new Error().stack);
         setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
 
         const editorContent = editor.document;
@@ -773,11 +807,18 @@ export default function EditorPage() {
 
     // Define execute* functions (not wrapped in useCallback as they are called within useEffect)
     const executeAddContent = async (args: any) => {
+        console.log('[addContent] EXECUTION STARTED - args:', args);
+        console.log('[addContent] Current editor document length:', editorRef.current?.document?.length);
         const editor = editorRef.current;
-        if (!editor) { toast.error('Editor not available to add content.'); return; }
+        if (!editor) { 
+            console.log('[addContent] Editor not available');
+            toast.error('Editor not available to add content.'); 
+            return; 
+        }
         
         try {
             const { markdownContent, targetBlockId } = args;
+            console.log('[addContent] Processing content:', markdownContent, 'target:', targetBlockId);
             
             if (typeof markdownContent !== 'string') { 
                 toast.error("Invalid content provided for addContent."); 
@@ -909,6 +950,8 @@ export default function EditorPage() {
             console.error('Failed to execute addContent:', error); 
             toast.error(`Error adding content: ${error.message}`); 
         }
+        
+        console.log('[addContent] EXECUTION COMPLETED');
     };
     const executeModifyContent = async (args: any) => {
         const editor = editorRef.current;
@@ -1464,21 +1507,16 @@ export default function EditorPage() {
                     return msgAny.role === 'tool' && msgAny.tool_call_id === toolCallId;
                 });
                 
-                // If it's from initial messages and marked as 'result', ensure it's in processedToolCallIds
-                // but don't add to callsToProcessThisRun.
-                if (toolCall.state === 'result' || hasResultMessage) {
-                    console.log(`[ToolProcessing] Tool call ${toolCallId} already completed (state: ${toolCall.state}, hasResult: ${hasResultMessage})`);
+                // Enhanced completion check: state='result' OR result message exists OR already processed
+                if (toolCall.state === 'result' || hasResultMessage || processedToolCallIds.has(toolCallId)) {
+                    console.log(`[ToolProcessing] Tool call ${toolCallId} already completed (state: ${toolCall.state}, hasResult: ${hasResultMessage}, processed: ${processedToolCallIds.has(toolCallId)})`);
                     idsToMarkAsProcessed.add(toolCallId); // Ensure it's considered processed
                     continue; // Don't re-process
                 }
 
-                // If it's not marked as 'result' and not yet processed (globally), add it for processing.
-                if (!processedToolCallIds.has(toolCallId)) {
-                    console.log(`[ToolProcessing] Adding tool call ${toolCallId} for processing`);
-                    callsToProcessThisRun.push(toolCall);
-                } else {
-                    console.log(`[ToolProcessing] Tool call ${toolCallId} already processed, skipping`);
-                }
+                // Only add for processing if none of the completion conditions are met
+                console.log(`[ToolProcessing] Adding tool call ${toolCallId} for processing`);
+                callsToProcessThisRun.push(toolCall);
             }
 
             if (callsToProcessThisRun.length > 0) {
@@ -1635,7 +1673,8 @@ export default function EditorPage() {
     // --- NEW: Event listener for Gemini tool execution ---
     useEffect(() => {
         const handleGeminiToolExecution = (event: CustomEvent) => {
-            console.log('[EditorPage] Received geminiToolExecution event:', event.detail);
+            console.log('[EditorPage] ❌ UNEXPECTED: Gemini tool execution event received for GPT model:', event.detail);
+            console.log('[EditorPage] This should NOT happen with GPT models! This may be the source of duplicate executions.');
             
             const { action, params } = event.detail;
             
@@ -2111,19 +2150,42 @@ export default function EditorPage() {
             const clientToolNames = ['addContent', 'modifyContent', 'deleteContent', 'createChecklist', 'modifyTable'];
             const invocationsToProcess = (lastMessage as any).toolInvocations.filter(
                 (inv: any) => {
+                    console.log(`[ToolProcessing2] Evaluating tool invocation: ${inv.toolName} (ID: ${inv.toolCallId})`);
+                    
                     // Skip if already processed
-                    if (processedToolCallIds.has(inv.toolCallId)) return false;
+                    if (processedToolCallIds.has(inv.toolCallId)) {
+                        console.log(`[ToolProcessing2] Skipping ${inv.toolName} (ID: ${inv.toolCallId}) - already in processedToolCallIds`);
+                        return false;
+                    }
+                    
                     // Skip if not a client-side tool
-                    if (!clientToolNames.includes(inv.toolName)) return false;
-                    // Skip if there's already a tool result message for this tool call
+                    if (!clientToolNames.includes(inv.toolName)) {
+                        console.log(`[ToolProcessing2] Skipping ${inv.toolName} (ID: ${inv.toolCallId}) - not a client-side tool`);
+                        return false;
+                    }
+                    
+                    // Enhanced check: Skip if there's already a tool result message for this tool call
                     const hasResultMessage = messages.some(msg => {
                         const msgAny = msg as any;
                         return msgAny.role === 'tool' && msgAny.tool_call_id === inv.toolCallId;
                     });
+                    
                     if (hasResultMessage) {
-                        console.log(`[ToolProcessing] Skipping ${inv.toolName} (ID: ${inv.toolCallId}) - already has result message`);
+                        console.log(`[ToolProcessing2] Skipping ${inv.toolName} (ID: ${inv.toolCallId}) - already has result message`);
+                        // Also mark it as processed to prevent future processing
+                        setProcessedToolCallIds(prev => new Set([...prev, inv.toolCallId]));
                         return false;
                     }
+                    
+                    // Additional check: Look for tool invocations with state 'result' (from AI SDK)
+                    if (inv.state === 'result') {
+                        console.log(`[ToolProcessing2] Skipping ${inv.toolName} (ID: ${inv.toolCallId}) - state is 'result'`);
+                        // Mark as processed
+                        setProcessedToolCallIds(prev => new Set([...prev, inv.toolCallId]));
+                        return false;
+                    }
+                    
+                    console.log(`[ToolProcessing2] Including ${inv.toolName} (ID: ${inv.toolCallId}) for processing`);
                     return true;
                 }
             );
