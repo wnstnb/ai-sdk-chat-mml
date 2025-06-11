@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import type { BlockNoteEditor, PartialBlock } from '@blocknote/core';
 import { ChatInputUI } from './ChatInputUI'; // Assuming it's in the same directory
 import { PinnedMessageBubble } from './PinnedMessageBubble'; // Import the new component
+import { BlockHighlightWrapper } from './BlockHighlightWrapper'; // Import our new highlighting wrapper
 import { Button } from "@/components/ui/button"; // For the toggle icon button
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { MessageSquare } from 'lucide-react'; // Icon for collapsed state toggle
@@ -218,13 +219,17 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
             {/* Editor Area */}
             <div className="flex-1 overflow-y-auto py-4 px-0 styled-scrollbar border-t border-[--border-color]">
                 {initialContent !== undefined ? (
-                    <BlockNoteEditorComponent
-                        key={documentId} 
-                        editorRef={editorRef}
-                        initialContent={initialContent}
-                        onEditorContentChange={onEditorContentChange}
-                        theme={currentTheme} // Pass the theme to BlockNoteEditorComponent
-                    />
+                    <BlockHighlightWrapper 
+                        isDarkTheme={currentTheme === 'dark'}
+                    >
+                        <BlockNoteEditorComponent
+                            key={documentId} 
+                            editorRef={editorRef}
+                            initialContent={initialContent}
+                            onEditorContentChange={onEditorContentChange}
+                            theme={currentTheme} // Pass the theme to BlockNoteEditorComponent
+                        />
+                    </BlockHighlightWrapper>
                 ) : (
                     // Consistent loading state
                     <p className="p-4 text-center text-[--muted-text-color]">Initializing editor...</p>

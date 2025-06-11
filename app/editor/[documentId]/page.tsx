@@ -135,6 +135,7 @@ import { MobileChatDrawer } from '@/components/chat/MobileChatDrawer';
 import { FloatingActionTab } from '@/components/chat/FloatingActionTab';
 // ADDED: Import client chat operation store and states
 import { useClientChatOperationStore } from '@/lib/stores/useClientChatOperationStore';
+import { BlockStatus } from '@/app/lib/clientChatOperationState';
 import { AIToolState, AudioState, FileUploadState } from '@/app/lib/clientChatOperationState';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
@@ -238,6 +239,8 @@ export default function EditorPage() {
         setCurrentOperationDescription,
         resetChatOperationState,
         setOperationStates,
+        setBlockStatus,
+        clearBlockStatus,
     } = useClientChatOperationStore();
 
     // --- Custom Hooks --- (Order is important!)
@@ -761,7 +764,18 @@ export default function EditorPage() {
                         if (!referenceBlock) {
                             // Only for first target, replace document
                             if (i === 0) {
-                                editor.replaceBlocks(editor.document, blocksToInsert);
+                                const replacedBlocks = editor.replaceBlocks(editor.document, blocksToInsert);
+                                
+                                // Set highlighting status for replaced blocks
+                                if (Array.isArray(replacedBlocks)) {
+                                    replacedBlocks.forEach(block => {
+                                        if (block?.id) {
+                                            console.log('[DEBUG] Setting block status for block:', block.id);
+                                            setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                                        }
+                                    });
+                                }
+                                
                                 results.success.push({ targetId: 'document-root', insertedCount: blocksToInsert.length });
                                 results.totalInserted += blocksToInsert.length;
                             } else {
@@ -772,7 +786,19 @@ export default function EditorPage() {
                     }
                     
                     if (referenceBlock && referenceBlock.id) {
-                        editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
+                        // Insert blocks and get their IDs for highlighting
+                        const insertedBlocks = editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
+                        
+                        // Set highlighting status for newly inserted blocks
+                        if (Array.isArray(insertedBlocks)) {
+                            insertedBlocks.forEach(block => {
+                                if (block?.id) {
+                                    console.log('[DEBUG] Setting block status for inserted block:', block.id);
+                                    setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                                }
+                            });
+                        }
+                        
                         results.success.push({ targetId: currentTargetId, insertedCount: blocksToInsert.length, referenceId: referenceBlock.id });
                         results.totalInserted += blocksToInsert.length;
                     } else {
@@ -921,6 +947,11 @@ export default function EditorPage() {
             if (blockDefinitionToUpdate) {
               const { id: payloadId, ...finalPayload } = blockDefinitionToUpdate as PartialBlock & {id?: string};
               editor.updateBlock(id, finalPayload as PartialBlock);
+              
+              // Set highlighting status for modified block
+              console.log('[DEBUG] Setting block status for modified block:', id);
+              setBlockStatus(id, BlockStatus.MODIFIED, 'update');
+              
               results.success.push({ targetId: id, blockType: blockDefinitionToUpdate.type as string });
             }
           } catch (error: any) {
@@ -1138,7 +1169,17 @@ export default function EditorPage() {
                         } else {
                             // Only for first target, replace document
                             if (i === 0) {
-                                editor.replaceBlocks(editor.document, blocksToInsert);
+                                const replacedBlocks = editor.replaceBlocks(editor.document, blocksToInsert);
+                                
+                                // Set highlighting status for replaced blocks
+                                if (Array.isArray(replacedBlocks)) {
+                                    replacedBlocks.forEach(block => {
+                                        if (block?.id) {
+                                            setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                                        }
+                                    });
+                                }
+                                
                                 results.success.push({ targetId: 'document-root', insertedCount: blocksToInsert.length });
                                 results.totalInserted += blocksToInsert.length;
                             } else {
@@ -1167,7 +1208,18 @@ export default function EditorPage() {
                     }
 
                     if (referenceBlock && referenceBlock.id) {
-                        editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
+                        const insertedBlocks = editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
+                        
+                        // Set highlighting status for newly inserted checklist blocks
+                        if (Array.isArray(insertedBlocks)) {
+                            insertedBlocks.forEach(block => {
+                                if (block?.id) {
+                                    console.log('[DEBUG] Setting block status for checklist block:', block.id);
+                                    setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                                }
+                            });
+                        }
+                        
                         results.success.push({ targetId: currentTargetId, insertedCount: blocksToInsert.length, referenceId: referenceBlock.id });
                         results.totalInserted += blocksToInsert.length;
                     } else {
@@ -1272,7 +1324,18 @@ export default function EditorPage() {
 
             // Replace the original table block with the newly parsed block(s)
             // Note: Parsing might yield multiple blocks if the markdown is complex, but typically a table markdown yields one table block.
-            editor.replaceBlocks([tableBlockId], newBlocks);
+            const replacedBlocks = editor.replaceBlocks([tableBlockId], newBlocks);
+            
+            // Set highlighting status for modified table blocks
+            if (Array.isArray(replacedBlocks)) {
+                replacedBlocks.forEach(block => {
+                    if (block?.id) {
+                        console.log('[DEBUG] Setting block status for table block:', block.id);
+                        setBlockStatus(block.id, BlockStatus.MODIFIED, 'update');
+                    }
+                });
+            }
+            
             toast.success(`Table block ${tableBlockId} updated.`);
             handleEditorChange(editor); // Trigger state update and autosave
 
