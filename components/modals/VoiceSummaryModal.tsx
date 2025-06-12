@@ -953,7 +953,26 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
         });
       }
       
-      toast.success('Content added to editor.');
+      // Use enhanced toast with block navigation
+      if (Array.isArray(insertedBlocks) && insertedBlocks.length > 0) {
+        const insertedBlockIds = insertedBlocks
+          .map((block: any) => block?.id)
+          .filter((id): id is string => Boolean(id));
+        
+        if (insertedBlockIds.length > 0) {
+          const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+          createBlockStatusToast(
+            insertedBlockIds,
+            'modified',
+            'insert',
+            `Content added to editor (${insertedBlockIds.length} block${insertedBlockIds.length > 1 ? 's' : ''})`
+          );
+        } else {
+          toast.success('Content added to editor.');
+        }
+      } else {
+        toast.success('Content added to editor.');
+      }
       // clearModalContent(); // Consider if this is needed or if onClose handles it
       onClose(); // Close modal after adding content
     } catch (error: any) {

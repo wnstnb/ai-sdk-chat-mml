@@ -442,7 +442,26 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose, setBlockSta
         });
       }
       
-      toast.success("Content inserted into the editor.");
+      // Use enhanced toast with block navigation
+      if (Array.isArray(insertedBlocks) && insertedBlocks.length > 0) {
+        const insertedBlockIds = insertedBlocks
+          .map((block: any) => block?.id)
+          .filter((id): id is string => Boolean(id));
+        
+        if (insertedBlockIds.length > 0) {
+          const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+          createBlockStatusToast(
+            insertedBlockIds,
+            'modified',
+            'insert',
+            `PDF content inserted (${insertedBlockIds.length} block${insertedBlockIds.length > 1 ? 's' : ''})`
+          );
+        } else {
+          toast.success("Content inserted into the editor.");
+        }
+      } else {
+        toast.success("Content inserted into the editor.");
+      }
       onClose();
     } catch (error) {
       console.error("Error inserting content into BlockNote editor:", error);

@@ -242,7 +242,26 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
               });
             }
             
-            toast.success('Content inserted into current document.');
+            // Use enhanced toast with block navigation
+            if (Array.isArray(insertedBlocks) && insertedBlocks.length > 0) {
+              const insertedBlockIds = insertedBlocks
+                .map((block: any) => block?.id)
+                .filter((id): id is string => Boolean(id));
+              
+              if (insertedBlockIds.length > 0) {
+                const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+                createBlockStatusToast(
+                  insertedBlockIds,
+                  'modified',
+                  'insert',
+                  `Web content inserted (${insertedBlockIds.length} block${insertedBlockIds.length > 1 ? 's' : ''})`
+                );
+              } else {
+                toast.success('Content inserted into current document.');
+              }
+            } else {
+              toast.success('Content inserted into current document.');
+            }
             onClose();
         } catch (error) {
             console.error("Error inserting content into current document:", error);
