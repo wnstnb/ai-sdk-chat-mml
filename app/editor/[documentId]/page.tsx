@@ -2466,29 +2466,7 @@ export default function EditorPage() {
             >
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
-            {/* --- Mini-Pane Container (Rendered conditionally) --- */}
-            {isMiniPaneOpen && (isChatPaneCollapsed || mobileVisiblePane !== 'chat') && (
-                <motion.div
-                    ref={miniPaneRef}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    transition={{ duration: 0.2 }}
-                    className="fixed bottom-[calc(var(--chat-input-area-height,174px)_+_8px)] left-0 right-0 mx-auto w-[calc(100%-2rem)] max-w-[700px] max-h-[350px] z-[1050] overflow-y-auto bg-[--input-bg] border border-[--border-color] rounded-md shadow-lg flex flex-col"
-                >
-                    <div className="flex-1 overflow-y-auto styled-scrollbar p-2">
-                        <ChatMessagesList 
-                            chatMessages={messages}
-                            isLoadingMessages={isLoadingMessages} // Or a mini-specific loading state if different
-                            isChatLoading={isAiLoading} // Or a mini-specific loading state
-                            handleSendToEditor={handleSendToEditor} // Actions should still work
-                            messagesEndRef={messagesEndRef} // May need a separate ref for mini-pane scroll
-                            onAddTaggedDocument={(doc) => { /* Define or pass handler */ }}
-                            displayMode="mini"
-                        />
-                    </div>
-                </motion.div>
-            )}
+
 
             {/* Conditional Rendering based on isMobile */}
             {isMobile ? (
@@ -2564,6 +2542,11 @@ export default function EditorPage() {
                                         onToggleMiniPane={handleToggleMiniPane}
                                         isMainChatCollapsed={true} // For mobile, editor implies main chat is hidden
                                         miniPaneToggleRef={miniPaneToggleRef}
+                                        // Mini pane content props
+                                        miniPaneMessages={messages}
+                                        miniPaneIsLoadingMessages={isLoadingMessages}
+                                        miniPaneIsAiLoading={isAiLoading}
+                                        miniPaneMessagesEndRef={messagesEndRef}
                                         currentTheme={currentTheme} // Pass down the theme
                                     />
                                 </div>
@@ -2646,6 +2629,7 @@ export default function EditorPage() {
                 <>
                     {/* Editor Pane Container - Takes remaining space, add padding here */}
                     <div className="flex-1 flex flex-col relative overflow-hidden p-4 bg-[var(--editor-bg)]"> {/* ADDED bg-[var(--editor-bg)] */}
+
                         {/* EditorTitleBar */}
                          <EditorTitleBar
                             currentTitle={currentTitle}
@@ -2713,6 +2697,11 @@ export default function EditorPage() {
                                 onToggleMiniPane={handleToggleMiniPane}
                                 isMainChatCollapsed={isChatPaneCollapsed} // Main chat is collapsed when pane is collapsed
                                 miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
+                                // Mini pane content props
+                                miniPaneMessages={messages}
+                                miniPaneIsLoadingMessages={isLoadingMessages}
+                                miniPaneIsAiLoading={isAiLoading}
+                                miniPaneMessagesEndRef={messagesEndRef}
                                 currentTheme={currentTheme} // Pass down the theme
                             />
                         </div>
