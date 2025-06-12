@@ -116,6 +116,31 @@ The Vercel AI SDK on the client-side (`lib/hooks/editor/useChatInteractions.ts`)
     *   Toast: `Failed to modify table: ${error.message}` (for general errors).
     *   Errors are logged to the console.
 
+### 1.6. `replaceAllContent`
+
+*   **Client-Side Executor Function:** `executeReplaceAllContent` in `app/editor/[documentId]/page.tsx`
+*   **Input Parameters (`args`):**
+    *   `newMarkdownContent`: `string` – The complete Markdown content to replace the entire document with.
+    *   `requireConfirmation`: `boolean` (default: `true`) – If true, triggers a confirmation dialog before replacement.
+*   **Behavior:**
+    *   When invoked, this tool replaces all content in the editor with the provided `newMarkdownContent`.
+    *   If `requireConfirmation` is true, a modal dialog is shown to the user to confirm the destructive action. The operation only proceeds after explicit confirmation.
+    *   The replacement is grouped as a single undo transaction using BlockNote's `transact` method, so a single undo (Ctrl+Z/Cmd+Z or the Undo button in the toast) will revert the entire operation.
+*   **Success Effects:**
+    *   Editor content is fully replaced with the new content.
+    *   Toast Notification: "Document content replaced successfully" with an Undo button (calls `editor.undo()`).
+    *   Block count and replacement details may be shown in the toast.
+    *   `handleEditorChange(editor)` is called.
+*   **Error/Warning Effects (Examples):**
+    *   Toast: "Editor not available to replace content."
+    *   Toast: "Invalid content provided for document replacement."
+    *   Toast: `Error replacing content: ${error.message}` (for general errors).
+    *   Errors are logged to the console.
+*   **Safety Features:**
+    *   Confirmation dialog prevents accidental document replacement.
+    *   Undo button and native undo/redo support allow easy reversal of the operation.
+    *   Enhanced logging for debugging and error tracking.
+
 ## 2. Server-Side Tools
 
 These tools are defined and executed on the server, typically within `lib/tools/server-tools.ts`. Their results are streamed back to the client as part of the AI's response, usually as a `tool_result` part in the Vercel AI SDK message stream. They use a `safeExecuteTool` wrapper for consistent error handling.
