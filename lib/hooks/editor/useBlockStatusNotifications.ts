@@ -3,6 +3,7 @@ import { useAllBlockStatuses } from '@/app/hooks/useBlockStatus';
 import { createBlockStatusToast } from '@/lib/utils/aiToast';
 import { useBlockNavigation } from './useBlockNavigation';
 import { BlockStatus } from '@/app/types/ai-editor.types';
+import { useModalStore } from '@/stores/useModalStore';
 
 interface NotificationOptions {
   /**
@@ -45,7 +46,13 @@ const DEFAULT_OPTIONS: Required<NotificationOptions> = {
  */
 export function useBlockStatusNotifications(options: NotificationOptions = {}) {
   const config = useMemo(() => ({ ...DEFAULT_OPTIONS, ...options }), [options]);
-  const { scrollToBlock } = useBlockNavigation();
+  const { editorRef } = useModalStore();
+  
+  // Create a fallback ref if editorRef is null
+  const fallbackRef = useRef<any>(null);
+  const safeEditorRef = editorRef || fallbackRef;
+  
+  const { scrollToBlock } = useBlockNavigation(safeEditorRef);
   const { allStatuses } = useAllBlockStatuses();
   
   // Track previous state to detect changes
