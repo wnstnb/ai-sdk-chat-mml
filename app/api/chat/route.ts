@@ -53,6 +53,11 @@ const createChecklistSchema = z.object({
   targetBlockId: z.string().nullable().describe("Optional: The ID of the block to insert the new checklist after. If null, the checklist is appended to the document or inserted at the current selection."),
 });
 
+const replaceAllContentSchema = z.object({
+  newMarkdownContent: z.string().describe("The complete new Markdown content that will replace all existing document content."),
+  requireConfirmation: z.boolean().default(true).describe("Whether to require explicit user confirmation before replacing all content. Defaults to true for safety."),
+});
+
 // CLIENT-SIDE TOOL DEFINITIONS (with synthetic execute functions to prevent incomplete tool calls)
 const clientSideTools = {
   addContent: tool({
@@ -128,6 +133,21 @@ const clientSideTools = {
         instruction: 'This tool will be executed on the client side',
         items,
         targetBlockId,
+        completed: true
+      };
+    },
+  }),
+  replaceAllContent: tool({
+    description: "Replaces the entire document content with new Markdown content. This is a destructive operation that requires explicit confirmation. Use with extreme caution.",
+    parameters: replaceAllContentSchema,
+    execute: async ({ newMarkdownContent, requireConfirmation }) => {
+      console.log('[ServerSide-ClientTool] replaceAllContent called with args:', { newMarkdownContent: `${newMarkdownContent.substring(0, 100)}...`, requireConfirmation });
+      return {
+        type: 'client-side-tool-call',
+        toolName: 'replaceAllContent',
+        instruction: 'This tool will be executed on the client side',
+        newMarkdownContent,
+        requireConfirmation,
         completed: true
       };
     },
@@ -209,6 +229,21 @@ const serverSideEditorTools = {
         targetBlockId,
         success: true,
         message: `Created checklist with ${items.length} items`
+      };
+    },
+  }),
+  replaceAllContent: tool({
+    description: "Replaces the entire document content with new Markdown content. This is a destructive operation that requires explicit confirmation. Use with extreme caution.",
+    parameters: replaceAllContentSchema,
+    execute: async ({ newMarkdownContent, requireConfirmation }) => {
+      // Return structured instruction for frontend to execute
+      return {
+        action: 'replaceAllContent',
+        instruction: 'Replace all document content with new markdown content',
+        newMarkdownContent,
+        requireConfirmation,
+        success: true,
+        message: `Document content replaced with ${newMarkdownContent.length} characters`
       };
     },
   }),
@@ -438,6 +473,11 @@ const editorTools = {
     // No execute function - handled client-side
   }),
   // --- END NEW ---
+  replaceAllContent: tool({
+    description: "Replaces the entire document content with new Markdown content. This is a destructive operation that requires explicit confirmation. Use with extreme caution.",
+    parameters: replaceAllContentSchema,
+    // No execute function - handled client-side
+  }),
 };
 
 // Define the tools for the AI model, combining editor and web search

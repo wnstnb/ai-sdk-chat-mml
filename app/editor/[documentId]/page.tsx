@@ -124,6 +124,10 @@ import { CollapseChatTab } from '@/components/chat/CollapseChatTab'; // <-- ADD 
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 // --- NEW: Import VersionHistoryModal ---
 import { VersionHistoryModal } from '@/components/editor/VersionHistoryModal';
+// --- NEW: Import DocumentReplacementConfirmationModal ---
+import DocumentReplacementConfirmationModal from '@/components/modals/DocumentReplacementConfirmationModal';
+// --- Use standard aiToast utility for proper positioning ---
+import { aiToast } from '@/lib/utils/aiToast';
 // REMOVED: SearchModal import for now, will be re-added at a higher level
 // import { SearchModal } from '@/components/search/SearchModal'; 
 import { useSWRConfig } from 'swr'; // ADDED for cache mutation
@@ -217,6 +221,12 @@ export default function EditorPage() {
     const [pendingContentForEditor, setPendingContentForEditor] = useState<string | null>(null);
     // --- NEW: State to track client-side tool processing ---
     const [isProcessingClientTools, setIsProcessingClientTools] = useState(false);
+    // --- NEW: State for document replacement confirmation modal ---
+    const [documentReplacementConfirmation, setDocumentReplacementConfirmation] = useState<{
+        isOpen: boolean;
+        args?: any;
+        isProcessing?: boolean;
+    }>({ isOpen: false });
 
     // --- Note: isChatInputBusy and currentOperationStatusText now come from useChatInteractions ---
     // Example to test UI states:
@@ -1548,6 +1558,120 @@ export default function EditorPage() {
         }
     };
 
+    const executeReplaceAllContent = async (args: any) => {
+        console.log('[ServerSide-ClientTool][replaceAllContent] EXECUTION STARTED - args:', args);
+        const editor = editorRef.current;
+        if (!editor) { 
+            console.log('[ServerSide-ClientTool][replaceAllContent] Editor not available');
+            toast.error('Editor not available to replace content.'); 
+            return; 
+        }
+        
+        try {
+            const { newMarkdownContent, requireConfirmation = true } = args;
+            console.log('[ServerSide-ClientTool][replaceAllContent] Processing content:', { 
+                contentLength: newMarkdownContent?.length,
+                requireConfirmation 
+            });
+            
+            if (typeof newMarkdownContent !== 'string') { 
+                toast.error("Invalid content provided for replaceAllContent."); 
+                return; 
+            }
+
+            // If confirmation is required, show confirmation modal
+            if (requireConfirmation) {
+                console.log('[ServerSide-ClientTool][replaceAllContent] Showing confirmation modal');
+                setDocumentReplacementConfirmation({
+                    isOpen: true,
+                    args: { newMarkdownContent, requireConfirmation: false }, // Disable nested confirmation
+                    isProcessing: false
+                });
+                return; // Exit early, will be resumed after confirmation
+            }
+            
+            // Get existing blocks for metadata and snapshot
+            const previousBlocks = editor.document;
+            const previousBlockIds = previousBlocks.map(block => block.id);
+            console.log(`[ServerSide-ClientTool][replaceAllContent] Replacing ${previousBlockIds.length} blocks`);
+            
+            // Parse the new markdown content
+            let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(newMarkdownContent);
+            if (blocksToInsert.length === 0 && newMarkdownContent.trim() !== '') {
+                blocksToInsert.push({ 
+                    type: 'paragraph', 
+                    content: [{ type: 'text', text: newMarkdownContent, styles: {} }] 
+                } as PartialBlock<typeof schema.blockSchema>);
+            } else if (blocksToInsert.length === 0) {
+                toast.error("No content to replace with.");
+                return;
+            }
+            
+             // Replace all document content using explicit transaction grouping
+             // This ensures the entire replacement operation is grouped as a single undo/redo operation
+             const insertedBlocks = editor.transact(() => {
+                 console.log('[ServerSide-ClientTool][replaceAllContent] Starting transaction for document replacement');
+                 const result = editor.replaceBlocks(editor.document, blocksToInsert);
+                 console.log('[ServerSide-ClientTool][replaceAllContent] Document replacement completed within transaction');
+                 return result;
+             });
+             
+             // Set highlighting status for newly inserted blocks
+             if (Array.isArray(insertedBlocks)) {
+                 insertedBlocks.forEach(block => {
+                     if (block?.id) {
+                         console.log('[ServerSide-ClientTool][replaceAllContent] Setting block status for replaced block:', block.id);
+                         setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                     }
+                 });
+             }
+             
+             // Use the enhanced toast system from the codebase
+             const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+             
+             // Create enhanced toast with Undo functionality by extending the createBlockStatusToast function
+             const insertedBlockIds = Array.isArray(insertedBlocks) ? insertedBlocks.map(block => block.id) : [];
+             console.log(`[ServerSide-ClientTool][replaceAllContent] Successfully replaced ${previousBlockIds.length} blocks with ${insertedBlockIds.length} new blocks`);
+             
+             // Use the standard attached toast system with undo functionality
+             const { aiToast } = await import('@/lib/utils/aiToast');
+             
+             // Create a styled success toast with affected block IDs to force it into AttachedToastContainer
+             // and add undo functionality through a custom message
+             const undoToastMessage = `Document replaced (${insertedBlockIds.length} blocks) - Press Ctrl+Z to undo`;
+             const toastId = aiToast.success(undoToastMessage, {
+                 affectedBlockIds: insertedBlockIds.length > 0 ? insertedBlockIds : ['document-root'], // Use actual block IDs or fallback to force attached container
+                 id: 'document-replacement-undo',
+                 duration: 10000, // Longer duration for destructive actions
+                 action: 'insert',
+                 onScrollToChange: (blockId: string) => {
+                     // Optional: scroll to the first replaced block
+                     const blockElement = document.querySelector(`[data-id="${blockId}"]`);
+                     if (blockElement) {
+                         blockElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                     }
+                 }
+             });
+             
+             console.log('[ServerSide-ClientTool][replaceAllContent] Enhanced attached toast created with keyboard undo hint');
+             
+             handleEditorChange(editor);
+             
+             return { 
+                 status: 'forwarded to client', 
+                 replacedBlockIds: previousBlockIds,
+                 insertedBlockIds: insertedBlockIds,
+                 blockCount: insertedBlockIds.length
+             };
+            
+        } catch (error: any) { 
+            console.error('[ServerSide-ClientTool][replaceAllContent] Failed to execute replaceAllContent:', error); 
+            toast.error(`Error replacing content: ${error.message}`); 
+        }
+        
+        console.log('[ServerSide-ClientTool][replaceAllContent] EXECUTION COMPLETED');
+    };
+
     // --- Effect Hooks (Defined BEFORE Early Returns) ---
     useEffect(() => { /* Effect for page error */
         if (documentError) {
@@ -1613,7 +1737,7 @@ export default function EditorPage() {
                     // This set (idsToMarkAsProcessed) will be used to update the main processedToolCallIds state later.
                     idsToMarkAsProcessed.add(toolCall.toolCallId); 
                     const { toolName, args } = toolCall;
-                    const editorTargetingTools = ['addContent', 'modifyContent', 'deleteContent', 'modifyTable', 'createChecklist']; // Added createChecklist
+                    const editorTargetingTools = ['addContent', 'modifyContent', 'deleteContent', 'modifyTable', 'createChecklist', 'replaceAllContent']; // Added createChecklist and replaceAllContent
 
                     // ADDED: Set initial AI tool state when tool call is detected
                     setOperationStates({
@@ -1667,6 +1791,12 @@ export default function EditorPage() {
                                     setAIToolState(AIToolState.AWAITING_RESULT_IN_STATE);
                                     addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'forwarded to client' } });
                                     break;
+                                case 'replaceAllContent': 
+                                    await executeReplaceAllContent(args);
+                                    // ADDED: Set awaiting result state before addToolResult
+                                    setAIToolState(AIToolState.AWAITING_RESULT_IN_STATE);
+                                    addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'forwarded to client' } });
+                                    break;
                                 case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); break;
                                 default: 
                                     console.error(`Unknown tool: ${toolName}`); 
@@ -1708,7 +1838,8 @@ export default function EditorPage() {
         executeModifyContent, 
         executeDeleteContent, 
         executeModifyTable, 
-        executeCreateChecklist, // <-- ADDED to dependency array
+        executeCreateChecklist, 
+        executeReplaceAllContent, // <-- ADDED to dependency array
         isMobile, 
         mobileVisiblePane,
         setPendingMobileEditorToolCall,
@@ -1734,6 +1865,7 @@ export default function EditorPage() {
                 case 'deleteContent': executeDeleteContent(args); break;
                 case 'modifyTable': executeModifyTable(args); break;
                 case 'createChecklist': executeCreateChecklist(args); break; // <-- ADDED CASE
+                case 'replaceAllContent': executeReplaceAllContent(args); break; // <-- ADDED CASE
                 default:
                     console.warn("[Mobile Editor] Unknown tool name:", toolName);
                     toast.error(`Unknown tool: ${toolName}`);
@@ -1742,7 +1874,7 @@ export default function EditorPage() {
             // Clear the pending tool call
             setPendingMobileEditorToolCall(null);
         }
-    }, [mobileVisiblePane, pendingMobileEditorToolCall, executeAddContent, executeModifyContent, executeDeleteContent, executeModifyTable, executeCreateChecklist]); // <-- ADDED to dependency array
+    }, [mobileVisiblePane, pendingMobileEditorToolCall, executeAddContent, executeModifyContent, executeDeleteContent, executeModifyTable, executeCreateChecklist, executeReplaceAllContent]); // <-- ADDED to dependency array
 
     // --- NEW: Event listener for Gemini tool execution ---
     useEffect(() => {
@@ -1811,19 +1943,33 @@ export default function EditorPage() {
                     }
                     break;
                     
-                case 'createChecklist':
-                    if (isMobile && mobileVisiblePane !== 'editor') {
-                        setPendingMobileEditorToolCall({ 
-                            toolName: action, 
-                            args: params, 
-                            toolCallId: `gemini-${Date.now()}` 
-                        });
-                        setMobileVisiblePane('editor');
-                        toast.info("Switching to editor to apply changes...");
-                    } else {
-                        executeCreateChecklist(params);
-                    }
-                    break;
+                                    case 'createChecklist':
+                        if (isMobile && mobileVisiblePane !== 'editor') {
+                            setPendingMobileEditorToolCall({ 
+                                toolName: action, 
+                                args: params, 
+                                toolCallId: `gemini-${Date.now()}` 
+                            });
+                            setMobileVisiblePane('editor');
+                            toast.info("Switching to editor to apply changes...");
+                        } else {
+                            executeCreateChecklist(params);
+                        }
+                        break;
+                        
+                    case 'replaceAllContent':
+                        if (isMobile && mobileVisiblePane !== 'editor') {
+                            setPendingMobileEditorToolCall({ 
+                                toolName: action, 
+                                args: params, 
+                                toolCallId: `gemini-${Date.now()}` 
+                            });
+                            setMobileVisiblePane('editor');
+                            toast.info("Switching to editor to apply changes...");
+                        } else {
+                            executeReplaceAllContent(params);
+                        }
+                        break;
                     
                 default:
                     console.warn('[EditorPage] Unknown Gemini tool action:', action);
@@ -2136,6 +2282,31 @@ export default function EditorPage() {
         setMobileVisiblePane(pane => pane === 'chat' ? 'editor' : 'chat');
     };
 
+    // --- NEW: Handlers for document replacement confirmation ---
+    const handleDocumentReplacementConfirm = async () => {
+        if (!documentReplacementConfirmation.args) {
+            console.error('[replaceAllContent] No args found for confirmation');
+            return;
+        }
+
+        console.log('[replaceAllContent] User confirmed replacement, proceeding...');
+        setDocumentReplacementConfirmation(prev => ({ ...prev, isProcessing: true }));
+        
+        try {
+            // Execute the replacement with confirmation disabled
+            await executeReplaceAllContent(documentReplacementConfirmation.args);
+        } finally {
+            // Close the modal
+            setDocumentReplacementConfirmation({ isOpen: false });
+        }
+    };
+
+    const handleDocumentReplacementCancel = () => {
+        console.log('[replaceAllContent] User cancelled replacement');
+        setDocumentReplacementConfirmation({ isOpen: false });
+        toast.info('Document replacement cancelled');
+    };
+
     // --- NEW: Effect to handle pending content for editor on mobile ---
     useEffect(() => {
         if (pendingContentForEditor && mobileVisiblePane === 'editor' && isMobile) {
@@ -2259,7 +2430,7 @@ export default function EditorPage() {
             !isAiLoading && // Not currently loading an AI response
             !isProcessingClientTools // Not already processing a batch of client tools
         ) {
-            const clientToolNames = ['addContent', 'modifyContent', 'deleteContent', 'createChecklist', 'modifyTable'];
+            const clientToolNames = ['addContent', 'modifyContent', 'deleteContent', 'createChecklist', 'modifyTable', 'replaceAllContent'];
             const invocationsToProcess = (lastMessage as any).toolInvocations.filter(
                 (inv: any) => {
                     console.log(`[ToolProcessing2] Evaluating tool invocation: ${inv.toolName} (ID: ${inv.toolCallId})`);
@@ -2341,6 +2512,8 @@ export default function EditorPage() {
                                 result = await executeCreateChecklist(toolInvocation.args);
                             } else if (toolInvocation.toolName === 'modifyTable') {
                                 result = await executeModifyTable(toolInvocation.args);
+                            } else if (toolInvocation.toolName === 'replaceAllContent') {
+                                result = await executeReplaceAllContent(toolInvocation.args);
                             } else {
                                 console.warn(`[Client Tool] Unknown tool in batch: ${toolInvocation.toolName}`);
                                 result = { success: false, error: `Unknown client-side tool: ${toolInvocation.toolName}` };
@@ -2382,6 +2555,7 @@ export default function EditorPage() {
         executeDeleteContent, 
         executeCreateChecklist, 
         executeModifyTable, 
+        executeReplaceAllContent, // ADDED
         processedToolCallIds, 
         setProcessedToolCallIds,
         setOperationStates, // ADDED
@@ -2870,6 +3044,15 @@ export default function EditorPage() {
                     onRestoreContent={handleRestoreEditorContent}
                 />
             )}
+            {/* --- END NEW --- */}
+
+            {/* --- NEW: Document Replacement Confirmation Modal --- */}
+            <DocumentReplacementConfirmationModal
+                isOpen={documentReplacementConfirmation.isOpen}
+                onClose={handleDocumentReplacementCancel}
+                onConfirm={handleDocumentReplacementConfirm}
+                isProcessing={documentReplacementConfirmation.isProcessing}
+            />
             {/* --- END NEW --- */}
         </div>
         </AttachedToastProvider>
