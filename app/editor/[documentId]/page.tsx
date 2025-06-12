@@ -137,6 +137,7 @@ import { FloatingActionTab } from '@/components/chat/FloatingActionTab';
 import { useClientChatOperationStore } from '@/lib/stores/useClientChatOperationStore';
 import { BlockStatus } from '@/app/lib/clientChatOperationState';
 import { AIToolState, AudioState, FileUploadState } from '@/app/lib/clientChatOperationState';
+import { AttachedToastProvider } from '@/contexts/AttachedToastContext';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -798,6 +799,13 @@ export default function EditorPage() {
         if (validation.warnings && validation.warnings.length > 0) {
             validation.warnings.forEach(warning => {
                 console.warn(`[${operation}] Warning:`, warning);
+                
+                // Show console warning only for cursor position fallback, not as toast
+                if (warning.includes('No target specified, using cursor position')) {
+                    // Already logged to console above, skip toast
+                    return;
+                }
+                
                 toast.warning(warning);
             });
         }
@@ -929,14 +937,36 @@ export default function EditorPage() {
                 }
             }
             
-            // Provide feedback based on results
+            // Provide feedback based on results using enhanced toast
             if (results.failed.length === 0) {
-                toast.success(`Content added at ${results.success.length} location(s). Total blocks inserted: ${results.totalInserted}`);
+                // Use enhanced toast with block navigation
+                const insertedBlockIds = results.success.flatMap(s => 
+                    Array.from({ length: s.insertedCount }, (_, idx) => s.referenceId)
+                ).filter((id): id is string => Boolean(id));
+                
+                const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+                createBlockStatusToast(
+                    insertedBlockIds,
+                    'modified',
+                    'insert',
+                    `Content added at ${results.success.length} location(s). Total blocks inserted: ${results.totalInserted}`
+                );
                 handleEditorChange(editor);
             } else if (results.success.length === 0) {
                 toast.error(`Failed to add content at any of the ${targetBlockIds.length} target location(s).`);
             } else {
-                toast.warning(`Partial success: Content added at ${results.success.length} location(s), failed at ${results.failed.length} location(s).`);
+                // Partial success - show enhanced toast for successful insertions
+                const insertedBlockIds = results.success.flatMap(s => 
+                    Array.from({ length: s.insertedCount }, (_, idx) => s.referenceId)
+                ).filter((id): id is string => Boolean(id));
+                
+                const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+                createBlockStatusToast(
+                    insertedBlockIds,
+                    'modified',
+                    'insert',
+                    `Partial success: Content added at ${results.success.length} location(s), failed at ${results.failed.length} location(s).`
+                );
                 handleEditorChange(editor);
             }
             
@@ -1083,15 +1113,29 @@ export default function EditorPage() {
           }
         }
 
-        // Enhanced feedback using new error handling system
+        // Enhanced feedback using enhanced toast with block navigation
         if (results.failed.length === 0 && results.success.length > 0) {
-          SuccessFeedback.single('modifyContent', `${results.success.length} block(s) modified successfully`);
+          // Use enhanced toast with block navigation for successful modifications
+          const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+          createBlockStatusToast(
+            results.success.map(r => r.targetId),
+            'modified',
+            'update',
+            `${results.success.length} block(s) modified successfully`
+          );
           handleEditorChange(editor); 
         } else if (results.success.length === 0 && results.failed.length > 0) {
           // All failures already reported individually above
           console.error(`[modifyContent] All ${results.failed.length} modification(s) failed`);
         } else if (results.success.length > 0 && results.failed.length > 0) {
-          SuccessFeedback.partial('modifyContent', results.success.length, results.failed.length);
+          // Partial success - show enhanced toast for successful modifications
+          const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+          createBlockStatusToast(
+            results.success.map(r => r.targetId),
+            'modified',
+            'update',
+            `Partial success: ${results.success.length} block(s) modified, ${results.failed.length} failed`
+          );
           handleEditorChange(editor);
         } else if (blockIds.length > 0) {
           toast.info("No changes applied to blocks.");
@@ -1159,11 +1203,27 @@ export default function EditorPage() {
                             // Set delete preview status instead of removing immediately
                             setBlockStatus(targetBlock.id, BlockStatus.MODIFIED, 'delete');
                             // editor.removeBlocks([targetBlock.id]); 
-                            SuccessFeedback.single('deleteContent', `Marked block ${targetBlock.id} for removal`);
+                            
+                            // Use enhanced toast with block navigation for block deletion
+                            const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+                            createBlockStatusToast(
+                                [targetBlock.id],
+                                'modified',
+                                'delete',
+                                `Block marked for removal`
+                            );
                             // handleEditorChange(editor); 
                         } else { 
                             editor.updateBlock(targetBlock.id, { content: updatedContent }); 
-                            SuccessFeedback.single('deleteContent', `Text "${targetText}" deleted`);
+                            
+                            // Use enhanced toast with block navigation for text deletion
+                            const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+                            createBlockStatusToast(
+                                [targetBlock.id],
+                                'modified',
+                                'delete',
+                                `Text "${targetText}" deleted`
+                            );
                             handleEditorChange(editor); 
                         }
                     } else { 
@@ -1208,11 +1268,25 @@ export default function EditorPage() {
                 // Store the blocks to delete for later cleanup (commented out immediate deletion)
                 // editor.removeBlocks(existingBlockIds);
                 
-                // Enhanced feedback
+                // Enhanced feedback with block navigation
                 if (results.failed.length === 0) {
-                    SuccessFeedback.single('deleteContent', `Removed ${results.success.length} block(s)`);
+                    // Use enhanced toast with block navigation for successful deletions
+                    const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+                    createBlockStatusToast(
+                        existingBlockIds,
+                        'modified',
+                        'delete',
+                        `${results.success.length} block(s) marked for removal`
+                    );
                 } else {
-                    SuccessFeedback.partial('deleteContent', results.success.length, results.failed.length);
+                    // Partial success - show enhanced toast for successful deletions
+                    const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+                    createBlockStatusToast(
+                        existingBlockIds,
+                        'modified',
+                        'delete',
+                        `Partial success: ${results.success.length} block(s) marked for removal, ${results.failed.length} failed`
+                    );
                     console.warn(`[deleteContent] Some blocks were missing:`, results.failed);
                 }
                 
@@ -2384,11 +2458,12 @@ export default function EditorPage() {
 
     // Main Render
     return (
-        <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden relative" 
-            onDragOver={handleDragOver} 
-            onDragLeave={handleDragLeave} 
-            onDrop={handleDrop}
-        >
+        <AttachedToastProvider>
+            <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden relative" 
+                onDragOver={handleDragOver} 
+                onDragLeave={handleDragLeave} 
+                onDrop={handleDrop}
+            >
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
             {/* --- Mini-Pane Container (Rendered conditionally) --- */}
@@ -2636,7 +2711,7 @@ export default function EditorPage() {
                                 setTaggedDocuments={setTaggedDocuments}
                                 isMiniPaneOpen={isMiniPaneOpen}
                                 onToggleMiniPane={handleToggleMiniPane}
-                                isMainChatCollapsed={isChatPaneCollapsed && !isMiniPaneOpen} // Pass this new prop
+                                isMainChatCollapsed={isChatPaneCollapsed} // Main chat is collapsed when pane is collapsed
                                 miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
                                 currentTheme={currentTheme} // Pass down the theme
                             />
@@ -2770,5 +2845,6 @@ export default function EditorPage() {
             )}
             {/* --- END NEW --- */}
         </div>
+        </AttachedToastProvider>
     );
 } 

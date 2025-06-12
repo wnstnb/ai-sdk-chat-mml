@@ -3,10 +3,10 @@ import { GeistSans } from 'geist/font/sans';
 import ThemeHandler from '@/components/ThemeHandler';
 import AppInitializer from '@/components/AppInitializer';
 import './globals.css';
-import { Toaster } from "sonner";
 import { AuthStateListener } from '@/components/AuthStateListener';
 import { Analytics } from '@vercel/analytics/next';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
+import { Toaster } from 'sonner';
 
 
 export const viewport: Viewport = {
@@ -112,7 +112,8 @@ export default function RootLayout({
             </AppInitializer>
           </ThemeHandler>
         </AuthStateListener>
-        <Toaster position="bottom-center" offset="4rem" />
+        {/* Fallback toaster for basic notifications */}
+        <Toaster position="top-right" offset="1rem" />
         <Analytics />
       </body>
     </html>
