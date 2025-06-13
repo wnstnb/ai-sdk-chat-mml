@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generatedAt": "2025-06-09T05:28:46.537Z",
+    "generatedAt": "2025-06-10T19:06:33.987Z",
     "tasksAnalyzed": 15,
     "totalTasks": 15,
     "analysisCount": 20,
@@ -51,123 +51,123 @@
     },
     {
       "taskId": 1,
-      "taskTitle": "Create Client Chat Operation State Machine",
+      "taskTitle": "Setup Editor Status Management System",
       "complexityScore": 7,
-      "recommendedSubtasks": 5,
-      "expansionPrompt": "Break down the design and implementation of the client chat operation state machine into: (1) defining enums and types for each operation, (2) implementing state utility functions, (3) integrating with the chat UI, (4) writing unit tests for state logic, and (5) documenting the state machine usage.",
-      "reasoning": "This task involves designing a granular state machine with multiple enums, utility functions, and integration points. It requires careful modeling and robust testing, making it moderately complex. Subtasks are needed for type definition, logic implementation, integration, testing, and documentation."
+      "recommendedSubtasks": 4,
+      "expansionPrompt": "Break down the Editor Status Management System implementation into detailed subtasks covering state definition, action implementation, optimization strategies, and testing approach.",
+      "reasoning": "This task involves extending an existing state management system with new data structures and functionality. The complexity comes from ensuring optimized rendering, implementing timeout mechanisms, and maintaining compatibility with the existing system. The task requires deep understanding of Zustand and React rendering optimization."
     },
     {
       "taskId": 2,
-      "taskTitle": "Implement Client Chat Orchestrator Hook",
-      "complexityScore": 8,
-      "recommendedSubtasks": 6,
-      "expansionPrompt": "Expand the orchestrator hook implementation into: (1) setting up state and derived values, (2) implementing AI tool handlers, (3) implementing audio handlers, (4) implementing file upload handlers, (5) integrating consistency checks, and (6) writing comprehensive unit tests.",
-      "reasoning": "This hook is the central manager for all chat operations, requiring coordination of multiple asynchronous flows, state management, and integration with other hooks. The complexity is high due to the need for atomicity, extensibility, and robust error handling."
+      "taskTitle": "Implement Block Loading State UI Component",
+      "complexityScore": 5,
+      "recommendedSubtasks": 3,
+      "expansionPrompt": "Break down the Block Loading State UI Component implementation into detailed subtasks covering component design, animation implementation, and integration with the status management system.",
+      "reasoning": "This is a focused UI component task with moderate complexity. It requires creating a React component with animations, accessibility considerations, and integration with the status system. The component itself is relatively straightforward but needs careful implementation to avoid performance issues."
     },
     {
       "taskId": 3,
-      "taskTitle": "Implement Audio Operation Handlers in Orchestrator",
-      "complexityScore": 6,
-      "recommendedSubtasks": 4,
-      "expansionPrompt": "Decompose the audio operation handler implementation into: (1) recording logic, (2) transcription logic, (3) state transitions and error handling, and (4) integration tests.",
-      "reasoning": "Audio operations involve asynchronous recording and transcription, error handling, and state transitions. While not trivial, the scope is focused and can be modularized into a few clear subtasks."
+      "taskTitle": "Develop AI Content Highlighting System",
+      "complexityScore": 8,
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Break down the AI Content Highlighting System implementation into detailed subtasks covering component design, animation implementation, diff highlighting algorithm, theme integration, and accessibility compliance.",
+      "reasoning": "This task has high complexity due to the need for diff highlighting algorithms, animations, theme awareness, and accessibility compliance. It involves both UI components and algorithmic work for text comparison, with multiple visual states and transitions to manage."
     },
     {
       "taskId": 4,
-      "taskTitle": "Implement File Upload Operation Handlers in Orchestrator",
-      "complexityScore": 6,
+      "taskTitle": "Standardize AI Tool Payload Structure",
+      "complexityScore": 7,
       "recommendedSubtasks": 4,
-      "expansionPrompt": "Expand file upload handler implementation into: (1) upload initiation and progress tracking, (2) state management and error handling, (3) integration with chat message flow, and (4) unit tests for upload scenarios.",
-      "reasoning": "File upload handling requires managing asynchronous uploads, state transitions, and error cases, but is conceptually straightforward and can be split into a few focused subtasks."
+      "expansionPrompt": "Break down the AI Tool Payload Standardization into detailed subtasks covering interface definition, adapter implementation for each tool type, dispatcher creation, and backward compatibility testing.",
+      "reasoning": "This task involves creating adapter logic for multiple existing tools with varied response formats. The complexity comes from maintaining backward compatibility while implementing a standardized structure, requiring deep understanding of the existing tools and careful implementation of the transformation logic."
     },
     {
       "taskId": 5,
-      "taskTitle": "Implement AI Tool Execution Handlers in Orchestrator",
-      "complexityScore": 7,
-      "recommendedSubtasks": 5,
-      "expansionPrompt": "Break down AI tool execution handler implementation into: (1) tool detection and invocation, (2) execution and result integration, (3) error handling, (4) state updates, and (5) unit tests for tool flows.",
-      "reasoning": "AI tool execution involves dynamic invocation, error handling, and integration with chat state, requiring careful coordination and robust testing. The complexity is moderate to high."
+      "taskTitle": "Enhance Toast Notification System",
+      "complexityScore": 6,
+      "recommendedSubtasks": 3,
+      "expansionPrompt": "Break down the Toast Notification System enhancement into detailed subtasks covering component redesign, scroll-to functionality, and integration with the block status system.",
+      "reasoning": "This task involves enhancing an existing notification system with new features like scroll-to functionality and better integration with the editor. The complexity is moderate, requiring UI design skills, animation implementation, and integration with other systems."
     },
     {
       "taskId": 6,
-      "taskTitle": "Refactor useChatInteractions Hook to Use Orchestrator",
-      "complexityScore": 7,
-      "recommendedSubtasks": 5,
-      "expansionPrompt": "Divide the refactor into: (1) analyzing current hook usage, (2) integrating orchestrator for chat, audio, and file flows, (3) updating message send logic, (4) updating UI event handlers, and (5) regression testing.",
-      "reasoning": "Refactoring an existing hook to use a new orchestrator requires careful analysis, integration, and thorough testing to avoid regressions, making it moderately complex."
+      "taskTitle": "Implement Error Handling UI",
+      "complexityScore": 6,
+      "recommendedSubtasks": 3,
+      "expansionPrompt": "Break down the Error Handling UI implementation into detailed subtasks covering component design, retry functionality, and integration with the block status system.",
+      "reasoning": "This task focuses on creating error indicators with retry functionality. The complexity comes from implementing the retry logic and ensuring proper integration with the block status system, requiring understanding of error handling patterns and state management."
     },
     {
       "taskId": 7,
-      "taskTitle": "Implement Tool Execution Error Handling",
+      "taskTitle": "Create User Preferences for AI Feedback",
       "complexityScore": 5,
       "recommendedSubtasks": 3,
-      "expansionPrompt": "Expand error handling implementation into: (1) formatting and reporting errors, (2) updating orchestrator state on errors, and (3) testing error scenarios and retries.",
-      "reasoning": "This task is focused on error handling logic for tool execution, which is important but can be modularized and is less complex than orchestrator-wide changes."
+      "expansionPrompt": "Break down the User Preferences implementation into detailed subtasks covering preferences schema design, UI components, and integration with the highlighting and toast systems.",
+      "reasoning": "This task involves extending existing preferences with new options for AI feedback. The complexity is moderate, requiring UI implementation, state persistence, and integration with multiple systems, but follows established patterns."
     },
     {
       "taskId": 8,
-      "taskTitle": "Implement Visual Feedback for Client Operations",
-      "complexityScore": 5,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Break down visual feedback implementation into: (1) creating status components, (2) integrating feedback into chat UI, and (3) testing UI states and accessibility.",
-      "reasoning": "Visual feedback involves UI component creation and integration, which is straightforward but requires attention to UX and accessibility."
+      "taskTitle": "Refactor Client-Side Tools for Precise Block Manipulation",
+      "complexityScore": 9,
+      "recommendedSubtasks": 6,
+      "expansionPrompt": "Break down the Client-Side Tools Refactoring into detailed subtasks covering audit of existing code, implementation of safeguards, enhancement of tool invocation, and testing strategy for each tool type.",
+      "reasoning": "This task has high complexity due to the need to audit and modify existing client-side logic across multiple tools. It requires deep understanding of the current implementation, careful refactoring to maintain compatibility, and implementation of safeguards to prevent unintended changes."
     },
     {
       "taskId": 9,
-      "taskTitle": "Implement Chat History Consistency Checks",
-      "complexityScore": 6,
+      "taskTitle": "Implement Full Document Replacement Mechanism",
+      "complexityScore": 7,
       "recommendedSubtasks": 4,
-      "expansionPrompt": "Expand consistency check implementation into: (1) defining consistency criteria, (2) implementing check and reporting functions, (3) integrating with orchestrator and send logic, and (4) testing edge cases.",
-      "reasoning": "Consistency checks require careful logic to ensure chat integrity, but the scope is well-defined and can be split into logical subtasks."
+      "expansionPrompt": "Break down the Full Document Replacement Mechanism implementation into detailed subtasks covering tool creation, confirmation dialog, intent detection, and version snapshot functionality.",
+      "reasoning": "This task involves creating a new tool with confirmation dialogs and safeguards. The complexity comes from implementing intent detection, version snapshots for recovery, and ensuring clear user communication about the impact of this operation."
     },
     {
       "taskId": 10,
-      "taskTitle": "Refactor useFileUpload Hook for Chat Integration",
-      "complexityScore": 5,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Divide the refactor into: (1) updating upload logic for atomicity, (2) integrating with orchestrator, and (3) testing upload flows and error handling.",
-      "reasoning": "Refactoring the file upload hook for orchestrator integration is a focused task with moderate complexity, mainly involving API and state changes."
+      "taskTitle": "Develop Unified AI Operation Dispatcher",
+      "complexityScore": 9,
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Break down the Unified AI Operation Dispatcher implementation into detailed subtasks covering service architecture, operation queuing, tracking system, hook implementation, and middleware pattern.",
+      "reasoning": "This is a complex architectural task that creates a central service to coordinate all AI operations. It requires implementing operation queuing, tracking, middleware patterns, and hooks for component interaction, with potential for state machine patterns for complex flows."
     },
     {
       "taskId": 11,
-      "taskTitle": "Refactor Audio Transcription Logic",
-      "complexityScore": 5,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Expand the refactor into: (1) creating a dedicated audio transcription hook, (2) integrating with orchestrator, and (3) testing recording and transcription flows.",
-      "reasoning": "This is a focused refactor to modularize audio logic, with moderate complexity and clear boundaries."
+      "taskTitle": "Implement Inline Diff Highlighting",
+      "complexityScore": 8,
+      "recommendedSubtasks": 4,
+      "expansionPrompt": "Break down the Inline Diff Highlighting implementation into detailed subtasks covering algorithm selection, component implementation, performance optimization, and accessibility compliance.",
+      "reasoning": "This task involves implementing a text diffing algorithm and rendering the differences with appropriate styling. The complexity comes from optimizing performance for large diffs, ensuring accessibility, and implementing smooth animations for transitions."
     },
     {
       "taskId": 12,
-      "taskTitle": "Update Chat Component to Use Orchestrator",
-      "complexityScore": 6,
-      "recommendedSubtasks": 4,
-      "expansionPrompt": "Break down the update into: (1) integrating orchestrator state and handlers, (2) updating UI for feedback and disabled states, (3) regression testing, and (4) updating documentation if needed.",
-      "reasoning": "Updating the main chat component for orchestrator integration involves UI and state changes, with moderate complexity due to the need for regression testing."
+      "taskTitle": "Enhance Block Context Tracking",
+      "complexityScore": 8,
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Break down the Block Context Tracking enhancement into detailed subtasks covering context extension, update mechanism, helper functions, validation implementation, and snapshot functionality.",
+      "reasoning": "This task involves extending the tracking of editor block context with additional information and functionality. The complexity comes from implementing efficient updates using MutationObserver, optimizing for performance, and creating validation functions for operations."
     },
     {
       "taskId": 13,
-      "taskTitle": "Implement Comprehensive Testing Suite",
-      "complexityScore": 8,
-      "recommendedSubtasks": 6,
-      "expansionPrompt": "Expand the testing suite into: (1) unit tests for orchestrator logic, (2) unit tests for audio/file hooks, (3) unit tests for UI components, (4) integration tests for chat flows, (5) edge case and error scenario tests, and (6) test documentation.",
-      "reasoning": "A comprehensive testing suite covering all orchestrator logic, hooks, and UI components is a large and complex task, requiring significant planning and coverage."
+      "taskTitle": "Implement Cross-Browser Compatibility",
+      "complexityScore": 7,
+      "recommendedSubtasks": 4,
+      "expansionPrompt": "Break down the Cross-Browser Compatibility implementation into detailed subtasks covering testing plan creation, browser-specific issue resolution, feature detection implementation, and performance optimization.",
+      "reasoning": "This task focuses on ensuring consistent behavior across multiple browsers. The complexity comes from addressing browser-specific issues, implementing feature detection and fallbacks, and optimizing rendering performance across different browser engines."
     },
     {
       "taskId": 14,
-      "taskTitle": "Implement Integration Tests for End-to-End Flows",
-      "complexityScore": 7,
-      "recommendedSubtasks": 5,
-      "expansionPrompt": "Break down integration testing into: (1) setting up test environment and mocks, (2) writing tests for message flow, (3) writing tests for audio and file flows, (4) writing tests for AI tool execution, and (5) reporting and CI integration.",
-      "reasoning": "End-to-end integration testing is complex due to the need for environment setup, mocking, and coverage of all user flows, but is essential for system reliability."
+      "taskTitle": "Implement Analytics for AI Interactions",
+      "complexityScore": 6,
+      "recommendedSubtasks": 3,
+      "expansionPrompt": "Break down the Analytics Implementation into detailed subtasks covering metrics definition, event tracking implementation, user interaction tracking, and privacy considerations.",
+      "reasoning": "This task involves implementing analytics tracking for AI interactions. The complexity is moderate, requiring definition of key metrics, implementation of event tracking, and ensuring privacy compliance, but follows established patterns for analytics implementation."
     },
     {
       "taskId": 15,
-      "taskTitle": "Document the Client Chat Orchestrator",
-      "complexityScore": 4,
-      "recommendedSubtasks": 3,
-      "expansionPrompt": "Expand documentation into: (1) writing usage and integration guides, (2) documenting API and best practices, and (3) reviewing and updating troubleshooting sections.",
-      "reasoning": "Documentation is less technically complex but requires thoroughness and clarity. It can be split into writing, API reference, and review subtasks."
+      "taskTitle": "Conduct Accessibility Audit and Optimization",
+      "complexityScore": 8,
+      "recommendedSubtasks": 5,
+      "expansionPrompt": "Break down the Accessibility Audit and Optimization into detailed subtasks covering automated testing, screen reader testing, keyboard navigation enhancement, ARIA implementation, contrast verification, and motion sensitivity accommodations.",
+      "reasoning": "This task involves comprehensive accessibility testing and optimization across multiple dimensions. The complexity comes from the breadth of accessibility considerations, including automated testing, screen reader compatibility, keyboard navigation, color contrast, and motion sensitivity."
     }
   ]
 }

@@ -19,6 +19,7 @@ export interface ModalState {
   isPDFModalOpen: boolean;
   voiceSummary: VoiceSummaryState;
   editorRef: React.RefObject<BlockNoteEditor<any> | null> | null;
+  setBlockStatus: ((blockId: string, status: any, action?: 'insert' | 'update' | 'delete', message?: string) => void) | null;
 
   openSearchModal: () => void;
   closeSearchModal: () => void;
@@ -42,6 +43,7 @@ export interface ModalState {
   toggleVoiceSummaryRecording: () => void;
   resetVoiceSummaryState: () => void;
   setEditorRef: (editorRef: React.RefObject<BlockNoteEditor<any> | null> | null) => void;
+  setBlockStatusFunction: (fn: ((blockId: string, status: any, action?: 'insert' | 'update' | 'delete', message?: string) => void) | null) => void;
 }
 
 const initialVoiceSummaryState: VoiceSummaryState = {
@@ -63,6 +65,7 @@ export const useModalStore = create<ModalState>()(
       isPDFModalOpen: false,
       voiceSummary: initialVoiceSummaryState,
       editorRef: null,
+      setBlockStatus: null,
 
       openSearchModal: () => set({ isSearchModalOpen: true }),
       closeSearchModal: () => set({ isSearchModalOpen: false }),
@@ -100,6 +103,7 @@ export const useModalStore = create<ModalState>()(
       resetVoiceSummaryState: () =>
         set({ voiceSummary: initialVoiceSummaryState }),
       setEditorRef: (editorRef) => set({ editorRef }),
+      setBlockStatusFunction: (fn) => set({ setBlockStatus: fn }),
     }),
     {
       name: "modal-storage",

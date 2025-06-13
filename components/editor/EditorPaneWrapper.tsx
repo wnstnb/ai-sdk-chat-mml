@@ -3,11 +3,12 @@ import dynamic from 'next/dynamic';
 import { X } from 'lucide-react';
 import type { BlockNoteEditor, PartialBlock } from '@blocknote/core';
 import { ChatInputUI } from './ChatInputUI'; // Assuming it's in the same directory
-import { PinnedMessageBubble } from './PinnedMessageBubble'; // Import the new component
-import { Button } from "@/components/ui/button"; // For the toggle icon button
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { MessageSquare } from 'lucide-react'; // Icon for collapsed state toggle
+import { BlockHighlightWrapper } from './BlockHighlightWrapper'; // Import our new highlighting wrapper
 import type { TaggedDocument } from '@/lib/types';
+import { AttachedToastContainer } from '@/components/chat/AttachedToastContainer';
+import { useAttachedToastContext } from '@/contexts/AttachedToastContext';
+import { ChatMessagesList } from './ChatMessagesList';
+
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 // Define loading state consistent with page.tsx
@@ -84,6 +85,11 @@ interface EditorPaneWrapperProps {
     onToggleMiniPane?: () => void;
     isMainChatCollapsed?: boolean;
     miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
+    // --- NEW: Props for Mini-Pane content ---
+    miniPaneMessages?: any[]; // Chat messages for mini pane
+    miniPaneIsLoadingMessages?: boolean;
+    miniPaneIsAiLoading?: boolean;
+    miniPaneMessagesEndRef?: React.RefObject<HTMLDivElement>;
     // --- END NEW ---
     currentTheme: 'light' | 'dark'; // CHANGED: Made non-optional
 }
@@ -141,11 +147,30 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     onToggleMiniPane,
     isMainChatCollapsed,
     miniPaneToggleRef, // Destructure the ref
+    // --- NEW: Destructure Mini-Pane content props ---
+    miniPaneMessages,
+    miniPaneIsLoadingMessages,
+    miniPaneIsAiLoading,
+    miniPaneMessagesEndRef,
     // --- END NEW ---
     currentTheme, // ADDED: Destructure currentTheme
 }) => {
-    // State for the pinned message bubble collapse state
-    const [isMessageBubbleCollapsed, setIsMessageBubbleCollapsed] = React.useState(false);
+    // Initialize attached toasts for collapsed chat input
+    const { toasts } = useAttachedToastContext();
+    
+    // Debug mini pane messages
+    React.useEffect(() => {
+        if (isMiniPaneOpen) {
+            console.log('[MiniPane] Debug - Messages:', {
+                miniPaneMessages: miniPaneMessages?.length || 0,
+                isMiniPaneOpen,
+                isMainChatCollapsed,
+                firstMessage: miniPaneMessages?.[0]
+            });
+        }
+    }, [isMiniPaneOpen, miniPaneMessages, isMainChatCollapsed]);
+    
+
 
     // Handler to add a tagged document (uses prop setter)
     const handleAddTaggedDocument = (docToAdd: TaggedDocument) => {
@@ -165,66 +190,26 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
         );
     };
 
-    // Effect to auto-collapse message bubble when follow-up context appears
-    React.useEffect(() => {
-        if (followUpContext) {
-            setIsMessageBubbleCollapsed(true);
-        }
-    }, [followUpContext]);
 
-    // NEW: Effect to show bubble for new messages
-    React.useEffect(() => {
-        // If a new assistant message arrives (indicated by ID change)
-        // and there's no follow-up context,
-        // ensure the message bubble is not considered "collapsed" from a previous message.
-        if (lastAssistantMessageId && !followUpContext) {
-            setIsMessageBubbleCollapsed(false);
-        }
-    }, [lastAssistantMessageId, followUpContext]);
 
-    // Memoize the toggle button element to avoid re-creating it on every render
-    const collapsedMessageToggle = React.useMemo(() => {
-        if (!lastMessageContent) return null;
 
-        // Extract text for tooltip preview
-        const textPreview = typeof lastMessageContent === 'string' 
-            ? lastMessageContent 
-            : (lastMessageContent as any)?.text || "View last message";
-
-        return (
-            <TooltipProvider delayDuration={100}>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-foreground" // Match other input action buttons style/size
-                            onClick={() => setIsMessageBubbleCollapsed(false)}
-                            aria-label="Show last message"
-                        >
-                            <MessageSquare size={18} />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[300px] whitespace-pre-wrap break-words bg-background text-foreground border shadow-md">
-                        <p className="line-clamp-3">{textPreview}</p>
-                    </TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
-        );
-    }, [lastMessageContent]); // Re-create only if last message content changes
 
     return (
         <div className="flex-1 flex flex-col relative bg-[--editor-bg] overflow-hidden">
             {/* Editor Area */}
             <div className="flex-1 overflow-y-auto py-4 px-0 styled-scrollbar border-t border-[--border-color]">
                 {initialContent !== undefined ? (
-                    <BlockNoteEditorComponent
-                        key={documentId} 
-                        editorRef={editorRef}
-                        initialContent={initialContent}
-                        onEditorContentChange={onEditorContentChange}
-                        theme={currentTheme} // Pass the theme to BlockNoteEditorComponent
-                    />
+                    <BlockHighlightWrapper 
+                        isDarkTheme={currentTheme === 'dark'}
+                    >
+                        <BlockNoteEditorComponent
+                            key={documentId} 
+                            editorRef={editorRef}
+                            initialContent={initialContent}
+                            onEditorContentChange={onEditorContentChange}
+                            theme={currentTheme} // Pass the theme to BlockNoteEditorComponent
+                        />
+                    </BlockHighlightWrapper>
                 ) : (
                     // Consistent loading state
                     <p className="p-4 text-center text-[--muted-text-color]">Initializing editor...</p>
@@ -235,17 +220,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
             {isChatCollapsed && (
                 // Apply width constraints and centering to this relative parent
                 <div className="relative max-w-[800px] mx-auto w-full">
-                    {/* Conditional Rendering for Bubbles */} 
-                    {!followUpContext && lastMessageContent && !isMessageBubbleCollapsed && (
-                         <div className="w-full mb-2 flex justify-center">
-                             <PinnedMessageBubble 
-                                key={lastAssistantMessageId}
-                                messageContent={lastMessageContent} 
-                                onSendToEditor={handleSendToEditor} 
-                                onCollapse={() => setIsMessageBubbleCollapsed(true)}
-                             />
-                         </div>
-                    )}
+
 
                     {/* Restore original Follow Up Context styling from ChatInputArea */}
                     {followUpContext && (
@@ -287,7 +262,36 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                     {/* --- END NEW: Render Tagged Document Pills --- */}
 
                     {/* Pinned Input Area - Remove max-width/centering from here */}
-                    <div className="pt-4 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0 w-full">
+                    <div className="pt-4 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0 w-full relative">
+                        {/* Attached Toast Container for collapsed chat */}
+                        <AttachedToastContainer toasts={toasts} />
+                        
+                        {/* Mini Chat Pane - positioned exactly like toast container */}
+                        {isMiniPaneOpen && (
+                            <div className="absolute bottom-full left-0 right-0 mb-2 z-40">
+                                <div className="flex flex-col gap-2 px-4">
+                                    <div className="w-full max-w-[780px] mx-auto max-h-[350px] overflow-y-auto bg-[--input-bg] border border-[--border-color] rounded-md shadow-lg flex flex-col">
+                                        <div className="flex-1 overflow-y-auto styled-scrollbar p-2">
+                                            {miniPaneMessages && miniPaneMessages.length > 0 ? (
+                                                <ChatMessagesList 
+                                                    chatMessages={miniPaneMessages}
+                                                    isLoadingMessages={miniPaneIsLoadingMessages || false}
+                                                    isChatLoading={miniPaneIsAiLoading || false}
+                                                    handleSendToEditor={handleSendToEditor}
+                                                    messagesEndRef={miniPaneMessagesEndRef || { current: null }}
+                                                    onAddTaggedDocument={handleAddTaggedDocument}
+                                                    displayMode="mini"
+                                                />
+                                            ) : (
+                                                <div className="text-sm text-[--muted-text-color] p-4 text-center">
+                                                    {miniPaneMessages ? `No messages (${miniPaneMessages.length})` : 'No chat history available'}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         <form ref={formRef} onSubmit={sendMessage} className="w-full flex flex-col items-center">
                             {/* Use ChatInputUI directly here */}
                             <ChatInputUI 

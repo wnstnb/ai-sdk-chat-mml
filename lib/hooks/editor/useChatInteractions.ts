@@ -125,6 +125,11 @@ const searchAndTagDocumentsSchema = z.object({
   searchQuery: z.string().describe("The user's query to search for in the documents.")
 });
 
+const replaceAllContentSchema = z.object({
+  newMarkdownContent: z.string().describe("The complete new Markdown content to replace the entire document with."),
+  requireConfirmation: z.boolean().default(true).describe("Whether to require user confirmation before replacement. Defaults to true for safety."),
+});
+
 // Define client-side tools (no execute functions)
 const clientTools = {
   addContent: tool({
@@ -151,6 +156,10 @@ const clientTools = {
     description: 'Searches documents by title and semantic content. Returns a list of relevant documents that the user can choose to tag for context.',
     parameters: searchAndTagDocumentsSchema,
   }),
+  replaceAllContent: tool({
+    description: "Replaces the entire document content with new Markdown content. This is a destructive operation that requires user confirmation by default. Can be undone using Ctrl+Z/Cmd+Z or the Undo button in the toast notification.",
+    parameters: replaceAllContentSchema,
+  }),
 };
 
 // Create adapter function to fix addToolResult signature mismatch
@@ -175,6 +184,7 @@ const createMockToolExecutors = () => {
     modifyTable: mockExecutor,
     createChecklist: mockExecutor,
     searchAndTagDocumentsTool: mockExecutor,
+    replaceAllContent: mockExecutor,
   };
 };
 

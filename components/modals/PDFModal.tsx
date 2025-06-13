@@ -37,10 +37,13 @@ type InsertionTarget = 'current' | 'new';
 interface PDFModalProps {
   isOpen: boolean;
   onClose: () => void;
+  setBlockStatus?: (blockId: string, status: any, action?: 'insert' | 'update' | 'delete', message?: string) => void;
 }
 
-export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
+export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose, setBlockStatus: propSetBlockStatus }) => {
   const editorRef = useModalStore(state => state.editorRef);
+  const storeSetBlockStatus = useModalStore(state => state.setBlockStatus);
+  const setBlockStatus = propSetBlockStatus || storeSetBlockStatus;
   const router = useRouter();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const hasActiveDocument = !!editorRef?.current;
@@ -417,18 +420,48 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
       }
 
       const currentDocumentBlocks = editorRef.current.document;
+      let insertedBlocks: any = [];
       if (currentDocumentBlocks.length === 0) {
-        editorRef.current.insertBlocks(blocksToInsert, editorRef.current.getTextCursorPosition().block, 'before');
+        insertedBlocks = editorRef.current.insertBlocks(blocksToInsert, editorRef.current.getTextCursorPosition().block, 'before');
       } else {
         const lastBlock = currentDocumentBlocks[currentDocumentBlocks.length - 1];
         if (lastBlock) {
-          editorRef.current.insertBlocks(blocksToInsert, lastBlock.id, 'after');
+          insertedBlocks = editorRef.current.insertBlocks(blocksToInsert, lastBlock.id, 'after');
         } else {
           // Fallback if lastBlock is somehow undefined, though currentDocumentBlocks.length > 0
-          editorRef.current.insertBlocks(blocksToInsert, editorRef.current.getTextCursorPosition().block, 'before');
+          insertedBlocks = editorRef.current.insertBlocks(blocksToInsert, editorRef.current.getTextCursorPosition().block, 'before');
         }
       }
-      toast.success("Content inserted into the editor.");
+      
+      // Trigger highlighting for manually added PDF content
+      if (setBlockStatus && Array.isArray(insertedBlocks)) {
+        insertedBlocks.forEach((block: any) => {
+          if (block?.id) {
+            setBlockStatus(block.id, 'MODIFIED', 'insert');
+          }
+        });
+      }
+      
+      // Use enhanced toast with block navigation
+      if (Array.isArray(insertedBlocks) && insertedBlocks.length > 0) {
+        const insertedBlockIds = insertedBlocks
+          .map((block: any) => block?.id)
+          .filter((id): id is string => Boolean(id));
+        
+        if (insertedBlockIds.length > 0) {
+          const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+          createBlockStatusToast(
+            insertedBlockIds,
+            'modified',
+            'insert',
+            `PDF content inserted (${insertedBlockIds.length} block${insertedBlockIds.length > 1 ? 's' : ''})`
+          );
+        } else {
+          toast.success("Content inserted into the editor.");
+        }
+      } else {
+        toast.success("Content inserted into the editor.");
+      }
       onClose();
     } catch (error) {
       console.error("Error inserting content into BlockNote editor:", error);
@@ -480,7 +513,7 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          title: `PDF Extraction - ${new Date().toLocaleDateString()}`,
+          title: `PDF Extraction - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour12: false })}`,
           content: blocksForNewDocument 
         }),
       });

@@ -3,6 +3,8 @@ import { X } from 'lucide-react';
 import { ChatInputUI } from './ChatInputUI'; // Assuming ChatInputUI is in the same directory or adjust path
 import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions'; // <<< Import type
 import { TaggedDocument } from '@/lib/types'; // Import TaggedDocument from shared types
+import { AttachedToastContainer } from '@/components/chat/AttachedToastContainer';
+import { useAttachedToastContext } from '@/contexts/AttachedToastContext';
 
 // Define TaggedDocument interface (assuming it might not be globally available here yet)
 // interface TaggedDocument {
@@ -132,6 +134,8 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     orchestratorCurrentOperationStatusText,
     // --- END NEW ---
 }) => {
+    // Initialize attached toasts
+    const { toasts } = useAttachedToastContext();
     // const [showTagDropdown, setShowTagDropdown] = useState(false); // Removed
     // const [tagQuery, setTagQuery] = useState(''); // Removed
     // const [tagSearchResults, setTagSearchResults] = useState<TaggedDocument[]>([]); // Removed
@@ -176,6 +180,8 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 
     return (
         <div className="w-full px-0 pb-4 pt-4 flex-shrink-0 bg-[--bg-secondary] relative">
+            {/* Attached Toast Container */}
+            <AttachedToastContainer toasts={toasts} />
             {/* Display area for selected document tags (pills) - REMOVED */}
             {/* {taggedDocuments.length > 0 && (
                 <div className="w-full px-4 md:px-0 mb-2 flex flex-wrap gap-2">

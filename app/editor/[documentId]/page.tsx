@@ -75,11 +75,33 @@ import {
     deleteTextInInlineContent,
     getTextFromDataUrl,
 } from '@/lib/editorUtils'; // Import the extracted helpers
+import {
+    validateToolOperation,
+    BlockValidationResult
+} from '@/lib/blockValidation';
+import {
+    createSafeOperationPlan,
+    generateSafetyErrorReport,
+    BlockSafetyResult
+} from '@/lib/blockSafety';
+import {
+    ToolErrorHandler,
+    CommonErrors,
+    SuccessFeedback,
+    ErrorUtils
+} from '@/lib/errorHandling';
+import {
+    checkContentPreservation,
+    ContentPreservationResult,
+    createContentSnapshot,
+    ContentSnapshot
+} from '@/lib/contentPreservation';
 
 // Zustand Store
 import { useFollowUpStore } from '@/lib/stores/followUpStore';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // Import preference store
-import { useModalStore } from '@/stores/useModalStore'; // Added for Live Summaries
+import { useModalStore } from '@/stores/useModalStore'; // Corrected Path
+
 
 // --- NEW: Import the hooks ---
 import { useDocument } from '@/app/lib/hooks/editor/useDocument';
@@ -89,7 +111,7 @@ import { useTitleManagement } from '@/lib/hooks/editor/useTitleManagement'; // C
 // --- NEW: Import the useChatPane hook ---
 import { useChatPane } from '@/lib/hooks/editor/useChatPane';
 // --- NEW: Import the useFileUpload hook ---
-import { useFileUpload } from '@/lib/hooks/editor/useFileUpload';
+import { useFileUpload } from '@/lib/hooks/editor/useFileUpload'; // Corrected Path
 // --- NEW: Import the useChatInteractions hook ---
 import { useChatInteractions } from '@/lib/hooks/editor/useChatInteractions';
 import { ChatInputArea } from '@/components/editor/ChatInputArea'; // Import the new component
@@ -102,6 +124,10 @@ import { CollapseChatTab } from '@/components/chat/CollapseChatTab'; // <-- ADD 
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 // --- NEW: Import VersionHistoryModal ---
 import { VersionHistoryModal } from '@/components/editor/VersionHistoryModal';
+// --- NEW: Import DocumentReplacementConfirmationModal ---
+import DocumentReplacementConfirmationModal from '@/components/modals/DocumentReplacementConfirmationModal';
+// --- Use standard aiToast utility for proper positioning ---
+import { aiToast } from '@/lib/utils/aiToast';
 // REMOVED: SearchModal import for now, will be re-added at a higher level
 // import { SearchModal } from '@/components/search/SearchModal'; 
 import { useSWRConfig } from 'swr'; // ADDED for cache mutation
@@ -113,7 +139,9 @@ import { MobileChatDrawer } from '@/components/chat/MobileChatDrawer';
 import { FloatingActionTab } from '@/components/chat/FloatingActionTab';
 // ADDED: Import client chat operation store and states
 import { useClientChatOperationStore } from '@/lib/stores/useClientChatOperationStore';
+import { BlockStatus } from '@/app/lib/clientChatOperationState';
 import { AIToolState, AudioState, FileUploadState } from '@/app/lib/clientChatOperationState';
+import { AttachedToastProvider } from '@/contexts/AttachedToastContext';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -173,6 +201,31 @@ export default function EditorPage() {
     const [autosaveTimerId, setAutosaveTimerId] = useState<NodeJS.Timeout | null>(null);
     const [revertStatusTimerId, setRevertStatusTimerId] = useState<NodeJS.Timeout | null>(null);
     const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved' | 'error'>('idle');
+    // --- ADDED: State for intelligent auto-save batching ---
+    const [autosaveBatchContext, setAutosaveBatchContext] = useState<{
+        isInBatch: boolean;
+        batchType: 'ai-tools' | 'user-typing' | 'manual';
+        batchStartTime: number | null;
+        batchChangesCount: number;
+        lastChangeTime: number | null;
+    }>({
+        isInBatch: false,
+        batchType: 'user-typing',
+        batchStartTime: null,
+        batchChangesCount: 0,
+        lastChangeTime: null,
+    });
+    // --- ADDED: State for diff-based autosave tracking ---
+    const lastServerSaveRef = useRef<{
+        content: string | null;
+        timestamp: number;
+        changesSinceLastSave: number;
+    }>({
+        content: null,
+        timestamp: Date.now(),
+        changesSinceLastSave: 0,
+    });
+    const [localSaveStatus, setLocalSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     // --- ADDED STATE for pending mobile editor tool call ---
     const [pendingMobileEditorToolCall, setPendingMobileEditorToolCall] = useState<{ toolName: string; args: any; toolCallId: string } | null>(null);
     // --- NEW: State for Version History Modal ---
@@ -193,6 +246,12 @@ export default function EditorPage() {
     const [pendingContentForEditor, setPendingContentForEditor] = useState<string | null>(null);
     // --- NEW: State to track client-side tool processing ---
     const [isProcessingClientTools, setIsProcessingClientTools] = useState(false);
+    // --- NEW: State for document replacement confirmation modal ---
+    const [documentReplacementConfirmation, setDocumentReplacementConfirmation] = useState<{
+        isOpen: boolean;
+        args?: any;
+        isProcessing?: boolean;
+    }>({ isOpen: false });
 
     // --- Note: isChatInputBusy and currentOperationStatusText now come from useChatInteractions ---
     // Example to test UI states:
@@ -216,17 +275,32 @@ export default function EditorPage() {
         setCurrentOperationDescription,
         resetChatOperationState,
         setOperationStates,
+        setBlockStatus,
+        clearBlockStatus,
     } = useClientChatOperationStore();
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
+    
+    // --- ADDED: Initialize diff tracking when document loads ---
+    useEffect(() => {
+        if (documentData?.content) {
+            const initialContent = JSON.stringify(documentData.content);
+            lastServerSaveRef.current = {
+                content: initialContent,
+                timestamp: Date.now(),
+                changesSinceLastSave: 0,
+            };
+            console.log('[Diff Tracking] Initialized with document content');
+        }
+    }, [documentData?.content]);
     // --- ADDED: SWR config for cache mutation ---
     const { mutate } = useSWRConfig();
     // NEW: Add useMediaQuery hook
     const isMobile = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
 
     // Added for Live Summaries
-    const { openVoiceSummaryModal, setEditorRef } = useModalStore(); // Get setEditorRef
+    const { openVoiceSummaryModal, setEditorRef, setBlockStatusFunction } = useModalStore(); // Get setEditorRef
     const { currentTitle, isEditingTitle, newTitleValue, isInferringTitle, handleEditTitleClick, handleCancelEditTitle, handleSaveTitle, handleTitleInputKeyDown, handleInferTitle, setNewTitleValue } = useTitleManagement({
         documentId,
         initialName: documentData?.name || '',
@@ -251,6 +325,113 @@ export default function EditorPage() {
         documentId,
         setPageError
     });
+
+    // --- NEW: Initialize processedToolCallIds with completed tool calls from initial messages ---
+    useEffect(() => {
+        console.log('[ToolInit] useEffect triggered. initialMessages length:', initialMessages?.length || 0);
+        if (!initialMessages || initialMessages.length === 0) {
+            console.log('[ToolInit] No initial messages to process');
+            return;
+        }
+
+        const completedToolCallIds = new Set<string>();
+
+        console.log('[ToolInit] Processing initial messages for completed tool calls:', initialMessages.length);
+
+        // Create a map of all tool result messages for quick lookup
+        const toolResultMessages = new Map<string, any>();
+        for (const message of initialMessages) {
+            const msgAny = message as any;
+            if (msgAny.role === 'tool' && msgAny.tool_call_id) {
+                toolResultMessages.set(msgAny.tool_call_id, msgAny);
+                console.log(`[ToolInit] Found tool result message for call ID: ${msgAny.tool_call_id}`);
+            }
+        }
+
+        // Check for tool calls that already have results in the initial messages
+        for (const message of initialMessages) {
+            console.log(`[ToolInit] Checking message ${message.id}, role: ${message.role}, content type: ${typeof message.content}`);
+            console.log(`[ToolInit] Message content:`, message.content);
+            
+            if (message.role === 'assistant') {
+                // Handle different content formats
+                let messageContent = message.content;
+                
+                // If content is a string, try to parse it as JSON
+                if (typeof messageContent === 'string') {
+                    try {
+                        messageContent = JSON.parse(messageContent);
+                        console.log(`[ToolInit] Parsed string content to:`, messageContent);
+                    } catch (e) {
+                        console.log(`[ToolInit] Failed to parse string content as JSON:`, e);
+                        // Keep as string if parsing fails
+                    }
+                }
+                
+                // Check parts-based tool invocations (AI SDK format)
+                if (messageContent && Array.isArray(messageContent)) {
+                    console.log(`[ToolInit] Message ${message.id} has ${messageContent.length} content parts`);
+                    for (const part of messageContent) {
+                        console.log(`[ToolInit] Part type: ${part.type}`);
+                        if (part.type === 'tool-invocation' && part.toolInvocation) {
+                            const toolCallId = part.toolInvocation.toolCallId;
+                            // Mark as completed if it has state 'result' OR if there's a corresponding tool result message
+                            if (part.toolInvocation.state === 'result' || toolResultMessages.has(toolCallId)) {
+                                console.log(`[ToolInit] Found completed tool call in parts: ${toolCallId} (state: ${part.toolInvocation.state}, hasResult: ${toolResultMessages.has(toolCallId)})`);
+                                completedToolCallIds.add(toolCallId);
+                            }
+                        }
+                        // NEW: Check for tool-call content parts (incomplete tool calls)
+                        else if (part.type === 'tool-call') {
+                            const toolCall = part as any;
+                            const toolCallId = toolCall.toolCallId;
+                            if (toolResultMessages.has(toolCallId)) {
+                                console.log(`[ToolInit] Found completed tool-call: ${toolCallId} (${toolCall.toolName})`);
+                                completedToolCallIds.add(toolCallId);
+                            } else {
+                                console.log(`[ToolInit] ⚠️  INCOMPLETE TOOL CALL DETECTED: ${toolCallId} (${toolCall.toolName}) - NO RESULT MESSAGE FOUND`);
+                                console.log(`[ToolInit] This is likely the source of duplicate execution on page refresh!`);
+                                // DON'T mark as completed - let it re-execute to complete the conversation
+                            }
+                        }
+                    }
+                }
+                
+                // Check toolInvocations-based format (legacy format)
+                const msgAny = message as any;
+                if (msgAny.toolInvocations && Array.isArray(msgAny.toolInvocations)) {
+                    console.log(`[ToolInit] Message ${message.id} has ${msgAny.toolInvocations.length} toolInvocations`);
+                    for (const toolInvocation of msgAny.toolInvocations) {
+                        console.log(`[ToolInit] ToolInvocation: ${toolInvocation.toolName} (${toolInvocation.toolCallId})`);
+                        // Check if there's a corresponding tool result message
+                        if (toolResultMessages.has(toolInvocation.toolCallId)) {
+                            console.log(`[ToolInit] Found result message for tool call: ${toolInvocation.toolCallId}`);
+                            completedToolCallIds.add(toolInvocation.toolCallId);
+                        }
+                    }
+                }
+
+                // Also check for tool_calls array (another possible format)
+                if (msgAny.tool_calls && Array.isArray(msgAny.tool_calls)) {
+                    console.log(`[ToolInit] Message ${message.id} has ${msgAny.tool_calls.length} tool_calls`);
+                    for (const toolCall of msgAny.tool_calls) {
+                        if (toolCall.id && toolResultMessages.has(toolCall.id)) {
+                            console.log(`[ToolInit] Found result message for tool_calls format: ${toolCall.id}`);
+                            completedToolCallIds.add(toolCall.id);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (completedToolCallIds.size > 0) {
+            console.log('[ToolInit] Setting processedToolCallIds with completed tool calls:', Array.from(completedToolCallIds));
+            setProcessedToolCallIds(completedToolCallIds);
+        } else {
+            console.log('[ToolInit] No completed tool calls found in initial messages');
+        }
+    }, [initialMessages]);
+
     // --- NEW: Get initialTaggedDocIdsString from searchParams ---
     const initialTaggedDocIdsString = searchParams.get('taggedDocIds');
     // --- END NEW ---
@@ -419,7 +600,155 @@ export default function EditorPage() {
         setIsVersionHistoryModalOpen(false);
     }, []);
 
+    // --- ADDED: Smart Auto-Save Batching Helpers ---
+    const startAIToolsBatch = useCallback(() => {
+        console.log('[AutoSave Batch] Starting AI tools batch');
+        setAutosaveBatchContext(prev => ({
+            ...prev,
+            isInBatch: true,
+            batchType: 'ai-tools',
+            batchStartTime: Date.now(),
+            batchChangesCount: 0,
+            lastChangeTime: null,
+        }));
+    }, []);
+
+    const endAIToolsBatch = useCallback(() => {
+        console.log('[AutoSave Batch] Ending AI tools batch');
+        setAutosaveBatchContext(prev => ({
+            ...prev,
+            isInBatch: false,
+            batchStartTime: null,
+        }));
+    }, []);
+
+    // --- ADDED: Diff Analysis and Local Storage Utilities ---
+    const analyzeContentDiff = useCallback((currentContent: string, previousContent: string | null): {
+        isSignificant: boolean;
+        metrics: {
+            charDelta: number;
+            wordDelta: number;
+            linesDelta: number;
+            blockStructureChanged: boolean;
+            timeSinceLastSave: number;
+        };
+    } => {
+        if (!previousContent) {
+            return {
+                isSignificant: true,
+                metrics: { charDelta: currentContent.length, wordDelta: 0, linesDelta: 0, blockStructureChanged: false, timeSinceLastSave: 0 }
+            };
+        }
+
+        const charDelta = Math.abs(currentContent.length - previousContent.length);
+        const currentWords = currentContent.split(/\s+/).length;
+        const previousWords = previousContent.split(/\s+/).length;
+        const wordDelta = Math.abs(currentWords - previousWords);
+        
+        const currentLines = currentContent.split('\n').length;
+        const previousLines = previousContent.split('\n').length;
+        const linesDelta = Math.abs(currentLines - previousLines);
+        
+        // Check for structural changes (new blocks, headers, lists, etc.)
+        const blockStructureChanged = linesDelta > 0 || 
+            currentContent.includes('# ') !== previousContent.includes('# ') ||
+            currentContent.includes('- ') !== previousContent.includes('- ') ||
+            currentContent.includes('1. ') !== previousContent.includes('1. ');
+
+        const timeSinceLastSave = Date.now() - lastServerSaveRef.current.timestamp;
+
+        // Determine significance based on multiple factors
+        const isSignificant = 
+            charDelta > 200 ||                           // Major text changes
+            wordDelta > 50 ||                            // Substantial word count change
+            blockStructureChanged ||                     // Structure changes (paragraphs, lists, headers)
+            timeSinceLastSave > 10 * 60 * 1000 ||       // 10+ minutes since last server save
+            lastServerSaveRef.current.changesSinceLastSave >= 5; // 5+ local saves accumulated
+
+        return {
+            isSignificant,
+            metrics: { charDelta, wordDelta, linesDelta, blockStructureChanged, timeSinceLastSave }
+        };
+    }, []);
+
+    const saveToLocalStorage = useCallback(async (content: string) => {
+        try {
+            setLocalSaveStatus('saving');
+            const localSaveData = {
+                content: JSON.parse(content),
+                timestamp: Date.now(),
+                documentId,
+            };
+            localStorage.setItem(`tuon-editor-draft-${documentId}`, JSON.stringify(localSaveData));
+            setLocalSaveStatus('saved');
+            
+            // Auto-revert local save status after 1 second
+            setTimeout(() => setLocalSaveStatus('idle'), 1000);
+            
+            console.log('[Local Save] Content saved to localStorage');
+            return true;
+        } catch (error) {
+            console.error('[Local Save] Failed to save to localStorage:', error);
+            setLocalSaveStatus('error');
+            setTimeout(() => setLocalSaveStatus('idle'), 2000);
+            return false;
+        }
+    }, [documentId]);
+
+    const promoteLocalSaveToServer = useCallback(async (): Promise<boolean> => {
+        try {
+            const localData = localStorage.getItem(`tuon-editor-draft-${documentId}`);
+            if (!localData) return false;
+
+            const { content } = JSON.parse(localData);
+            const response = await fetch(`/api/documents/${documentId}/content`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content }),
+            });
+
+            if (response.ok) {
+                // Update server save tracking
+                lastServerSaveRef.current = {
+                    content: JSON.stringify(content),
+                    timestamp: Date.now(),
+                    changesSinceLastSave: 0,
+                };
+                // Clear local storage after successful server save
+                localStorage.removeItem(`tuon-editor-draft-${documentId}`);
+                console.log('[Promote Save] Local save promoted to server successfully');
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('[Promote Save] Failed to promote local save to server:', error);
+            return false;
+        }
+    }, [documentId]);
+
+    const getAutosaveDelay = useCallback((batchContext: typeof autosaveBatchContext) => {
+        const currentTime = Date.now();
+        
+        if (batchContext.batchType === 'ai-tools') {
+            if (batchContext.isInBatch) {
+                // While AI tools are actively running, use a longer delay to batch changes
+                return 8000; // 8 seconds to allow for multiple tool calls
+            } else {
+                // AI tools batch just ended, save more quickly
+                return 2000; // 2 seconds after AI tools finish
+            }
+        } else if (batchContext.batchType === 'user-typing') {
+            // Standard delay for user typing
+            return 3000; // 3 seconds for normal user interaction
+        } else {
+            // Manual or other contexts
+            return 1000; // 1 second for immediate saves
+        }
+    }, []);
+
     const handleEditorChange = useCallback((editor: BlockNoteEditorType) => {
+        console.log('[handleEditorChange] CALLED - document length:', editor.document.length);
+        console.log('[handleEditorChange] Current batch context:', autosaveBatchContext);
         setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
 
         const editorContent = editor.document;
@@ -429,6 +758,7 @@ export default function EditorPage() {
             latestEditorContentRef.current = JSON.stringify(editorContent);
             return;
         }
+        
         latestEditorBlocksRef.current = editorContent;
         try {
             latestEditorContentRef.current = JSON.stringify(editorContent);
@@ -437,6 +767,25 @@ export default function EditorPage() {
              setAutosaveStatus('error');
              return;
         }
+
+        // Update batch context with this change
+        const currentTime = Date.now();
+        setAutosaveBatchContext(prev => {
+            const updatedContext = {
+                ...prev,
+                batchChangesCount: prev.batchChangesCount + 1,
+                lastChangeTime: currentTime,
+            };
+
+            // If not in an AI batch and this looks like user typing, set user-typing context
+            if (!prev.isInBatch && prev.batchType !== 'user-typing') {
+                updatedContext.batchType = 'user-typing';
+                updatedContext.batchStartTime = currentTime;
+            }
+
+            return updatedContext;
+        });
+
         setAutosaveStatus('unsaved');
         if (revertStatusTimerId) {
             clearTimeout(revertStatusTimerId);
@@ -445,6 +794,11 @@ export default function EditorPage() {
         if (autosaveTimerId) {
             clearTimeout(autosaveTimerId);
         }
+
+        // Use intelligent delay based on current batch context
+        const delay = getAutosaveDelay(autosaveBatchContext);
+        console.log(`[handleEditorChange] Using ${delay}ms delay for ${autosaveBatchContext.batchType} context`);
+
         const newTimerId = setTimeout(async () => {
             const editorInstance = editorRef.current;
             const currentBlocks = latestEditorBlocksRef.current;
@@ -454,7 +808,48 @@ export default function EditorPage() {
                 setAutosaveStatus('error');
                 return;
             }
+
+            // Check if we should skip this save due to another change happening soon in AI batch
+            if (autosaveBatchContext.isInBatch && autosaveBatchContext.batchType === 'ai-tools') {
+                const timeSinceLastChange = Date.now() - (autosaveBatchContext.lastChangeTime || Date.now());
+                if (timeSinceLastChange < 1000) { // If a change happened within last 1 second
+                    console.log('[Autosave Timer] Skipping save due to recent change in AI batch');
+                    return;
+                }
+            }
+
+            // --- ADDED: Diff Analysis for Smart Save Decision ---
+            let shouldUseServerSave = true; // Default for AI tools and first saves
+            let diffMetrics = null;
+
+            // Only analyze diffs for user typing (not AI tools)
+            if (autosaveBatchContext.batchType === 'user-typing') {
+                const diffAnalysis = analyzeContentDiff(currentContentString, lastServerSaveRef.current.content);
+                diffMetrics = diffAnalysis.metrics;
+                shouldUseServerSave = diffAnalysis.isSignificant;
+                
+                console.log(`[Autosave Diff] Analysis:`, {
+                    isSignificant: diffAnalysis.isSignificant,
+                    metrics: diffMetrics,
+                    changesSinceLastSave: lastServerSaveRef.current.changesSinceLastSave
+                });
+            }
+
+            console.log(`[Autosave Timer] Executing ${shouldUseServerSave ? 'SERVER' : 'LOCAL'} save after ${delay}ms delay. Batch context:`, autosaveBatchContext);
+
+            if (!shouldUseServerSave) {
+                // --- LOCAL SAVE PATH (leverages existing content preparation) ---
+                const saveSuccess = await saveToLocalStorage(currentContentString);
+                if (saveSuccess) {
+                    lastServerSaveRef.current.changesSinceLastSave += 1;
+                    console.log(`[Local Save] Completed. Total local changes: ${lastServerSaveRef.current.changesSinceLastSave}`);
+                }
+                return; // Exit early for local saves
+            }
+
+            // --- SERVER SAVE PATH (existing logic preserved) ---
             setAutosaveStatus('saving');
+            
             let markdownContent: string | null = null;
             if (currentBlocks.length > 0) {
                 try {
@@ -465,6 +860,7 @@ export default function EditorPage() {
                     toast.error("Failed to generate markdown for search.");
                 }
             }
+            
             let jsonContent: Block[] | null = null;
             try {
                 jsonContent = JSON.parse(currentContentString);
@@ -473,6 +869,7 @@ export default function EditorPage() {
                 setAutosaveStatus('error');
                 return;
             }
+            
             try {
                 const response = await fetch(`/api/documents/${documentId}/content`, {
                     method: 'PUT',
@@ -483,7 +880,27 @@ export default function EditorPage() {
                     const errData = await response.json().catch(() => ({}));
                     throw new Error(errData.error?.message || `Autosave failed (${response.status})`);
                 }
+                
+                // --- ADDED: Update server save tracking after successful save ---
+                lastServerSaveRef.current = {
+                    content: currentContentString,
+                    timestamp: Date.now(),
+                    changesSinceLastSave: 0,
+                };
+                
+                console.log(`[Autosave Timer] Server save completed successfully. Changes in batch: ${autosaveBatchContext.batchChangesCount}${diffMetrics ? `, Diff: +${diffMetrics.charDelta} chars, +${diffMetrics.wordDelta} words` : ''}`);
                 setAutosaveStatus('saved');
+                
+                // Reset batch context after successful save (unless still in AI batch)
+                if (!autosaveBatchContext.isInBatch) {
+                    setAutosaveBatchContext(prev => ({
+                        ...prev,
+                        batchChangesCount: 0,
+                        batchStartTime: null,
+                        lastChangeTime: null,
+                    }));
+                }
+                
                 const revertTimer = setTimeout(() => {
                     setAutosaveStatus(status => status === 'saved' ? 'idle' : status);
                     setRevertStatusTimerId(null);
@@ -494,9 +911,9 @@ export default function EditorPage() {
                 toast.error(`Autosave failed: ${saveError.message}`);
                 setAutosaveStatus('error');
             }
-        }, 3000);
+        }, delay);
         setAutosaveTimerId(newTimerId);
-    }, [documentId, autosaveTimerId, revertStatusTimerId, setEditorRef]); // Corrected dependencies
+    }, [documentId, autosaveTimerId, revertStatusTimerId, setEditorRef, autosaveBatchContext, getAutosaveDelay]);
 
     // Effect to set editorRef object in the global store - Reinstated and Corrected
     useEffect(() => {
@@ -504,13 +921,15 @@ export default function EditorPage() {
         // We set this object into the store so other components can access it.
         console.log('[EditorPage useEffect] Setting editorRef in store. editorRef object:', editorRef);
         setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
+        setBlockStatusFunction(setBlockStatus); // Register setBlockStatus function
         
         // Cleanup to nullify the ref in store when EditorPage unmounts
         return () => {
             console.log('[EditorPage useEffect Cleanup] Setting editorRef in store to null.');
             setEditorRef(null);
+            setBlockStatusFunction(null); // Clear setBlockStatus function
         };
-    }, [setEditorRef]); // Dependency on setEditorRef ensures it runs if the store setter changes, editorRef object itself is stable.
+    }, [setEditorRef, setBlockStatusFunction]); // Dependency on setEditorRef ensures it runs if the store setter changes, editorRef object itself is stable.
 
     const handleRestoreEditorContent = useCallback((restoredBlocks: PartialBlock[]) => {
         const editor = editorRef.current;
@@ -651,39 +1070,227 @@ export default function EditorPage() {
         }
     };
 
+    // Helper function to handle validation results
+    const handleValidationResult = (validation: BlockValidationResult, operation: string): boolean => {
+        if (!validation.isValid) {
+            console.error(`[${operation}] Validation failed:`, validation.errorMessage);
+            toast.error(`${operation} failed: ${validation.errorMessage}`);
+            return false;
+        }
+
+        if (validation.warnings && validation.warnings.length > 0) {
+            validation.warnings.forEach(warning => {
+                console.warn(`[${operation}] Warning:`, warning);
+                
+                // Show console warning only for cursor position fallback, not as toast
+                if (warning.includes('No target specified, using cursor position')) {
+                    // Already logged to console above, skip toast
+                    return;
+                }
+                
+                toast.warning(warning);
+            });
+        }
+
+        return true;
+    };
+
     // Define execute* functions (not wrapped in useCallback as they are called within useEffect)
     const executeAddContent = async (args: any) => {
+        console.log('[addContent] EXECUTION STARTED - args:', args);
+        console.log('[addContent] Current editor document length:', editorRef.current?.document?.length);
+        
+        // Start AI tools batch if not already started
+        if (!autosaveBatchContext.isInBatch) {
+            startAIToolsBatch();
+        }
+        
         const editor = editorRef.current;
-        if (!editor) { toast.error('Editor not available to add content.'); return; }
+        if (!editor) { 
+            console.log('[addContent] Editor not available');
+            toast.error('Editor not available to add content.'); 
+            return; 
+        }
+        
         try {
             const { markdownContent, targetBlockId } = args;
-            if (typeof markdownContent !== 'string') { toast.error("Invalid content provided for addContent."); return; }
+            console.log('[addContent] Processing content:', markdownContent, 'target:', targetBlockId);
+            
+            if (typeof markdownContent !== 'string') { 
+                toast.error("Invalid content provided for addContent."); 
+                return; 
+            }
+
+            // Handle multiple insertion points if targetBlockId is an array
+            const targetBlockIds = Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId];
+            const results: {
+                success: Array<{ targetId: string; insertedCount: number; referenceId?: string }>;
+                failed: Array<{ targetId: string; reason: string }>;
+                totalInserted: number;
+            } = { success: [], failed: [], totalInserted: 0 };
+            
+            // Parse markdown content once for reuse
             let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(markdownContent);
             if (blocksToInsert.length === 0 && markdownContent.trim() !== '') {
                 blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: markdownContent, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
-            } else if (blocksToInsert.length === 0) return;
-            let referenceBlock: Block | PartialBlock | undefined | null = targetBlockId ? editor.getBlock(targetBlockId) : editor.getTextCursorPosition().block;
-            let placement: 'before' | 'after' = 'after';
-            if (!referenceBlock) {
-                referenceBlock = editor.document[editor.document.length - 1];
-                placement = 'after';
-                if (!referenceBlock) {
-                    editor.replaceBlocks(editor.document, blocksToInsert);
-                    toast.success("Content added from AI.");
-                    handleEditorChange(editor);
-                    return;
+            } else if (blocksToInsert.length === 0) {
+                toast.error("No content to insert.");
+                return;
+            }
+            
+            // Process each target block ID
+            for (let i = 0; i < targetBlockIds.length; i++) {
+                const currentTargetId = targetBlockIds[i];
+                
+                try {
+                    // Enhanced validation and safety using new utilities for each target
+                    const safetyPlan = createSafeOperationPlan(editor, {
+                        type: 'add',
+                        content: markdownContent,
+                        referenceBlockId: currentTargetId
+                    });
+                    
+                    if (!safetyPlan.isValid) {
+                        const errorReport = generateSafetyErrorReport('addContent', safetyPlan, { ...args, targetBlockId: currentTargetId });
+                        console.error(errorReport);
+                        results.failed.push({ targetId: currentTargetId, reason: safetyPlan.errorMessage || 'Safety validation failed' });
+                        continue;
+                    }
+
+                    // Log safety information
+                    if (safetyPlan.fallbackUsed) {
+                        console.info(`[addContent] Using fallback for target ${currentTargetId}: ${safetyPlan.fallbackReason}`);
+                    }
+                    
+                    if (!handleValidationResult(safetyPlan, 'addContent')) {
+                        results.failed.push({ targetId: currentTargetId, reason: 'Validation failed' });
+                        continue;
+                    }
+                    
+                    // Use the safely resolved reference block from the safety plan
+                    const resolvedReferenceId = safetyPlan.operationPlan?.resolvedReference || currentTargetId;
+                    let referenceBlock: Block | PartialBlock | undefined | null = resolvedReferenceId ? editor.getBlock(resolvedReferenceId) : editor.getTextCursorPosition().block;
+                    let placement: 'before' | 'after' = 'after';
+                    
+                    if (!referenceBlock) {
+                        referenceBlock = editor.document[editor.document.length - 1];
+                        placement = 'after';
+                        if (!referenceBlock) {
+                            // Only for first target, replace document
+                            if (i === 0) {
+                                const replacedBlocks = editor.replaceBlocks(editor.document, blocksToInsert);
+                                
+                                // Set highlighting status for replaced blocks
+                                if (Array.isArray(replacedBlocks)) {
+                                    replacedBlocks.forEach(block => {
+                                        if (block?.id) {
+                                            console.log('[DEBUG] Setting block status for block:', block.id);
+                                            setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                                        }
+                                    });
+                                }
+                                
+                                results.success.push({ targetId: 'document-root', insertedCount: blocksToInsert.length });
+                                results.totalInserted += blocksToInsert.length;
+                            } else {
+                                results.failed.push({ targetId: currentTargetId, reason: 'Empty document, content already inserted' });
+                            }
+                            continue;
+                        }
+                    }
+                    
+                    if (referenceBlock && referenceBlock.id) {
+                        // Insert blocks and get their IDs for highlighting
+                        const insertedBlocks = editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
+                        
+                        // Set highlighting status for newly inserted blocks
+                        if (Array.isArray(insertedBlocks)) {
+                            insertedBlocks.forEach(block => {
+                                if (block?.id) {
+                                    console.log('[DEBUG] Setting block status for inserted block:', block.id);
+                                    setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                                }
+                            });
+                        }
+                        
+                        results.success.push({ targetId: currentTargetId, insertedCount: blocksToInsert.length, referenceId: referenceBlock.id });
+                        results.totalInserted += blocksToInsert.length;
+                    } else {
+                        results.failed.push({ targetId: currentTargetId, reason: 'Could not find reference block' });
+                    }
+                    
+                } catch (error: any) {
+                    console.error(`Failed to insert content at target ${currentTargetId}:`, error);
+                    results.failed.push({ targetId: currentTargetId, reason: error.message });
                 }
             }
-            if (referenceBlock && referenceBlock.id) {
-                editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
-                toast.success('Content added from AI.');
+            
+            // Provide feedback based on results using batched toast system
+            if (results.failed.length === 0) {
+                // Use batched toast for successful insertions
+                const insertedBlockIds = results.success.flatMap(s => 
+                    Array.from({ length: s.insertedCount }, (_, idx) => s.referenceId)
+                ).filter((id): id is string => Boolean(id));
+                
+                const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+                createBatchedToolToast(
+                    'addContent',
+                    'success',
+                    'insert',
+                    insertedBlockIds
+                );
                 handleEditorChange(editor);
+            } else if (results.success.length === 0) {
+                // Use batched toast for failures
+                const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+                createBatchedToolToast(
+                    'addContent',
+                    'error',
+                    'error',
+                    results.failed.map(f => f.targetId)
+                );
             } else {
-                 toast.error("Failed to insert content: could not find reference block.");
+                // Partial success - use batched toast for successful insertions
+                const insertedBlockIds = results.success.flatMap(s => 
+                    Array.from({ length: s.insertedCount }, (_, idx) => s.referenceId)
+                ).filter((id): id is string => Boolean(id));
+                
+                const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+                createBatchedToolToast(
+                    'addContent',
+                    'success',
+                    'insert',
+                    insertedBlockIds
+                );
+                // Also show batched toast for failures
+                createBatchedToolToast(
+                    'addContent',
+                    'error',
+                    'error',
+                    results.failed.map(f => f.targetId)
+                );
+                handleEditorChange(editor);
             }
-        } catch (error: any) { console.error('Failed to execute addContent:', error); toast.error(`Error adding content: ${error.message}`); }
+            
+            return { 
+                status: 'forwarded to client', 
+                results,
+                insertedBlockIds: results.success.flatMap(s => Array.from({ length: s.insertedCount }, (_, idx) => `${s.referenceId}_${idx}`))
+            };
+            
+        } catch (error: any) { 
+            console.error('Failed to execute addContent:', error); 
+            toast.error(`Error adding content: ${error.message}`); 
+        }
+        
+        console.log('[addContent] EXECUTION COMPLETED');
     };
     const executeModifyContent = async (args: any) => {
+        // Start AI tools batch if not already started
+        if (!autosaveBatchContext.isInBatch) {
+            startAIToolsBatch();
+        }
+        
         const editor = editorRef.current;
         if (!editor) { toast.error('Editor not available to modify content.'); return; }
         console.log('[Client Tool] executeModifyContent called with args:', args);
@@ -696,7 +1303,26 @@ export default function EditorPage() {
           return;
         }
 
-        const blockIds = Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId];
+        // Enhanced validation and safety using new utilities
+        const safetyPlan = createSafeOperationPlan(editor, {
+            type: 'modify',
+            targetBlockIds: targetBlockId,
+            content: newMarkdownContent
+        });
+        
+        if (!safetyPlan.isValid) {
+            const errorReport = generateSafetyErrorReport('modifyContent', safetyPlan, args);
+            console.error(errorReport);
+            toast.error(`modifyContent failed: ${safetyPlan.errorMessage}`);
+            return;
+        }
+
+        if (!handleValidationResult(safetyPlan, 'modifyContent')) {
+            return;
+        }
+
+        // Use resolved targets from safety plan
+        const blockIds = safetyPlan.operationPlan?.resolvedTargets || (Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId]);
         const contents = Array.isArray(newMarkdownContent) ? newMarkdownContent : [newMarkdownContent];
 
         if (blockIds.length !== contents.length && Array.isArray(targetBlockId) && Array.isArray(newMarkdownContent)) {
@@ -708,17 +1334,21 @@ export default function EditorPage() {
         // Define listTypes using string literals as per standard BlockNote usage if schema access is problematic
         const listTypes = ["bulletListItem", "numberedListItem", "checkListItem"];
 
-        let successCount = 0;
-        let errorCount = 0;
+        // Enhanced results tracking for batch operations
+        const results: {
+            success: Array<{ targetId: string; blockType?: string }>;
+            failed: Array<{ targetId: string; reason: string }>;
+        } = { success: [], failed: [] };
 
         for (let i = 0; i < blockIds.length; i++) {
           const id = blockIds[i];
           const originalBlock = editor.getBlock(id);
 
           if (!originalBlock) {
-            toast.error(`Modification failed: Block ID ${id} not found.`);
-            console.warn(`Block ID ${id} not found during modifyContent.`);
-            errorCount++;
+            const errorHandler = ToolErrorHandler.getInstance();
+            const errorContext = CommonErrors.targetNotFound('modifyContent', id);
+            errorHandler.reportError(errorContext);
+            results.failed.push({ targetId: id, reason: 'Block not found' });
             continue;
           }
 
@@ -728,89 +1358,271 @@ export default function EditorPage() {
 
           let blockDefinitionToUpdate: PartialBlock | undefined = undefined;
 
-          if (checklistMatch) {
-            const isChecked = checklistMatch[1].toLowerCase() === 'x';
-            const textContent = checklistMatch[2] || "";
-            
-            blockDefinitionToUpdate = {
-              type: "checkListItem", // Use string literal for type
-              props: { ...originalBlock.props, checked: isChecked }, // Ensure 'isChecked' is boolean if schema expects boolean
-              content: textContent ? [{ type: "text", text: textContent, styles: {} }] : [], // Use string literal for type "text"
-              children: [] 
-            };
-          } else {
-            const parsedBlocks = await editor.tryParseMarkdownToBlocks(currentMarkdown);
-            if (parsedBlocks && parsedBlocks.length > 0) {
-              const { id: parsedId, ...restOfParsedBlock } = parsedBlocks[0];
-              blockDefinitionToUpdate = { ...restOfParsedBlock };
+          try {
+            if (checklistMatch) {
+              const isChecked = checklistMatch[1].toLowerCase() === 'x';
+              const textContent = checklistMatch[2] || "";
+              
+              blockDefinitionToUpdate = {
+                type: "checkListItem", // Use string literal for type
+                props: { ...originalBlock.props, checked: isChecked }, // Ensure 'isChecked' is boolean if schema expects boolean
+                content: textContent ? [{ type: "text", text: textContent, styles: {} }] : [], // Use string literal for type "text"
+                children: [] 
+              };
+            } else {
+              const parsedBlocks = await editor.tryParseMarkdownToBlocks(currentMarkdown);
+              if (parsedBlocks && parsedBlocks.length > 0) {
+                const { id: parsedId, ...restOfParsedBlock } = parsedBlocks[0];
+                blockDefinitionToUpdate = { ...restOfParsedBlock };
 
-              if (listTypes.includes(blockDefinitionToUpdate.type as string)) {
-                if (!blockDefinitionToUpdate.props) {
-                  blockDefinitionToUpdate.props = {};
-                }
-                const listItemProps = blockDefinitionToUpdate.props as { level?: string; [key: string]: any };
-                
-                if (listItemProps.level === undefined) {
-                  const originalBlockIsList = listTypes.includes(originalBlock.type as string);
-                  if (originalBlockIsList && originalBlock.props && (originalBlock.props as any).level !== undefined) {
-                    listItemProps.level = (originalBlock.props as any).level;
-                  } else {
-                    listItemProps.level = "0"; 
+                if (listTypes.includes(blockDefinitionToUpdate.type as string)) {
+                  if (!blockDefinitionToUpdate.props) {
+                    blockDefinitionToUpdate.props = {};
+                  }
+                  const listItemProps = blockDefinitionToUpdate.props as { level?: string; [key: string]: any };
+                  
+                  if (listItemProps.level === undefined) {
+                    const originalBlockIsList = listTypes.includes(originalBlock.type as string);
+                    if (originalBlockIsList && originalBlock.props && (originalBlock.props as any).level !== undefined) {
+                      listItemProps.level = (originalBlock.props as any).level;
+                    } else {
+                      listItemProps.level = "0"; 
+                    }
                   }
                 }
+              } else {
+                const errorHandler = ToolErrorHandler.getInstance();
+                const errorContext = CommonErrors.invalidContent('modifyContent', 'markdown');
+                errorContext.details = `Failed to parse markdown: "${currentMarkdown}"`;
+                errorContext.targetId = id;
+                errorHandler.reportError(errorContext);
+                results.failed.push({ targetId: id, reason: 'Markdown parsing failed' });
+                continue;
               }
-            } else {
-              toast.error(`Failed to parse Markdown for block ID ${id}: "${currentMarkdown}"`);
-              console.warn(`Markdown parsing failed for block ${id}:`, currentMarkdown);
-              errorCount++;
-              continue;
             }
-          }
 
-          if (blockDefinitionToUpdate) {
-            const { id: payloadId, ...finalPayload } = blockDefinitionToUpdate as PartialBlock & {id?: string};
-            editor.updateBlock(id, finalPayload as PartialBlock);
-            successCount++;
+            if (blockDefinitionToUpdate) {
+              const { id: payloadId, ...finalPayload } = blockDefinitionToUpdate as PartialBlock & {id?: string};
+              editor.updateBlock(id, finalPayload as PartialBlock);
+              
+              // Set highlighting status for modified block
+              console.log('[DEBUG] Setting block status for modified block:', id);
+              setBlockStatus(id, BlockStatus.MODIFIED, 'update');
+              
+              results.success.push({ targetId: id, blockType: blockDefinitionToUpdate.type as string });
+            }
+          } catch (error: any) {
+            const errorHandler = ToolErrorHandler.getInstance();
+            const errorContext = CommonErrors.systemError('modifyContent', error);
+            errorContext.targetId = id;
+            errorHandler.reportError(errorContext);
+            results.failed.push({ targetId: id, reason: ErrorUtils.extractErrorMessage(error) });
           }
         }
 
-        if (successCount > 0) {
-          toast.success(`${successCount} block(s) modified.`);
+        // Enhanced feedback using batched toast system to prevent flooding
+        if (results.failed.length === 0 && results.success.length > 0) {
+          // Use batched toast for successful modifications
+          const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+          createBatchedToolToast(
+            'modifyContent',
+            'success',
+            'update',
+            results.success.map(r => r.targetId)
+          );
           handleEditorChange(editor); 
-        }
-        if (errorCount > 0) {
-          toast.error(`${errorCount} block(s) could not be modified.`);
-        }
-        if (successCount === 0 && errorCount === 0 && blockIds.length > 0) {
-            toast.info("No changes applied to blocks.");
+        } else if (results.success.length === 0 && results.failed.length > 0) {
+          // Use batched toast for failures
+          const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+          createBatchedToolToast(
+            'modifyContent',
+            'error',
+            'error',
+            results.failed.map(r => r.targetId)
+          );
+          console.error(`[modifyContent] All ${results.failed.length} modification(s) failed`);
+        } else if (results.success.length > 0 && results.failed.length > 0) {
+          // Partial success - use batched toast for successful modifications
+          const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+          createBatchedToolToast(
+            'modifyContent',
+            'success',
+            'update',
+            results.success.map(r => r.targetId)
+          );
+          // Also show batched toast for failures
+          createBatchedToolToast(
+            'modifyContent',
+            'error',
+            'error',
+            results.failed.map(r => r.targetId)
+          );
+          handleEditorChange(editor);
+        } else if (blockIds.length > 0) {
+          toast.info("No changes applied to blocks.");
         }
     };
     const executeDeleteContent = async (args: any) => {
+        // Start AI tools batch if not already started
+        if (!autosaveBatchContext.isInBatch) {
+            startAIToolsBatch();
+        }
+        
         const editor = editorRef.current;
         if (!editor) { toast.error('Editor not available to delete content.'); return; }
         try {
             const { targetBlockId, targetText } = args;
             if (!targetBlockId) { toast.error('Deletion failed: Missing target block ID(s).'); return; }
-            const blockIdsToDelete = Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId];
+            
+            // Enhanced validation and safety using new utilities
+            const safetyPlan = createSafeOperationPlan(editor, {
+                type: 'delete',
+                targetBlockIds: targetBlockId
+            });
+            
+            if (!safetyPlan.isValid) {
+                const errorReport = generateSafetyErrorReport('deleteContent', safetyPlan, args);
+                console.error(errorReport);
+                toast.error(`deleteContent failed: ${safetyPlan.errorMessage}`);
+                return;
+            }
+
+            if (!handleValidationResult(safetyPlan, 'deleteContent')) {
+                return;
+            }
+
+            // Use resolved targets from safety plan
+            const blockIdsToDelete = safetyPlan.operationPlan?.resolvedTargets || (Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId]);
+            
+            // Enhanced results tracking for batch operations
+            const results: {
+                success: Array<{ targetId: string; operation: 'text_deleted' | 'block_removed' }>;
+                failed: Array<{ targetId: string; reason: string }>;
+            } = { success: [], failed: [] };
+
             if (targetText && blockIdsToDelete.length === 1) {
-                const targetBlock = editor.getBlock(blockIdsToDelete[0]);
-                if (!targetBlock) { toast.error(`Deletion failed: Block ID ${blockIdsToDelete[0]} not found.`); return; }
-                if (!targetBlock.content || !Array.isArray(targetBlock.content)) { toast.error(`Deletion failed: Block ${targetBlock.id} has no deletable content.`); return; }
+                // Single block text deletion
+                const id = blockIdsToDelete[0];
+                const targetBlock = editor.getBlock(id);
+                
+                if (!targetBlock) { 
+                    const errorHandler = ToolErrorHandler.getInstance();
+                    const errorContext = CommonErrors.targetNotFound('deleteContent', id);
+                    errorHandler.reportError(errorContext);
+                    return; 
+                }
+                
+                if (!targetBlock.content || !Array.isArray(targetBlock.content)) { 
+                    const errorHandler = ToolErrorHandler.getInstance();
+                    const errorContext = CommonErrors.invalidContent('deleteContent', 'block content');
+                    errorContext.details = `Block ${targetBlock.id} has no deletable content`;
+                    errorContext.targetId = id;
+                    errorHandler.reportError(errorContext);
+                    return; 
+                }
+                
                 const updatedContent = deleteTextInInlineContent(targetBlock.content, targetText);
                 if (updatedContent !== null) {
                     if (editor.getBlock(targetBlock.id)) {
                         const newText = getInlineContentText(updatedContent);
-                        if (!newText.trim()) { editor.removeBlocks([targetBlock.id]); toast.success(`Removed block ${targetBlock.id}.`); handleEditorChange(editor); }
-                        else { editor.updateBlock(targetBlock.id, { content: updatedContent }); toast.success(`Text "${targetText}" deleted.`); handleEditorChange(editor); }
-                    } else { toast.error(`Deletion failed: Target block ${targetBlock.id} disappeared.`); }
-                } else { toast.warning(`Could not find text "${targetText}" to delete in block ${targetBlock.id}.`); }
+                        if (!newText.trim()) { 
+                            // Set delete preview status instead of removing immediately
+                            setBlockStatus(targetBlock.id, BlockStatus.MODIFIED, 'delete');
+                            // editor.removeBlocks([targetBlock.id]); 
+                            
+                            // Use enhanced toast with block navigation for block deletion
+                            const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+                            createBlockStatusToast(
+                                [targetBlock.id],
+                                'modified',
+                                'delete',
+                                `Block marked for removal`
+                            );
+                            // handleEditorChange(editor); 
+                        } else { 
+                            editor.updateBlock(targetBlock.id, { content: updatedContent }); 
+                            
+                            // Use batched toast for text deletion
+                            const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+                            createBatchedToolToast(
+                                'deleteContent',
+                                'success',
+                                'delete',
+                                [targetBlock.id]
+                            );
+                            handleEditorChange(editor); 
+                        }
+                    } else { 
+                        const errorHandler = ToolErrorHandler.getInstance();
+                        const errorContext = CommonErrors.systemError('deleteContent', new Error(`Target block ${targetBlock.id} disappeared during operation`));
+                        errorHandler.reportError(errorContext);
+                    }
+                } else { 
+                    toast.warning(`Could not find text "${targetText}" to delete in block ${targetBlock.id}.`); 
+                }
             } else {
-                if (targetText) { toast.warning("Cannot delete specific text across multiple blocks. Deleting blocks instead."); }
-                const existingBlockIds = blockIdsToDelete.filter(id => editor.getBlock(id));
-                if (existingBlockIds.length === 0) { toast.error("Deletion failed: Target blocks disappeared."); return; }
-                if (existingBlockIds.length !== blockIdsToDelete.length) { toast.warning("Some target blocks were missing, removing the ones found."); }
-                editor.removeBlocks(existingBlockIds);
-                toast.success(`Removed ${existingBlockIds.length} block(s).`);
+                // Multi-block deletion
+                if (targetText) { 
+                    toast.warning("Cannot delete specific text across multiple blocks. Deleting blocks instead."); 
+                }
+                
+                // Check which blocks exist
+                for (const id of blockIdsToDelete) {
+                    const block = editor.getBlock(id);
+                    if (block) {
+                        results.success.push({ targetId: id, operation: 'block_removed' });
+                    } else {
+                        results.failed.push({ targetId: id, reason: 'Block not found or disappeared' });
+                    }
+                }
+                
+                if (results.success.length === 0) { 
+                    const errorHandler = ToolErrorHandler.getInstance();
+                    const errorContext = CommonErrors.targetNotFound('deleteContent', 'all targets');
+                    errorContext.details = 'All target blocks disappeared';
+                    errorHandler.reportError(errorContext);
+                    return; 
+                }
+                
+                const existingBlockIds = results.success.map(r => r.targetId);
+                
+                // Set delete preview status for each block instead of removing immediately
+                existingBlockIds.forEach(blockId => {
+                    setBlockStatus(blockId, BlockStatus.MODIFIED, 'delete');
+                });
+                
+                // Store the blocks to delete for later cleanup (commented out immediate deletion)
+                // editor.removeBlocks(existingBlockIds);
+                
+                // Enhanced feedback with batched toast system
+                if (results.failed.length === 0) {
+                    // Use batched toast for successful deletions
+                    const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+                    createBatchedToolToast(
+                        'deleteContent',
+                        'success',
+                        'delete',
+                        existingBlockIds
+                    );
+                } else {
+                    // Partial success - use batched toast for successful deletions
+                    const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+                    createBatchedToolToast(
+                        'deleteContent',
+                        'success',
+                        'delete',
+                        existingBlockIds
+                    );
+                    // Also show batched toast for failures
+                    createBatchedToolToast(
+                        'deleteContent',
+                        'error',
+                        'error',
+                        results.failed.map(f => f.targetId)
+                    );
+                    console.warn(`[deleteContent] Some blocks were missing:`, results.failed);
+                }
+                
                 handleEditorChange(editor);
             }
         } catch (error: any) { console.error('Failed to execute deleteContent:', error); toast.error(`Error deleting content: ${error.message}`); }
@@ -836,58 +1648,142 @@ export default function EditorPage() {
                 return;
             }
 
+            // Handle multiple insertion points if targetBlockId is an array
+            const targetBlockIds = Array.isArray(targetBlockId) ? targetBlockId : [targetBlockId];
+            const results: {
+                success: Array<{ targetId: string; insertedCount: number; referenceId?: string }>;
+                failed: Array<{ targetId: string; reason: string }>;
+                totalInserted: number;
+            } = { success: [], failed: [], totalInserted: 0 };
+
+            // Create checklist blocks once for reuse
             const blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = items.map(itemText => ({
                 type: 'checkListItem',
                 props: { checked: false }, // BlockNote uses boolean false for unchecked
                 content: itemText ? [{ type: 'text', text: itemText, styles: {} }] : [],
             }));
 
-            let referenceBlock: Block | PartialBlock | undefined | null = targetBlockId ? editor.getBlock(targetBlockId) : editor.getTextCursorPosition().block;
-            let placement: 'before' | 'after' = 'after';
-
-            if (!referenceBlock) {
-                const lastBlock = editor.document[editor.document.length - 1];
-                if (lastBlock) {
-                    referenceBlock = lastBlock;
-                    placement = 'after';
-                } else {
-                    // Document is empty, replace all blocks (which is none)
-                    editor.replaceBlocks(editor.document, blocksToInsert);
-                    toast.success(`${blocksToInsert.length} checklist item(s) added.`);
-                    handleEditorChange(editor);
-                    return;
-                }
-            }
-            
-            // Ensure the reference block still exists if it was fetched by ID
-            if (targetBlockId && !editor.getBlock(targetBlockId)){
-                toast.error("Failed to create checklist: reference block not found or disappeared.");
-                // Fallback: try inserting at the end or current cursor
-                const currentPosBlock = editor.getTextCursorPosition().block;
-                if (currentPosBlock && currentPosBlock.id) {
-                    referenceBlock = currentPosBlock;
-                } else {
-                    const lastDocBlock = editor.document[editor.document.length - 1];
-                    if (lastDocBlock && lastDocBlock.id) referenceBlock = lastDocBlock;
-                    else {
-                         editor.replaceBlocks(editor.document, blocksToInsert); // if all else fails
-                         toast.success(`${blocksToInsert.length} checklist item(s) added.`);
-                         handleEditorChange(editor);
-                         return;
+            // Process each target block ID
+            for (let i = 0; i < targetBlockIds.length; i++) {
+                const currentTargetId = targetBlockIds[i];
+                
+                try {
+                    // Enhanced validation and safety using new utilities for each target
+                    const safetyPlan = createSafeOperationPlan(editor, {
+                        type: 'createChecklist',
+                        content: items,
+                        referenceBlockId: currentTargetId
+                    });
+                    
+                    if (!safetyPlan.isValid) {
+                        const errorReport = generateSafetyErrorReport('createChecklist', safetyPlan, { ...args, targetBlockId: currentTargetId });
+                        console.error(errorReport);
+                        results.failed.push({ targetId: currentTargetId, reason: safetyPlan.errorMessage || 'Safety validation failed' });
+                        continue;
                     }
+
+                    // Log safety information
+                    if (safetyPlan.fallbackUsed) {
+                        console.info(`[createChecklist] Using fallback for target ${currentTargetId}: ${safetyPlan.fallbackReason}`);
+                    }
+
+                    if (!handleValidationResult(safetyPlan, 'createChecklist')) {
+                        results.failed.push({ targetId: currentTargetId, reason: 'Validation failed' });
+                        continue;
+                    }
+
+                    // Use the safely resolved reference block from the safety plan
+                    const resolvedReferenceId = safetyPlan.operationPlan?.resolvedReference || currentTargetId;
+                    let referenceBlock: Block | PartialBlock | undefined | null = resolvedReferenceId ? editor.getBlock(resolvedReferenceId) : editor.getTextCursorPosition().block;
+                    let placement: 'before' | 'after' = 'after';
+
+                    if (!referenceBlock) {
+                        const lastBlock = editor.document[editor.document.length - 1];
+                        if (lastBlock) {
+                            referenceBlock = lastBlock;
+                            placement = 'after';
+                        } else {
+                            // Only for first target, replace document
+                            if (i === 0) {
+                                const replacedBlocks = editor.replaceBlocks(editor.document, blocksToInsert);
+                                
+                                // Set highlighting status for replaced blocks
+                                if (Array.isArray(replacedBlocks)) {
+                                    replacedBlocks.forEach(block => {
+                                        if (block?.id) {
+                                            setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                                        }
+                                    });
+                                }
+                                
+                                results.success.push({ targetId: 'document-root', insertedCount: blocksToInsert.length });
+                                results.totalInserted += blocksToInsert.length;
+                            } else {
+                                results.failed.push({ targetId: currentTargetId, reason: 'Empty document, checklist already inserted' });
+                            }
+                            continue;
+                        }
+                    }
+                    
+                    // Ensure the reference block still exists if it was fetched by ID
+                    if (currentTargetId && !editor.getBlock(currentTargetId)) {
+                        console.warn(`Reference block ${currentTargetId} not found or disappeared.`);
+                        // Fallback: try inserting at the end or current cursor
+                        const currentPosBlock = editor.getTextCursorPosition().block;
+                        if (currentPosBlock && currentPosBlock.id) {
+                            referenceBlock = currentPosBlock;
+                        } else {
+                            const lastDocBlock = editor.document[editor.document.length - 1];
+                            if (lastDocBlock && lastDocBlock.id) {
+                                referenceBlock = lastDocBlock;
+                            } else {
+                                results.failed.push({ targetId: currentTargetId, reason: 'No valid reference block found' });
+                                continue;
+                            }
+                        }
+                    }
+
+                    if (referenceBlock && referenceBlock.id) {
+                        const insertedBlocks = editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
+                        
+                        // Set highlighting status for newly inserted checklist blocks
+                        if (Array.isArray(insertedBlocks)) {
+                            insertedBlocks.forEach(block => {
+                                if (block?.id) {
+                                    console.log('[DEBUG] Setting block status for checklist block:', block.id);
+                                    setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                                }
+                            });
+                        }
+                        
+                        results.success.push({ targetId: currentTargetId, insertedCount: blocksToInsert.length, referenceId: referenceBlock.id });
+                        results.totalInserted += blocksToInsert.length;
+                    } else {
+                        results.failed.push({ targetId: currentTargetId, reason: 'Could not find reference block' });
+                    }
+
+                } catch (error: any) {
+                    console.error(`Failed to insert checklist at target ${currentTargetId}:`, error);
+                    results.failed.push({ targetId: currentTargetId, reason: error.message });
                 }
             }
 
-            if (referenceBlock && referenceBlock.id) {
-                editor.insertBlocks(blocksToInsert, referenceBlock.id, placement);
-                toast.success(`${blocksToInsert.length} checklist item(s) added.`);
+            // Provide feedback based on results
+            if (results.failed.length === 0) {
+                toast.success(`Checklist created at ${results.success.length} location(s). Total items inserted: ${results.totalInserted}`);
                 handleEditorChange(editor);
+            } else if (results.success.length === 0) {
+                toast.error(`Failed to create checklist at any of the ${targetBlockIds.length} target location(s).`);
             } else {
-                // Fallback if referenceBlock.id is somehow still null (e.g. text cursor in non-block context)
-                editor.replaceBlocks(editor.document, blocksToInsert); 
-                toast.success(`${blocksToInsert.length} checklist item(s) added to the end.`);
+                toast.warning(`Partial success: Checklist created at ${results.success.length} location(s), failed at ${results.failed.length} location(s).`);
                 handleEditorChange(editor);
             }
+
+            return { 
+                status: 'forwarded to client', 
+                results,
+                insertedBlockIds: results.success.flatMap(s => Array.from({ length: s.insertedCount }, (_, idx) => `${s.referenceId}_checklist_${idx}`))
+            };
 
         } catch (error: any) {
             console.error('Error processing createChecklist tool call:', error);
@@ -907,6 +1803,24 @@ export default function EditorPage() {
             if (typeof tableBlockId !== 'string' || typeof newTableMarkdown !== 'string') {
                 toast.error('Invalid arguments for modifyTable.');
                 console.error('Invalid args for modifyTable:', args);
+                return;
+            }
+
+            // Enhanced validation and safety using new utilities
+            const safetyPlan = createSafeOperationPlan(editor, {
+                type: 'modifyTable',
+                targetBlockIds: [tableBlockId],
+                content: newTableMarkdown
+            });
+            
+            if (!safetyPlan.isValid) {
+                const errorReport = generateSafetyErrorReport('modifyTable', safetyPlan, args);
+                console.error(errorReport);
+                toast.error(`modifyTable failed: ${safetyPlan.errorMessage}`);
+                return;
+            }
+
+            if (!handleValidationResult(safetyPlan, 'modifyTable')) {
                 return;
             }
 
@@ -946,7 +1860,18 @@ export default function EditorPage() {
 
             // Replace the original table block with the newly parsed block(s)
             // Note: Parsing might yield multiple blocks if the markdown is complex, but typically a table markdown yields one table block.
-            editor.replaceBlocks([tableBlockId], newBlocks);
+            const replacedBlocks = editor.replaceBlocks([tableBlockId], newBlocks);
+            
+            // Set highlighting status for modified table blocks
+            if (Array.isArray(replacedBlocks)) {
+                replacedBlocks.forEach(block => {
+                    if (block?.id) {
+                        console.log('[DEBUG] Setting block status for table block:', block.id);
+                        setBlockStatus(block.id, BlockStatus.MODIFIED, 'update');
+                    }
+                });
+            }
+            
             toast.success(`Table block ${tableBlockId} updated.`);
             handleEditorChange(editor); // Trigger state update and autosave
 
@@ -954,6 +1879,126 @@ export default function EditorPage() {
             console.error('Error processing modifyTable tool call:', error);
             toast.error(`Failed to modify table: ${error.message}`);
         }
+    };
+
+    const executeReplaceAllContent = async (args: any) => {
+        console.log('[ServerSide-ClientTool][replaceAllContent] EXECUTION STARTED - args:', args);
+        
+        // Start AI tools batch if not already started
+        if (!autosaveBatchContext.isInBatch) {
+            startAIToolsBatch();
+        }
+        
+        const editor = editorRef.current;
+        if (!editor) { 
+            console.log('[ServerSide-ClientTool][replaceAllContent] Editor not available');
+            toast.error('Editor not available to replace content.'); 
+            return; 
+        }
+        
+        try {
+            const { newMarkdownContent, requireConfirmation = true } = args;
+            console.log('[ServerSide-ClientTool][replaceAllContent] Processing content:', { 
+                contentLength: newMarkdownContent?.length,
+                requireConfirmation 
+            });
+            
+            if (typeof newMarkdownContent !== 'string') { 
+                toast.error("Invalid content provided for replaceAllContent."); 
+                return; 
+            }
+
+            // If confirmation is required, show confirmation modal
+            if (requireConfirmation) {
+                console.log('[ServerSide-ClientTool][replaceAllContent] Showing confirmation modal');
+                setDocumentReplacementConfirmation({
+                    isOpen: true,
+                    args: { newMarkdownContent, requireConfirmation: false }, // Disable nested confirmation
+                    isProcessing: false
+                });
+                return; // Exit early, will be resumed after confirmation
+            }
+            
+            // Get existing blocks for metadata and snapshot
+            const previousBlocks = editor.document;
+            const previousBlockIds = previousBlocks.map(block => block.id);
+            console.log(`[ServerSide-ClientTool][replaceAllContent] Replacing ${previousBlockIds.length} blocks`);
+            
+            // Parse the new markdown content
+            let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(newMarkdownContent);
+            if (blocksToInsert.length === 0 && newMarkdownContent.trim() !== '') {
+                blocksToInsert.push({ 
+                    type: 'paragraph', 
+                    content: [{ type: 'text', text: newMarkdownContent, styles: {} }] 
+                } as PartialBlock<typeof schema.blockSchema>);
+            } else if (blocksToInsert.length === 0) {
+                toast.error("No content to replace with.");
+                return;
+            }
+            
+             // Replace all document content using explicit transaction grouping
+             // This ensures the entire replacement operation is grouped as a single undo/redo operation
+             const insertedBlocks = editor.transact(() => {
+                 console.log('[ServerSide-ClientTool][replaceAllContent] Starting transaction for document replacement');
+                 const result = editor.replaceBlocks(editor.document, blocksToInsert);
+                 console.log('[ServerSide-ClientTool][replaceAllContent] Document replacement completed within transaction');
+                 return result;
+             });
+             
+             // Set highlighting status for newly inserted blocks
+             if (Array.isArray(insertedBlocks)) {
+                 insertedBlocks.forEach(block => {
+                     if (block?.id) {
+                         console.log('[ServerSide-ClientTool][replaceAllContent] Setting block status for replaced block:', block.id);
+                         setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                     }
+                 });
+             }
+             
+             // Use the enhanced toast system from the codebase
+             const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+             
+             // Create enhanced toast with Undo functionality by extending the createBlockStatusToast function
+             const insertedBlockIds = Array.isArray(insertedBlocks) ? insertedBlocks.map(block => block.id) : [];
+             console.log(`[ServerSide-ClientTool][replaceAllContent] Successfully replaced ${previousBlockIds.length} blocks with ${insertedBlockIds.length} new blocks`);
+             
+             // Use the standard attached toast system with undo functionality
+             const { aiToast } = await import('@/lib/utils/aiToast');
+             
+             // Create a styled success toast with affected block IDs to force it into AttachedToastContainer
+             // and add undo functionality through a custom message
+             const undoToastMessage = `Document replaced (${insertedBlockIds.length} blocks) - Press Ctrl+Z to undo`;
+             const toastId = aiToast.success(undoToastMessage, {
+                 affectedBlockIds: insertedBlockIds.length > 0 ? insertedBlockIds : ['document-root'], // Use actual block IDs or fallback to force attached container
+                 id: 'document-replacement-undo',
+                 duration: 10000, // Longer duration for destructive actions
+                 action: 'insert',
+                 onScrollToChange: (blockId: string) => {
+                     // Optional: scroll to the first replaced block
+                     const blockElement = document.querySelector(`[data-id="${blockId}"]`);
+                     if (blockElement) {
+                         blockElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                     }
+                 }
+             });
+             
+             console.log('[ServerSide-ClientTool][replaceAllContent] Enhanced attached toast created with keyboard undo hint');
+             
+             handleEditorChange(editor);
+             
+             return { 
+                 status: 'forwarded to client', 
+                 replacedBlockIds: previousBlockIds,
+                 insertedBlockIds: insertedBlockIds,
+                 blockCount: insertedBlockIds.length
+             };
+            
+        } catch (error: any) { 
+            console.error('[ServerSide-ClientTool][replaceAllContent] Failed to execute replaceAllContent:', error); 
+            toast.error(`Error replacing content: ${error.message}`); 
+        }
+        
+        console.log('[ServerSide-ClientTool][replaceAllContent] EXECUTION COMPLETED');
     };
 
     // --- Effect Hooks (Defined BEFORE Early Returns) ---
@@ -981,17 +2026,24 @@ export default function EditorPage() {
 
             for (const part of toolInvocationParts) {
                 const toolCall = part.toolInvocation;
-                // If it's from initial messages and marked as 'result', ensure it's in processedToolCallIds
-                // but don't add to callsToProcessThisRun.
-                if (toolCall.state === 'result') {
-                    idsToMarkAsProcessed.add(toolCall.toolCallId); // Ensure it's considered processed
+                const toolCallId = toolCall.toolCallId;
+                
+                // Check if this tool call already has a result message in the current messages
+                const hasResultMessage = messages.some(msg => {
+                    const msgAny = msg as any;
+                    return msgAny.role === 'tool' && msgAny.tool_call_id === toolCallId;
+                });
+                
+                // Enhanced completion check: state='result' OR result message exists OR already processed
+                if (toolCall.state === 'result' || hasResultMessage || processedToolCallIds.has(toolCallId)) {
+                    console.log(`[ToolProcessing] Tool call ${toolCallId} already completed (state: ${toolCall.state}, hasResult: ${hasResultMessage}, processed: ${processedToolCallIds.has(toolCallId)})`);
+                    idsToMarkAsProcessed.add(toolCallId); // Ensure it's considered processed
                     continue; // Don't re-process
                 }
 
-                // If it's not marked as 'result' and not yet processed (globally), add it for processing.
-                if (!processedToolCallIds.has(toolCall.toolCallId)) {
-                    callsToProcessThisRun.push(toolCall);
-                }
+                // Only add for processing if none of the completion conditions are met
+                console.log(`[ToolProcessing] Adding tool call ${toolCallId} for processing`);
+                callsToProcessThisRun.push(toolCall);
             }
 
             if (callsToProcessThisRun.length > 0) {
@@ -1014,7 +2066,7 @@ export default function EditorPage() {
                     // This set (idsToMarkAsProcessed) will be used to update the main processedToolCallIds state later.
                     idsToMarkAsProcessed.add(toolCall.toolCallId); 
                     const { toolName, args } = toolCall;
-                    const editorTargetingTools = ['addContent', 'modifyContent', 'deleteContent', 'modifyTable', 'createChecklist']; // Added createChecklist
+                    const editorTargetingTools = ['addContent', 'modifyContent', 'deleteContent', 'modifyTable', 'createChecklist', 'replaceAllContent']; // Added createChecklist and replaceAllContent
 
                     // ADDED: Set initial AI tool state when tool call is detected
                     setOperationStates({
@@ -1068,6 +2120,12 @@ export default function EditorPage() {
                                     setAIToolState(AIToolState.AWAITING_RESULT_IN_STATE);
                                     addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'forwarded to client' } });
                                     break;
+                                case 'replaceAllContent': 
+                                    await executeReplaceAllContent(args);
+                                    // ADDED: Set awaiting result state before addToolResult
+                                    setAIToolState(AIToolState.AWAITING_RESULT_IN_STATE);
+                                    addToolResult({ toolCallId: toolCall.toolCallId, result: { status: 'forwarded to client' } });
+                                    break;
                                 case 'request_editor_content': setIncludeEditorContent(true); toast.info('AI context requested.'); break;
                                 default: 
                                     console.error(`Unknown tool: ${toolName}`); 
@@ -1109,7 +2167,8 @@ export default function EditorPage() {
         executeModifyContent, 
         executeDeleteContent, 
         executeModifyTable, 
-        executeCreateChecklist, // <-- ADDED to dependency array
+        executeCreateChecklist, 
+        executeReplaceAllContent, // <-- ADDED to dependency array
         isMobile, 
         mobileVisiblePane,
         setPendingMobileEditorToolCall,
@@ -1135,6 +2194,7 @@ export default function EditorPage() {
                 case 'deleteContent': executeDeleteContent(args); break;
                 case 'modifyTable': executeModifyTable(args); break;
                 case 'createChecklist': executeCreateChecklist(args); break; // <-- ADDED CASE
+                case 'replaceAllContent': executeReplaceAllContent(args); break; // <-- ADDED CASE
                 default:
                     console.warn("[Mobile Editor] Unknown tool name:", toolName);
                     toast.error(`Unknown tool: ${toolName}`);
@@ -1143,12 +2203,13 @@ export default function EditorPage() {
             // Clear the pending tool call
             setPendingMobileEditorToolCall(null);
         }
-    }, [mobileVisiblePane, pendingMobileEditorToolCall, executeAddContent, executeModifyContent, executeDeleteContent, executeModifyTable, executeCreateChecklist]); // <-- ADDED to dependency array
+    }, [mobileVisiblePane, pendingMobileEditorToolCall, executeAddContent, executeModifyContent, executeDeleteContent, executeModifyTable, executeCreateChecklist, executeReplaceAllContent]); // <-- ADDED to dependency array
 
     // --- NEW: Event listener for Gemini tool execution ---
     useEffect(() => {
         const handleGeminiToolExecution = (event: CustomEvent) => {
-            console.log('[EditorPage] Received geminiToolExecution event:', event.detail);
+            console.log('[EditorPage] ❌ UNEXPECTED: Gemini tool execution event received for GPT model:', event.detail);
+            console.log('[EditorPage] This should NOT happen with GPT models! This may be the source of duplicate executions.');
             
             const { action, params } = event.detail;
             
@@ -1211,19 +2272,33 @@ export default function EditorPage() {
                     }
                     break;
                     
-                case 'createChecklist':
-                    if (isMobile && mobileVisiblePane !== 'editor') {
-                        setPendingMobileEditorToolCall({ 
-                            toolName: action, 
-                            args: params, 
-                            toolCallId: `gemini-${Date.now()}` 
-                        });
-                        setMobileVisiblePane('editor');
-                        toast.info("Switching to editor to apply changes...");
-                    } else {
-                        executeCreateChecklist(params);
-                    }
-                    break;
+                                    case 'createChecklist':
+                        if (isMobile && mobileVisiblePane !== 'editor') {
+                            setPendingMobileEditorToolCall({ 
+                                toolName: action, 
+                                args: params, 
+                                toolCallId: `gemini-${Date.now()}` 
+                            });
+                            setMobileVisiblePane('editor');
+                            toast.info("Switching to editor to apply changes...");
+                        } else {
+                            executeCreateChecklist(params);
+                        }
+                        break;
+                        
+                    case 'replaceAllContent':
+                        if (isMobile && mobileVisiblePane !== 'editor') {
+                            setPendingMobileEditorToolCall({ 
+                                toolName: action, 
+                                args: params, 
+                                toolCallId: `gemini-${Date.now()}` 
+                            });
+                            setMobileVisiblePane('editor');
+                            toast.info("Switching to editor to apply changes...");
+                        } else {
+                            executeReplaceAllContent(params);
+                        }
+                        break;
                     
                 default:
                     console.warn('[EditorPage] Unknown Gemini tool action:', action);
@@ -1250,8 +2325,67 @@ export default function EditorPage() {
         setPendingMobileEditorToolCall
     ]);
 
+    // --- NEW: Event listener for confirmed block deletion after preview ---
+    useEffect(() => {
+        const handleBlockDeleteConfirmed = (event: CustomEvent) => {
+            const { blockId } = event.detail;
+            const editor = editorRef.current;
+            
+            if (editor && blockId) {
+                console.log(`[EditorPage] Confirming deletion of block ${blockId} after preview`);
+                const blockExists = editor.getBlock(blockId);
+                if (blockExists) {
+                    editor.removeBlocks([blockId]);
+                    handleEditorChange(editor);
+                    console.log(`[EditorPage] Successfully removed block ${blockId}`);
+                } else {
+                    console.warn(`[EditorPage] Block ${blockId} not found for deletion`);
+                }
+            }
+        };
+        
+        // Add event listener
+        document.addEventListener('block-delete-confirmed', handleBlockDeleteConfirmed as EventListener);
+        
+        // Cleanup
+        return () => {
+            document.removeEventListener('block-delete-confirmed', handleBlockDeleteConfirmed as EventListener);
+        };
+    }, [handleEditorChange]);
+
     useEffect(() => { /* Effect for beforeunload */
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+            // --- ADDED: Promote any local saves to server before leaving ---
+            const hasLocalSave = localStorage.getItem(`tuon-editor-draft-${documentId}`);
+            if (hasLocalSave && documentId) {
+                console.log('[BeforeUnload] Local save detected, promoting to server...');
+                try {
+                    const { content } = JSON.parse(hasLocalSave);
+                    const payload = JSON.stringify({ content });
+                    const url = `/api/documents/${documentId}/content`;
+                    
+                    if (navigator.sendBeacon) {
+                        const blob = new Blob([payload], { type: 'application/json' });
+                        const sent = navigator.sendBeacon(url, blob);
+                        console.log('[BeforeUnload] Local save promotion via beacon:', sent ? 'Success' : 'Failed');
+                        if (sent) {
+                            localStorage.removeItem(`tuon-editor-draft-${documentId}`);
+                        }
+                    } else {
+                        fetch(url, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: payload,
+                            keepalive: true,
+                        }).then(() => {
+                            localStorage.removeItem(`tuon-editor-draft-${documentId}`);
+                        }).catch(err => console.error('[BeforeUnload] Local save promotion failed:', err));
+                    }
+                } catch (error) {
+                    console.error('[BeforeUnload] Failed to promote local save:', error);
+                }
+            }
+            
             if (autosaveStatus === 'unsaved' || autosaveTimerId) {
                 if (autosaveTimerId) clearTimeout(autosaveTimerId);
                 if (revertStatusTimerId) clearTimeout(revertStatusTimerId);
@@ -1279,25 +2413,34 @@ export default function EditorPage() {
 
     useEffect(() => { /* Effect for navigation handling */
         const isLeavingEditor = !!(previousPathnameRef.current?.startsWith('/editor/') && !pathname?.startsWith('/editor/'));
-        if (isLeavingEditor && (autosaveStatus === 'unsaved' || autosaveTimerId)) {
-             if (autosaveTimerId) {
-                clearTimeout(autosaveTimerId);
-                setAutosaveTimerId(null);
-            }
-            if (revertStatusTimerId) {
-                 clearTimeout(revertStatusTimerId);
-                 setRevertStatusTimerId(null);
-            }
-            if (latestEditorContentRef.current && documentId) {
-                 setAutosaveStatus('saving');
-                 triggerSaveDocument(latestEditorContentRef.current, documentId)
-                    .catch(err => console.error("[Navigation] Save on navigate failed:", err));
+        if (isLeavingEditor) {
+            // --- ADDED: Promote local saves to server on navigation ---
+            promoteLocalSaveToServer().then(promoted => {
+                if (promoted) {
+                    console.log('[Navigation] Local save promoted to server');
+                }
+            }).catch(err => console.error('[Navigation] Failed to promote local save:', err));
+            
+            if (autosaveStatus === 'unsaved' || autosaveTimerId) {
+                 if (autosaveTimerId) {
+                    clearTimeout(autosaveTimerId);
+                    setAutosaveTimerId(null);
+                }
+                if (revertStatusTimerId) {
+                     clearTimeout(revertStatusTimerId);
+                     setRevertStatusTimerId(null);
+                }
+                if (latestEditorContentRef.current && documentId) {
+                     setAutosaveStatus('saving');
+                     triggerSaveDocument(latestEditorContentRef.current, documentId)
+                        .catch(err => console.error("[Navigation] Save on navigate failed:", err));
+                }
             }
         }
         if (pathname) {
            previousPathnameRef.current = pathname;
         }
-    }, [pathname, autosaveStatus, autosaveTimerId, revertStatusTimerId, documentId, triggerSaveDocument]);
+    }, [pathname, autosaveStatus, autosaveTimerId, revertStatusTimerId, documentId, triggerSaveDocument, promoteLocalSaveToServer]);
 
     useEffect(() => { /* Effect for unmount cleanup */
         return () => {
@@ -1309,6 +2452,98 @@ export default function EditorPage() {
     useEffect(() => { /* Effect for scrolling chat */
          scrollToBottom(); 
     }, [messages, scrollToBottom]);
+
+    // --- ADDED: Effect to automatically end AI tools batch when processing is complete ---
+    useEffect(() => {
+        // Check if we should end the AI tools batch
+        if (autosaveBatchContext.isInBatch && autosaveBatchContext.batchType === 'ai-tools') {
+            // End batch if:
+            // 1. Not processing client tools anymore
+            // 2. AI is not loading
+            // 3. Some time has passed since batch started (to allow tools to finish)
+            const batchAge = Date.now() - (autosaveBatchContext.batchStartTime || Date.now());
+            const minBatchDuration = 1000; // Minimum 1 second
+            
+            if (!isProcessingClientTools && !isAiLoading && batchAge > minBatchDuration) {
+                console.log('[AutoSave Batch] Ending AI tools batch - processing complete');
+                endAIToolsBatch();
+                
+                // Trigger a save with the shorter delay after batch ends
+                if (autosaveTimerId) {
+                    clearTimeout(autosaveTimerId);
+                    const editor = editorRef.current;
+                    if (editor && documentId && latestEditorContentRef.current) {
+                        const delay = getAutosaveDelay({ ...autosaveBatchContext, isInBatch: false });
+                        console.log(`[AutoSave Batch] Scheduling final save with ${delay}ms delay`);
+                        
+                        const newTimerId = setTimeout(async () => {
+                            console.log('[AutoSave Batch] Executing final batch save');
+                            setAutosaveStatus('saving');
+                            
+                            let markdownContent: string | null = null;
+                                                         if (latestEditorBlocksRef.current && latestEditorBlocksRef.current.length > 0) {
+                                 try {
+                                     markdownContent = await editor.blocksToMarkdownLossy(latestEditorBlocksRef.current);
+                                     markdownContent = markdownContent?.trim() || null;
+                                 } catch (markdownError) {
+                                     console.error("[Final Batch Save] Error generating markdown:", markdownError);
+                                 }
+                             }
+                            
+                                                         let jsonContent: Block[] | null = null;
+                             try {
+                                 if (!latestEditorContentRef.current) {
+                                     console.warn("[Final Batch Save] No content to save");
+                                     setAutosaveStatus('error');
+                                     return;
+                                 }
+                                 jsonContent = JSON.parse(latestEditorContentRef.current);
+                             } catch (parseError) {
+                                 console.error("[Final Batch Save] Failed to parse content string:", parseError);
+                                 setAutosaveStatus('error');
+                                 return;
+                             }
+                            
+                            try {
+                                const response = await fetch(`/api/documents/${documentId}/content`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ content: jsonContent, searchable_content: markdownContent }), 
+                                });
+                                if (!response.ok) {
+                                    const errData = await response.json().catch(() => ({}));
+                                    throw new Error(errData.error?.message || `Final batch save failed (${response.status})`);
+                                }
+                                
+                                console.log(`[Final Batch Save] Completed successfully after AI batch. Total changes: ${autosaveBatchContext.batchChangesCount}`);
+                                setAutosaveStatus('saved');
+                                
+                                // Reset batch context completely
+                                setAutosaveBatchContext({
+                                    isInBatch: false,
+                                    batchType: 'user-typing',
+                                    batchStartTime: null,
+                                    batchChangesCount: 0,
+                                    lastChangeTime: null,
+                                });
+                                
+                                const revertTimer = setTimeout(() => {
+                                    setAutosaveStatus(status => status === 'saved' ? 'idle' : status);
+                                    setRevertStatusTimerId(null);
+                                }, 2000);
+                                setRevertStatusTimerId(revertTimer);
+                            } catch (saveError: any) {
+                                console.error("[Final Batch Save] Failed:", saveError);
+                                toast.error(`Final batch save failed: ${saveError.message}`);
+                                setAutosaveStatus('error');
+                            }
+                        }, delay);
+                        setAutosaveTimerId(newTimerId);
+                    }
+                }
+            }
+        }
+    }, [isProcessingClientTools, isAiLoading, autosaveBatchContext, endAIToolsBatch, autosaveTimerId, getAutosaveDelay, documentId]);
     
     useEffect(() => { /* Effect for Embedding generation */
         return () => {
@@ -1402,9 +2637,43 @@ export default function EditorPage() {
             const { block: currentBlock } = editor.getTextCursorPosition();
             let referenceBlockId: string | undefined = currentBlock?.id;
             if (!referenceBlockId) { referenceBlockId = editor.document[editor.document.length - 1]?.id; }
-            if (referenceBlockId) { editor.insertBlocks(blocksToInsert, referenceBlockId, 'after'); }
-            else { editor.replaceBlocks(editor.document, blocksToInsert); } 
-            toast.success('Content successfully added to editor.');
+            let insertedBlocks: any = [];
+            if (referenceBlockId) { 
+                insertedBlocks = editor.insertBlocks(blocksToInsert, referenceBlockId, 'after'); 
+            }
+            else { 
+                insertedBlocks = editor.replaceBlocks(editor.document, blocksToInsert); 
+            }
+            
+            // Trigger highlighting for manually added content
+            if (Array.isArray(insertedBlocks)) {
+                insertedBlocks.forEach((block: any) => {
+                    if (block?.id) {
+                        setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                    }
+                });
+            }
+            
+            // Use enhanced toast with block navigation
+            if (Array.isArray(insertedBlocks) && insertedBlocks.length > 0) {
+                const insertedBlockIds = insertedBlocks
+                    .map((block: any) => block?.id)
+                    .filter((id): id is string => Boolean(id));
+                
+                if (insertedBlockIds.length > 0) {
+                    const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+                    createBlockStatusToast(
+                        insertedBlockIds,
+                        'modified',
+                        'insert',
+                        `Content added to editor (${insertedBlockIds.length} block${insertedBlockIds.length > 1 ? 's' : ''})`
+                    );
+                } else {
+                    toast.success('Content successfully added to editor.');
+                }
+            } else {
+                toast.success('Content successfully added to editor.');
+            }
             handleEditorChange(editor);
         } catch (error: any) { 
             console.error('Failed to add content to editor:', error); 
@@ -1474,6 +2743,31 @@ export default function EditorPage() {
         setMobileVisiblePane(pane => pane === 'chat' ? 'editor' : 'chat');
     };
 
+    // --- NEW: Handlers for document replacement confirmation ---
+    const handleDocumentReplacementConfirm = async () => {
+        if (!documentReplacementConfirmation.args) {
+            console.error('[replaceAllContent] No args found for confirmation');
+            return;
+        }
+
+        console.log('[replaceAllContent] User confirmed replacement, proceeding...');
+        setDocumentReplacementConfirmation(prev => ({ ...prev, isProcessing: true }));
+        
+        try {
+            // Execute the replacement with confirmation disabled
+            await executeReplaceAllContent(documentReplacementConfirmation.args);
+        } finally {
+            // Close the modal
+            setDocumentReplacementConfirmation({ isOpen: false });
+        }
+    };
+
+    const handleDocumentReplacementCancel = () => {
+        console.log('[replaceAllContent] User cancelled replacement');
+        setDocumentReplacementConfirmation({ isOpen: false });
+        toast.info('Document replacement cancelled');
+    };
+
     // --- NEW: Effect to handle pending content for editor on mobile ---
     useEffect(() => {
         if (pendingContentForEditor && mobileVisiblePane === 'editor' && isMobile) {
@@ -1492,12 +2786,42 @@ export default function EditorPage() {
                             if (!referenceBlockId && editor.document.length > 0) {
                                 referenceBlockId = editor.document[editor.document.length - 1]?.id;
                             }
+                            let insertedBlocks: any = [];
                             if (referenceBlockId) {
-                                editor.insertBlocks(blocksToInsert, referenceBlockId, 'after');
+                                insertedBlocks = editor.insertBlocks(blocksToInsert, referenceBlockId, 'after');
                             } else {
-                                editor.replaceBlocks(editor.document, blocksToInsert);
+                                insertedBlocks = editor.replaceBlocks(editor.document, blocksToInsert);
                             }
-                            toast.success('Content added to editor.');
+                            
+                            // Trigger highlighting for manually added content (mobile)
+                            if (Array.isArray(insertedBlocks)) {
+                                insertedBlocks.forEach((block: any) => {
+                                    if (block?.id) {
+                                        setBlockStatus(block.id, BlockStatus.MODIFIED, 'insert');
+                                    }
+                                });
+                            }
+                            
+                            // Use enhanced toast with block navigation (mobile)
+                            if (Array.isArray(insertedBlocks) && insertedBlocks.length > 0) {
+                                const insertedBlockIds = insertedBlocks
+                                    .map((block: any) => block?.id)
+                                    .filter((id): id is string => Boolean(id));
+                                
+                                if (insertedBlockIds.length > 0) {
+                                    const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+                                    createBlockStatusToast(
+                                        insertedBlockIds,
+                                        'modified',
+                                        'insert',
+                                        `Content added to editor (${insertedBlockIds.length} block${insertedBlockIds.length > 1 ? 's' : ''})`
+                                    );
+                                } else {
+                                    toast.success('Content added to editor.');
+                                }
+                            } else {
+                                toast.success('Content added to editor.');
+                            }
                             handleEditorChange(editor); // Ensure changes are saved/propagated
                         }
                     } catch (error: any) {
@@ -1551,15 +2875,63 @@ export default function EditorPage() {
     useEffect(() => {
         const lastMessage = messages[messages.length - 1];
 
+        console.log('[ToolProcessing2] Checking last message:', {
+            messageId: lastMessage?.id,
+            role: lastMessage?.role,
+            hasToolInvocations: !!(lastMessage as any)?.toolInvocations?.length,
+            toolInvocationsCount: (lastMessage as any)?.toolInvocations?.length || 0,
+            isAiLoading,
+            isProcessingClientTools,
+            processedToolCallIds: Array.from(processedToolCallIds)
+        });
+
         if (
             lastMessage?.role === 'assistant' &&
-            lastMessage.toolInvocations?.length &&
+            (lastMessage as any).toolInvocations?.length &&
             !isAiLoading && // Not currently loading an AI response
             !isProcessingClientTools // Not already processing a batch of client tools
         ) {
-            const clientToolNames = ['addContent', 'modifyContent', 'deleteContent', 'createChecklist', 'modifyTable'];
-            const invocationsToProcess = lastMessage.toolInvocations.filter(
-                (inv) => clientToolNames.includes(inv.toolName) && !processedToolCallIds.has(inv.toolCallId)
+            const clientToolNames = ['addContent', 'modifyContent', 'deleteContent', 'createChecklist', 'modifyTable', 'replaceAllContent'];
+            const invocationsToProcess = (lastMessage as any).toolInvocations.filter(
+                (inv: any) => {
+                    console.log(`[ToolProcessing2] Evaluating tool invocation: ${inv.toolName} (ID: ${inv.toolCallId})`);
+                    
+                    // Skip if already processed
+                    if (processedToolCallIds.has(inv.toolCallId)) {
+                        console.log(`[ToolProcessing2] Skipping ${inv.toolName} (ID: ${inv.toolCallId}) - already in processedToolCallIds`);
+                        return false;
+                    }
+                    
+                    // Skip if not a client-side tool
+                    if (!clientToolNames.includes(inv.toolName)) {
+                        console.log(`[ToolProcessing2] Skipping ${inv.toolName} (ID: ${inv.toolCallId}) - not a client-side tool`);
+                        return false;
+                    }
+                    
+                    // Enhanced check: Skip if there's already a tool result message for this tool call
+                    const hasResultMessage = messages.some(msg => {
+                        const msgAny = msg as any;
+                        return msgAny.role === 'tool' && msgAny.tool_call_id === inv.toolCallId;
+                    });
+                    
+                    if (hasResultMessage) {
+                        console.log(`[ToolProcessing2] Skipping ${inv.toolName} (ID: ${inv.toolCallId}) - already has result message`);
+                        // Also mark it as processed to prevent future processing
+                        setProcessedToolCallIds(prev => new Set([...prev, inv.toolCallId]));
+                        return false;
+                    }
+                    
+                    // Additional check: Look for tool invocations with state 'result' (from AI SDK)
+                    if (inv.state === 'result') {
+                        console.log(`[ToolProcessing2] Skipping ${inv.toolName} (ID: ${inv.toolCallId}) - state is 'result'`);
+                        // Mark as processed
+                        setProcessedToolCallIds(prev => new Set([...prev, inv.toolCallId]));
+                        return false;
+                    }
+                    
+                    console.log(`[ToolProcessing2] Including ${inv.toolName} (ID: ${inv.toolCallId}) for processing`);
+                    return true;
+                }
             );
 
             if (invocationsToProcess.length > 0) {
@@ -1570,11 +2942,11 @@ export default function EditorPage() {
                     // Add all current tool call IDs to processed set immediately to prevent re-entry for this batch
                     setProcessedToolCallIds(prev => {
                         const newSet = new Set(prev);
-                        invocationsToProcess.forEach(inv => newSet.add(inv.toolCallId));
+                        invocationsToProcess.forEach((inv: any) => newSet.add(inv.toolCallId));
                         return newSet;
                     });
 
-                    for (const toolInvocation of invocationsToProcess) {
+                    for (const toolInvocation of invocationsToProcess as any[]) {
                         // ADDED: Set initial AI tool state when tool call is detected
                         setOperationStates({
                             aiToolState: AIToolState.DETECTED,
@@ -1601,6 +2973,8 @@ export default function EditorPage() {
                                 result = await executeCreateChecklist(toolInvocation.args);
                             } else if (toolInvocation.toolName === 'modifyTable') {
                                 result = await executeModifyTable(toolInvocation.args);
+                            } else if (toolInvocation.toolName === 'replaceAllContent') {
+                                result = await executeReplaceAllContent(toolInvocation.args);
                             } else {
                                 console.warn(`[Client Tool] Unknown tool in batch: ${toolInvocation.toolName}`);
                                 result = { success: false, error: `Unknown client-side tool: ${toolInvocation.toolName}` };
@@ -1642,6 +3016,7 @@ export default function EditorPage() {
         executeDeleteContent, 
         executeCreateChecklist, 
         executeModifyTable, 
+        executeReplaceAllContent, // ADDED
         processedToolCallIds, 
         setProcessedToolCallIds,
         setOperationStates, // ADDED
@@ -1756,36 +3131,15 @@ export default function EditorPage() {
 
     // Main Render
     return (
-        <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden relative" 
-            onDragOver={handleDragOver} 
-            onDragLeave={handleDragLeave} 
-            onDrop={handleDrop}
-        >
+        <AttachedToastProvider>
+            <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden relative" 
+                onDragOver={handleDragOver} 
+                onDragLeave={handleDragLeave} 
+                onDrop={handleDrop}
+            >
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
-            {/* --- Mini-Pane Container (Rendered conditionally) --- */}
-            {isMiniPaneOpen && (isChatPaneCollapsed || mobileVisiblePane !== 'chat') && (
-                <motion.div
-                    ref={miniPaneRef}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    transition={{ duration: 0.2 }}
-                    className="fixed bottom-[calc(var(--chat-input-area-height,174px)_+_8px)] left-0 right-0 mx-auto w-[calc(100%-2rem)] max-w-[700px] max-h-[350px] z-[1050] overflow-y-auto bg-[--input-bg] border border-[--border-color] rounded-md shadow-lg flex flex-col"
-                >
-                    <div className="flex-1 overflow-y-auto styled-scrollbar p-2">
-                        <ChatMessagesList 
-                            chatMessages={messages}
-                            isLoadingMessages={isLoadingMessages} // Or a mini-specific loading state if different
-                            isChatLoading={isAiLoading} // Or a mini-specific loading state
-                            handleSendToEditor={handleSendToEditor} // Actions should still work
-                            messagesEndRef={messagesEndRef} // May need a separate ref for mini-pane scroll
-                            onAddTaggedDocument={(doc) => { /* Define or pass handler */ }}
-                            displayMode="mini"
-                        />
-                    </div>
-                </motion.div>
-            )}
+
 
             {/* Conditional Rendering based on isMobile */}
             {isMobile ? (
@@ -1811,6 +3165,8 @@ export default function EditorPage() {
                                     handleSaveContent={handleSaveContent}
                                     isSaving={isSaving}
                                     onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
+                                    batchContext={autosaveBatchContext}
+                                    localSaveStatus={localSaveStatus}
                                     isDocumentStarred={currentDocIsStarred}
                                     onToggleDocumentStar={handleToggleCurrentDocumentStar}
                                 />
@@ -1861,6 +3217,11 @@ export default function EditorPage() {
                                         onToggleMiniPane={handleToggleMiniPane}
                                         isMainChatCollapsed={true} // For mobile, editor implies main chat is hidden
                                         miniPaneToggleRef={miniPaneToggleRef}
+                                        // Mini pane content props
+                                        miniPaneMessages={messages}
+                                        miniPaneIsLoadingMessages={isLoadingMessages}
+                                        miniPaneIsAiLoading={isAiLoading}
+                                        miniPaneMessagesEndRef={messagesEndRef}
                                         currentTheme={currentTheme} // Pass down the theme
                                     />
                                 </div>
@@ -1943,6 +3304,7 @@ export default function EditorPage() {
                 <>
                     {/* Editor Pane Container - Takes remaining space, add padding here */}
                     <div className="flex-1 flex flex-col relative overflow-hidden p-4 bg-[var(--editor-bg)]"> {/* ADDED bg-[var(--editor-bg)] */}
+
                         {/* EditorTitleBar */}
                          <EditorTitleBar
                             currentTitle={currentTitle}
@@ -1960,6 +3322,8 @@ export default function EditorPage() {
                             handleSaveContent={handleSaveContent}
                             isSaving={isSaving}
                             onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
+                            batchContext={autosaveBatchContext}
+                            localSaveStatus={localSaveStatus}
                             isDocumentStarred={currentDocIsStarred}
                             onToggleDocumentStar={handleToggleCurrentDocumentStar}
                          />
@@ -2008,8 +3372,13 @@ export default function EditorPage() {
                                 setTaggedDocuments={setTaggedDocuments}
                                 isMiniPaneOpen={isMiniPaneOpen}
                                 onToggleMiniPane={handleToggleMiniPane}
-                                isMainChatCollapsed={isChatPaneCollapsed && !isMiniPaneOpen} // Pass this new prop
+                                isMainChatCollapsed={isChatPaneCollapsed} // Main chat is collapsed when pane is collapsed
                                 miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
+                                // Mini pane content props
+                                miniPaneMessages={messages}
+                                miniPaneIsLoadingMessages={isLoadingMessages}
+                                miniPaneIsAiLoading={isAiLoading}
+                                miniPaneMessagesEndRef={messagesEndRef}
                                 currentTheme={currentTheme} // Pass down the theme
                             />
                         </div>
@@ -2141,6 +3510,16 @@ export default function EditorPage() {
                 />
             )}
             {/* --- END NEW --- */}
+
+            {/* --- NEW: Document Replacement Confirmation Modal --- */}
+            <DocumentReplacementConfirmationModal
+                isOpen={documentReplacementConfirmation.isOpen}
+                onClose={handleDocumentReplacementCancel}
+                onConfirm={handleDocumentReplacementConfirm}
+                isProcessing={documentReplacementConfirmation.isProcessing}
+            />
+            {/* --- END NEW --- */}
         </div>
+        </AttachedToastProvider>
     );
 } 

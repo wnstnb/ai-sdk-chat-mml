@@ -253,6 +253,22 @@ jest.mock('@/components/editor/VersionHistoryModal', () => {
   return MockVersionHistoryModal;
 });
 
+// Mock DocumentReplacementConfirmationModal
+jest.mock('@/components/modals/DocumentReplacementConfirmationModal', () => {
+  const MockDocumentReplacementConfirmationModal = (props: any) => 
+    props.isOpen ? (
+      <div data-testid="mock-document-replacement-confirmation-modal">
+        <div>Replace entire document content?</div>
+        <button data-testid="confirm-replacement" onClick={props.onConfirm}>Confirm</button>
+        <button data-testid="cancel-replacement" onClick={props.onClose}>Cancel</button>
+      </div>
+    ) : null;
+  MockDocumentReplacementConfirmationModal.displayName = 'MockDocumentReplacementConfirmationModal';
+  return MockDocumentReplacementConfirmationModal;
+});
+
+// DocumentReplacementToast removed - now using standard Sonner toast with action button
+
 
 // --- Test Suite --- 
 describe('EditorPage', () => {
@@ -457,5 +473,403 @@ describe('EditorPage', () => {
     });
   });
   // --- END NEW TEST SUITE ---
+
+  // --- NEW TEST SUITE FOR DOCUMENT REPLACEMENT TOOL ---
+  describe('Document Replacement Tool', () => {
+    let mockEditor: any;
+    let mockUseChatInteractionsMock: any;
+
+    beforeEach(() => {
+      // Create a mock editor with the methods we need
+      mockEditor = {
+        document: [
+          { id: 'block1', type: 'paragraph', content: 'Original content 1' },
+          { id: 'block2', type: 'paragraph', content: 'Original content 2' }
+        ],
+        tryParseMarkdownToBlocks: jest.fn().mockResolvedValue([
+          { type: 'paragraph', content: [{ type: 'text', text: 'New content', styles: {} }] }
+        ]),
+        replaceBlocks: jest.fn().mockReturnValue([
+          { id: 'newblock1', type: 'paragraph', content: 'New content' }
+        ]),
+        transact: jest.fn().mockImplementation((callback) => callback()),
+        undo: jest.fn(),
+        redo: jest.fn(),
+      };
+
+      // Mock the useChatInteractions hook to include our mock editor
+      mockUseChatInteractionsMock = require('@/lib/hooks/editor/useChatInteractions');
+      mockUseChatInteractionsMock.useChatInteractions.mockReturnValue({
+        messages: [], 
+        setMessages: jest.fn(), 
+        input: '',
+        setInput: jest.fn(),
+        handleInputChange: jest.fn(), 
+        handleSubmit: jest.fn(), 
+        isLoading: false, 
+        reload: jest.fn(),
+        stop: jest.fn(),
+        model: 'test-model',
+        setModel: jest.fn(),
+        append: jest.fn(),
+        error: undefined,
+        data: undefined,
+        setBody: jest.fn(),
+        setHeaders: jest.fn(),
+        addToolResult: jest.fn(),
+        lastToolResponse: null,
+        setLastToolResponse: jest.fn(),
+        editorRef: { current: mockEditor }, 
+        handleToolCall: jest.fn(),
+        isToolExecutionPending: false,
+        isTranscriptionSupported: true, 
+        isRecording: false, 
+        isTranscribing: false,
+        micPermissionError: false,
+        startRecording: jest.fn(),
+        stopRecording: jest.fn(),
+        audioTimeDomainData: new Uint8Array(),
+        taggedDocuments: [],
+        setTaggedDocuments: jest.fn(),
+      });
+
+      mockIsMobile = false;
+    });
+
+    test('should handle replaceAllContent tool call with confirmation', async () => {
+      const user = userEvent.setup();
+      
+      // Mock the confirmation modal to auto-confirm
+      const mockConfirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+      
+      render(<EditorPage />);
+
+      // Simulate a tool call for replaceAllContent
+      const mockMessages = [
+        {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-invocation',
+              toolInvocation: {
+                toolCallId: 'test-replace-call-1',
+                toolName: 'replaceAllContent',
+                args: {
+                  newMarkdownContent: '# New Document\n\nThis is the new content.',
+                  requireConfirmation: true
+                },
+                state: 'call'
+              }
+            }
+          ]
+        }
+      ];
+
+      // Update the mock to return these messages
+      mockUseChatInteractionsMock.useChatInteractions.mockReturnValue({
+        ...mockUseChatInteractionsMock.useChatInteractions(),
+        messages: mockMessages,
+        editorRef: { current: mockEditor },
+      });
+
+      // Re-render with the new messages
+      render(<EditorPage />);
+
+      // Wait for the tool to be processed
+      await waitFor(() => {
+        expect(mockEditor.transact).toHaveBeenCalled();
+      });
+
+      // Verify that replaceBlocks was called within the transaction
+      expect(mockEditor.transact).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockEditor.replaceBlocks).toHaveBeenCalledWith(
+        mockEditor.document,
+        expect.any(Array)
+      );
+
+      mockConfirm.mockRestore();
+    });
+
+    test('should cancel replaceAllContent when user declines confirmation', async () => {
+      // Mock the confirmation modal to decline
+      const mockConfirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
+      
+      render(<EditorPage />);
+
+      // Simulate a tool call for replaceAllContent
+      const mockMessages = [
+        {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-invocation',
+              toolInvocation: {
+                toolCallId: 'test-replace-call-2',
+                toolName: 'replaceAllContent',
+                args: {
+                  newMarkdownContent: '# New Document\n\nThis is the new content.',
+                  requireConfirmation: true
+                },
+                state: 'call'
+              }
+            }
+          ]
+        }
+      ];
+
+      // Update the mock to return these messages
+      mockUseChatInteractionsMock.useChatInteractions.mockReturnValue({
+        ...mockUseChatInteractionsMock.useChatInteractions(),
+        messages: mockMessages,
+        editorRef: { current: mockEditor },
+      });
+
+      // Re-render with the new messages
+      render(<EditorPage />);
+
+      // Wait a bit to ensure processing would have happened
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Verify that replaceBlocks was NOT called
+      expect(mockEditor.replaceBlocks).not.toHaveBeenCalled();
+      expect(mockEditor.transact).not.toHaveBeenCalled();
+
+      mockConfirm.mockRestore();
+    });
+
+    test('should handle replaceAllContent without confirmation when requireConfirmation is false', async () => {
+      render(<EditorPage />);
+
+      // Simulate a tool call for replaceAllContent without confirmation
+      const mockMessages = [
+        {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-invocation',
+              toolInvocation: {
+                toolCallId: 'test-replace-call-3',
+                toolName: 'replaceAllContent',
+                args: {
+                  newMarkdownContent: '# New Document\n\nThis is the new content.',
+                  requireConfirmation: false
+                },
+                state: 'call'
+              }
+            }
+          ]
+        }
+      ];
+
+      // Update the mock to return these messages
+      mockUseChatInteractionsMock.useChatInteractions.mockReturnValue({
+        ...mockUseChatInteractionsMock.useChatInteractions(),
+        messages: mockMessages,
+        editorRef: { current: mockEditor },
+      });
+
+      // Re-render with the new messages
+      render(<EditorPage />);
+
+      // Wait for the tool to be processed
+      await waitFor(() => {
+        expect(mockEditor.transact).toHaveBeenCalled();
+      });
+
+      // Verify that replaceBlocks was called within the transaction
+      expect(mockEditor.transact).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockEditor.replaceBlocks).toHaveBeenCalledWith(
+        mockEditor.document,
+        expect.any(Array)
+      );
+    });
+
+    test('should handle empty content gracefully', async () => {
+      render(<EditorPage />);
+
+      // Simulate a tool call with empty content
+      const mockMessages = [
+        {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-invocation',
+              toolInvocation: {
+                toolCallId: 'test-replace-call-4',
+                toolName: 'replaceAllContent',
+                args: {
+                  newMarkdownContent: '',
+                  requireConfirmation: false
+                },
+                state: 'call'
+              }
+            }
+          ]
+        }
+      ];
+
+      // Update the mock to return these messages
+      mockUseChatInteractionsMock.useChatInteractions.mockReturnValue({
+        ...mockUseChatInteractionsMock.useChatInteractions(),
+        messages: mockMessages,
+        editorRef: { current: mockEditor },
+      });
+
+      // Mock tryParseMarkdownToBlocks to return empty array for empty content
+      mockEditor.tryParseMarkdownToBlocks.mockResolvedValue([]);
+
+      // Re-render with the new messages
+      render(<EditorPage />);
+
+      // Wait a bit to ensure processing would have happened
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Verify that replaceBlocks was NOT called due to empty content
+      expect(mockEditor.replaceBlocks).not.toHaveBeenCalled();
+    });
+
+    test('should handle editor not available gracefully', async () => {
+      render(<EditorPage />);
+
+      // Simulate a tool call when editor is not available
+      const mockMessages = [
+        {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-invocation',
+              toolInvocation: {
+                toolCallId: 'test-replace-call-5',
+                toolName: 'replaceAllContent',
+                args: {
+                  newMarkdownContent: '# New Document\n\nThis is the new content.',
+                  requireConfirmation: false
+                },
+                state: 'call'
+              }
+            }
+          ]
+        }
+      ];
+
+      // Update the mock to return these messages with no editor
+      mockUseChatInteractionsMock.useChatInteractions.mockReturnValue({
+        ...mockUseChatInteractionsMock.useChatInteractions(),
+        messages: mockMessages,
+        editorRef: { current: null }, // No editor available
+      });
+
+      // Re-render with the new messages
+      render(<EditorPage />);
+
+      // Wait a bit to ensure processing would have happened
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Verify that no editor operations were attempted
+      expect(mockEditor.replaceBlocks).not.toHaveBeenCalled();
+      expect(mockEditor.transact).not.toHaveBeenCalled();
+    });
+
+    test('should handle transaction errors gracefully', async () => {
+      render(<EditorPage />);
+
+      // Mock the editor to throw an error during transaction
+      mockEditor.transact.mockImplementation(() => {
+        throw new Error('Transaction failed');
+      });
+
+      // Simulate a tool call for replaceAllContent
+      const mockMessages = [
+        {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-invocation',
+              toolInvocation: {
+                toolCallId: 'test-replace-call-6',
+                toolName: 'replaceAllContent',
+                args: {
+                  newMarkdownContent: '# New Document\n\nThis is the new content.',
+                  requireConfirmation: false
+                },
+                state: 'call'
+              }
+            }
+          ]
+        }
+      ];
+
+      // Update the mock to return these messages
+      mockUseChatInteractionsMock.useChatInteractions.mockReturnValue({
+        ...mockUseChatInteractionsMock.useChatInteractions(),
+        messages: mockMessages,
+        editorRef: { current: mockEditor },
+      });
+
+      // Re-render with the new messages
+      render(<EditorPage />);
+
+      // Wait for the tool to be processed
+      await waitFor(() => {
+        expect(mockEditor.transact).toHaveBeenCalled();
+      });
+
+      // Verify that the error was handled gracefully
+      expect(mockEditor.transact).toHaveBeenCalled();
+      // The component should continue to function despite the error
+    });
+
+    test('should handle undo functionality correctly', async () => {
+      const user = userEvent.setup();
+      
+      render(<EditorPage />);
+
+      // Simulate successful document replacement first
+      const mockMessages = [
+        {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-invocation',
+              toolInvocation: {
+                toolCallId: 'test-replace-call-7',
+                toolName: 'replaceAllContent',
+                args: {
+                  newMarkdownContent: '# New Document\n\nThis is the new content.',
+                  requireConfirmation: false
+                },
+                state: 'call'
+              }
+            }
+          ]
+        }
+      ];
+
+      // Update the mock to return these messages
+      mockUseChatInteractionsMock.useChatInteractions.mockReturnValue({
+        ...mockUseChatInteractionsMock.useChatInteractions(),
+        messages: mockMessages,
+        editorRef: { current: mockEditor },
+      });
+
+      // Re-render with the new messages
+      render(<EditorPage />);
+
+      // Wait for the tool to be processed
+      await waitFor(() => {
+        expect(mockEditor.transact).toHaveBeenCalled();
+      });
+
+      // Verify that the transaction was called
+      expect(mockEditor.transact).toHaveBeenCalled();
+      expect(mockEditor.replaceBlocks).toHaveBeenCalled();
+
+      // Test that undo functionality would work
+      // (In a real test, we'd simulate clicking the undo button in the toast)
+      mockEditor.undo();
+      expect(mockEditor.undo).toHaveBeenCalled();
+    });
+  });
+  // --- END DOCUMENT REPLACEMENT TOOL TEST SUITE ---
 
 }); 

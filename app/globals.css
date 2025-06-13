@@ -1349,3 +1349,33 @@ span > p { /* Or if wrapped in spans */
   margin-bottom: 0.75rem; /* Slightly less than default p for tighter notes */
 }
 /* End Basic Markdown Element Styling */
+
+/* AI Action Toast - Outline pulse animation for highlighting blocks */
+@keyframes outline-pulse {
+  0%, 100% {
+    outline: 2px solid transparent;
+  }
+  50% {
+    outline: 2px solid var(--accent-color);
+  }
+}
+
+.outline-pulse {
+  animation: outline-pulse 1s ease-in-out;
+}
+
+/* Toast slide-in animations */
+@keyframes slide-in-from-right {
+  0% { 
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  100% { 
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.slide-in-from-right {
+  animation: slide-in-from-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}

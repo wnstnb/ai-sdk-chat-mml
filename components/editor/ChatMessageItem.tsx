@@ -6,7 +6,6 @@ import { BotIcon, UserIcon, Wrench, SendToBack, Image as ImageIcon } from 'lucid
 import { NonMemoizedMarkdown } from '@/components/markdown';
 import { getTextFromDataUrl } from '@/lib/editorUtils';
 import Image from 'next/image';
-import remarkGfm from 'remark-gfm';
 
 // --- Define types related to the search tool ---
 interface TaggedDocument {
@@ -93,10 +92,15 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 
     // --- State for Collapsible Tool Details ---
     const [expandedToolCalls, setExpandedToolCalls] = useState<Record<string, boolean>>({});
+    const [expandedToolGroups, setExpandedToolGroups] = useState<Record<string, boolean>>({});
     
-    // --- Toggle Function ---
+    // --- Toggle Functions ---
     const toggleToolCallExpansion = (toolCallId: string) => {
         setExpandedToolCalls(prev => ({ ...prev, [toolCallId]: !prev[toolCallId] }));
+    };
+
+    const toggleToolGroupExpansion = (toolName: string) => {
+        setExpandedToolGroups(prev => ({ ...prev, [toolName]: !prev[toolName] }));
     };
 
     // Determine if the "Send to Editor" button can be shown
@@ -172,71 +176,50 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
 
     const renderContent = () => {
         if (typeof message.content === 'string') {
-            const textToRender = extractUserDisplayContent(message.content, message.role);
-            // Render only if there is actual text after removing potential prefix
-            return textToRender.trim() ? (
+            return (
                 <div className={`prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 ${isMiniMode ? 'text-xs' : ''}`}>
                     <NonMemoizedMarkdown>
-                        {textToRender}
+                        {extractUserDisplayContent(message.content, message.role)}
                     </NonMemoizedMarkdown>
                 </div>
-            ) : null;
+            );
         } else if (Array.isArray(message.content)) {
-            const parts = message.content as ContentPart[];
-            const visibleParts = parts.filter(part => part.type !== 'text' || part.text?.trim());
-            
-            if (visibleParts.length === 0) return null;
-
             return (
-                <div className={`space-y-2 ${isMiniMode ? 'space-y-1' : 'space-y-3'}`}>
-                    {visibleParts.map((part, index) => {
+                <div className={`prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 ${isMiniMode ? 'text-xs' : ''}`}>
+                    {(message.content as ContentPart[]).map((part, index) => {
                         if (part.type === 'text') {
-                             const textToRender = extractUserDisplayContent(part.text, message.role);
-                             return textToRender.trim() ? (
-                                <div key={`${message.id}-part-${index}-text`} className={`prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 ${isMiniMode ? 'text-xs' : ''}`}>
+                            const textPart = part as TextPart;
+                            return (
+                                <div key={`${message.id}-content-${index}`}>
                                     <NonMemoizedMarkdown>
-                                        {textToRender}
+                                        {extractUserDisplayContent(textPart.text, message.role)}
                                     </NonMemoizedMarkdown>
                                 </div>
-                            ) : null;
+                            );
                         } else if (part.type === 'image') {
+                            const imagePart = part as ImagePart;
                             return renderImagePart(
-                                part.image,
-                                part.error,
-                                `${message.id}-part-${index}-image`,
+                                imagePart.image,
+                                imagePart.error,
+                                `${message.id}-content-${index}-image`,
                                 'content'
                             );
                         } else if (part.type === 'tool-call') {
-                            const displayArgs = typeof part.args === 'string' ? JSON.parse(part.args) : part.args;
+                            const toolCallPart = part as ToolCallPart;
                             return (
-                                <div key={`${message.id}-part-${index}-tool`} className={`my-1 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700 ${isMiniMode ? 'p-1 text-xs' : 'p-2 my-2'}`}>
+                                <div key={`${message.id}-content-${index}-tool`} className={`my-1 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700 ${isMiniMode ? 'p-1 text-xs' : 'mt-2 p-2 my-2'}`}>
                                     <div className={`flex items-center gap-1 text-zinc-600 dark:text-zinc-400 ${isMiniMode ? 'gap-0.5 mb-0.5 text-[10px]' : 'gap-1.5 mb-1 text-xs'}`}>
                                         <Wrench size={isMiniMode ? 10 : 12} className="flex-shrink-0" />
-                                        <span>Tool Call: <strong>{part.toolName}</strong></span>
+                                        <span>Tool Used: <strong>{toolCallPart.toolName}</strong></span>
                                     </div>
-                                    {!isMiniMode && (
-                                      <pre className="mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
-                                          Args: {JSON.stringify(displayArgs, null, 2)}
-                                      </pre>
-                                    )}
-                                </div>
-                            );
-                        } else if (part.type === 'tool-invocation') {
-                            const toolInvocation = (part as ToolInvocationPart).toolInvocation;
-                            return (
-                                <div key={`${message.id}-part-${index}-tool`} className={`my-1 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700 ${isMiniMode ? 'p-1 text-xs' : 'mt-2 p-2 my-2'}`}>
-                                    <div className={`flex items-center gap-1 text-zinc-600 dark:text-zinc-400 ${isMiniMode ? 'gap-0.5 mb-0.5 text-[10px]' : 'gap-1.5 mb-1 text-xs'}`}>
-                                        <Wrench size={isMiniMode ? 10 : 12} className="flex-shrink-0" />
-                                        <span>Tool Used: <strong>{toolInvocation.toolName}</strong></span>
-                                    </div>
-                                    {!isMiniMode && toolInvocation.state === 'result' && (toolInvocation as any).result && (
-                                        <pre className="mt-1 text-xs text-green-600 dark:text-green-400 whitespace-pre-wrap break-all">
-                                            Result: {JSON.stringify((toolInvocation as any).result, null, 2)}
+                                    {!isMiniMode && toolCallPart.args && (
+                                        <pre className="mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
+                                            Args: {JSON.stringify(toolCallPart.args, null, 2)}
                                         </pre>
                                     )}
-                                     {!isMiniMode && toolInvocation.args && (
-                                        <pre className="mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
-                                            Args: {JSON.stringify(toolInvocation.args, null, 2)}
+                                    {!isMiniMode && (toolCallPart as any).result && (
+                                        <pre className="mt-1 text-xs text-green-600 dark:text-green-400 whitespace-pre-wrap break-all">
+                                            Result: {JSON.stringify((toolCallPart as any).result, null, 2)}
                                         </pre>
                                     )}
                                 </div>
@@ -250,6 +233,211 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
             console.warn('[ChatMessageItem] Unexpected message content type:', typeof message.content, message.content);
             return <p className={`text-red-500 ${isMiniMode ? 'text-xs' : 'text-sm'}`}>[Invalid message content]</p>;
         }
+    };
+
+    // Helper function to group tool invocations by tool name
+    const groupToolInvocations = (parts: any[]) => {
+        const toolGroups: Record<string, any[]> = {};
+        const nonToolParts: any[] = [];
+
+        parts.forEach((part, index) => {
+            const contentPart = part as ContentPart;
+            let effectiveToolInvocation: ToolInvocation | undefined = undefined;
+            let toolCallIdForExpansion: string | undefined = undefined;
+
+            if (contentPart.type === 'tool-invocation') {
+                effectiveToolInvocation = (contentPart as ToolInvocationPart).toolInvocation;
+                if (effectiveToolInvocation) toolCallIdForExpansion = effectiveToolInvocation.toolCallId;
+            } else if (contentPart.type === 'tool-call' && (contentPart as any).result !== undefined) {
+                const toolCallPart = contentPart as ToolCallPart & { result: any; toolCallId: string };
+                toolCallIdForExpansion = toolCallPart.toolCallId;
+                effectiveToolInvocation = {
+                    toolCallId: toolCallPart.toolCallId,
+                    toolName: toolCallPart.toolName,
+                    args: toolCallPart.args,
+                    result: toolCallPart.result,
+                    state: 'result',
+                } as ToolInvocation;
+            }
+
+            if (effectiveToolInvocation && toolCallIdForExpansion) {
+                const toolName = effectiveToolInvocation.toolName;
+                if (!toolGroups[toolName]) {
+                    toolGroups[toolName] = [];
+                }
+                toolGroups[toolName].push({
+                    ...effectiveToolInvocation,
+                    originalIndex: index,
+                    toolCallId: toolCallIdForExpansion
+                });
+            } else {
+                nonToolParts.push({ part: contentPart, index });
+            }
+        });
+
+        return { toolGroups, nonToolParts };
+    };
+
+    // Render consolidated tool groups
+    const renderToolGroups = (toolGroups: Record<string, any[]>) => {
+        return Object.entries(toolGroups).map(([toolName, toolCalls]) => {
+            const isGroupExpanded = !!expandedToolGroups[toolName];
+            const isSpecialTool = toolName === 'searchAndTagDocumentsTool';
+            
+            // Special handling for searchAndTagDocumentsTool - don't consolidate
+            if (isSpecialTool) {
+                return toolCalls.map((toolCall, callIndex) => {
+                    if (toolCall.state === 'result' &&
+                        toolCall.result &&
+                        typeof toolCall.result === 'object' &&
+                        (toolCall.result as SearchAndTagDocumentsToolResult).presentationStyle === 'listWithTagButtons') {
+                        const searchResult = toolCall.result as SearchAndTagDocumentsToolResult;
+                        if (isMiniMode) {
+                            return (
+                                <div key={`${message.id}-search-results-mini-${callIndex}`} className={`mt-0.5 p-1 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800/30 text-xs`}>
+                                    <div className="flex items-center gap-1 text-blue-700 dark:text-blue-300 mb-0.5 font-medium text-[10px]">
+                                        <Wrench size={10} className="flex-shrink-0" />
+                                        <span>Found {searchResult.documents.length} doc(s) for: <strong>{searchResult.queryUsed || 'query'}</strong></span>
+                                    </div>
+                                </div>
+                            );
+                        }
+                        return (
+                            <div key={`${message.id}-search-results-${callIndex}`} className="mt-1 p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800/30">
+                                <div className="flex items-center gap-1.5 text-xs text-blue-700 dark:text-blue-300 mb-2 font-medium">
+                                    <Wrench size={12} className="flex-shrink-0" />
+                                    <span>{searchResult.documents.length > 0 ? 'Found documents related to:' : 'No documents found for:'} <strong>{searchResult.queryUsed || 'your query'}</strong></span>
+                                </div>
+                                {searchResult.documents.length > 0 ? (
+                                    <ul className="space-y-2">
+                                        {searchResult.documents.map((doc) => (
+                                            <li key={doc.id} className="p-2.5 bg-white dark:bg-gray-800/50 rounded shadow-sm border border-gray-200 dark:border-gray-700/60">
+                                                <div className="flex justify-between items-center">
+                                                    <div className="flex-1 min-w-0">
+                                                        <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-100 truncate" title={doc.name}>{doc.name}</h4>
+                                                        {doc.summary && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate" title={doc.summary}>{doc.summary}</p>}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => onAddTaggedDocument({ id: doc.id, name: doc.name })}
+                                                        className="ml-3 shrink-0 px-2.5 py-1 text-xs bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-500 transition-colors"
+                                                    >
+                                                        Tag
+                                                    </button>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">You can try a different search query.</p>
+                                )}
+                            </div>
+                        );
+                    }
+                    return null;
+                });
+            }
+
+            // Consolidate multiple calls of the same tool
+            if (toolCalls.length === 1) {
+                // Single tool call - render normally
+                const toolCall = toolCalls[0];
+                const isExpanded = !!expandedToolCalls[toolCall.toolCallId];
+                
+                if (isMiniMode) {
+                    return (
+                        <div key={`${message.id}-tool-mini-${toolName}`} className={`mt-0.5 p-1 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700 text-xs`}>
+                            <div className="flex items-center gap-1 text-zinc-600 dark:text-zinc-400 text-[10px]">
+                                <Wrench size={10} className="flex-shrink-0" />
+                                <span>Tool: <strong>{toolName}</strong></span>
+                            </div>
+                        </div>
+                    );
+                }
+                
+                return (
+                    <div key={`${message.id}-tool-${toolName}`} className="mt-1 p-2 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700">
+                        <div 
+                            className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer" 
+                            onClick={() => toggleToolCallExpansion(toolCall.toolCallId)}
+                        >
+                            <Wrench size={12} className="flex-shrink-0" />
+                            <span>Tool Used: <strong>{toolName}</strong></span>
+                            <span className="ml-auto text-zinc-400 dark:text-zinc-500">{isExpanded ? '[-]' : '[+]'}</span>
+                        </div>
+                        
+                        {isExpanded && (
+                            <div className="mt-1 pt-1 border-t border-gray-200 dark:border-gray-700">
+                                <pre className="mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
+                                    Args: {JSON.stringify(toolCall.args, null, 2)}
+                                </pre>
+                                {toolCall.state === 'result' && toolCall.result && (
+                                    <pre className="mt-1 text-xs text-green-600 dark:text-green-400 whitespace-pre-wrap break-all">
+                                        Result: {JSON.stringify(toolCall.result, null, 2)}
+                                    </pre>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            } else {
+                // Multiple tool calls - render consolidated view
+                if (isMiniMode) {
+                    return (
+                        <div key={`${message.id}-tool-group-mini-${toolName}`} className={`mt-0.5 p-1 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700 text-xs`}>
+                            <div className="flex items-center gap-1 text-zinc-600 dark:text-zinc-400 text-[10px]">
+                                <Wrench size={10} className="flex-shrink-0" />
+                                <span>Tool: <strong>{toolName}</strong> ({toolCalls.length}×)</span>
+                            </div>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div key={`${message.id}-tool-group-${toolName}`} className="mt-1 p-2 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700">
+                        <div 
+                            className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer" 
+                            onClick={() => toggleToolGroupExpansion(toolName)}
+                        >
+                            <Wrench size={12} className="flex-shrink-0" />
+                            <span>Tool Used: <strong>{toolName}</strong> ({toolCalls.length} operations)</span>
+                            <span className="ml-auto text-zinc-400 dark:text-zinc-500">{isGroupExpanded ? '[-]' : '[+]'}</span>
+                        </div>
+                        
+                        {isGroupExpanded && (
+                            <div className="mt-1 pt-1 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                                {toolCalls.map((toolCall, callIndex) => {
+                                    const isCallExpanded = !!expandedToolCalls[toolCall.toolCallId];
+                                    return (
+                                        <div key={`${toolCall.toolCallId}-${callIndex}`} className="p-1.5 bg-gray-50 dark:bg-gray-700/50 rounded border border-gray-200 dark:border-gray-600">
+                                            <div 
+                                                className="flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer" 
+                                                onClick={() => toggleToolCallExpansion(toolCall.toolCallId)}
+                                            >
+                                                <span>Operation #{callIndex + 1}</span>
+                                                <span className="ml-auto text-zinc-400 dark:text-zinc-500">{isCallExpanded ? '[-]' : '[+]'}</span>
+                                            </div>
+                                            
+                                            {isCallExpanded && (
+                                                <div className="mt-1 pt-1 border-t border-gray-200 dark:border-gray-600">
+                                                    <pre className="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
+                                                        Args: {JSON.stringify(toolCall.args, null, 2)}
+                                                    </pre>
+                                                    {toolCall.state === 'result' && toolCall.result && (
+                                                        <pre className="mt-1 text-xs text-green-600 dark:text-green-400 whitespace-pre-wrap break-all">
+                                                            Result: {JSON.stringify(toolCall.result, null, 2)}
+                                                        </pre>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+        });
     };
 
     return (
@@ -281,125 +469,31 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                 )}
                 
                 {/* 2. Render any Tool Invocations or Images found in parts */}
-                {Array.isArray(message.parts) && message.parts.map((part, index) => {
-                     const contentPart = part as ContentPart;
-                    let effectiveToolInvocation: ToolInvocation | undefined = undefined;
-                    let toolCallIdForExpansion: string | undefined = undefined;
-
-                    if (contentPart.type === 'tool-invocation') {
-                        effectiveToolInvocation = (contentPart as ToolInvocationPart).toolInvocation;
-                        if (effectiveToolInvocation) toolCallIdForExpansion = effectiveToolInvocation.toolCallId;
-                    } else if (contentPart.type === 'tool-call' && (contentPart as any).result !== undefined) {
-                        const toolCallPart = contentPart as ToolCallPart & { result: any; toolCallId: string };
-                        toolCallIdForExpansion = toolCallPart.toolCallId;
-                        effectiveToolInvocation = {
-                            toolCallId: toolCallPart.toolCallId,
-                            toolName: toolCallPart.toolName,
-                            args: toolCallPart.args,
-                            result: toolCallPart.result,
-                            state: 'result', // Inferred state
-                        } as ToolInvocation; // Cast to ToolInvocation, acknowledging 'type' field isn't set here but structure matches
-                    }
-
-                    if (effectiveToolInvocation && toolCallIdForExpansion) {
-                        const toolCallId = toolCallIdForExpansion;
-                        const isExpanded = !!expandedToolCalls[toolCallId];
-                        
-                        if (effectiveToolInvocation.toolName === 'searchAndTagDocumentsTool' &&
-                            effectiveToolInvocation.state === 'result' &&
-                            effectiveToolInvocation.result &&
-                            typeof effectiveToolInvocation.result === 'object' &&
-                            (effectiveToolInvocation.result as SearchAndTagDocumentsToolResult).presentationStyle === 'listWithTagButtons') {
-                            const searchResult = effectiveToolInvocation.result as SearchAndTagDocumentsToolResult;
-                            if (isMiniMode) {
-                                return (
-                                    <div key={`${message.id}-part-${index}-search-results-mini`} className={`mt-0.5 p-1 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800/30 text-xs`}>
-                                        <div className="flex items-center gap-1 text-blue-700 dark:text-blue-300 mb-0.5 font-medium text-[10px]">
-                                            <Wrench size={10} className="flex-shrink-0" />
-                                            <span>Found {searchResult.documents.length} doc(s) for: <strong>{searchResult.queryUsed || 'query'}</strong></span>
-                                        </div>
-                                        {/* Mini mode might not show document list or show a very compact one */}
-                                    </div>
-                                );
-                            }
-                            return (
-                                <div key={`${message.id}-part-${index}-search-results`} className="mt-1 p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800/30">
-                                    <div className="flex items-center gap-1.5 text-xs text-blue-700 dark:text-blue-300 mb-2 font-medium">
-                                        <Wrench size={12} className="flex-shrink-0" />
-                                        <span>{searchResult.documents.length > 0 ? 'Found documents related to:' : 'No documents found for:'} <strong>{searchResult.queryUsed || 'your query'}</strong></span>
-                                    </div>
-                                    {searchResult.documents.length > 0 ? (
-                                        <ul className="space-y-2">
-                                            {searchResult.documents.map((doc) => (
-                                                <li key={doc.id} className="p-2.5 bg-white dark:bg-gray-800/50 rounded shadow-sm border border-gray-200 dark:border-gray-700/60">
-                                                    <div className="flex justify-between items-center">
-                                                        <div className="flex-1 min-w-0">
-                                                            <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-100 truncate" title={doc.name}>{doc.name}</h4>
-                                                            {doc.summary && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate" title={doc.summary}>{doc.summary}</p>}
-                                                        </div>
-                                                        <button
-                                                            onClick={() => onAddTaggedDocument({ id: doc.id, name: doc.name })}
-                                                            className="ml-3 shrink-0 px-2.5 py-1 text-xs bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-500 transition-colors"
-                                                        >
-                                                            Tag
-                                                        </button>
-                                                    </div>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    ) : (
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">You can try a different search query.</p>
-                                    )}
-                                </div>
-                            );
-                        } else {
-                            if (isMiniMode) {
-                                return (
-                                    <div key={`${message.id}-part-${index}-tool-mini`} className={`mt-0.5 p-1 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700 text-xs`}>
-                                        <div className="flex items-center gap-1 text-zinc-600 dark:text-zinc-400 text-[10px]">
-                                            <Wrench size={10} className="flex-shrink-0" />
-                                            <span>Tool: <strong>{effectiveToolInvocation.toolName}</strong></span>
-                                        </div>
-                                    </div>
-                                );
-                            }
-                            return (
-                                <div key={`${message.id}-part-${index}-tool`} className="mt-1 p-2 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-700">
-                                    <div 
-                                        className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer" 
-                                        onClick={() => toggleToolCallExpansion(toolCallId)}
-                                    >
-                                        <Wrench size={12} className="flex-shrink-0" />
-                                        <span>Tool Used: <strong>{effectiveToolInvocation.toolName}</strong></span>
-                                        <span className="ml-auto text-zinc-400 dark:text-zinc-500">{isExpanded ? '[-]' : '[+]'}</span>
-                                    </div>
-                                    
-                                    {isExpanded && (
-                                        <div className="mt-1 pt-1 border-t border-gray-200 dark:border-gray-700">
-                                            <pre className="mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
-                                                Args: {JSON.stringify(effectiveToolInvocation.args, null, 2)}
-                                            </pre>
-                                            {effectiveToolInvocation.state === 'result' && (effectiveToolInvocation as any).result && (
-                                                <pre className="mt-1 text-xs text-green-600 dark:text-green-400 whitespace-pre-wrap break-all">
-                                                    Result: {JSON.stringify((effectiveToolInvocation as any).result, null, 2)}
-                                                </pre>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        }
-                    } else if (contentPart.type === 'image') {
-                        const imagePart = contentPart as ImagePart;
-                        return renderImagePart(
-                            imagePart.image,
-                            imagePart.error,
-                            `${message.id}-part-${index}-image`,
-                            'attachment'
-                        );
-                    } 
-                    return null; 
-                })}
+                {Array.isArray(message.parts) && (() => {
+                    const { toolGroups, nonToolParts } = groupToolInvocations(message.parts);
+                    
+                    return (
+                        <>
+                            {/* Render non-tool parts (images, etc.) */}
+                            {nonToolParts.map(({ part, index }) => {
+                                const contentPart = part as ContentPart;
+                                if (contentPart.type === 'image') {
+                                    const imagePart = contentPart as ImagePart;
+                                    return renderImagePart(
+                                        imagePart.image,
+                                        imagePart.error,
+                                        `${message.id}-part-${index}-image`,
+                                        'attachment'
+                                    );
+                                }
+                                return null;
+                            })}
+                            
+                            {/* Render consolidated tool groups */}
+                            {renderToolGroups(toolGroups)}
+                        </>
+                    );
+                })()}
 
                 {/* Send to Editor Button - Uses specifically extracted text */}
                 {canSendToEditor && (

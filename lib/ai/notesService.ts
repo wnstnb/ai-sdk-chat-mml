@@ -1,4 +1,4 @@
-export const generateNotesFromTranscript = async (transcript: string): Promise<{ notes?: string | null; error?: string | null; }> => {
+export const generateNotesFromTranscript = async (transcript: string, timestamp?: string): Promise<{ notes?: string | null; error?: string | null; }> => {
   console.log('[Client NotesService] Attempting to generate notes for transcript of length:', transcript.length);
   if (!transcript || transcript.trim() === "") {
     return { error: "Transcript is empty." };
@@ -9,7 +9,7 @@ export const generateNotesFromTranscript = async (transcript: string): Promise<{
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ transcript }),
+      body: JSON.stringify({ transcript, timestamp }),
     });
 
     const data = await response.json();
@@ -27,7 +27,7 @@ export const generateNotesFromTranscript = async (transcript: string): Promise<{
   }
 };
 
-export const prettifyTranscript = async (transcript: string): Promise<{ notes?: string | null; error?: string | null; }> => {
+export const prettifyTranscript = async (transcript: string, timestamp?: string): Promise<{ notes?: string | null; error?: string | null; }> => {
   console.log('[Client NotesService] Attempting to prettify transcript of length:', transcript.length);
   if (!transcript || transcript.trim() === "") {
     return { error: "Transcript is empty." };
@@ -38,7 +38,7 @@ export const prettifyTranscript = async (transcript: string): Promise<{ notes?: 
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ transcript }),
+      body: JSON.stringify({ transcript, timestamp }),
     });
 
     const data = await response.json();

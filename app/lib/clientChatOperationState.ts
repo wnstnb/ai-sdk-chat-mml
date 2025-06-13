@@ -22,6 +22,26 @@ export enum FileUploadState {
   PROCESSING_COMPLETE = 'FILE_PROCESSING_COMPLETE'
 }
 
+// ---- NEW TYPES FOR EDITOR BLOCK STATUS ----
+export enum BlockStatus {
+  IDLE = 'IDLE',
+  LOADING = 'LOADING',
+  MODIFIED = 'MODIFIED', // Indicates content was changed by AI, for highlighting
+  ERROR = 'ERROR'       // Indicates an error occurred during AI operation on this block
+}
+
+export interface BlockStatusEntry {
+  status: BlockStatus;
+  action?: 'insert' | 'update' | 'delete'; // Optional: for more granular feedback
+  timestamp: number; // For potential timeout or ordering logic
+  message?: string; // Optional: error message or other info
+}
+
+export type BlockStatusMap = {
+  [blockId: string]: BlockStatusEntry | undefined;
+};
+// ---- END NEW TYPES ----
+
 // Define a type to represent the overall client chat operation state
 export type ClientChatOperationState = {
   aiToolState: AIToolState;
@@ -29,6 +49,7 @@ export type ClientChatOperationState = {
   fileUploadState: FileUploadState;
   currentToolCallId?: string;
   currentOperationDescription?: string;
+  editorBlockStatuses: BlockStatusMap; // Added editor block statuses
 };
 
 // Initial state
@@ -38,6 +59,7 @@ export const initialClientChatOperationState: ClientChatOperationState = {
   fileUploadState: FileUploadState.IDLE,
   currentToolCallId: undefined,
   currentOperationDescription: undefined,
+  editorBlockStatuses: {}, // Initialize as empty object
 };
 
 export const isAnyOperationInProgress = (state: ClientChatOperationState): boolean => {

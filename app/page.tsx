@@ -26,6 +26,7 @@ interface PricingPlan {
   name: string;
   price: string;
   priceDetails: string;
+  monthlyBreakdown?: string; // For showing monthly price on annual plan
   features: string[];
   highlight?: string;
 }
@@ -45,8 +46,9 @@ const PricingSection = () => {
     {
       id: 'annual',
       name: "Annual",
-      price: "$150",
-      priceDetails: "/ year",
+      price: "$12.50",
+      priceDetails: "/ month",
+      monthlyBreakdown: "($150 billed annually)",
       features: ["7-day free trial", "Cancel anytime", "All features included", "Full access to multiple AI models"],
       highlight: "Save 22%",
     },
@@ -113,10 +115,17 @@ const PricingSection = () => {
                 <h3 className="text-2xl font-semibold text-[color:var(--primary-color)]">{plan.name}</h3>
                 {selectedPlan === plan.id && <CheckCircle className="h-6 w-6 text-[color:var(--accent-color)]" />}
               </div>
-              <p className="text-4xl font-bold text-[color:var(--accent-color)] mb-1">
-                {plan.price}
-                <span className="text-lg font-normal text-[color:var(--primary-color)]/70">{plan.priceDetails}</span>
-              </p>
+              <div className="mb-1">
+                <p className="text-4xl font-bold text-[color:var(--accent-color)] mb-1">
+                  {plan.price}
+                  <span className="text-lg font-normal text-[color:var(--primary-color)]/70">{plan.priceDetails}</span>
+                </p>
+                {plan.monthlyBreakdown && (
+                  <p className="text-sm text-[color:var(--primary-color)]/60 -mt-1">
+                    {plan.monthlyBreakdown}
+                  </p>
+                )}
+              </div>
               <ul className="space-y-2 mt-6 text-[color:var(--primary-color)]/80">
                 {plan.features.map((feature, i) => (
                   <li key={i} className="flex items-center">

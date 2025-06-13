@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useMessagePanePreferences } from '@/lib/hooks/useAIPreferences';
 
 interface UseChatPaneProps {
     // Removed initialWidthPercent, minWidthPx, maxWidthPercent
@@ -18,21 +19,28 @@ interface UseChatPaneReturn {
 const DRAG_THRESHOLD_PX = 50; // Threshold for drag-to-expand
 
 export function useChatPane({}: UseChatPaneProps): UseChatPaneReturn {
-    const [isExpanded, setIsExpanded] = useState(true);
+    const messagePanePrefs = useMessagePanePreferences();
+    const [isExpanded, setIsExpanded] = useState(() => {
+        // Use preference-based default state
+        return messagePanePrefs.defaultState === 'expanded';
+    });
     const [previousWidth, setPreviousWidth] = useState('30%'); // New state for string width
     const [mobileVisiblePane, setMobileVisiblePane] = useState<'editor' | 'chat'>('editor'); // New state for mobile
 
     const toggleExpanded = useCallback(() => {
         setIsExpanded(prevIsExpanded => {
             const newState = !prevIsExpanded;
-            try {
-                localStorage.setItem('chatPaneExpandedState', JSON.stringify(newState));
-            } catch (error) {
-                console.error('Error saving chat pane state to localStorage:', error);
+            // Only save to localStorage if user preference is to remember last state
+            if (messagePanePrefs.rememberLastState) {
+                try {
+                    localStorage.setItem('chatPaneExpandedState', JSON.stringify(newState));
+                } catch (error) {
+                    console.error('Error saving chat pane state to localStorage:', error);
+                }
             }
             return newState;
         });
-    }, []);
+    }, [messagePanePrefs.rememberLastState]);
 
     const latestIsExpandedRef = useRef(isExpanded);
     const latestToggleExpandedRef = useRef(toggleExpanded);
@@ -50,9 +58,14 @@ export function useChatPane({}: UseChatPaneProps): UseChatPaneReturn {
     useEffect(() => {
         try {
             const savedIsExpanded = localStorage.getItem('chatPaneExpandedState');
-            if (savedIsExpanded !== null) {
+            if (messagePanePrefs.rememberLastState && savedIsExpanded !== null) {
+                // Use saved state if user preference is to remember last state
                 setIsExpanded(JSON.parse(savedIsExpanded));
+            } else {
+                // Use default preference if not remembering last state or no saved state
+                setIsExpanded(messagePanePrefs.defaultState === 'expanded');
             }
+            
             const savedPreviousWidth = localStorage.getItem('chatPaneWidth'); // Load previousWidth
             if (savedPreviousWidth !== null) {
                 setPreviousWidth(savedPreviousWidth);
@@ -62,7 +75,7 @@ export function useChatPane({}: UseChatPaneProps): UseChatPaneReturn {
         } catch (error) {
             console.error('Error loading chat pane state from localStorage:', error);
         }
-    }, []);
+    }, [messagePanePrefs.defaultState, messagePanePrefs.rememberLastState]);
 
     const handleWidthChange = useCallback((newWidth: string) => {
         setPreviousWidth(newWidth);

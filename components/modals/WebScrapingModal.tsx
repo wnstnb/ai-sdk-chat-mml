@@ -26,6 +26,7 @@ interface ScrapedUrlResult {
 interface WebScrapingModalProps {
   isOpen: boolean;
   onClose: () => void;
+  setBlockStatus?: (blockId: string, status: any, action?: 'insert' | 'update' | 'delete', message?: string) => void;
 }
 
 type TargetDocumentType = 'current' | 'new';
@@ -35,8 +36,11 @@ const BNSchema = BlockNoteSchema.create({ blockSpecs: defaultBlockSpecs });
 export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
   isOpen,
   onClose,
+  setBlockStatus: propSetBlockStatus,
 }) => {
   const editorRef = useModalStore(state => state.editorRef as React.RefObject<BlockNoteEditor | null> | null);
+  const storeSetBlockStatus = useModalStore(state => state.setBlockStatus);
+  const setBlockStatus = propSetBlockStatus || storeSetBlockStatus;
   const hasActiveDocument = !!editorRef?.current;
   const router = useRouter();
 
@@ -227,8 +231,37 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
             const activeEditor = editorRef.current;
             const currentPosition = activeEditor.getTextCursorPosition();
             const referenceBlock = currentPosition.block || activeEditor.document[activeEditor.document.length - 1];
-            activeEditor.insertBlocks(allBlocksToInsert, referenceBlock || activeEditor.document[0], referenceBlock ? 'after' : 'before');
-            toast.success('Content inserted into current document.');
+            const insertedBlocks = activeEditor.insertBlocks(allBlocksToInsert, referenceBlock || activeEditor.document[0], referenceBlock ? 'after' : 'before');
+            
+            // Trigger highlighting for manually added web scraped content
+            if (setBlockStatus && Array.isArray(insertedBlocks)) {
+              insertedBlocks.forEach((block: any) => {
+                if (block?.id) {
+                  setBlockStatus(block.id, 'MODIFIED', 'insert');
+                }
+              });
+            }
+            
+            // Use enhanced toast with block navigation
+            if (Array.isArray(insertedBlocks) && insertedBlocks.length > 0) {
+              const insertedBlockIds = insertedBlocks
+                .map((block: any) => block?.id)
+                .filter((id): id is string => Boolean(id));
+              
+              if (insertedBlockIds.length > 0) {
+                const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
+                createBlockStatusToast(
+                  insertedBlockIds,
+                  'modified',
+                  'insert',
+                  `Web content inserted (${insertedBlockIds.length} block${insertedBlockIds.length > 1 ? 's' : ''})`
+                );
+              } else {
+                toast.success('Content inserted into current document.');
+              }
+            } else {
+              toast.success('Content inserted into current document.');
+            }
             onClose();
         } catch (error) {
             console.error("Error inserting content into current document:", error);
@@ -240,7 +273,7 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    title: `Scraped Content - ${new Date().toLocaleDateString()}`,
+                    title: `Scraped Content - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour12: false })}`,
                     content: allBlocksToInsert,
                 }),
             });
