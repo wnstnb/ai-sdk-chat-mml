@@ -234,6 +234,10 @@ export default function EditorPage() {
     const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
     // --- NEW: State for Mini-Pane ---
     const [isMiniPaneOpen, setIsMiniPaneOpen] = useState(false);
+    // --- NEW: State for tracking unread messages in mini pane ---
+    const [unreadMiniPaneCount, setUnreadMiniPaneCount] = useState(0);
+    // --- NEW: Ref to track the last seen message count ---
+    const lastSeenMessageCountRef = useRef(0);
     // --- ADDED: State for document star status ---
     const [currentDocIsStarred, setCurrentDocIsStarred] = useState(false);
     // --- NEW: State for current theme ---
@@ -2697,8 +2701,52 @@ export default function EditorPage() {
         }
     };
 
+    // --- NEW: Effect to initialize the assistant message count reference on first load ---
+    useEffect(() => {
+        if (messages && lastSeenMessageCountRef.current === 0) {
+            // On initial load, count only assistant messages and set the ref without incrementing unread count
+            const assistantMessageCount = messages.filter(msg => msg.role === 'assistant').length;
+            lastSeenMessageCountRef.current = assistantMessageCount;
+        }
+    }, [messages]);
+
+    // --- NEW: Effect to track new assistant messages for mini pane indicator ---
+    useEffect(() => {
+        if (!messages) return;
+        
+        // Count only assistant messages
+        const currentAssistantMessageCount = messages.filter(msg => msg.role === 'assistant').length;
+        
+        // If we have more assistant messages than we last saw (and it's not the initial load)
+        if (currentAssistantMessageCount > lastSeenMessageCountRef.current && lastSeenMessageCountRef.current >= 0) {
+            const newAssistantMessagesCount = currentAssistantMessageCount - lastSeenMessageCountRef.current;
+            
+            // Only increment unread count if mini pane is closed
+            if (!isMiniPaneOpen) {
+                setUnreadMiniPaneCount(prev => prev + newAssistantMessagesCount);
+            }
+            
+            // Update the last seen count
+            lastSeenMessageCountRef.current = currentAssistantMessageCount;
+        }
+        
+        // If mini pane is open, reset unread count
+        if (isMiniPaneOpen) {
+            setUnreadMiniPaneCount(0);
+        }
+    }, [messages, isMiniPaneOpen]);
+
     // --- NEW: Handler for Mini-Pane Toggle ---
-    const handleToggleMiniPane = () => setIsMiniPaneOpen(prev => !prev);
+    const handleToggleMiniPane = () => {
+        setIsMiniPaneOpen(prev => {
+            const newState = !prev;
+            // Clear unread count when opening the mini pane
+            if (newState) {
+                setUnreadMiniPaneCount(0);
+            }
+            return newState;
+        });
+    };
 
     // --- NEW: Desktop Pane Resize Handlers ---
     const handleDesktopResizePointerMove = useCallback((event: globalThis.PointerEvent) => { // Explicitly use globalThis.PointerEvent
@@ -3217,6 +3265,7 @@ export default function EditorPage() {
                                         onToggleMiniPane={handleToggleMiniPane}
                                         isMainChatCollapsed={true} // For mobile, editor implies main chat is hidden
                                         miniPaneToggleRef={miniPaneToggleRef}
+                                        unreadMiniPaneCount={unreadMiniPaneCount}
                                         // Mini pane content props
                                         miniPaneMessages={messages}
                                         miniPaneIsLoadingMessages={isLoadingMessages}
@@ -3374,6 +3423,7 @@ export default function EditorPage() {
                                 onToggleMiniPane={handleToggleMiniPane}
                                 isMainChatCollapsed={isChatPaneCollapsed} // Main chat is collapsed when pane is collapsed
                                 miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
+                                unreadMiniPaneCount={unreadMiniPaneCount}
                                 // Mini pane content props
                                 miniPaneMessages={messages}
                                 miniPaneIsLoadingMessages={isLoadingMessages}

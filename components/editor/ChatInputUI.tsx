@@ -75,6 +75,7 @@ interface ChatInputUIProps {
     onToggleMiniPane?: () => void;
     isMainChatCollapsed?: boolean;
     miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
+    unreadMiniPaneCount?: number; // Count of unread messages for indicator
     // --- END NEW ---
 
     // --- NEW: Orchestrator file upload props ---
@@ -129,6 +130,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     onToggleMiniPane,
     isMainChatCollapsed,
     miniPaneToggleRef, // Destructure the ref
+    unreadMiniPaneCount, // Destructure the unread count
     // --- END NEW ---
 
     // --- NEW: Destructure orchestrator props ---
@@ -453,16 +455,24 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                        {renderCollapsedMessageToggle}
                        {/* --- NEW: Mini-Pane Toggle Button --- */}
                        {isMainChatCollapsed && onToggleMiniPane && (
-                            <button
-                                ref={miniPaneToggleRef} // Apply the ref here
-                                type="button"
-                                onClick={onToggleMiniPane}
-                                className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                                title={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
-                                aria-label={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
-                            >
-                                {isMiniPaneOpen ? <Minimize size={20} /> : <GalleryVerticalEnd size={20} />}
-                            </button>
+                            <div className="relative">
+                                <button
+                                    ref={miniPaneToggleRef} // Apply the ref here
+                                    type="button"
+                                    onClick={onToggleMiniPane}
+                                    className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
+                                    aria-label={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
+                                >
+                                    {isMiniPaneOpen ? <Minimize size={20} /> : <GalleryVerticalEnd size={20} />}
+                                </button>
+                                {/* Unread message indicator */}
+                                {!isMiniPaneOpen && unreadMiniPaneCount && unreadMiniPaneCount > 0 && (
+                                    <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium shadow-sm">
+                                        {unreadMiniPaneCount > 99 ? '99+' : unreadMiniPaneCount}
+                                    </div>
+                                )}
+                            </div>
                        )}
                        {/* --- END NEW --- */}
                     </div>

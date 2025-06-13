@@ -85,6 +85,7 @@ interface EditorPaneWrapperProps {
     onToggleMiniPane?: () => void;
     isMainChatCollapsed?: boolean;
     miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
+    unreadMiniPaneCount?: number; // Count of unread messages for indicator
     // --- NEW: Props for Mini-Pane content ---
     miniPaneMessages?: any[]; // Chat messages for mini pane
     miniPaneIsLoadingMessages?: boolean;
@@ -147,6 +148,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     onToggleMiniPane,
     isMainChatCollapsed,
     miniPaneToggleRef, // Destructure the ref
+    unreadMiniPaneCount, // Destructure the unread count
     // --- NEW: Destructure Mini-Pane content props ---
     miniPaneMessages,
     miniPaneIsLoadingMessages,
@@ -157,6 +159,10 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
 }) => {
     // Initialize attached toasts for collapsed chat input
     const { toasts } = useAttachedToastContext();
+    
+    // Refs for click-off behavior
+    const miniPaneRef = React.useRef<HTMLDivElement>(null);
+    const chatInputAreaRef = React.useRef<HTMLDivElement>(null);
     
     // Debug mini pane messages
     React.useEffect(() => {
@@ -169,6 +175,41 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
             });
         }
     }, [isMiniPaneOpen, miniPaneMessages, isMainChatCollapsed]);
+
+    // Click-off behavior for mini chat pane
+    React.useEffect(() => {
+        if (!isMiniPaneOpen || !onToggleMiniPane) return;
+
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as Node;
+            
+            // Don't close if clicking inside the mini pane
+            if (miniPaneRef.current?.contains(target)) {
+                return;
+            }
+            
+            // Don't close if clicking inside the chat input area
+            if (chatInputAreaRef.current?.contains(target)) {
+                return;
+            }
+            
+            // Don't close if clicking the toggle button (it has its own handler)
+            if (miniPaneToggleRef?.current?.contains(target)) {
+                return;
+            }
+            
+            // Close the mini pane for all other clicks
+            onToggleMiniPane();
+        };
+
+        // Add event listener to document
+        document.addEventListener('mousedown', handleClickOutside);
+        
+        // Cleanup
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isMiniPaneOpen, onToggleMiniPane, miniPaneToggleRef]);
     
 
 
@@ -262,13 +303,13 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                     {/* --- END NEW: Render Tagged Document Pills --- */}
 
                     {/* Pinned Input Area - Remove max-width/centering from here */}
-                    <div className="pt-4 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0 w-full relative">
+                    <div className="pt-4 z-10 bg-[--editor-bg] flex-shrink-0 w-full relative">
                         {/* Attached Toast Container for collapsed chat */}
                         <AttachedToastContainer toasts={toasts} />
                         
                         {/* Mini Chat Pane - positioned exactly like toast container */}
                         {isMiniPaneOpen && (
-                            <div className="absolute bottom-full left-0 right-0 mb-2 z-40">
+                            <div ref={miniPaneRef} className="absolute bottom-full left-0 right-0 mb-2 z-40">
                                 <div className="flex flex-col gap-2 px-4">
                                     <div className="w-full max-w-[780px] mx-auto max-h-[350px] overflow-y-auto bg-[--input-bg] border border-[--border-color] rounded-md shadow-lg flex flex-col">
                                         <div className="flex-1 overflow-y-auto styled-scrollbar p-2">
@@ -292,7 +333,15 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 </div>
                             </div>
                         )}
-                        <form ref={formRef} onSubmit={sendMessage} className="w-full flex flex-col items-center">
+                        <form ref={(node) => {
+                            // Handle multiple refs for the form element
+                            if (typeof formRef === 'function') {
+                                formRef(node);
+                            }
+                            
+                            // Also assign to our chat input area ref
+                            (chatInputAreaRef as React.MutableRefObject<HTMLFormElement | null>).current = node;
+                        }} onSubmit={sendMessage} className="w-full flex flex-col items-center">
                             {/* Use ChatInputUI directly here */}
                             <ChatInputUI 
                                 key={isChatCollapsed ? 'collapsed-input' : 'unmounted'}
@@ -329,6 +378,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 onToggleMiniPane={onToggleMiniPane}
                                 isMainChatCollapsed={isMainChatCollapsed}
                                 miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
+                                unreadMiniPaneCount={unreadMiniPaneCount} // Pass the unread count
                                 // --- END NEW ---
                             />
                         </form>
