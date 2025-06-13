@@ -136,8 +136,18 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
       }
       const prefs: UserPreferences = await response.json();
       console.log('[PreferenceStore] Fetched preferences:', prefs);
+      
+      const theme = prefs.theme || defaultPreferencesData.theme;
+      
+      // Sync theme to localStorage for anti-flicker script
+      try {
+        localStorage.setItem('theme', theme);
+      } catch (e) {
+        console.warn('[PreferenceStore] localStorage not accessible during fetch');
+      }
+      
       set({ 
-          theme: prefs.theme || defaultPreferencesData.theme, 
+          theme, 
           default_model: prefs.default_model || defaultPreferencesData.default_model, 
           editorFontSize: prefs.editorFontSize || defaultPreferencesData.editorFontSize,
           chatFontSize: prefs.chatFontSize || defaultPreferencesData.chatFontSize,
@@ -149,11 +159,21 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
       });
     } catch (error: any) {
       console.error('[PreferenceStore] Error fetching preferences:', error);
+      
+      const defaultTheme = defaultPreferencesData.theme;
+      
+      // Sync default theme to localStorage even on error
+      try {
+        localStorage.setItem('theme', defaultTheme);
+      } catch (e) {
+        console.warn('[PreferenceStore] localStorage not accessible during error fallback');
+      }
+      
       set({ 
           preferenceError: error.message, 
           isPreferenceLoading: false, 
           // Set defaults on error after first attempt
-          theme: defaultPreferencesData.theme,
+          theme: defaultTheme,
           default_model: defaultPreferencesData.default_model,
           editorFontSize: defaultPreferencesData.editorFontSize,
           chatFontSize: defaultPreferencesData.chatFontSize,
@@ -202,10 +222,28 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
     if (get().theme === theme) return; 
     const previousTheme = get().theme; // Store previous theme for potential rollback
     set({ theme }); // Optimistic local update
+    
+    // Immediately update localStorage to sync with anti-flicker script
+    try {
+      localStorage.setItem('theme', theme);
+    } catch (e) {
+      console.warn('[PreferenceStore] localStorage not accessible for theme sync');
+    }
+    
     try {
       await get()._updateRemotePreference({ theme });
     } catch (error) {
       set({ theme: previousTheme }); // Rollback on error
+      // Also rollback localStorage
+      try {
+        if (previousTheme) {
+          localStorage.setItem('theme', previousTheme);
+        } else {
+          localStorage.removeItem('theme');
+        }
+      } catch (e) {
+        console.warn('[PreferenceStore] localStorage not accessible for theme rollback');
+      }
     }
   },
 

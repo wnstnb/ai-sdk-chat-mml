@@ -392,9 +392,11 @@ export default function LandingPageContent() {
   };
 
   return (
-    // Removed min-h-screen from main, letting inner div control height
-    // <main ref={mainRef} className="parallax-bg text-[color:var(--text-color)] "> // REMOVED mainRef
-    <main className="parallax-bg text-[color:var(--text-color)] "> 
+    // Force dark theme for landing page regardless of user preference
+    <div data-theme="dark">
+      {/* Removed min-h-screen from main, letting inner div control height */}
+      {/* <main ref={mainRef} className="parallax-bg text-[color:var(--text-color)] "> // REMOVED mainRef */}
+      <main className="parallax-bg text-[color:var(--text-color)] "> 
       {/* Content wrapper - Make it a flex container filling height */}
       <div className="relative z-10 flex flex-col min-h-screen">
         {/* Header Section - Static glass-like background */}
@@ -801,5 +803,6 @@ export default function LandingPageContent() {
         </footer>
       </div>
     </main>
+    </div>
   );
 } 

@@ -84,16 +84,23 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
-                let theme = 'dark'; // Default to dark
+                let theme = 'dark'; // Default fallback
                 try {
-                  // Optional: If you also want to respect a localStorage preference set by client-side toggling
-                  // const storedTheme = localStorage.getItem('theme'); // Use the same key your theme toggle might use
-                  // if (storedTheme) {
-                  //   theme = storedTheme;
-                  // }
+                  // Check localStorage for user's theme preference first
+                  const storedTheme = localStorage.getItem('theme');
+                  if (storedTheme === 'light' || storedTheme === 'dark') {
+                    theme = storedTheme;
+                    console.log('[AntiFlickerScript] Using stored theme:', theme);
+                  } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+                    // If no stored preference, check system preference
+                    theme = 'light';
+                    console.log('[AntiFlickerScript] Using system preference: light');
+                  } else {
+                    console.log('[AntiFlickerScript] Using default theme: dark');
+                  }
                 } catch (e) {
                   // localStorage may not be available (e.g., in some SSR or restricted environments)
-                  console.warn('[AntiFlickerScript] localStorage not accessible.');
+                  console.warn('[AntiFlickerScript] localStorage not accessible, using default theme.');
                 }
                 document.documentElement.setAttribute('data-theme', theme);
                 console.log('[AntiFlickerScript] Initial theme set to:', theme);

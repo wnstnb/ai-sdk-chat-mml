@@ -76,25 +76,45 @@ This Privacy Policy is designed to be consistent with our Terms of Service. For 
 
 export default function PrivacyPage() {
   return (
-    <main className="text-[color:var(--text-color)] bg-[color:var(--bg-color)] min-h-screen">
-      <header className="container mx-auto px-6 py-6 flex items-center justify-between relative z-20">
-        <div className="flex items-center">
-          <Link href="/">
-            <img src="/tuon-logo-svg-type.svg" alt="Tuon Logo" className="h-8 w-8 cursor-pointer" style={{ filter: 'var(--logo-filter)' }} />
-          </Link>
+    // Force dark theme for privacy policy page regardless of user preference
+    <div data-theme="dark">
+      <main className="text-[color:var(--text-color)] bg-[color:var(--bg-color)] min-h-screen">
+        <header className="container mx-auto px-6 py-6 flex items-center justify-between relative z-20">
+          <div className="flex items-center">
+            <Link href="/">
+              <img src="/tuon-logo-svg-type.svg" alt="Tuon Logo" className="h-8 w-8 cursor-pointer" style={{ filter: 'var(--logo-filter)' }} />
+            </Link>
+          </div>
+        </header>
+        <div className="container mx-auto px-6 py-12 flex justify-center">
+          <div className="max-w-4xl w-full">
+            <div className="bg-[color:var(--card-bg)]/70 backdrop-blur-lg p-8 md:p-10 rounded-xl border border-[color:var(--border-color)]/25 shadow-xl">
+              <div className="prose prose-lg max-w-none text-white">
+                <ReactMarkdown
+                  components={{
+                    h1: ({children}) => <h1 className="text-white text-3xl font-bold mb-6">{children}</h1>,
+                    h2: ({children}) => <h2 className="text-white text-2xl font-semibold mt-8 mb-4">{children}</h2>,
+                    h3: ({children}) => <h3 className="text-white text-xl font-medium mt-6 mb-3">{children}</h3>,
+                    p: ({children}) => <p className="text-gray-200 mb-4 leading-relaxed">{children}</p>,
+                    ul: ({children}) => <ul className="text-gray-200 mb-4 ml-6 space-y-2">{children}</ul>,
+                    li: ({children}) => <li className="text-gray-200">{children}</li>,
+                    strong: ({children}) => <strong className="text-white font-semibold">{children}</strong>,
+                    a: ({children, href}) => <a href={href} className="text-blue-400 hover:text-blue-300 underline">{children}</a>
+                  }}
+                >
+                  {privacyContent}
+                </ReactMarkdown>
+              </div>
+            </div>
+          </div>
         </div>
-      </header>
-      <div className="container mx-auto px-6 py-12">
-        <div className="bg-[color:var(--card-bg)]/70 backdrop-blur-lg p-8 md:p-10 rounded-xl border border-[color:var(--border-color)]/25 shadow-xl prose prose-sm sm:prose lg:prose-lg xl:prose-xl prose-invert max-w-none">
-          <ReactMarkdown>{privacyContent}</ReactMarkdown>
-        </div>
-      </div>
-      <footer className="py-12 bg-[color:var(--bg-color)] relative z-20">
-        <div className="container mx-auto px-6 text-center text-sm text-[color:var(--primary-color)]/60">
-          © {new Date().getFullYear()} dodatathings.dev. All rights reserved. 
-          <Link href="/terms" className="ml-4 hover:text-[color:var(--accent-color)]">Terms of Service</Link>
-        </div>
-      </footer>
-    </main>
+        <footer className="py-12 bg-[color:var(--bg-color)] relative z-20">
+          <div className="container mx-auto px-6 text-center text-sm text-[color:var(--primary-color)]/60">
+            © {new Date().getFullYear()} dodatathings.dev. All rights reserved. 
+            <Link href="/terms" className="ml-4 hover:text-[color:var(--accent-color)]">Terms of Service</Link>
+          </div>
+        </footer>
+      </main>
+    </div>
   );
 } 

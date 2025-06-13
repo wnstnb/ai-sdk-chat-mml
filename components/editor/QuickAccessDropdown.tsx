@@ -20,7 +20,7 @@ export const QuickAccessDropdown: React.FC = () => {
     if (docs.length === 0) return <div className="p-2 text-xs text-center text-[--muted-text-color]">No documents found.</div>;
 
     return (
-      <ul className="space-y-1 p-1 max-h-60 overflow-y-auto">
+      <ul className="space-y-1 p-1 overflow-y-auto h-full">
         {docs.map((doc) => (
           <li key={doc.id}>
             <Link 
@@ -36,8 +36,8 @@ export const QuickAccessDropdown: React.FC = () => {
   };
 
   return (
-    <Tabs defaultValue="recent" className="p-1">
-      <TabsList className="grid w-full grid-cols-2 bg-[--input-bg] border-[--border-color]">
+    <Tabs defaultValue="recent" className="p-1 flex flex-col h-full">
+      <TabsList className="grid w-full grid-cols-2 bg-[--input-bg] border-[--border-color] flex-shrink-0">
         <TabsTrigger 
           value="recent" 
           className="data-[state=active]:bg-[--primary-color] data-[state=active]:text-[--text-color] text-[--muted-text-color] hover:text-[--text-color]"
@@ -51,10 +51,10 @@ export const QuickAccessDropdown: React.FC = () => {
           <Star className="w-4 h-4 mr-1.5" /> Starred
         </TabsTrigger>
       </TabsList>
-      <TabsContent value="recent" className="mt-1">
+      <TabsContent value="recent" className="mt-1 flex-grow overflow-hidden">
         {renderDocumentList(recentDocs, isLoadingRecent, recentError)}
       </TabsContent>
-      <TabsContent value="starred" className="mt-1">
+      <TabsContent value="starred" className="mt-1 flex-grow overflow-hidden">
         {renderDocumentList(starredDocs, isLoadingStarred, starredError)}
       </TabsContent>
     </Tabs>
