@@ -273,7 +273,7 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    title: `Scraped Content - ${new Date().toLocaleDateString()}`,
+                    title: `Scraped Content - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour12: false })}`,
                     content: allBlocksToInsert,
                 }),
             });

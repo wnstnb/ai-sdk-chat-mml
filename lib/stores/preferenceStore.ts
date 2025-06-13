@@ -6,7 +6,31 @@ interface UserPreferences {
   default_model: string;
   editorFontSize: number;
   chatFontSize: number;
-  // Add other preferences here in the future
+  // AI Interaction preferences
+  aiHighlighting?: {
+    enabled: boolean;
+    highlightDuration: number; // milliseconds, 0 = until clicked
+    showDiffs: boolean;
+    scrollToHighlight: boolean;
+    customColors?: {
+      addition: string;
+      deletion: string;
+      modification: string;
+    };
+  };
+  // Toast notification preferences
+  toastNotifications?: {
+    enabled: boolean;
+    style: 'attached' | 'regular';
+    animationSpeed: 'slow' | 'normal' | 'fast';
+    position: 'top' | 'bottom';
+    showRetryButton: boolean;
+  };
+  // Message pane preferences
+  messagePaneDefaults?: {
+    defaultState: 'collapsed' | 'expanded';
+    rememberLastState: boolean;
+  };
 }
 
 // Define the state shape for the Zustand store (what components interact with)
@@ -15,6 +39,31 @@ interface PreferenceState {
   default_model: string | null;    // Allow null initially
   editorFontSize: number | null;
   chatFontSize: number | null;
+  // AI Interaction preferences
+  aiHighlighting: {
+    enabled: boolean;
+    highlightDuration: number;
+    showDiffs: boolean;
+    scrollToHighlight: boolean;
+    customColors?: {
+      addition: string;
+      deletion: string;
+      modification: string;
+    };
+  } | null;
+  // Toast notification preferences
+  toastNotifications: {
+    enabled: boolean;
+    style: 'attached' | 'regular';
+    animationSpeed: 'slow' | 'normal' | 'fast';
+    position: 'top' | 'bottom';
+    showRetryButton: boolean;
+  } | null;
+  // Message pane preferences
+  messagePaneDefaults: {
+    defaultState: 'collapsed' | 'expanded';
+    rememberLastState: boolean;
+  } | null;
   isPreferenceLoading: boolean;
   preferenceError: string | null;
   isInitialized: boolean;
@@ -23,6 +72,9 @@ interface PreferenceState {
   setDefaultModel: (model: string) => Promise<void>;
   setEditorFontSize: (size: number) => Promise<void>;
   setChatFontSize: (size: number) => Promise<void>;
+  setAiHighlighting: (highlighting: Partial<NonNullable<PreferenceState['aiHighlighting']>>) => Promise<void>;
+  setToastNotifications: (toasts: Partial<NonNullable<PreferenceState['toastNotifications']>>) => Promise<void>;
+  setMessagePaneDefaults: (pane: Partial<NonNullable<PreferenceState['messagePaneDefaults']>>) => Promise<void>;
 }
 
 // Internal type for the store implementation including private helpers
@@ -36,6 +88,24 @@ const defaultPreferencesData: UserPreferences = {
   default_model: 'gpt-4.1',
   editorFontSize: 1,
   chatFontSize: 1,
+  aiHighlighting: {
+    enabled: true,
+    highlightDuration: 5000, // 5 seconds
+    showDiffs: true,
+    scrollToHighlight: true,
+    customColors: undefined // Use theme defaults
+  },
+  toastNotifications: {
+    enabled: true,
+    style: 'attached',
+    animationSpeed: 'normal',
+    position: 'bottom',
+    showRetryButton: true
+  },
+  messagePaneDefaults: {
+    defaultState: 'expanded',
+    rememberLastState: true
+  },
 };
 
 // Use the internal type for create
@@ -45,6 +115,9 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
   default_model: null, 
   editorFontSize: null,
   chatFontSize: null,
+  aiHighlighting: null,
+  toastNotifications: null,
+  messagePaneDefaults: null,
   isPreferenceLoading: false,
   preferenceError: null,
   isInitialized: false,
@@ -68,6 +141,9 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
           default_model: prefs.default_model || defaultPreferencesData.default_model, 
           editorFontSize: prefs.editorFontSize || defaultPreferencesData.editorFontSize,
           chatFontSize: prefs.chatFontSize || defaultPreferencesData.chatFontSize,
+          aiHighlighting: prefs.aiHighlighting || defaultPreferencesData.aiHighlighting,
+          toastNotifications: prefs.toastNotifications || defaultPreferencesData.toastNotifications,
+          messagePaneDefaults: prefs.messagePaneDefaults || defaultPreferencesData.messagePaneDefaults,
           isInitialized: true, 
           isPreferenceLoading: false 
       });
@@ -81,6 +157,9 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
           default_model: defaultPreferencesData.default_model,
           editorFontSize: defaultPreferencesData.editorFontSize,
           chatFontSize: defaultPreferencesData.chatFontSize,
+          aiHighlighting: defaultPreferencesData.aiHighlighting,
+          toastNotifications: defaultPreferencesData.toastNotifications,
+          messagePaneDefaults: defaultPreferencesData.messagePaneDefaults,
           isInitialized: true, // Mark as initialized even on error to apply defaults
       });
     }
@@ -93,6 +172,9 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
           default_model: get().default_model || defaultPreferencesData.default_model, 
           editorFontSize: get().editorFontSize || defaultPreferencesData.editorFontSize,
           chatFontSize: get().chatFontSize || defaultPreferencesData.chatFontSize,
+          aiHighlighting: get().aiHighlighting || defaultPreferencesData.aiHighlighting,
+          toastNotifications: get().toastNotifications || defaultPreferencesData.toastNotifications,
+          messagePaneDefaults: get().messagePaneDefaults || defaultPreferencesData.messagePaneDefaults,
       };
       const newPreferences = { ...currentState, ...updatedPrefs };
 
@@ -157,6 +239,42 @@ export const usePreferenceStore = create<PreferenceStoreImplementation>()((set, 
       await get()._updateRemotePreference({ chatFontSize: size });
     } catch (error) {
       set({ chatFontSize: previousSize });
+    }
+  },
+
+  setAiHighlighting: async (highlighting: Partial<NonNullable<PreferenceState['aiHighlighting']>>) => {
+    const current = get().aiHighlighting || defaultPreferencesData.aiHighlighting!;
+    const updated = { ...current, ...highlighting };
+    const previous = get().aiHighlighting;
+    set({ aiHighlighting: updated });
+    try {
+      await get()._updateRemotePreference({ aiHighlighting: updated });
+    } catch (error) {
+      set({ aiHighlighting: previous });
+    }
+  },
+
+  setToastNotifications: async (toasts: Partial<NonNullable<PreferenceState['toastNotifications']>>) => {
+    const current = get().toastNotifications || defaultPreferencesData.toastNotifications!;
+    const updated = { ...current, ...toasts };
+    const previous = get().toastNotifications;
+    set({ toastNotifications: updated });
+    try {
+      await get()._updateRemotePreference({ toastNotifications: updated });
+    } catch (error) {
+      set({ toastNotifications: previous });
+    }
+  },
+
+  setMessagePaneDefaults: async (pane: Partial<NonNullable<PreferenceState['messagePaneDefaults']>>) => {
+    const current = get().messagePaneDefaults || defaultPreferencesData.messagePaneDefaults!;
+    const updated = { ...current, ...pane };
+    const previous = get().messagePaneDefaults;
+    set({ messagePaneDefaults: updated });
+    try {
+      await get()._updateRemotePreference({ messagePaneDefaults: updated });
+    } catch (error) {
+      set({ messagePaneDefaults: previous });
     }
   },
 

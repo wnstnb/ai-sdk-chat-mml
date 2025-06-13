@@ -2,6 +2,7 @@ import React, { useCallback, useState, useEffect, useMemo } from 'react';
 import { CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getHighlightColors } from '@/lib/highlightColors';
+import { useToastPreferences } from '@/lib/hooks/useAIPreferences';
 
 type BlockAction = 'insert' | 'update' | 'delete' | 'error';
 
@@ -67,6 +68,7 @@ export const AIActionToast: React.FC<AIActionToastProps> = ({
 }) => {
   const hasAffectedBlocks = affectedBlockIds.length > 0;
   const [currentTheme, setCurrentTheme] = useState<'light' | 'dark'>('dark');
+  const toastPrefs = useToastPreferences();
   
   // Theme detection effect (following pattern from ContentHighlight)
   useEffect(() => {
@@ -162,7 +164,7 @@ export const AIActionToast: React.FC<AIActionToastProps> = ({
           {message}
         </div>
         
-        {hasAffectedBlocks && (
+        {hasAffectedBlocks && toastPrefs.showRetryButton && (
           <button 
             onClick={onScrollToChange ? handleScrollToChange : handleDefaultScrollToChange}
             className={cn(

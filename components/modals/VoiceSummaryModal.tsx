@@ -69,7 +69,7 @@ class AudioProcessor extends AudioWorkletProcessor {
 registerProcessor('audio-processor', AudioProcessor);
 `;
 
-const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onClose, setBlockStatus: propSetBlockStatus }) => {
+export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onClose, setBlockStatus: propSetBlockStatus }) => {
   const editorRef = useModalStore(state => state.editorRef);
   const storeSetBlockStatus = useModalStore(state => state.setBlockStatus);
   const setBlockStatus = propSetBlockStatus || storeSetBlockStatus;
@@ -89,6 +89,7 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
   const [notesAction, setNotesAction] = React.useState<'summary' | 'prettify'>('summary');
   const [targetDocument, setTargetDocument] = React.useState<TargetDocumentType>('new'); // State for target selection
   const [isCreatingNewDocument, setIsCreatingNewDocument] = React.useState<boolean>(false);
+  const [recordingStartTime, setRecordingStartTime] = React.useState<string | null>(null);
 
   // --- NEW: State for WebSocket configuration ---
   const [websocketUrl, setWebsocketUrl] = React.useState<string | null>(null);
@@ -221,6 +222,7 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
     lastTranscriptionForNotesRef.current = null; 
     setActiveTab("transcription");
     setInsertionType('active');
+    setRecordingStartTime(null); // Clear recording timestamp
   }, [setVoiceSummaryTranscription, setGeneratedNotes, setNotesError, setActiveTab, setInsertionType]);
 
   // Helper function to stop recording and perform necessary cleanup
@@ -770,6 +772,11 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
       
       toggleVoiceSummaryRecording(); // Optimistically update recording state in store (triggers UI)
 
+      // Set recording start time for timestamp context
+      const currentTime = new Date();
+      const timestamp = `${currentTime.toLocaleDateString()} ${currentTime.toLocaleTimeString([], { hour12: false })}`;
+      setRecordingStartTime(timestamp);
+
       let initialDisplayMessage = '';
       console.log("[VoiceSummaryModal handleRecordToggle] About to check finalizedTranscriptContent.current.trim(). Current value:", JSON.stringify(finalizedTranscriptContent.current));
       if (finalizedTranscriptContent.current.trim()) { 
@@ -868,9 +875,9 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
         async () => {
           let result: { notes?: string | null; error?: string | null; } = { error: "Unknown action" };
           if (currentAction === 'summary') {
-            result = await generateNotesFromTranscript(cleanedFinalizedContent);
+            result = await generateNotesFromTranscript(cleanedFinalizedContent, recordingStartTime || undefined);
           } else if (currentAction === 'prettify') {
-            result = await prettifyTranscript(cleanedFinalizedContent);
+            result = await prettifyTranscript(cleanedFinalizedContent, recordingStartTime || undefined);
           }
 
           if (result.error) {
@@ -1026,7 +1033,7 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          title: `Voice Note - ${new Date().toLocaleDateString()}`,
+          title: `Voice Note - ${recordingStartTime || new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour12: false })}`,
           content: blocksToInsert, // Send BlockNote JSON content
         }),
       });
@@ -1061,7 +1068,7 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
   const notesAvailable = !!generatedNotes;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(openState) => { if (!openState) handleCloseModal(); }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { handleCloseModal(); } }}>
       <div className="sr-only" aria-live="polite" id="voice-summary-status"></div>
       <DialogContent 
         className="bg-[var(--editor-bg)] text-[--text-color] p-6 w-full max-w-lg flex flex-col max-h-[90vh]"
@@ -1073,7 +1080,7 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
           }
         }}
         onInteractOutside={(e) => {
-            // Allow interaction with toasts
+          // Allow interaction with toasts
           if ((e.target as HTMLElement).closest('[data-sonner-toast]')) {
             e.preventDefault();
           }
@@ -1167,6 +1174,7 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
                 currentUtteranceContent.current = '';
                 setGeneratedNotes(null);
                 setNotesError(null);
+                setRecordingStartTime(null);
                 toast.info("Transcription and notes cleared.");
               }}
               disabled={isRecordingRef.current || (!transcriptionAvailable && !notesAvailable)}
@@ -1304,17 +1312,5 @@ const ActualVoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, onC
         </div>
       </DialogContent>
     </Dialog>
-  );
-};
-
-export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = (props) => {
-  const { isOpen, onClose, setBlockStatus } = props;
-
-  if (!isOpen) return null;
-
-  return (
-    <>
-      <ActualVoiceSummaryModal isOpen={isOpen} onClose={onClose} setBlockStatus={setBlockStatus} />
-    </>
   );
 };

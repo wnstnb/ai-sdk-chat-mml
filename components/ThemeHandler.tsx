@@ -8,7 +8,7 @@ import { useModalStore } from '@/stores/useModalStore';
 import Sidebar from '@/components/sidebar/Sidebar';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { VoiceSummaryModal } from './modals/VoiceSummaryModal';
+
 import useMediaQuery from '@/lib/hooks/utils/useMediaQuery';
 import { WebScrapingModal } from '@/components/modals/WebScrapingModal';
 
@@ -31,7 +31,6 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   const { 
     openSearchModal, 
     openPreferencesModal, 
-    openNewDocumentModal, 
     isVoiceSummaryModalOpen, 
     openVoiceSummaryModal, 
     closeVoiceSummaryModal,
@@ -42,6 +41,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   } = useModalStore();
 
   const [isWebScrapingModalOpen, setIsWebScrapingModalOpen] = useState(false);
+  const [isCreatingNewNote, setIsCreatingNewNote] = useState(false);
 
   const [isMounted, setIsMounted] = useState(false);
   const isMobile = useMediaQuery('(max-width: 768px)');
@@ -92,8 +92,44 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     router.push('/login');
   };
 
-  const handleNewNote = () => {
-    openNewDocumentModal();
+  const handleNewNote = async () => {
+    if (isCreatingNewNote) return; // Prevent double-clicks
+    
+    setIsCreatingNewNote(true);
+    try {
+      toast.info('Creating new document...');
+      
+      const response = await fetch('/api/documents/create-with-content', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: `New Note - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour12: false })}`,
+          content: [], // Empty content for blank document
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: { message: 'Failed to create new document. Please try again.' } }));
+        throw new Error(errorData.error?.message || 'Failed to create new document.');
+      }
+
+      const result = await response.json();
+      const newDocumentId = result.data?.documentId;
+
+      if (!newDocumentId) {
+        throw new Error('Failed to get new document ID from response.');
+      }
+
+      toast.success('New document created!');
+      router.push(`/editor/${newDocumentId}`);
+    } catch (error: any) {
+      console.error('Error creating new document:', error);
+      toast.error(error.message || 'Failed to create new document.');
+    } finally {
+      setIsCreatingNewNote(false);
+    }
   };
   
   const openWebScrapingModal = () => setIsWebScrapingModalOpen(true);
@@ -114,8 +150,8 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
           currentTheme={currentThemeForSidebar}
           onOpenPreferences={openPreferencesModal}
           onNewNote={handleNewNote}
-          isNewNoteLoading={false}
-          isNewNoteDisabled={false}
+          isNewNoteLoading={isCreatingNewNote}
+          isNewNoteDisabled={isCreatingNewNote}
           onVoiceSummary={openVoiceSummaryModal}
           isVoiceSummaryLoading={false}
           isVoiceSummaryDisabled={false}
@@ -130,10 +166,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
       <main className="flex-1 flex flex-col overflow-y-auto">
         {children}
       </main>
-      <VoiceSummaryModal
-        isOpen={isVoiceSummaryModalOpen}
-        onClose={closeVoiceSummaryModal}
-      />
+
       <WebScrapingModal
         isOpen={isWebScrapingModalOpen}
         onClose={closeWebScrapingModal}

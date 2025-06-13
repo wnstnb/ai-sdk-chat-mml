@@ -13,6 +13,7 @@ import {
   highlightAnimationConfig,
   type HighlightColorScheme 
 } from '@/lib/highlightColors';
+import { useHighlightingPreferences } from '@/lib/hooks/useAIPreferences';
 import { cn } from '@/lib/utils';
 
 export interface ContentHighlightProps {
@@ -51,6 +52,7 @@ const ContentHighlightRaw: React.FC<ContentHighlightProps> = ({
   const [currentTheme, setCurrentTheme] = useState<'light' | 'dark'>('dark');
   const shouldReduceMotion = usePrefersReducedMotion();
   const clearBlockStatus = useClientChatOperationStore((state) => state.clearBlockStatus);
+  const highlightingPrefs = useHighlightingPreferences();
   
   // Memoized theme detection effect to prevent unnecessary re-runs
   const themeDetectionEffect = useCallback(() => {
@@ -85,8 +87,12 @@ const ContentHighlightRaw: React.FC<ContentHighlightProps> = ({
   
   // Get detailed status information
   const statusDetails = useBlockStatusDetails(blockId);
-  const isHighlighted = useBlockHighlightState(blockId, highlightDuration);
-  const progress = useBlockHighlightProgress(blockId, highlightDuration);
+  
+  // Use preference-aware highlighting settings
+  const effectiveHighlightDuration = highlightingPrefs.enabled ? 
+    (highlightingPrefs.duration || highlightDuration) : 0;
+  const isHighlighted = useBlockHighlightState(blockId, effectiveHighlightDuration) && highlightingPrefs.enabled;
+  const progress = useBlockHighlightProgress(blockId, effectiveHighlightDuration);
   
   // Memoized action determination
   const action = useMemo(() => {
@@ -99,8 +105,20 @@ const ContentHighlightRaw: React.FC<ContentHighlightProps> = ({
   
   // Memoized color scheme calculation
   const colors = useMemo((): HighlightColorScheme => {
-    return getHighlightColors(action, isDarkTheme);
-  }, [action, isDarkTheme]);
+    const baseColors = getHighlightColors(action, isDarkTheme);
+    
+    // Apply custom colors if defined in preferences
+    if (highlightingPrefs.customColors) {
+      return {
+        ...baseColors,
+        background: highlightingPrefs.customColors.addition || baseColors.background,
+        border: highlightingPrefs.customColors.modification || baseColors.border,
+        accent: highlightingPrefs.customColors.addition || baseColors.accent,
+      };
+    }
+    
+    return baseColors;
+  }, [action, isDarkTheme, highlightingPrefs.customColors]);
   
   // Memoized animation settings
   const animationSettings = useMemo(() => {

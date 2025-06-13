@@ -1,6 +1,34 @@
 import { toast as sonnerToast } from 'sonner';
 import React from 'react';
 import AIActionToast from '@/components/ui/AIActionToast';
+import { usePreferenceStore } from '@/lib/stores/preferenceStore';
+
+// Helper function to get toast preferences without using hooks
+const getToastPreferences = () => {
+  const store = usePreferenceStore.getState();
+  const toastNotifications = store.toastNotifications || {
+    enabled: true,
+    style: 'attached' as const,
+    animationSpeed: 'normal' as const,
+    position: 'bottom' as const,
+    showRetryButton: true,
+  };
+  
+  // Convert animation speed to duration
+  const getToastDuration = (speed: 'slow' | 'normal' | 'fast'): number => {
+    switch (speed) {
+      case 'slow': return 5000;
+      case 'normal': return 3000;
+      case 'fast': return 1500;
+      default: return 3000;
+    }
+  };
+  
+  return {
+    ...toastNotifications,
+    duration: getToastDuration(toastNotifications.animationSpeed),
+  };
+};
 
 // Global reference to our attached toast context
 let globalAttachedToastContext: {
@@ -231,10 +259,17 @@ function flushBatch(batchKey: string): void {
  * Internal function to show enhanced AI toast
  */
 function showAIToast(type: ToastType, message: string, options?: AIToastOptions) {
+  const toastPrefs = getToastPreferences();
+  
+  // Early return if toasts are disabled
+  if (!toastPrefs.enabled) {
+    return null;
+  }
+  
   const {
     affectedBlockIds = [],
     onScrollToChange,
-    duration = 3000, // Default 3 seconds - shorter for compact toasts
+    duration = toastPrefs.duration, // Use preference-based duration
     id,
     action,
     batchKey,
@@ -245,8 +280,8 @@ function showAIToast(type: ToastType, message: string, options?: AIToastOptions)
     return showBatchedToast(batchKey, type, action, affectedBlockIds, onScrollToChange);
   }
 
-  // Try to use our attached toast context first
-  if (globalAttachedToastContext && (affectedBlockIds.length > 0 || onScrollToChange)) {
+  // Try to use our attached toast context first if style is 'attached'
+  if (globalAttachedToastContext && toastPrefs.style === 'attached' && (affectedBlockIds.length > 0 || onScrollToChange)) {
     const toastContent = React.createElement(AIActionToast, {
       message,
       type,

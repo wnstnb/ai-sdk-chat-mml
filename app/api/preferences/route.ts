@@ -9,6 +9,24 @@ const defaultPreferences = {
   default_model: 'gpt-4.1',
   editorFontSize: 1,
   chatFontSize: 1,
+  aiHighlighting: {
+    enabled: true,
+    highlightDuration: 5000, // 5 seconds
+    showDiffs: true,
+    scrollToHighlight: true,
+    customColors: undefined // Use theme defaults
+  },
+  toastNotifications: {
+    enabled: true,
+    style: 'attached',
+    animationSpeed: 'normal',
+    position: 'bottom',
+    showRetryButton: true
+  },
+  messagePaneDefaults: {
+    defaultState: 'expanded',
+    rememberLastState: true
+  },
 };
 
 export async function GET(request: NextRequest) {

@@ -1,6 +1,7 @@
 import { useCallback, RefObject } from 'react';
 import { BlockNoteEditor } from '@blocknote/core';
 import { useEditorBlockStatusStore } from '@/app/stores/editorBlockStatusStore';
+import { useHighlightingPreferences } from '@/lib/hooks/useAIPreferences';
 
 interface ScrollToBlockOptions {
   /**
@@ -91,6 +92,7 @@ export const useBlockNavigation = (
   editorRef: RefObject<BlockNoteEditor | null>
 ): UseBlockNavigationReturn => {
   const { blockStatusMap, updateInteractionState } = useEditorBlockStatusStore();
+  const highlightingPrefs = useHighlightingPreferences();
 
   /**
    * Find the DOM element for a block using BlockNote's data-id attribute
@@ -191,12 +193,12 @@ export const useBlockNavigation = (
         blockElement.focus();
       }
 
-      // Add highlight effect if requested
-      if (opts.highlight) {
+      // Add highlight effect if requested and highlighting is enabled in preferences
+      if (opts.highlight && highlightingPrefs.enabled && highlightingPrefs.scrollToHighlight) {
         blockElement.classList.add('outline-pulse');
         setTimeout(() => {
           blockElement.classList.remove('outline-pulse');
-        }, opts.highlightDuration);
+        }, highlightingPrefs.duration || opts.highlightDuration);
       }
 
       return true;

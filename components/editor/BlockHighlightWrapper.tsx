@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useClientChatOperationStore } from '@/lib/stores/useClientChatOperationStore';
 import { getHighlightColors } from '@/lib/highlightColors';
+import { useHighlightingPreferences } from '@/lib/hooks/useAIPreferences';
 import { BlockStatus } from '@/app/lib/clientChatOperationState';
 
 interface BlockHighlightWrapperProps {
@@ -21,6 +22,7 @@ export const BlockHighlightWrapper: React.FC<BlockHighlightWrapperProps> = ({
   const editorRef = useRef<HTMLDivElement>(null);
   const clearBlockStatus = useClientChatOperationStore((state) => state.clearBlockStatus);
   const blockStatuses = useClientChatOperationStore((state) => state.editorBlockStatuses);
+  const highlightingPrefs = useHighlightingPreferences();
   
   const activeHighlights = useRef<Map<string, {
     overlay: HTMLDivElement;
@@ -50,7 +52,11 @@ export const BlockHighlightWrapper: React.FC<BlockHighlightWrapperProps> = ({
       }
     });
 
-    // Add or update highlights for active blocks
+    // Add or update highlights for active blocks - only if highlighting is enabled
+    if (!highlightingPrefs.enabled) {
+      return;
+    }
+    
     activeBlockIds.forEach((blockId) => {
       const status = blockStatuses[blockId];
       if (!status) return;
@@ -181,11 +187,12 @@ export const BlockHighlightWrapper: React.FC<BlockHighlightWrapperProps> = ({
 
         editorRef.current!.appendChild(overlay);
 
-        // Create progress update interval
+        // Create progress update interval with preference-based duration
         const startTime = Date.now();
-        const holdDuration = 4000; // Hold at full opacity for 0.5 seconds
-        const fadeDuration = 1000; // Then fade for 2.5 seconds
-        const totalDuration = holdDuration + fadeDuration; // Total 3 seconds
+        const userDuration = highlightingPrefs.duration || 5000; // Use user preference or fallback
+        const holdDuration = Math.max(1000, userDuration * 0.8); // Hold for 80% of duration
+        const fadeDuration = Math.max(500, userDuration * 0.2); // Fade for 20% of duration
+        const totalDuration = holdDuration + fadeDuration;
         
         const interval = setInterval(() => {
           const elapsed = Date.now() - startTime;

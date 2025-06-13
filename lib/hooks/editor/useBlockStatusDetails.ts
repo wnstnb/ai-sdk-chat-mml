@@ -63,21 +63,31 @@ export function useBlockStatusDetails(blockId: string): BlockStatusDetails {
  * Hook to check if a block should show highlight animation based on duration
  * 
  * @param blockId The ID of the block to check
- * @param highlightDuration Duration in milliseconds (default: 3000ms)
+ * @param highlightDuration Duration in milliseconds (0 = until clicked, default: 3000ms)
  * @returns Whether the block should currently show highlighting
  */
 export function useBlockHighlightState(blockId: string, highlightDuration: number = 3000): boolean {
   const { isHighlighted, elapsedMs } = useBlockStatusDetails(blockId);
   
-  // Only show highlight if status is MODIFIED and within duration
-  return isHighlighted && elapsedMs < highlightDuration;
+  // If highlighting is disabled for this block, don't show
+  if (!isHighlighted) {
+    return false;
+  }
+  
+  // Special case: highlightDuration = 0 means "until clicked" (permanent highlight)
+  if (highlightDuration === 0) {
+    return true;
+  }
+  
+  // Normal time-based highlighting
+  return elapsedMs < highlightDuration;
 }
 
 /**
  * Hook to get the remaining highlight progress as a percentage
  * 
  * @param blockId The ID of the block to check
- * @param highlightDuration Duration in milliseconds (default: 3000ms)
+ * @param highlightDuration Duration in milliseconds (0 = until clicked, default: 3000ms)
  * @returns Progress value between 0 and 1 (0 = expired, 1 = just started)
  */
 export function useBlockHighlightProgress(blockId: string, highlightDuration: number = 3000): number {
@@ -85,6 +95,11 @@ export function useBlockHighlightProgress(blockId: string, highlightDuration: nu
   
   if (!isHighlighted) {
     return 0;
+  }
+  
+  // Special case: highlightDuration = 0 means "until clicked" (always full progress)
+  if (highlightDuration === 0) {
+    return 1;
   }
   
   const remainingMs = Math.max(0, highlightDuration - elapsedMs);

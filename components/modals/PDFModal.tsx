@@ -513,7 +513,7 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose, setBlockSta
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          title: `PDF Extraction - ${new Date().toLocaleDateString()}`,
+          title: `PDF Extraction - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour12: false })}`,
           content: blocksForNewDocument 
         }),
       });
