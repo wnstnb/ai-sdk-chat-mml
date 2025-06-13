@@ -36,8 +36,10 @@ export interface ContentHighlightProps {
  * ContentHighlight component that wraps blocks with AI operation highlighting.
  * Provides visual feedback for insert, update, delete, and error operations
  * with WCAG AA compliant colors and respect for reduced motion preferences.
+ * 
+ * Optimized with React.memo and memoized computations for performance.
  */
-const ContentHighlight: React.FC<ContentHighlightProps> = ({
+const ContentHighlightRaw: React.FC<ContentHighlightProps> = ({
   blockId,
   children,
   highlightDuration = highlightAnimationConfig.defaultDuration,
@@ -50,8 +52,8 @@ const ContentHighlight: React.FC<ContentHighlightProps> = ({
   const shouldReduceMotion = usePrefersReducedMotion();
   const clearBlockStatus = useClientChatOperationStore((state) => state.clearBlockStatus);
   
-  // Theme detection effect (following existing pattern from editor page)
-  useEffect(() => {
+  // Memoized theme detection effect to prevent unnecessary re-runs
+  const themeDetectionEffect = useCallback(() => {
     const getTheme = (): 'light' | 'dark' => {
       const dataTheme = document.documentElement.getAttribute('data-theme');
       if (dataTheme === 'dark' || dataTheme === 'light') {
@@ -78,25 +80,29 @@ const ContentHighlight: React.FC<ContentHighlightProps> = ({
       observer.disconnect();
     };
   }, []);
+
+  useEffect(themeDetectionEffect, [themeDetectionEffect]);
   
   // Get detailed status information
   const statusDetails = useBlockStatusDetails(blockId);
   const isHighlighted = useBlockHighlightState(blockId, highlightDuration);
   const progress = useBlockHighlightProgress(blockId, highlightDuration);
   
-  // Determine action type and theme
-  const action = statusDetails.hasError ? 'error' : 
-                statusDetails.isNewContent ? 'insert' :
-                statusDetails.isUpdatedContent ? 'update' : 'update';
+  // Memoized action determination
+  const action = useMemo(() => {
+    return statusDetails.hasError ? 'error' : 
+           statusDetails.isNewContent ? 'insert' :
+           statusDetails.isUpdatedContent ? 'update' : 'update';
+  }, [statusDetails.hasError, statusDetails.isNewContent, statusDetails.isUpdatedContent]);
   
   const isDarkTheme = currentTheme === 'dark';
   
-  // Get appropriate color scheme
+  // Memoized color scheme calculation
   const colors = useMemo((): HighlightColorScheme => {
     return getHighlightColors(action, isDarkTheme);
   }, [action, isDarkTheme]);
   
-  // Calculate animation settings based on reduced motion preference
+  // Memoized animation settings
   const animationSettings = useMemo(() => {
     if (shouldReduceMotion) {
       return {
@@ -110,7 +116,7 @@ const ContentHighlight: React.FC<ContentHighlightProps> = ({
     };
   }, [shouldReduceMotion]);
   
-  // Handle click to dismiss
+  // Memoized click handler
   const handleClick = useCallback((event: React.MouseEvent) => {
     if (enableClickToDismiss && isHighlighted) {
       event.preventDefault();
@@ -124,11 +130,13 @@ const ContentHighlight: React.FC<ContentHighlightProps> = ({
     }
   }, [enableClickToDismiss, isHighlighted, blockId, onHighlightDismissed, clearBlockStatus]);
   
-  // Get accessibility description
-  const statusDescription = getBlockStatusDescription(statusDetails);
+  // Memoized accessibility description
+  const statusDescription = useMemo(() => {
+    return getBlockStatusDescription(statusDetails);
+  }, [statusDetails]);
   
-  // Variants for the highlight animation
-  const highlightVariants = {
+  // Memoized animation variants
+  const highlightVariants = useMemo(() => ({
     hidden: { 
       opacity: 0,
       scale: shouldReduceMotion ? 1 : 0.98
@@ -137,14 +145,31 @@ const ContentHighlight: React.FC<ContentHighlightProps> = ({
       opacity: progress,
       scale: 1
     }
-  };
+  }), [shouldReduceMotion, progress]);
   
-  // Base wrapper className
-  const wrapperClassName = cn(
+  // Memoized wrapper className
+  const wrapperClassName = useMemo(() => cn(
     'relative transition-all duration-200',
     enableClickToDismiss && isHighlighted && 'cursor-pointer',
     className
-  );
+  ), [enableClickToDismiss, isHighlighted, className]);
+  
+  // Memoized overlay styles
+  const overlayStyles = useMemo(() => ({
+    backgroundColor: colors.background,
+    border: `1px solid ${colors.border}`,
+  }), [colors.background, colors.border]);
+  
+  // Memoized accent bar styles
+  const accentBarStyles = useMemo(() => ({
+    backgroundColor: colors.accent
+  }), [colors.accent]);
+  
+  // Memoized debug indicator styles
+  const debugIndicatorStyles = useMemo(() => ({
+    backgroundColor: colors.accent,
+    color: colors.text 
+  }), [colors.accent, colors.text]);
   
   return (
     <div 
@@ -160,10 +185,7 @@ const ContentHighlight: React.FC<ContentHighlightProps> = ({
           <motion.div
             key={`highlight-${blockId}`}
             className="absolute inset-0 pointer-events-none rounded-md"
-            style={{
-              backgroundColor: colors.background,
-              border: `1px solid ${colors.border}`,
-            }}
+            style={overlayStyles}
             variants={highlightVariants}
             initial="hidden"
             animate="visible"
@@ -175,7 +197,7 @@ const ContentHighlight: React.FC<ContentHighlightProps> = ({
             {showAccentBar && (
               <div
                 className="absolute left-0 top-0 bottom-0 w-1 rounded-l-md"
-                style={{ backgroundColor: colors.accent }}
+                style={accentBarStyles}
                 aria-hidden="true"
               />
             )}
@@ -184,10 +206,7 @@ const ContentHighlight: React.FC<ContentHighlightProps> = ({
             {process.env.NODE_ENV === 'development' && (
               <div 
                 className="absolute top-1 right-1 px-2 py-1 text-xs rounded"
-                style={{ 
-                  backgroundColor: colors.accent,
-                  color: colors.text 
-                }}
+                style={debugIndicatorStyles}
               >
                 {action} ({Math.round(progress * 100)}%)
               </div>
@@ -198,5 +217,21 @@ const ContentHighlight: React.FC<ContentHighlightProps> = ({
     </div>
   );
 };
+
+// Memoized component to prevent unnecessary re-renders
+const ContentHighlight = React.memo(ContentHighlightRaw, (prevProps, nextProps) => {
+  // Custom comparison function for better performance
+  return (
+    prevProps.blockId === nextProps.blockId &&
+    prevProps.highlightDuration === nextProps.highlightDuration &&
+    prevProps.showAccentBar === nextProps.showAccentBar &&
+    prevProps.className === nextProps.className &&
+    prevProps.enableClickToDismiss === nextProps.enableClickToDismiss &&
+    prevProps.onHighlightDismissed === nextProps.onHighlightDismissed &&
+    prevProps.children === nextProps.children
+  );
+});
+
+ContentHighlight.displayName = 'ContentHighlight';
 
 export default ContentHighlight; 

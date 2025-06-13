@@ -13,7 +13,18 @@ export const setGlobalAttachedToastContext = (context: typeof globalAttachedToas
   globalAttachedToastContext = context;
 };
 
-export type ToastType = 'success' | 'error' | 'info' | 'warning';
+// Toast batching system to consolidate multiple operations
+interface BatchedToast {
+  type: ToastType;
+  action?: 'insert' | 'update' | 'delete' | 'error';
+  blockIds: Set<string>;
+  operationCount: number;
+  timer: NodeJS.Timeout;
+  onScrollToChange?: (blockId: string) => void;
+}
+
+const toastBatches = new Map<string, BatchedToast>();
+const BATCH_WINDOW_MS = 500; // 500ms window to batch operations
 
 interface AIToastOptions {
   affectedBlockIds?: string[];
@@ -21,12 +32,11 @@ interface AIToastOptions {
   duration?: number;
   id?: string | number;
   action?: 'insert' | 'update' | 'delete' | 'error'; // Add action type for color matching
+  batchKey?: string; // Optional key for batching similar operations
 }
 
-/**
- * Enhanced toast utility that integrates with our block status system
- * and provides scroll-to functionality for affected blocks.
- */
+type ToastType = 'success' | 'error' | 'info' | 'warning';
+
 export const aiToast = {
   /**
    * Show a success toast with optional block navigation
@@ -68,6 +78,19 @@ export const aiToast = {
    */
   loading: (message: string, options?: { id?: string | number }) => {
     return sonnerToast.loading(message, options);
+  },
+
+  /**
+   * Show a batched toast that consolidates multiple operations of the same type
+   */
+  batched: (
+    batchKey: string,
+    type: ToastType,
+    action: 'insert' | 'update' | 'delete' | 'error',
+    blockIds: string[],
+    onScrollToChange?: (blockId: string) => void
+  ) => {
+    return showBatchedToast(batchKey, type, action, blockIds, onScrollToChange);
   },
 
   /**
@@ -118,6 +141,93 @@ export const aiToast = {
 };
 
 /**
+ * Show a batched toast that consolidates multiple operations
+ */
+function showBatchedToast(
+  batchKey: string,
+  type: ToastType,
+  action: 'insert' | 'update' | 'delete' | 'error',
+  blockIds: string[],
+  onScrollToChange?: (blockId: string) => void
+): string {
+  const existingBatch = toastBatches.get(batchKey);
+  
+  if (existingBatch) {
+    // Add to existing batch
+    blockIds.forEach(id => existingBatch.blockIds.add(id));
+    existingBatch.operationCount++;
+    
+    // Clear the existing timer and set a new one
+    clearTimeout(existingBatch.timer);
+    existingBatch.timer = setTimeout(() => {
+      flushBatch(batchKey);
+    }, BATCH_WINDOW_MS);
+    
+    return batchKey;
+  } else {
+    // Create new batch
+    const batch: BatchedToast = {
+      type,
+      action,
+      blockIds: new Set(blockIds),
+      operationCount: 1,
+      onScrollToChange,
+      timer: setTimeout(() => {
+        flushBatch(batchKey);
+      }, BATCH_WINDOW_MS)
+    };
+    
+    toastBatches.set(batchKey, batch);
+    return batchKey;
+  }
+}
+
+/**
+ * Flush a batch and show the consolidated toast
+ */
+function flushBatch(batchKey: string): void {
+  const batch = toastBatches.get(batchKey);
+  if (!batch) return;
+  
+  // Remove from batches
+  toastBatches.delete(batchKey);
+  clearTimeout(batch.timer);
+  
+  const blockIds = Array.from(batch.blockIds);
+  const blockCount = blockIds.length;
+  const operationCount = batch.operationCount;
+  
+  // Generate consolidated message
+  let message: string;
+  if (batch.action === 'error') {
+    message = operationCount === 1 
+      ? `Error processing ${blockCount} block${blockCount > 1 ? 's' : ''}`
+      : `${operationCount} operations failed (${blockCount} block${blockCount > 1 ? 's' : ''} affected)`;
+  } else {
+    const actionText = batch.action === 'insert' ? 'added' : 
+                     batch.action === 'update' ? 'modified' : 
+                     batch.action === 'delete' ? 'deleted' : 'processed';
+    
+    if (operationCount === blockCount) {
+      // Simple case: one operation per block
+      message = `${blockCount} block${blockCount > 1 ? 's' : ''} ${actionText}`;
+    } else {
+      // Complex case: multiple operations, some affecting same blocks
+      message = `${operationCount} operations completed (${blockCount} block${blockCount > 1 ? 's' : ''} ${actionText})`;
+    }
+  }
+  
+  // Show the consolidated toast
+  showAIToast(batch.type, message, {
+    affectedBlockIds: blockIds,
+    onScrollToChange: batch.onScrollToChange,
+    action: batch.action,
+    id: batchKey,
+    duration: Math.min(5000, 2000 + (blockCount * 100)), // Dynamic duration based on complexity
+  });
+}
+
+/**
  * Internal function to show enhanced AI toast
  */
 function showAIToast(type: ToastType, message: string, options?: AIToastOptions) {
@@ -127,7 +237,13 @@ function showAIToast(type: ToastType, message: string, options?: AIToastOptions)
     duration = 3000, // Default 3 seconds - shorter for compact toasts
     id,
     action,
+    batchKey,
   } = options || {};
+
+  // If batching is requested, use the batched system
+  if (batchKey && action && action !== 'error') {
+    return showBatchedToast(batchKey, type, action, affectedBlockIds, onScrollToChange);
+  }
 
   // Try to use our attached toast context first
   if (globalAttachedToastContext && (affectedBlockIds.length > 0 || onScrollToChange)) {
@@ -173,7 +289,8 @@ export const createBlockStatusToast = (
   status: 'idle' | 'loading' | 'modified' | 'error',
   action?: 'insert' | 'update' | 'delete',
   message?: string,
-  onScrollToChange?: (blockId: string) => void
+  onScrollToChange?: (blockId: string) => void,
+  batchKey?: string // New parameter for batching
 ) => {
   if (!blockIds.length) return;
 
@@ -197,7 +314,23 @@ export const createBlockStatusToast = (
     onScrollToChange,
     action: status === 'error' ? 'error' : action, // Use 'error' action for error status, otherwise use provided action
     duration: status === 'loading' ? 4000 : 3000, // Shorter durations for compact toasts
+    batchKey, // Pass through batch key
   });
+};
+
+/**
+ * Create a batched toast for tool operations
+ * This is the main function to use for consolidating multiple tool calls
+ */
+export const createBatchedToolToast = (
+  toolName: string,
+  type: ToastType,
+  action: 'insert' | 'update' | 'delete' | 'error',
+  blockIds: string[],
+  onScrollToChange?: (blockId: string) => void
+) => {
+  const batchKey = `tool-${toolName}-${action}`;
+  return aiToast.batched(batchKey, type, action, blockIds, onScrollToChange);
 };
 
 export default aiToast; 

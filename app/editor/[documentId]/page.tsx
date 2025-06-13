@@ -947,35 +947,49 @@ export default function EditorPage() {
                 }
             }
             
-            // Provide feedback based on results using enhanced toast
+            // Provide feedback based on results using batched toast system
             if (results.failed.length === 0) {
-                // Use enhanced toast with block navigation
+                // Use batched toast for successful insertions
                 const insertedBlockIds = results.success.flatMap(s => 
                     Array.from({ length: s.insertedCount }, (_, idx) => s.referenceId)
                 ).filter((id): id is string => Boolean(id));
                 
-                const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
-                createBlockStatusToast(
-                    insertedBlockIds,
-                    'modified',
+                const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+                createBatchedToolToast(
+                    'addContent',
+                    'success',
                     'insert',
-                    `Content added at ${results.success.length} location(s). Total blocks inserted: ${results.totalInserted}`
+                    insertedBlockIds
                 );
                 handleEditorChange(editor);
             } else if (results.success.length === 0) {
-                toast.error(`Failed to add content at any of the ${targetBlockIds.length} target location(s).`);
+                // Use batched toast for failures
+                const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+                createBatchedToolToast(
+                    'addContent',
+                    'error',
+                    'error',
+                    results.failed.map(f => f.targetId)
+                );
             } else {
-                // Partial success - show enhanced toast for successful insertions
+                // Partial success - use batched toast for successful insertions
                 const insertedBlockIds = results.success.flatMap(s => 
                     Array.from({ length: s.insertedCount }, (_, idx) => s.referenceId)
                 ).filter((id): id is string => Boolean(id));
                 
-                const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
-                createBlockStatusToast(
-                    insertedBlockIds,
-                    'modified',
+                const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+                createBatchedToolToast(
+                    'addContent',
+                    'success',
                     'insert',
-                    `Partial success: Content added at ${results.success.length} location(s), failed at ${results.failed.length} location(s).`
+                    insertedBlockIds
+                );
+                // Also show batched toast for failures
+                createBatchedToolToast(
+                    'addContent',
+                    'error',
+                    'error',
+                    results.failed.map(f => f.targetId)
                 );
                 handleEditorChange(editor);
             }
@@ -1123,28 +1137,42 @@ export default function EditorPage() {
           }
         }
 
-        // Enhanced feedback using enhanced toast with block navigation
+        // Enhanced feedback using batched toast system to prevent flooding
         if (results.failed.length === 0 && results.success.length > 0) {
-          // Use enhanced toast with block navigation for successful modifications
-          const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
-          createBlockStatusToast(
-            results.success.map(r => r.targetId),
-            'modified',
+          // Use batched toast for successful modifications
+          const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+          createBatchedToolToast(
+            'modifyContent',
+            'success',
             'update',
-            `${results.success.length} block(s) modified successfully`
+            results.success.map(r => r.targetId)
           );
           handleEditorChange(editor); 
         } else if (results.success.length === 0 && results.failed.length > 0) {
-          // All failures already reported individually above
+          // Use batched toast for failures
+          const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+          createBatchedToolToast(
+            'modifyContent',
+            'error',
+            'error',
+            results.failed.map(r => r.targetId)
+          );
           console.error(`[modifyContent] All ${results.failed.length} modification(s) failed`);
         } else if (results.success.length > 0 && results.failed.length > 0) {
-          // Partial success - show enhanced toast for successful modifications
-          const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
-          createBlockStatusToast(
-            results.success.map(r => r.targetId),
-            'modified',
+          // Partial success - use batched toast for successful modifications
+          const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+          createBatchedToolToast(
+            'modifyContent',
+            'success',
             'update',
-            `Partial success: ${results.success.length} block(s) modified, ${results.failed.length} failed`
+            results.success.map(r => r.targetId)
+          );
+          // Also show batched toast for failures
+          createBatchedToolToast(
+            'modifyContent',
+            'error',
+            'error',
+            results.failed.map(r => r.targetId)
           );
           handleEditorChange(editor);
         } else if (blockIds.length > 0) {
@@ -1226,13 +1254,13 @@ export default function EditorPage() {
                         } else { 
                             editor.updateBlock(targetBlock.id, { content: updatedContent }); 
                             
-                            // Use enhanced toast with block navigation for text deletion
-                            const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
-                            createBlockStatusToast(
-                                [targetBlock.id],
-                                'modified',
+                            // Use batched toast for text deletion
+                            const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+                            createBatchedToolToast(
+                                'deleteContent',
+                                'success',
                                 'delete',
-                                `Text "${targetText}" deleted`
+                                [targetBlock.id]
                             );
                             handleEditorChange(editor); 
                         }
@@ -1278,24 +1306,31 @@ export default function EditorPage() {
                 // Store the blocks to delete for later cleanup (commented out immediate deletion)
                 // editor.removeBlocks(existingBlockIds);
                 
-                // Enhanced feedback with block navigation
+                // Enhanced feedback with batched toast system
                 if (results.failed.length === 0) {
-                    // Use enhanced toast with block navigation for successful deletions
-                    const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
-                    createBlockStatusToast(
-                        existingBlockIds,
-                        'modified',
+                    // Use batched toast for successful deletions
+                    const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+                    createBatchedToolToast(
+                        'deleteContent',
+                        'success',
                         'delete',
-                        `${results.success.length} block(s) marked for removal`
+                        existingBlockIds
                     );
                 } else {
-                    // Partial success - show enhanced toast for successful deletions
-                    const { createBlockStatusToast } = await import('@/lib/utils/aiToast');
-                    createBlockStatusToast(
-                        existingBlockIds,
-                        'modified',
+                    // Partial success - use batched toast for successful deletions
+                    const { createBatchedToolToast } = await import('@/lib/utils/aiToast');
+                    createBatchedToolToast(
+                        'deleteContent',
+                        'success',
                         'delete',
-                        `Partial success: ${results.success.length} block(s) marked for removal, ${results.failed.length} failed`
+                        existingBlockIds
+                    );
+                    // Also show batched toast for failures
+                    createBatchedToolToast(
+                        'deleteContent',
+                        'error',
+                        'error',
+                        results.failed.map(f => f.targetId)
                     );
                     console.warn(`[deleteContent] Some blocks were missing:`, results.failed);
                 }
