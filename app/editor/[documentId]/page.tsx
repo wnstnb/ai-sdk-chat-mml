@@ -201,6 +201,31 @@ export default function EditorPage() {
     const [autosaveTimerId, setAutosaveTimerId] = useState<NodeJS.Timeout | null>(null);
     const [revertStatusTimerId, setRevertStatusTimerId] = useState<NodeJS.Timeout | null>(null);
     const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved' | 'error'>('idle');
+    // --- ADDED: State for intelligent auto-save batching ---
+    const [autosaveBatchContext, setAutosaveBatchContext] = useState<{
+        isInBatch: boolean;
+        batchType: 'ai-tools' | 'user-typing' | 'manual';
+        batchStartTime: number | null;
+        batchChangesCount: number;
+        lastChangeTime: number | null;
+    }>({
+        isInBatch: false,
+        batchType: 'user-typing',
+        batchStartTime: null,
+        batchChangesCount: 0,
+        lastChangeTime: null,
+    });
+    // --- ADDED: State for diff-based autosave tracking ---
+    const lastServerSaveRef = useRef<{
+        content: string | null;
+        timestamp: number;
+        changesSinceLastSave: number;
+    }>({
+        content: null,
+        timestamp: Date.now(),
+        changesSinceLastSave: 0,
+    });
+    const [localSaveStatus, setLocalSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     // --- ADDED STATE for pending mobile editor tool call ---
     const [pendingMobileEditorToolCall, setPendingMobileEditorToolCall] = useState<{ toolName: string; args: any; toolCallId: string } | null>(null);
     // --- NEW: State for Version History Modal ---
@@ -256,6 +281,19 @@ export default function EditorPage() {
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
+    
+    // --- ADDED: Initialize diff tracking when document loads ---
+    useEffect(() => {
+        if (documentData?.content) {
+            const initialContent = JSON.stringify(documentData.content);
+            lastServerSaveRef.current = {
+                content: initialContent,
+                timestamp: Date.now(),
+                changesSinceLastSave: 0,
+            };
+            console.log('[Diff Tracking] Initialized with document content');
+        }
+    }, [documentData?.content]);
     // --- ADDED: SWR config for cache mutation ---
     const { mutate } = useSWRConfig();
     // NEW: Add useMediaQuery hook
@@ -562,9 +600,155 @@ export default function EditorPage() {
         setIsVersionHistoryModalOpen(false);
     }, []);
 
+    // --- ADDED: Smart Auto-Save Batching Helpers ---
+    const startAIToolsBatch = useCallback(() => {
+        console.log('[AutoSave Batch] Starting AI tools batch');
+        setAutosaveBatchContext(prev => ({
+            ...prev,
+            isInBatch: true,
+            batchType: 'ai-tools',
+            batchStartTime: Date.now(),
+            batchChangesCount: 0,
+            lastChangeTime: null,
+        }));
+    }, []);
+
+    const endAIToolsBatch = useCallback(() => {
+        console.log('[AutoSave Batch] Ending AI tools batch');
+        setAutosaveBatchContext(prev => ({
+            ...prev,
+            isInBatch: false,
+            batchStartTime: null,
+        }));
+    }, []);
+
+    // --- ADDED: Diff Analysis and Local Storage Utilities ---
+    const analyzeContentDiff = useCallback((currentContent: string, previousContent: string | null): {
+        isSignificant: boolean;
+        metrics: {
+            charDelta: number;
+            wordDelta: number;
+            linesDelta: number;
+            blockStructureChanged: boolean;
+            timeSinceLastSave: number;
+        };
+    } => {
+        if (!previousContent) {
+            return {
+                isSignificant: true,
+                metrics: { charDelta: currentContent.length, wordDelta: 0, linesDelta: 0, blockStructureChanged: false, timeSinceLastSave: 0 }
+            };
+        }
+
+        const charDelta = Math.abs(currentContent.length - previousContent.length);
+        const currentWords = currentContent.split(/\s+/).length;
+        const previousWords = previousContent.split(/\s+/).length;
+        const wordDelta = Math.abs(currentWords - previousWords);
+        
+        const currentLines = currentContent.split('\n').length;
+        const previousLines = previousContent.split('\n').length;
+        const linesDelta = Math.abs(currentLines - previousLines);
+        
+        // Check for structural changes (new blocks, headers, lists, etc.)
+        const blockStructureChanged = linesDelta > 0 || 
+            currentContent.includes('# ') !== previousContent.includes('# ') ||
+            currentContent.includes('- ') !== previousContent.includes('- ') ||
+            currentContent.includes('1. ') !== previousContent.includes('1. ');
+
+        const timeSinceLastSave = Date.now() - lastServerSaveRef.current.timestamp;
+
+        // Determine significance based on multiple factors
+        const isSignificant = 
+            charDelta > 200 ||                           // Major text changes
+            wordDelta > 50 ||                            // Substantial word count change
+            blockStructureChanged ||                     // Structure changes (paragraphs, lists, headers)
+            timeSinceLastSave > 10 * 60 * 1000 ||       // 10+ minutes since last server save
+            lastServerSaveRef.current.changesSinceLastSave >= 5; // 5+ local saves accumulated
+
+        return {
+            isSignificant,
+            metrics: { charDelta, wordDelta, linesDelta, blockStructureChanged, timeSinceLastSave }
+        };
+    }, []);
+
+    const saveToLocalStorage = useCallback(async (content: string) => {
+        try {
+            setLocalSaveStatus('saving');
+            const localSaveData = {
+                content: JSON.parse(content),
+                timestamp: Date.now(),
+                documentId,
+            };
+            localStorage.setItem(`tuon-editor-draft-${documentId}`, JSON.stringify(localSaveData));
+            setLocalSaveStatus('saved');
+            
+            // Auto-revert local save status after 1 second
+            setTimeout(() => setLocalSaveStatus('idle'), 1000);
+            
+            console.log('[Local Save] Content saved to localStorage');
+            return true;
+        } catch (error) {
+            console.error('[Local Save] Failed to save to localStorage:', error);
+            setLocalSaveStatus('error');
+            setTimeout(() => setLocalSaveStatus('idle'), 2000);
+            return false;
+        }
+    }, [documentId]);
+
+    const promoteLocalSaveToServer = useCallback(async (): Promise<boolean> => {
+        try {
+            const localData = localStorage.getItem(`tuon-editor-draft-${documentId}`);
+            if (!localData) return false;
+
+            const { content } = JSON.parse(localData);
+            const response = await fetch(`/api/documents/${documentId}/content`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content }),
+            });
+
+            if (response.ok) {
+                // Update server save tracking
+                lastServerSaveRef.current = {
+                    content: JSON.stringify(content),
+                    timestamp: Date.now(),
+                    changesSinceLastSave: 0,
+                };
+                // Clear local storage after successful server save
+                localStorage.removeItem(`tuon-editor-draft-${documentId}`);
+                console.log('[Promote Save] Local save promoted to server successfully');
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('[Promote Save] Failed to promote local save to server:', error);
+            return false;
+        }
+    }, [documentId]);
+
+    const getAutosaveDelay = useCallback((batchContext: typeof autosaveBatchContext) => {
+        const currentTime = Date.now();
+        
+        if (batchContext.batchType === 'ai-tools') {
+            if (batchContext.isInBatch) {
+                // While AI tools are actively running, use a longer delay to batch changes
+                return 8000; // 8 seconds to allow for multiple tool calls
+            } else {
+                // AI tools batch just ended, save more quickly
+                return 2000; // 2 seconds after AI tools finish
+            }
+        } else if (batchContext.batchType === 'user-typing') {
+            // Standard delay for user typing
+            return 3000; // 3 seconds for normal user interaction
+        } else {
+            // Manual or other contexts
+            return 1000; // 1 second for immediate saves
+        }
+    }, []);
+
     const handleEditorChange = useCallback((editor: BlockNoteEditorType) => {
         console.log('[handleEditorChange] CALLED - document length:', editor.document.length);
-        console.log('[handleEditorChange] Stack trace:', new Error().stack);
+        console.log('[handleEditorChange] Current batch context:', autosaveBatchContext);
         setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
 
         const editorContent = editor.document;
@@ -574,6 +758,7 @@ export default function EditorPage() {
             latestEditorContentRef.current = JSON.stringify(editorContent);
             return;
         }
+        
         latestEditorBlocksRef.current = editorContent;
         try {
             latestEditorContentRef.current = JSON.stringify(editorContent);
@@ -582,6 +767,25 @@ export default function EditorPage() {
              setAutosaveStatus('error');
              return;
         }
+
+        // Update batch context with this change
+        const currentTime = Date.now();
+        setAutosaveBatchContext(prev => {
+            const updatedContext = {
+                ...prev,
+                batchChangesCount: prev.batchChangesCount + 1,
+                lastChangeTime: currentTime,
+            };
+
+            // If not in an AI batch and this looks like user typing, set user-typing context
+            if (!prev.isInBatch && prev.batchType !== 'user-typing') {
+                updatedContext.batchType = 'user-typing';
+                updatedContext.batchStartTime = currentTime;
+            }
+
+            return updatedContext;
+        });
+
         setAutosaveStatus('unsaved');
         if (revertStatusTimerId) {
             clearTimeout(revertStatusTimerId);
@@ -590,6 +794,11 @@ export default function EditorPage() {
         if (autosaveTimerId) {
             clearTimeout(autosaveTimerId);
         }
+
+        // Use intelligent delay based on current batch context
+        const delay = getAutosaveDelay(autosaveBatchContext);
+        console.log(`[handleEditorChange] Using ${delay}ms delay for ${autosaveBatchContext.batchType} context`);
+
         const newTimerId = setTimeout(async () => {
             const editorInstance = editorRef.current;
             const currentBlocks = latestEditorBlocksRef.current;
@@ -599,7 +808,48 @@ export default function EditorPage() {
                 setAutosaveStatus('error');
                 return;
             }
+
+            // Check if we should skip this save due to another change happening soon in AI batch
+            if (autosaveBatchContext.isInBatch && autosaveBatchContext.batchType === 'ai-tools') {
+                const timeSinceLastChange = Date.now() - (autosaveBatchContext.lastChangeTime || Date.now());
+                if (timeSinceLastChange < 1000) { // If a change happened within last 1 second
+                    console.log('[Autosave Timer] Skipping save due to recent change in AI batch');
+                    return;
+                }
+            }
+
+            // --- ADDED: Diff Analysis for Smart Save Decision ---
+            let shouldUseServerSave = true; // Default for AI tools and first saves
+            let diffMetrics = null;
+
+            // Only analyze diffs for user typing (not AI tools)
+            if (autosaveBatchContext.batchType === 'user-typing') {
+                const diffAnalysis = analyzeContentDiff(currentContentString, lastServerSaveRef.current.content);
+                diffMetrics = diffAnalysis.metrics;
+                shouldUseServerSave = diffAnalysis.isSignificant;
+                
+                console.log(`[Autosave Diff] Analysis:`, {
+                    isSignificant: diffAnalysis.isSignificant,
+                    metrics: diffMetrics,
+                    changesSinceLastSave: lastServerSaveRef.current.changesSinceLastSave
+                });
+            }
+
+            console.log(`[Autosave Timer] Executing ${shouldUseServerSave ? 'SERVER' : 'LOCAL'} save after ${delay}ms delay. Batch context:`, autosaveBatchContext);
+
+            if (!shouldUseServerSave) {
+                // --- LOCAL SAVE PATH (leverages existing content preparation) ---
+                const saveSuccess = await saveToLocalStorage(currentContentString);
+                if (saveSuccess) {
+                    lastServerSaveRef.current.changesSinceLastSave += 1;
+                    console.log(`[Local Save] Completed. Total local changes: ${lastServerSaveRef.current.changesSinceLastSave}`);
+                }
+                return; // Exit early for local saves
+            }
+
+            // --- SERVER SAVE PATH (existing logic preserved) ---
             setAutosaveStatus('saving');
+            
             let markdownContent: string | null = null;
             if (currentBlocks.length > 0) {
                 try {
@@ -610,6 +860,7 @@ export default function EditorPage() {
                     toast.error("Failed to generate markdown for search.");
                 }
             }
+            
             let jsonContent: Block[] | null = null;
             try {
                 jsonContent = JSON.parse(currentContentString);
@@ -618,6 +869,7 @@ export default function EditorPage() {
                 setAutosaveStatus('error');
                 return;
             }
+            
             try {
                 const response = await fetch(`/api/documents/${documentId}/content`, {
                     method: 'PUT',
@@ -628,7 +880,27 @@ export default function EditorPage() {
                     const errData = await response.json().catch(() => ({}));
                     throw new Error(errData.error?.message || `Autosave failed (${response.status})`);
                 }
+                
+                // --- ADDED: Update server save tracking after successful save ---
+                lastServerSaveRef.current = {
+                    content: currentContentString,
+                    timestamp: Date.now(),
+                    changesSinceLastSave: 0,
+                };
+                
+                console.log(`[Autosave Timer] Server save completed successfully. Changes in batch: ${autosaveBatchContext.batchChangesCount}${diffMetrics ? `, Diff: +${diffMetrics.charDelta} chars, +${diffMetrics.wordDelta} words` : ''}`);
                 setAutosaveStatus('saved');
+                
+                // Reset batch context after successful save (unless still in AI batch)
+                if (!autosaveBatchContext.isInBatch) {
+                    setAutosaveBatchContext(prev => ({
+                        ...prev,
+                        batchChangesCount: 0,
+                        batchStartTime: null,
+                        lastChangeTime: null,
+                    }));
+                }
+                
                 const revertTimer = setTimeout(() => {
                     setAutosaveStatus(status => status === 'saved' ? 'idle' : status);
                     setRevertStatusTimerId(null);
@@ -639,9 +911,9 @@ export default function EditorPage() {
                 toast.error(`Autosave failed: ${saveError.message}`);
                 setAutosaveStatus('error');
             }
-        }, 3000);
+        }, delay);
         setAutosaveTimerId(newTimerId);
-    }, [documentId, autosaveTimerId, revertStatusTimerId, setEditorRef]); // Corrected dependencies
+    }, [documentId, autosaveTimerId, revertStatusTimerId, setEditorRef, autosaveBatchContext, getAutosaveDelay]);
 
     // Effect to set editorRef object in the global store - Reinstated and Corrected
     useEffect(() => {
@@ -827,6 +1099,12 @@ export default function EditorPage() {
     const executeAddContent = async (args: any) => {
         console.log('[addContent] EXECUTION STARTED - args:', args);
         console.log('[addContent] Current editor document length:', editorRef.current?.document?.length);
+        
+        // Start AI tools batch if not already started
+        if (!autosaveBatchContext.isInBatch) {
+            startAIToolsBatch();
+        }
+        
         const editor = editorRef.current;
         if (!editor) { 
             console.log('[addContent] Editor not available');
@@ -1008,6 +1286,11 @@ export default function EditorPage() {
         console.log('[addContent] EXECUTION COMPLETED');
     };
     const executeModifyContent = async (args: any) => {
+        // Start AI tools batch if not already started
+        if (!autosaveBatchContext.isInBatch) {
+            startAIToolsBatch();
+        }
+        
         const editor = editorRef.current;
         if (!editor) { toast.error('Editor not available to modify content.'); return; }
         console.log('[Client Tool] executeModifyContent called with args:', args);
@@ -1180,6 +1463,11 @@ export default function EditorPage() {
         }
     };
     const executeDeleteContent = async (args: any) => {
+        // Start AI tools batch if not already started
+        if (!autosaveBatchContext.isInBatch) {
+            startAIToolsBatch();
+        }
+        
         const editor = editorRef.current;
         if (!editor) { toast.error('Editor not available to delete content.'); return; }
         try {
@@ -1595,6 +1883,12 @@ export default function EditorPage() {
 
     const executeReplaceAllContent = async (args: any) => {
         console.log('[ServerSide-ClientTool][replaceAllContent] EXECUTION STARTED - args:', args);
+        
+        // Start AI tools batch if not already started
+        if (!autosaveBatchContext.isInBatch) {
+            startAIToolsBatch();
+        }
+        
         const editor = editorRef.current;
         if (!editor) { 
             console.log('[ServerSide-ClientTool][replaceAllContent] Editor not available');
@@ -2061,6 +2355,37 @@ export default function EditorPage() {
 
     useEffect(() => { /* Effect for beforeunload */
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+            // --- ADDED: Promote any local saves to server before leaving ---
+            const hasLocalSave = localStorage.getItem(`tuon-editor-draft-${documentId}`);
+            if (hasLocalSave && documentId) {
+                console.log('[BeforeUnload] Local save detected, promoting to server...');
+                try {
+                    const { content } = JSON.parse(hasLocalSave);
+                    const payload = JSON.stringify({ content });
+                    const url = `/api/documents/${documentId}/content`;
+                    
+                    if (navigator.sendBeacon) {
+                        const blob = new Blob([payload], { type: 'application/json' });
+                        const sent = navigator.sendBeacon(url, blob);
+                        console.log('[BeforeUnload] Local save promotion via beacon:', sent ? 'Success' : 'Failed');
+                        if (sent) {
+                            localStorage.removeItem(`tuon-editor-draft-${documentId}`);
+                        }
+                    } else {
+                        fetch(url, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: payload,
+                            keepalive: true,
+                        }).then(() => {
+                            localStorage.removeItem(`tuon-editor-draft-${documentId}`);
+                        }).catch(err => console.error('[BeforeUnload] Local save promotion failed:', err));
+                    }
+                } catch (error) {
+                    console.error('[BeforeUnload] Failed to promote local save:', error);
+                }
+            }
+            
             if (autosaveStatus === 'unsaved' || autosaveTimerId) {
                 if (autosaveTimerId) clearTimeout(autosaveTimerId);
                 if (revertStatusTimerId) clearTimeout(revertStatusTimerId);
@@ -2088,25 +2413,34 @@ export default function EditorPage() {
 
     useEffect(() => { /* Effect for navigation handling */
         const isLeavingEditor = !!(previousPathnameRef.current?.startsWith('/editor/') && !pathname?.startsWith('/editor/'));
-        if (isLeavingEditor && (autosaveStatus === 'unsaved' || autosaveTimerId)) {
-             if (autosaveTimerId) {
-                clearTimeout(autosaveTimerId);
-                setAutosaveTimerId(null);
-            }
-            if (revertStatusTimerId) {
-                 clearTimeout(revertStatusTimerId);
-                 setRevertStatusTimerId(null);
-            }
-            if (latestEditorContentRef.current && documentId) {
-                 setAutosaveStatus('saving');
-                 triggerSaveDocument(latestEditorContentRef.current, documentId)
-                    .catch(err => console.error("[Navigation] Save on navigate failed:", err));
+        if (isLeavingEditor) {
+            // --- ADDED: Promote local saves to server on navigation ---
+            promoteLocalSaveToServer().then(promoted => {
+                if (promoted) {
+                    console.log('[Navigation] Local save promoted to server');
+                }
+            }).catch(err => console.error('[Navigation] Failed to promote local save:', err));
+            
+            if (autosaveStatus === 'unsaved' || autosaveTimerId) {
+                 if (autosaveTimerId) {
+                    clearTimeout(autosaveTimerId);
+                    setAutosaveTimerId(null);
+                }
+                if (revertStatusTimerId) {
+                     clearTimeout(revertStatusTimerId);
+                     setRevertStatusTimerId(null);
+                }
+                if (latestEditorContentRef.current && documentId) {
+                     setAutosaveStatus('saving');
+                     triggerSaveDocument(latestEditorContentRef.current, documentId)
+                        .catch(err => console.error("[Navigation] Save on navigate failed:", err));
+                }
             }
         }
         if (pathname) {
            previousPathnameRef.current = pathname;
         }
-    }, [pathname, autosaveStatus, autosaveTimerId, revertStatusTimerId, documentId, triggerSaveDocument]);
+    }, [pathname, autosaveStatus, autosaveTimerId, revertStatusTimerId, documentId, triggerSaveDocument, promoteLocalSaveToServer]);
 
     useEffect(() => { /* Effect for unmount cleanup */
         return () => {
@@ -2118,6 +2452,98 @@ export default function EditorPage() {
     useEffect(() => { /* Effect for scrolling chat */
          scrollToBottom(); 
     }, [messages, scrollToBottom]);
+
+    // --- ADDED: Effect to automatically end AI tools batch when processing is complete ---
+    useEffect(() => {
+        // Check if we should end the AI tools batch
+        if (autosaveBatchContext.isInBatch && autosaveBatchContext.batchType === 'ai-tools') {
+            // End batch if:
+            // 1. Not processing client tools anymore
+            // 2. AI is not loading
+            // 3. Some time has passed since batch started (to allow tools to finish)
+            const batchAge = Date.now() - (autosaveBatchContext.batchStartTime || Date.now());
+            const minBatchDuration = 1000; // Minimum 1 second
+            
+            if (!isProcessingClientTools && !isAiLoading && batchAge > minBatchDuration) {
+                console.log('[AutoSave Batch] Ending AI tools batch - processing complete');
+                endAIToolsBatch();
+                
+                // Trigger a save with the shorter delay after batch ends
+                if (autosaveTimerId) {
+                    clearTimeout(autosaveTimerId);
+                    const editor = editorRef.current;
+                    if (editor && documentId && latestEditorContentRef.current) {
+                        const delay = getAutosaveDelay({ ...autosaveBatchContext, isInBatch: false });
+                        console.log(`[AutoSave Batch] Scheduling final save with ${delay}ms delay`);
+                        
+                        const newTimerId = setTimeout(async () => {
+                            console.log('[AutoSave Batch] Executing final batch save');
+                            setAutosaveStatus('saving');
+                            
+                            let markdownContent: string | null = null;
+                                                         if (latestEditorBlocksRef.current && latestEditorBlocksRef.current.length > 0) {
+                                 try {
+                                     markdownContent = await editor.blocksToMarkdownLossy(latestEditorBlocksRef.current);
+                                     markdownContent = markdownContent?.trim() || null;
+                                 } catch (markdownError) {
+                                     console.error("[Final Batch Save] Error generating markdown:", markdownError);
+                                 }
+                             }
+                            
+                                                         let jsonContent: Block[] | null = null;
+                             try {
+                                 if (!latestEditorContentRef.current) {
+                                     console.warn("[Final Batch Save] No content to save");
+                                     setAutosaveStatus('error');
+                                     return;
+                                 }
+                                 jsonContent = JSON.parse(latestEditorContentRef.current);
+                             } catch (parseError) {
+                                 console.error("[Final Batch Save] Failed to parse content string:", parseError);
+                                 setAutosaveStatus('error');
+                                 return;
+                             }
+                            
+                            try {
+                                const response = await fetch(`/api/documents/${documentId}/content`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ content: jsonContent, searchable_content: markdownContent }), 
+                                });
+                                if (!response.ok) {
+                                    const errData = await response.json().catch(() => ({}));
+                                    throw new Error(errData.error?.message || `Final batch save failed (${response.status})`);
+                                }
+                                
+                                console.log(`[Final Batch Save] Completed successfully after AI batch. Total changes: ${autosaveBatchContext.batchChangesCount}`);
+                                setAutosaveStatus('saved');
+                                
+                                // Reset batch context completely
+                                setAutosaveBatchContext({
+                                    isInBatch: false,
+                                    batchType: 'user-typing',
+                                    batchStartTime: null,
+                                    batchChangesCount: 0,
+                                    lastChangeTime: null,
+                                });
+                                
+                                const revertTimer = setTimeout(() => {
+                                    setAutosaveStatus(status => status === 'saved' ? 'idle' : status);
+                                    setRevertStatusTimerId(null);
+                                }, 2000);
+                                setRevertStatusTimerId(revertTimer);
+                            } catch (saveError: any) {
+                                console.error("[Final Batch Save] Failed:", saveError);
+                                toast.error(`Final batch save failed: ${saveError.message}`);
+                                setAutosaveStatus('error');
+                            }
+                        }, delay);
+                        setAutosaveTimerId(newTimerId);
+                    }
+                }
+            }
+        }
+    }, [isProcessingClientTools, isAiLoading, autosaveBatchContext, endAIToolsBatch, autosaveTimerId, getAutosaveDelay, documentId]);
     
     useEffect(() => { /* Effect for Embedding generation */
         return () => {
@@ -2739,6 +3165,8 @@ export default function EditorPage() {
                                     handleSaveContent={handleSaveContent}
                                     isSaving={isSaving}
                                     onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
+                                    batchContext={autosaveBatchContext}
+                                    localSaveStatus={localSaveStatus}
                                     isDocumentStarred={currentDocIsStarred}
                                     onToggleDocumentStar={handleToggleCurrentDocumentStar}
                                 />
@@ -2894,6 +3322,8 @@ export default function EditorPage() {
                             handleSaveContent={handleSaveContent}
                             isSaving={isSaving}
                             onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
+                            batchContext={autosaveBatchContext}
+                            localSaveStatus={localSaveStatus}
                             isDocumentStarred={currentDocIsStarred}
                             onToggleDocumentStar={handleToggleCurrentDocumentStar}
                          />

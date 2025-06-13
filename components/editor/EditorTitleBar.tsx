@@ -28,6 +28,16 @@ interface EditorTitleBarProps {
     handleSaveContent: () => void;
     isSaving: boolean; // Manual save button state
     onOpenHistory: () => void; // Prop to open version history modal
+    
+    // --- ADDED: Batch context for enhanced auto-save status ---
+    batchContext?: {
+        isInBatch: boolean;
+        batchType: 'ai-tools' | 'user-typing' | 'manual';
+        batchChangesCount: number;
+    };
+    
+    // --- ADDED: Local save status for diff-based saves ---
+    localSaveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 
     // ADDED for starring
     isDocumentStarred: boolean;
@@ -50,6 +60,8 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
     handleSaveContent,
     isSaving,
     onOpenHistory, // Destructure new prop
+    batchContext, // ADDED for batch context
+    localSaveStatus, // ADDED for local save status
     // ADDED for starring
     isDocumentStarred,
     onToggleDocumentStar,
@@ -163,7 +175,7 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
                 )}
             </div>
             <div className="flex items-center space-x-2 flex-shrink-0">
-                <AutosaveStatusIndicator status={autosaveStatus} />
+                <AutosaveStatusIndicator status={autosaveStatus} batchContext={batchContext} localSaveStatus={localSaveStatus} />
                 
                 {/* Undo/Redo buttons */}
                 <button 

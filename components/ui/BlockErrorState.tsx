@@ -25,6 +25,7 @@ const BlockErrorStateRaw: React.FC<BlockErrorStateProps> = ({
   onDismiss,
   className 
 }) => {
+  // --- ALL HOOKS MUST BE CALLED UNCONDITIONALLY AT THE TOP ---
   const { hasError, message } = useBlockStatusDetails(blockId);
   const retryManager = useMemo(() => RetryUtils.getRetryManager(), []);
   const retryableOperations = useMemo(() => 
@@ -38,11 +39,6 @@ const BlockErrorStateRaw: React.FC<BlockErrorStateProps> = ({
     [hasError, retryableOperations.length]
   );
   
-  // Don't render error state if there's no error
-  if (!shouldShowError) {
-    return <>{children}</>;
-  }
-
   const displayErrorMessage = useMemo(() => 
     message || 'Error processing AI request', 
     [message]
@@ -87,6 +83,11 @@ const BlockErrorStateRaw: React.FC<BlockErrorStateProps> = ({
       retryManager.removeRetryableOperation(op.id);
     });
   }, [onDismiss, retryableOperations, retryManager]);
+
+  // Don't render error state if there's no error (after all hooks are called)
+  if (!shouldShowError) {
+    return <>{children}</>;
+  }
 
   return (
     <div className={cn("relative", className)}>
