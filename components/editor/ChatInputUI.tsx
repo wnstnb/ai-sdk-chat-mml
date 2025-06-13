@@ -467,7 +467,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                                     {isMiniPaneOpen ? <Minimize size={20} /> : <GalleryVerticalEnd size={20} />}
                                 </button>
                                 {/* Unread message indicator */}
-                                {!isMiniPaneOpen && unreadMiniPaneCount && unreadMiniPaneCount > 0 && (
+                                {!isMiniPaneOpen && unreadMiniPaneCount != null && unreadMiniPaneCount > 0 && (
                                     <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium shadow-sm">
                                         {unreadMiniPaneCount > 99 ? '99+' : unreadMiniPaneCount}
                                     </div>
