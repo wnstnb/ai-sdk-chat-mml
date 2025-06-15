@@ -265,7 +265,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                         userName={user?.user_metadata?.name || user?.email || 'Anonymous User'}
                         userColor={undefined} // Let the component generate a color based on userId
                         useCollaboration={true} // EXPLICITLY ENABLE: Real-time collaboration
-                        enableComments={false} // DISABLED: Comments interfering with collaboration
+                        enableComments={true} // ENABLED: Comments for real-time comment synchronization
                     />
                 </BlockHighlightWrapper>
             </div>

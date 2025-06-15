@@ -101,6 +101,7 @@ import {
 import { useFollowUpStore } from '@/lib/stores/followUpStore';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // Import preference store
 import { useModalStore } from '@/stores/useModalStore'; // Corrected Path
+import { useAuthStore } from '@/lib/stores/useAuthStore';
 
 
 // --- NEW: Import the hooks ---
@@ -142,6 +143,7 @@ import { useClientChatOperationStore } from '@/lib/stores/useClientChatOperation
 import { BlockStatus } from '@/app/lib/clientChatOperationState';
 import { AIToolState, AudioState, FileUploadState } from '@/app/lib/clientChatOperationState';
 import { AttachedToastProvider } from '@/contexts/AttachedToastContext';
+import { CollaborationProvider, useCollaborationContext } from '@/contexts/CollaborationContext';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -165,14 +167,18 @@ const MOBILE_BREAKPOINT_QUERY = '(max-width: 768px)'; // Corresponds to Tailwind
 // Define the BlockNote schema
 const schema = BlockNoteSchema.create();
 
-// --- Main Editor Page Component ---
-export default function EditorPage() {
+// --- Inner component that uses CollaborationContext ---
+function EditorPageContent() {
     // --- Top-Level Hooks (React, Next.js) ---
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
     const pathname = usePathname();
-    const documentId = params?.documentId as string; 
+    const documentId = params?.documentId as string;
+    
+    // Get collaboration context and auth state
+    const { initializeCollaboration } = useCollaborationContext();
+    const { user } = useAuthStore(); 
     
     // --- Refs --- (Declare refs early if needed by custom hooks)
     const editorRef = useRef<BlockNoteEditor<typeof schema.blockSchema>>(null);
@@ -285,6 +291,18 @@ export default function EditorPage() {
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
+    
+    // Initialize collaboration when document and user are available
+    useEffect(() => {
+        if (documentData && user?.id) {
+            initializeCollaboration(
+                documentId,
+                user.id,
+                user.user_metadata?.name || user.email || 'Anonymous User',
+                undefined // Let it generate a color
+            );
+        }
+    }, [documentData, user, documentId, initializeCollaboration]);
     
     // --- ADDED: Initialize diff tracking when document loads ---
     useEffect(() => {
@@ -3179,12 +3197,11 @@ export default function EditorPage() {
 
     // Main Render
     return (
-        <AttachedToastProvider>
-            <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden relative" 
-                onDragOver={handleDragOver} 
-                onDragLeave={handleDragLeave} 
-                onDrop={handleDrop}
-            >
+        <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden relative" 
+            onDragOver={handleDragOver} 
+            onDragLeave={handleDragLeave} 
+            onDrop={handleDrop}
+        >
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
 
@@ -3570,6 +3587,16 @@ export default function EditorPage() {
             />
             {/* --- END NEW --- */}
         </div>
+    );
+}
+
+// --- Main Editor Page Component ---
+export default function EditorPage() {
+    return (
+        <AttachedToastProvider>
+            <CollaborationProvider>
+                <EditorPageContent />
+            </CollaborationProvider>
         </AttachedToastProvider>
     );
 } 

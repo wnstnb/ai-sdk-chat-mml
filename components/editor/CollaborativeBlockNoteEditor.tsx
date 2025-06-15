@@ -9,6 +9,7 @@ import '@blocknote/core/fonts/inter.css';
 import '@blocknote/mantine/style.css';
 import * as Y from 'yjs';
 import YPartyKitProvider from 'y-partykit/provider';
+import { useCollaborationContext } from '@/contexts/CollaborationContext';
 
 // Mobile breakpoint query constant
 const MOBILE_BREAKPOINT_QUERY = '(max-width: 768px)';
@@ -246,11 +247,14 @@ const CollaborativeBlockNoteEditor = ({
   
   const { doc, provider, sessionId } = createCollaborationInstance();
 
+  // Get comment functionality from CollaborationContext
+  const { threadStore, resolveUsers } = useCollaborationContext();
+
   // Check provider connection state - YPartyKitProvider doesn't expose 'connected' property
   // but we know it's working when provider exists
   const isConnected = !!provider;
 
-  // Create BlockNote editor with collaboration
+  // Create BlockNote editor with collaboration and comments
   const editor = useCreateBlockNote({
     initialContent: initialContent.length > 0 ? initialContent : undefined,
     collaboration: provider ? {
@@ -264,7 +268,13 @@ const CollaborativeBlockNoteEditor = ({
         color: userColor || getRandomColor(),
       },
     } : undefined,
-  }, [provider, initialContent, sessionId, userName, userColor, documentId]);
+    // Add comment support when enabled and threadStore is available
+    comments: enableComments && threadStore ? {
+      threadStore,
+    } : undefined,
+    // Add resolveUsers function for comment user resolution
+    resolveUsers: enableComments ? resolveUsers : undefined,
+  }, [provider, initialContent, sessionId, userName, userColor, documentId, enableComments, threadStore, resolveUsers]);
 
   console.log('[CollaborativeEditor] Editor created with config:', {
     hasInitialContent: initialContent.length > 0,

@@ -1,11 +1,13 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { PartialBlock } from '@blocknote/core';
+import { YjsThreadStore, DefaultThreadStoreAuth } from '@blocknote/core/comments';
 import { UserAwareness } from '@/lib/collaboration/yjsDocument';
 import { ConnectionState } from '@/lib/collaboration/partykitYjsProvider';
 import { useCollaborativeDocument, UseCollaborativeDocumentReturn } from '@/lib/hooks/editor/useCollaborativeDocument';
 import { createClient } from '@/lib/supabase/client';
+import { SupabaseThreadStoreAuth } from '@/lib/comments/supabaseThreadStoreAuth';
 
 export interface CollaborationUser {
   id: string;
@@ -49,6 +51,10 @@ interface CollaborationContextType {
   // Session management
   activeSessions: CollaborationSession[];
   currentSession: CollaborationSession | null;
+  
+  // Comment threading
+  threadStore: YjsThreadStore | null;
+  resolveUsers: (userIds: string[]) => Promise<Array<{ id: string; username: string; avatarUrl?: string }>>;
   
   // Actions
   initializeCollaboration: (documentId: string, userId?: string, userName?: string, userColor?: string) => void;
@@ -103,6 +109,41 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
   const sessionCleanupRef = useRef<(() => void) | null>(null);
   const supabase = createClient();
 
+  // Comment threading - resolveUsers function
+  const resolveUsers = useCallback(async (userIds: string[]) => {
+    try {
+      const { data: users, error } = await supabase
+        .from('profiles') // Assuming you have a profiles table
+        .select('id, username, avatar_url')
+        .in('id', userIds);
+
+      if (error) {
+        console.error('[CollaborationContext] Error resolving users:', error);
+        // Return fallback user data
+        return userIds.map(id => ({
+          id,
+          username: 'Unknown User',
+          avatarUrl: '', // Ensure avatarUrl is always a string
+        }));
+      }
+
+      // Map to BlockNote's expected format
+      return users?.map(user => ({
+        id: user.id,
+        username: user.username || 'Unknown User',
+        avatarUrl: user.avatar_url || '', // Ensure avatarUrl is always a string
+      })) || [];
+    } catch (error) {
+      console.error('[CollaborationContext] Error in resolveUsers:', error);
+      // Return fallback user data
+      return userIds.map(id => ({
+        id,
+        username: 'Unknown User',
+        avatarUrl: '', // Ensure avatarUrl is always a string
+      }));
+    }
+  }, [supabase]);
+
   // Initialize collaborative document when needed
   const collaboration = useCollaborativeDocument({
     documentId: documentId || '',
@@ -111,9 +152,12 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
     userName: currentUser?.name,
     userColor: currentUser?.color,
     onContentChange: (blocks) => {
+      console.log('[CollaborationContext] Content changed:', blocks.length, 'blocks');
       onContentChange?.(blocks);
     },
     onUsersChange: (users) => {
+      console.log('[CollaborationContext] Users changed:', users.length, 'users');
+      // Convert users to CollaborationUser format
       const collaborationUsers: CollaborationUser[] = users.map(user => ({
         id: user.userId,
         name: user.user?.name || 'Anonymous User',
@@ -121,11 +165,11 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
         isActive: true,
         lastSeen: user.lastSeen,
       }));
-      
       setActiveUsers(collaborationUsers);
       onUsersChange?.(collaborationUsers);
     },
     onConnectionError: (error) => {
+      console.error('[CollaborationContext] Connection error:', error);
       setConnectionError(error.message);
       onConnectionError?.(error);
     },
@@ -134,6 +178,35 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
       onAuthError?.(error);
     },
   });
+
+  // Create thread store when collaboration is ready
+  const threadStore = useMemo(() => {
+    if (!collaboration.yjsDocument || !currentUser) {
+      return null;
+    }
+
+    try {
+      // Get the threads Y.Map from the Yjs document
+      const threadsMap = collaboration.yjsDocument.doc.getMap('threads');
+      
+      // Use DefaultThreadStoreAuth for now - simpler approach
+      // We can enhance with custom auth later
+      const threadStoreAuth = new DefaultThreadStoreAuth(
+        currentUser.id,
+        'editor' // Default role - can be made dynamic later
+      );
+
+      // Create and return YjsThreadStore
+      return new YjsThreadStore(
+        currentUser.id,
+        threadsMap,
+        threadStoreAuth
+      );
+    } catch (error) {
+      console.error('[CollaborationContext] Error creating thread store:', error);
+      return null;
+    }
+  }, [collaboration.yjsDocument, currentUser]);
 
   // Update collaboration ref
   useEffect(() => {
@@ -356,6 +429,10 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
     collaborativeBlocks: collaboration.blocks,
     activeSessions,
     currentSession,
+    
+    // Comment threading
+    threadStore,
+    resolveUsers,
     
     // Actions
     initializeCollaboration,
