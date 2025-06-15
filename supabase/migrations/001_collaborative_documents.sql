@@ -211,3 +211,5 @@ COMMENT ON COLUMN public.collaborative_sessions.session_data IS 'Additional sess
 COMMENT ON COLUMN public.yjs_updates.update_data IS 'Binary Yjs update data for document synchronization';
 COMMENT ON COLUMN public.yjs_updates.version_vector IS 'Optional version tracking for conflict resolution';
 COMMENT ON COLUMN public.collaborative_presence.presence_data IS 'User awareness data including cursor position, selection, user info, etc.'; 
+
+-- End of collaborative document schema 

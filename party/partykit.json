@@ -1,9 +1,14 @@
 {
   "name": "ai-chat-collaboration",
   "main": "src/server.ts",
-  "compatibility_date": "2024-06-14",
+  "compatibilityDate": "2025-06-14",
+  "parties": {
+    "collaboration": "src/server.ts"
+  },
   "vars": {
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    "CORS_ORIGINS": "http://localhost:3000,https://localhost:3000,https://www.tuon.io",
+    "TEST_VAR": "THISISATEST"
   },
   "define": {
     "PARTYKIT_HOST": "$PARTYKIT_HOST"

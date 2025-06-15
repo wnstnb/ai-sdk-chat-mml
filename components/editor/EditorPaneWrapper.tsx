@@ -8,21 +8,22 @@ import type { TaggedDocument } from '@/lib/types';
 import { AttachedToastContainer } from '@/components/chat/AttachedToastContainer';
 import { useAttachedToastContext } from '@/contexts/AttachedToastContext';
 import { ChatMessagesList } from './ChatMessagesList';
+import { useAuthStore } from '@/lib/stores/useAuthStore';
 
 
-// Dynamically import BlockNoteEditorComponent with SSR disabled
+// Dynamically import CollaborativeBlockNoteEditor with SSR disabled
 // Define loading state consistent with page.tsx
-const BlockNoteEditorComponent = dynamic(
-    () => import('@/components/BlockNoteEditorComponent'),
+const CollaborativeBlockNoteEditor = dynamic(
+    () => import('@/components/editor/CollaborativeBlockNoteEditor'),
     {
         ssr: false,
-        loading: () => <p className="p-4 text-center text-[--muted-text-color]">Loading Editor...</p>,
+        loading: () => <p className="p-4 text-center text-[--muted-text-color]">Loading Collaborative Editor...</p>,
     }
 );
 
 // Define props required by the EditorPaneWrapper and its potential children
 interface EditorPaneWrapperProps {
-    // For BlockNoteEditorComponent
+    // For CollaborativeBlockNoteEditor
     documentId: string; // Needed for key prop
     initialContent: PartialBlock<any>[] | undefined;
     editorRef: React.RefObject<BlockNoteEditor<any>>; 
@@ -160,6 +161,17 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     // Initialize attached toasts for collapsed chat input
     const { toasts } = useAttachedToastContext();
     
+    // Get current user from auth store
+    const { user } = useAuthStore();
+    
+    // Debug user data
+    console.log('[EditorPaneWrapper] User data for collaboration:', {
+        userId: user?.id,
+        userName: user?.user_metadata?.name || user?.email || 'Anonymous User',
+        hasUser: !!user,
+        userObject: user
+    });
+    
     // Refs for click-off behavior
     const miniPaneRef = React.useRef<HTMLDivElement>(null);
     const chatInputAreaRef = React.useRef<HTMLDivElement>(null);
@@ -239,22 +251,23 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
         <div className="flex-1 flex flex-col relative bg-[--editor-bg] overflow-hidden">
             {/* Editor Area */}
             <div className="flex-1 overflow-y-auto py-4 px-0 styled-scrollbar border-t border-[--border-color]">
-                {initialContent !== undefined ? (
-                    <BlockHighlightWrapper 
-                        isDarkTheme={currentTheme === 'dark'}
-                    >
-                        <BlockNoteEditorComponent
-                            key={documentId} 
-                            editorRef={editorRef}
-                            initialContent={initialContent}
-                            onEditorContentChange={onEditorContentChange}
-                            theme={currentTheme} // Pass the theme to BlockNoteEditorComponent
-                        />
-                    </BlockHighlightWrapper>
-                ) : (
-                    // Consistent loading state
-                    <p className="p-4 text-center text-[--muted-text-color]">Initializing editor...</p>
-                )}
+                <BlockHighlightWrapper 
+                    isDarkTheme={currentTheme === 'dark'}
+                >
+                    <CollaborativeBlockNoteEditor
+                        key={documentId} // FIXED: Use only documentId for key to prevent unnecessary remounts
+                        documentId={documentId}
+                        editorRef={editorRef}
+                        initialContent={initialContent || []} // Provide empty array as fallback
+                        onEditorContentChange={onEditorContentChange}
+                        theme={currentTheme} // Pass the theme to CollaborativeBlockNoteEditor
+                        userId={user?.id}
+                        userName={user?.user_metadata?.name || user?.email || 'Anonymous User'}
+                        userColor={undefined} // Let the component generate a color based on userId
+                        useCollaboration={true} // EXPLICITLY ENABLE: Real-time collaboration
+                        enableComments={false} // DISABLED: Comments interfering with collaboration
+                    />
+                </BlockHighlightWrapper>
             </div>
 
             {/* Collapsed Chat Input (Rendered conditionally at the bottom) */}

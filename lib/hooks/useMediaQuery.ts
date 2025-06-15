@@ -8,9 +8,13 @@ import { useState, useEffect } from 'react';
  * @returns True if the media query matches, false otherwise.
  */
 export function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(false);
+  // Start with null to indicate we haven't determined the value yet
+  const [matches, setMatches] = useState<boolean | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+    
     // Ensure window is defined (for client-side execution)
     if (typeof window === 'undefined') {
       return;
@@ -43,6 +47,12 @@ export function useMediaQuery(query: string): boolean {
       }
     };
   }, [query]); // Re-run effect if query changes
+
+  // Return false during SSR and before mount to prevent hydration mismatches
+  // This ensures consistent behavior between server and client
+  if (!mounted || matches === null) {
+    return false;
+  }
 
   return matches;
 } 

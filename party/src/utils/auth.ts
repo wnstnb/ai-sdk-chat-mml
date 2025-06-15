@@ -86,7 +86,7 @@ export function verifyJWT(token: string, secret: string): AuthenticatedUser | nu
 /**
  * Extract JWT token from WebSocket connection headers or URL
  */
-export function extractToken(request: Request): string | null {
+export function extractToken(request: any): string | null {
   try {
     // Try to get token from Authorization header
     const authHeader = request.headers.get('Authorization');
@@ -122,7 +122,7 @@ export function createAuthError(message: string, code = 'AUTH_ERROR'): ServerErr
 /**
  * Validate user session and return authenticated user
  */
-export function authenticateUser(request: Request, jwtSecret: string): AuthenticatedUser | ServerError {
+export function authenticateUser(request: any, jwtSecret: string): AuthenticatedUser | ServerError {
   const token = extractToken(request);
   
   if (!token) {

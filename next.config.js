@@ -7,10 +7,11 @@ const withPWA = require('next-pwa')({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
-  swcMinify: true,
+  experimental: {
+    serverComponentsExternalPackages: ['sharp', 'onnxruntime-node'],
+  },
   images: {
-    // Add other allowed domains/patterns here if needed
+    domains: ['localhost'],
     remotePatterns: [
       {
         protocol: 'https',
@@ -25,6 +26,8 @@ const nextConfig = {
       // },
     ],
   },
+  reactStrictMode: false, // Temporarily disabled to debug multiple editor instances
+  swcMinify: true,
   // Other configurations...
 };
 

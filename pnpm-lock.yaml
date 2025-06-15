@@ -21,14 +21,14 @@ importers:
         specifier: latest
         version: 1.2.11(zod@3.25.56)
       '@blocknote/core':
-        specifier: ^0.31.1
-        version: 0.31.1(@types/hast@3.0.4)
+        specifier: ^0.31.2
+        version: 0.31.2(@types/hast@3.0.4)
       '@blocknote/mantine':
-        specifier: ^0.31.1
-        version: 0.31.1(@types/hast@3.0.4)(@types/react@18.3.23)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: ^0.31.2
+        version: 0.31.2(@types/hast@3.0.4)(@types/react@18.3.23)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@blocknote/react':
-        specifier: ^0.31.1
-        version: 0.31.1(@types/hast@3.0.4)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: ^0.31.2
+        version: 0.31.2(@types/hast@3.0.4)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@cubone/react-file-manager':
         specifier: ^1.21.0
         version: 1.24.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
@@ -260,6 +260,12 @@ importers:
       web-audio-api:
         specifier: ^0.2.2
         version: 0.2.2
+      ws:
+        specifier: ^8.18.2
+        version: 8.18.2
+      y-partykit:
+        specifier: ^0.0.33
+        version: 0.0.33(react@18.3.1)(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)
       y-websocket:
         specifier: ^3.0.0
         version: 3.0.0(yjs@13.6.27)
@@ -1149,22 +1155,22 @@ packages:
   '@bcoe/v8-coverage@0.2.3':
     resolution: {integrity: sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==}
 
-  '@blocknote/core@0.31.1':
-    resolution: {integrity: sha512-EGRYksdz1MxgqlmLzvhjWZvwL2Q8iiWY8tbXTBcYSEMyEdxWM5t4v2lcfTuuZuz8wInMR/c7MW8ymlzoYxrBZA==}
+  '@blocknote/core@0.31.2':
+    resolution: {integrity: sha512-qt+zqEr3T2ggeD4JZClfHmQvuKxS4/ampY+3j3nEPVZmc7UWLkOebn5wB7kM9JOaUy5WQ6SoMmwnqWZuo6m8KA==}
     peerDependencies:
       '@hocuspocus/provider': ^2.15.2
     peerDependenciesMeta:
       '@hocuspocus/provider':
         optional: true
 
-  '@blocknote/mantine@0.31.1':
-    resolution: {integrity: sha512-0s46A3wpRY0/XXxf0j824BbDzt3JSZe4g7J9kNXB5wUngFp1Oo4spMEZ7zAi/IkrkMXFz67SaLIX6NpDBHSG9Q==}
+  '@blocknote/mantine@0.31.2':
+    resolution: {integrity: sha512-CWMSsWcZuYCV3Nmgw8//LaYQRpyOZWdpkYTqu74CSRYOP0WgY4xzjr2S2fkf5SGj2lHWdQCtTzDlgezs9zkR9w==}
     peerDependencies:
       react: ^18.0 || ^19.0 || >= 19.0.0-rc
       react-dom: ^18.0 || ^19.0 || >= 19.0.0-rc
 
-  '@blocknote/react@0.31.1':
-    resolution: {integrity: sha512-S7Edl+eQjRf+2/iBHayjzOGSyjPDz4hsMbnLL8H+tl5XbE93u6KrBKkYEqU+yij6uKMounftrpxzdBY2UFgyiQ==}
+  '@blocknote/react@0.31.2':
+    resolution: {integrity: sha512-QvFmC7qQeMQ+nGN7GQFjqafBF4iXDlagRLtLtnPY408QPjqlgPgLCswDvLqVThCTutsBjAI0ROAlHQrkRDYa9Q==}
     peerDependencies:
       react: ^18.0 || ^19.0 || >= 19.0.0-rc
       react-dom: ^18.0 || ^19.0 || >= 19.0.0-rc
@@ -7979,6 +7985,16 @@ packages:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
     engines: {node: '>=0.4'}
 
+  y-partykit@0.0.33:
+    resolution: {integrity: sha512-TqM2H/C1fBZbFjL9kpBLC3EWWaizBUYdFzW5DMGmcZYfQv5tYYIBTqUW4eCZOXHkhNLTEA+s2ydSKGYi8u1+sg==}
+    peerDependencies:
+      react: '*'
+      y-protocols: ^1.0.6
+      yjs: ^13.6.16
+    peerDependenciesMeta:
+      react:
+        optional: true
+
   y-prosemirror@1.3.5:
     resolution: {integrity: sha512-qW8fXCb72L6H2BWiuhZdSJ6hiShHUog08gh6KvBqLjhK6Et9DxfDnMDvx6yyO3iCdnEhDfUJviRvaMAAXb0dNg==}
     engines: {node: '>=16.0.0', npm: '>=8.0.0'}
@@ -9358,7 +9374,7 @@ snapshots:
 
   '@bcoe/v8-coverage@0.2.3': {}
 
-  '@blocknote/core@0.31.1(@types/hast@3.0.4)':
+  '@blocknote/core@0.31.2(@types/hast@3.0.4)':
     dependencies:
       '@emoji-mart/data': 1.2.1
       '@shikijs/types': 3.2.1
@@ -9407,10 +9423,10 @@ snapshots:
       - sugar-high
       - supports-color
 
-  '@blocknote/mantine@0.31.1(@types/hast@3.0.4)(@types/react@18.3.23)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+  '@blocknote/mantine@0.31.2(@types/hast@3.0.4)(@types/react@18.3.23)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
-      '@blocknote/core': 0.31.1(@types/hast@3.0.4)
-      '@blocknote/react': 0.31.1(@types/hast@3.0.4)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@blocknote/core': 0.31.2(@types/hast@3.0.4)
+      '@blocknote/react': 0.31.2(@types/hast@3.0.4)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@mantine/core': 7.17.8(@mantine/hooks@7.17.8(react@18.3.1))(@types/react@18.3.23)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@mantine/hooks': 7.17.8(react@18.3.1)
       '@mantine/utils': 6.0.22(react@18.3.1)
@@ -9427,9 +9443,9 @@ snapshots:
       - sugar-high
       - supports-color
 
-  '@blocknote/react@0.31.1(@types/hast@3.0.4)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+  '@blocknote/react@0.31.2(@types/hast@3.0.4)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
-      '@blocknote/core': 0.31.1(@types/hast@3.0.4)
+      '@blocknote/core': 0.31.2(@types/hast@3.0.4)
       '@emoji-mart/data': 1.2.1
       '@floating-ui/react': 0.26.28(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tiptap/core': 2.14.0(@tiptap/pm@2.14.0)
@@ -17682,6 +17698,15 @@ snapshots:
       zod-to-json-schema: 3.24.5(zod@3.25.56)
 
   xtend@4.0.2: {}
+
+  y-partykit@0.0.33(react@18.3.1)(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27):
+    dependencies:
+      lib0: 0.2.108
+      lodash.debounce: 4.0.8
+      y-protocols: 1.0.6(yjs@13.6.27)
+      yjs: 13.6.27
+    optionalDependencies:
+      react: 18.3.1
 
   y-prosemirror@1.3.5(prosemirror-model@1.25.1)(prosemirror-state@1.4.3)(prosemirror-view@1.40.0)(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27):
     dependencies:

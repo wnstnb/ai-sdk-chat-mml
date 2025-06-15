@@ -63,21 +63,52 @@ NODE_ENV=production
 
 ## Deployment
 
-1. **Build for production:**
-   ```bash
-   npm run build
-   ```
+### ✅ Successfully Deployed
 
-2. **Deploy to Cloudflare:**
+**Production URL:** `https://ai-chat-collaboration.wnstnb.partykit.dev`
+
+### Environment Variables Setup
+
+✅ **Configured Environment Variables:**
+- `SUPABASE_URL`: https://ikbmdbgxdprtcgasdijz.supabase.co
+- `SUPABASE_SERVICE_ROLE_KEY`: ✅ Set
+- `SUPABASE_JWT_SECRET`: ⚠️ Placeholder (update from Supabase dashboard)
+- `CORS_ORIGINS`: ✅ Set for localhost development
+
+### Deployment Commands
+
+1. **Deploy to Cloudflare:**
    ```bash
    npm run deploy
    ```
 
+2. **Verify deployment:**
+   ```bash
+   ./verify-deployment.sh
+   ```
+
+3. **Monitor logs:**
+   ```bash
+   npx partykit tail
+   ```
+
+4. **Manage environment variables:**
+   ```bash
+   npx partykit env list
+   npx partykit env add KEY_NAME
+   ```
+
+### Important Notes
+
+1. **JWT Secret**: Update `SUPABASE_JWT_SECRET` with the actual JWT secret from your Supabase project settings
+2. **CORS Origins**: Add your production domain to `CORS_ORIGINS` when deploying to production
+3. **Domain Provisioning**: New domains can take up to 2 minutes to provision
+
 ## API Endpoints
 
 ### WebSocket Connection
-- **URL**: `wss://your-party.your-subdomain.partykit.dev/parties/collaboration/{documentId}`
-- **Auth**: JWT token via `Authorization: Bearer {token}` header or `?token={token}` query parameter
+- **URL**: `wss://ai-chat-collaboration.wnstnb.partykit.dev/parties/collaboration/{documentId}`
+- **Auth**: JWT token via `?token={token}` query parameter
 
 ### HTTP Endpoints
 - **Health Check**: `GET /health` - Returns server status and metrics

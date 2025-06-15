@@ -170,54 +170,9 @@ export class PartykitYjsProvider {
   }
 
   private async loadDocumentState() {
-    if (!this.supabase) return;
-
-    try {
-      console.log('[PartykitYjsProvider] Loading document state from Supabase...');
-      
-      // Build the request with auth headers if available
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      
-      if (this.authToken) {
-        headers['Authorization'] = `Bearer ${this.authToken}`;
-      }
-      
-      // Fetch Yjs updates from our Supabase API
-      const response = await fetch(`/api/collaboration/yjs-updates?documentId=${this.documentId}`, {
-        headers,
-      });
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Authentication failed - invalid or expired token');
-        }
-        throw new Error(`Failed to load document state: ${response.statusText}`);
-      }
-
-      const { updates } = await response.json();
-      
-      if (updates && updates.length > 0) {
-        console.log(`[PartykitYjsProvider] Applying ${updates.length} updates from Supabase`);
-        
-        // Apply updates to restore document state
-        updates.forEach((update: any) => {
-          const updateArray = new Uint8Array(update.data);
-          Y.applyUpdate(this.doc, updateArray, 'supabase-load');
-        });
-      }
-
-      console.log('[PartykitYjsProvider] Document state loaded successfully');
-    } catch (error) {
-      console.error('[PartykitYjsProvider] Error loading document state:', error);
-      
-      if (error instanceof Error && error.message.includes('Authentication failed')) {
-        this.onAuthError?.(error);
-      }
-      
-      // Don't throw - allow provider to work without persistence
-    }
+    // Document state will be loaded via WebSocket sync with PartyKit server
+    // No need for API calls - the PartyKit server handles all persistence
+    console.log('[PartykitYjsProvider] Document state will be synced via WebSocket connection');
   }
 
   private async connectToPartyKit() {
@@ -230,8 +185,9 @@ export class PartykitYjsProvider {
     }
 
     try {
-      // Build WebSocket URL with authentication parameters
-      const wsUrl = new URL(`ws://${this.partykitHost}/parties/yjs/${this.documentId}`);
+      // Build WebSocket URL for our enhanced Y-PartyServer
+      const protocol = this.partykitHost.includes('localhost') ? 'ws:' : 'wss:';
+      const wsUrl = new URL(`${protocol}//${this.partykitHost}/parties/collaboration/${this.documentId}`);
       
       // Add authentication token as query parameter if available
       if (this.authToken) {
@@ -277,8 +233,13 @@ export class PartykitYjsProvider {
 
       this.websocket.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
-          this.handlePartyKitMessage(data);
+          // Handle both binary (Yjs updates) and text (awareness/sync) messages
+          if (event.data instanceof ArrayBuffer || event.data instanceof Uint8Array) {
+            this.handleYjsBinaryMessage(new Uint8Array(event.data));
+          } else {
+            const data = JSON.parse(event.data);
+            this.handleYPartyServerMessage(data);
+          }
         } catch (error) {
           console.error('[PartykitYjsProvider] Error parsing message:', error);
         }
@@ -426,23 +387,138 @@ export class PartykitYjsProvider {
     }
   }
 
+  /**
+   * Handle binary Yjs updates from Y-PartyServer
+   */
+  private handleYjsBinaryMessage(update: Uint8Array): void {
+    try {
+      // Apply Yjs update directly from binary message
+      Y.applyUpdate(this.doc, update, 'y-partyserver');
+      console.log('[PartykitYjsProvider] Applied Y-PartyServer binary update');
+    } catch (error) {
+      console.error('[PartykitYjsProvider] Error applying Y-PartyServer update:', error);
+    }
+  }
+
+  /**
+   * Handle enhanced Y-PartyServer messages
+   */
+  private handleYPartyServerMessage(data: any): void {
+    switch (data.type) {
+      case 'sync':
+        this.handleSyncMessage(data);
+        break;
+
+      case 'awareness':
+        this.handleAwarenessMessage(data);
+        break;
+
+      case 'error':
+        console.error('[PartykitYjsProvider] Y-PartyServer error:', data.payload);
+        if (data.payload?.code === 'AUTH_ERROR') {
+          this.onAuthError?.(new Error(data.payload.message));
+        } else {
+          this.onConnectionError?.(new Error(data.payload.message));
+        }
+        break;
+
+      case 'ping':
+        // Respond to server ping with pong
+        this.sendMessage({ type: 'pong', timestamp: Date.now() });
+        break;
+
+      default:
+        // Fallback to existing handler for compatibility
+        this.handlePartyKitMessage(data);
+    }
+  }
+
+  /**
+   * Handle sync protocol messages from Y-PartyServer
+   */
+  private handleSyncMessage(data: any): void {
+    const { step, data: syncData } = data.payload;
+    
+    switch (step) {
+      case 1: // Sync step 1: state vector received
+        const stateVector = new Uint8Array(syncData);
+        const update = Y.encodeStateAsUpdate(this.doc, stateVector);
+        if (update.length > 0) {
+          this.sendMessage({
+            type: 'sync',
+            payload: { step: 2, data: Array.from(update) },
+            timestamp: Date.now()
+          });
+        }
+        break;
+        
+      case 2: // Sync step 2: update received
+        const updateData = new Uint8Array(syncData);
+        Y.applyUpdate(this.doc, updateData, 'y-partyserver-sync');
+        break;
+    }
+  }
+
+  /**
+   * Handle awareness messages from Y-PartyServer
+   */
+  private handleAwarenessMessage(data: any): void {
+    const { type: awarenessType, user, users, states } = data.payload;
+    
+    switch (awarenessType) {
+      case 'user_joined':
+        if (user) {
+          this.awareness.set(user.id, user);
+          this.onAwarenessChange?.(Array.from(this.awareness.values()));
+        }
+        break;
+        
+      case 'user_left':
+        if (data.payload.userId) {
+          this.awareness.delete(data.payload.userId);
+          this.onAwarenessChange?.(Array.from(this.awareness.values()));
+        }
+        break;
+        
+      case 'initial_awareness':
+      case 'awareness_update':
+        if (states) {
+          // Update awareness with all user states
+          states.forEach((state: any) => {
+            if (state.user) {
+              this.awareness.set(state.user.id, state);
+            }
+          });
+          this.onAwarenessChange?.(Array.from(this.awareness.values()));
+        }
+        break;
+    }
+  }
+
   private setupDocumentListeners() {
-    // Listen for document updates and broadcast to PartyKit
+    // Listen for document updates and broadcast to Y-PartyServer
     this.doc.on('updateV2', (update: Uint8Array, origin: any) => {
-      // Don't broadcast updates that came from PartyKit to avoid loops
-      if (origin === 'partykit-sync' || origin === 'partykit-update' || origin === 'supabase-load') {
+      // Don't broadcast updates that came from Y-PartyServer to avoid loops
+      if (origin === 'y-partyserver' || origin === 'y-partyserver-sync' || origin === 'partykit-sync' || origin === 'partykit-update' || origin === 'supabase-load') {
         return;
       }
 
-      console.log('[PartykitYjsProvider] Document updated, broadcasting to PartyKit');
+      console.log('[PartykitYjsProvider] Document updated, broadcasting to Y-PartyServer');
       
-      // Broadcast to PartyKit for real-time sync
-      if (this.connectionState.isConnected) {
-        this.sendMessage({
-          type: 'update',
-          update: Array.from(update),
-          userId: this.userId,
-        });
+      // Broadcast binary update directly to Y-PartyServer for real-time sync
+      if (this.connectionState.isConnected && this.websocket?.readyState === WebSocket.OPEN) {
+        try {
+          // Send binary update directly for optimal performance
+          this.websocket.send(update);
+        } catch (error) {
+          console.error('[PartykitYjsProvider] Error sending binary update:', error);
+          // Fallback to JSON message
+          this.sendMessage({
+            type: 'update',
+            update: Array.from(update),
+            userId: this.userId,
+          });
+        }
       }
 
       // Persist to Supabase (debounced to avoid too many requests)
@@ -495,46 +571,9 @@ export class PartykitYjsProvider {
   }
 
   private async persistUpdate(update: Uint8Array): Promise<void> {
-    if (!this.supabase) return;
-
-    try {
-      console.log('[PartykitYjsProvider] Persisting update to Supabase...');
-      
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      
-      if (this.authToken) {
-        headers['Authorization'] = `Bearer ${this.authToken}`;
-      }
-      
-      const response = await fetch('/api/collaboration/yjs-updates', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          documentId: this.documentId,
-          updateData: Array.from(update),
-        }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          console.warn('[PartykitYjsProvider] Auth token expired during persistence, refreshing...');
-          await this.ensureValidAuthToken();
-          // Retry once with new token
-          return this.persistUpdate(update);
-        }
-        throw new Error(`Failed to persist update: ${response.statusText}`);
-      }
-
-      console.log('[PartykitYjsProvider] Update persisted successfully');
-    } catch (error) {
-      console.error('[PartykitYjsProvider] Error persisting update:', error);
-      
-      if (error instanceof Error && error.message.includes('Authentication')) {
-        this.onAuthError?.(error);
-      }
-    }
+    // Persistence is handled by the PartyKit server automatically
+    // No need for API calls - the server manages all document persistence
+    console.log('[PartykitYjsProvider] Update will be persisted by PartyKit server');
   }
 
   // Update user awareness/presence
@@ -546,30 +585,9 @@ export class PartykitYjsProvider {
   }
 
   private async updateSessionActivity() {
-    try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      
-      if (this.authToken) {
-        headers['Authorization'] = `Bearer ${this.authToken}`;
-      }
-      
-      await fetch('/api/collaboration/sessions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          documentId: this.documentId,
-          sessionData: {
-            userName: this.userName,
-            userColor: this.userColor,
-            lastActivity: new Date().toISOString(),
-          },
-        }),
-      });
-    } catch (error) {
-      console.error('[PartykitYjsProvider] Error updating session activity:', error);
-    }
+    // Session activity is managed by the PartyKit server through WebSocket heartbeat
+    // No need for API calls - the server tracks all session activity automatically
+    console.log('[PartykitYjsProvider] Session activity tracked by PartyKit server');
   }
 
   // Public methods
@@ -631,19 +649,8 @@ export class PartykitYjsProvider {
   }
 
   private async endSession() {
-    try {
-      const headers: Record<string, string> = {};
-      
-      if (this.authToken) {
-        headers['Authorization'] = `Bearer ${this.authToken}`;
-      }
-      
-      await fetch(`/api/collaboration/sessions?documentId=${this.documentId}`, {
-        method: 'DELETE',
-        headers,
-      });
-    } catch (error) {
-      console.error('[PartykitYjsProvider] Error ending session:', error);
-    }
+    // Session cleanup is handled by the PartyKit server when WebSocket disconnects
+    // No need for API calls - the server manages all session lifecycle automatically
+    console.log('[PartykitYjsProvider] Session cleanup handled by PartyKit server');
   }
 } 

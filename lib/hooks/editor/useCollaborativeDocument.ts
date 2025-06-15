@@ -180,7 +180,7 @@ export function useCollaborativeDocument(
       isInitialized.current = false;
       setIsReady(false);
     };
-  }, [documentId, userId, userName, userColor, onContentChange, onUsersChange, onConnectionError, onAuthError, supabase]);
+  }, [documentId, userId, userName, userColor, supabase]);
 
   // Monitor authentication state changes
   useEffect(() => {
@@ -207,7 +207,7 @@ export function useCollaborativeDocument(
     return () => {
       authListener?.subscription.unsubscribe();
     };
-  }, [supabase, onAuthError]);
+  }, [supabase]);
 
   // Enhanced user awareness updates with cleanup
   useEffect(() => {
@@ -246,7 +246,7 @@ export function useCollaborativeDocument(
     return () => {
       clearInterval(awarenessInterval);
     };
-  }, [yjsDocument, userId, userName, userColor, onUsersChange]);
+  }, [yjsDocument, userId, userName, userColor]);
 
   // Enhanced content update with better transaction handling
   const updateContent = useCallback((newBlocks: PartialBlock[]) => {
@@ -279,7 +279,7 @@ export function useCollaborativeDocument(
       console.error('[useCollaborativeDocument] Error refreshing connection:', error);
       onConnectionError?.(error as Error);
     }
-  }, [onConnectionError]);
+  }, []);
 
   // Enhanced block operations for granular updates
   const updateSingleBlock = useCallback((blockId: string, updates: Partial<PartialBlock>) => {

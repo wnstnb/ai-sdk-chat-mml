@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { PartialBlock } from '@blocknote/core';
 import type { Document as SupabaseDocument } from '@/types/supabase';
 import { BlockNoteSchema } from '@blocknote/core';
@@ -22,9 +22,18 @@ export function useDocument(documentId: string | undefined | null): UseDocumentR
     >(undefined);
     const [isLoadingDocument, setIsLoadingDocument] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    
+    // Use ref to track the last fetched documentId to prevent duplicate fetches
+    const lastFetchedDocumentId = useRef<string | null>(null);
 
     // Fetch Document Details (Name, Initial Content)
     const fetchDocument = useCallback(async () => {
+        // Prevent duplicate fetches for the same document
+        if (lastFetchedDocumentId.current === documentId) {
+            console.log(`[useDocument] Skipping duplicate fetch for document: ${documentId}`);
+            return;
+        }
+
         // Reset states on new fetch attempt (e.g., if documentId changes)
         setIsLoadingDocument(true);
         setError(null);
@@ -36,10 +45,12 @@ export function useDocument(documentId: string | undefined | null): UseDocumentR
             setIsLoadingDocument(false);
             // Set default content even on error to prevent editor crash
             setInitialEditorContent([{ type: 'paragraph', content: [] }]);
+            lastFetchedDocumentId.current = null;
             return;
         }
 
         console.log(`[useDocument] Fetching document: ${documentId}`);
+        lastFetchedDocumentId.current = documentId;
 
         try {
             const response = await fetch(`/api/documents/${documentId}`);
@@ -92,8 +103,11 @@ export function useDocument(documentId: string | undefined | null): UseDocumentR
 
     // Initial data fetch on component mount or when documentId changes
     useEffect(() => {
+        // Only fetch if documentId has actually changed
+        if (lastFetchedDocumentId.current !== documentId) {
         fetchDocument();
-    }, [fetchDocument]); // Effect depends on the memoized fetchDocument
+        }
+    }, [documentId]); // Simplified dependency array - only depend on documentId directly
 
     return {
         documentData,
