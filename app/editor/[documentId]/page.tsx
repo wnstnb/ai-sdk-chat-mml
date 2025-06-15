@@ -127,6 +127,8 @@ import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import { VersionHistoryModal } from '@/components/editor/VersionHistoryModal';
 // --- NEW: Import DocumentReplacementConfirmationModal ---
 import DocumentReplacementConfirmationModal from '@/components/modals/DocumentReplacementConfirmationModal';
+// --- NEW: Import ShareDocumentModal ---
+import { ShareDocumentModal } from '@/components/modals/ShareDocumentModal';
 // --- Use standard aiToast utility for proper positioning ---
 import { aiToast } from '@/lib/utils/aiToast';
 // REMOVED: SearchModal import for now, will be re-added at a higher level
@@ -322,7 +324,7 @@ function EditorPageContent() {
     const isMobile = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
 
     // Added for Live Summaries
-    const { openVoiceSummaryModal, setEditorRef, setBlockStatusFunction } = useModalStore(); // Get setEditorRef
+    const { openVoiceSummaryModal, setEditorRef, setBlockStatusFunction, isShareDocumentModalOpen, closeShareDocumentModal } = useModalStore(); // Get setEditorRef and ShareDocumentModal state
     const { currentTitle, isEditingTitle, newTitleValue, isInferringTitle, handleEditTitleClick, handleCancelEditTitle, handleSaveTitle, handleTitleInputKeyDown, handleInferTitle, setNewTitleValue } = useTitleManagement({
         documentId,
         initialName: documentData?.name || '',
@@ -3574,6 +3576,16 @@ function EditorPageContent() {
                     isOpen={isVersionHistoryModalOpen}
                     onClose={handleCloseHistoryModal}
                     onRestoreContent={handleRestoreEditorContent}
+                />
+            )}
+            {/* --- END NEW --- */}
+
+            {/* --- NEW: Share Document Modal --- */}
+            {isShareDocumentModalOpen && documentId && (
+                <ShareDocumentModal
+                    documentId={documentId}
+                    isOpen={isShareDocumentModalOpen}
+                    onClose={closeShareDocumentModal}
                 />
             )}
             {/* --- END NEW --- */}

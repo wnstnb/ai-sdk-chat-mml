@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, Star, FileText, Undo, Redo } from 'lucide-react';
+import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, Star, FileText, Undo, Redo, Share2 } from 'lucide-react';
 import { AutosaveStatusIndicator } from '@/app/components/editor/AutosaveStatusIndicator';
 import { BlockNoteEditor } from '@blocknote/core'; // Added for editorRef type
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
@@ -69,7 +69,7 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
     const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'error'>('idle');
     const [titleValue, setTitleValue] = useState(currentTitle);
     const isMobile = useMediaQuery('(max-width: 768px)');
-    const { openMobileSidebar } = useModalStore(); // ADDED: Get function from store
+    const { openMobileSidebar, openShareDocumentModal } = useModalStore(); // ADDED: Get functions from store
 
     const handleCopyContent = async () => {
         if (!editorRef.current || editorRef.current.document.length === 0) {
@@ -222,6 +222,10 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
 
                 <button onClick={onOpenHistory} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded" title="Version History">
                     <Clock size={20} />
+                </button>
+
+                <button onClick={openShareDocumentModal} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded" title="Share Document">
+                    <Share2 size={20} />
                 </button>
             </div>
         </div>

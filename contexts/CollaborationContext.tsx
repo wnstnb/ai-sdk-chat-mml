@@ -54,7 +54,7 @@ interface CollaborationContextType {
   
   // Comment threading
   threadStore: YjsThreadStore | null;
-  resolveUsers: (userIds: string[]) => Promise<Array<{ id: string; username: string; avatarUrl?: string }>>;
+  resolveUsers: (userIds: string[]) => Promise<Array<{ id: string; username: string; avatarUrl: string }>>;
   
   // Actions
   initializeCollaboration: (documentId: string, userId?: string, userName?: string, userColor?: string) => void;
