@@ -25,21 +25,37 @@ async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerCl
   return { userId: user.id };
 }
 
-// Helper to check if user owns the document (needed for RLS checks simulation/verification)
-// Note: RLS policy `is_document_owner` should handle this on the DB side. This is belt-and-suspenders or for contexts where RLS might not apply (e.g., admin client).
-async function checkDocumentOwnership(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string): Promise<boolean> {
-    const { data, error } = await supabase
-        .from('documents')
-        .select('id')
-        .eq('id', documentId)
-        .eq('user_id', userId)
-        .maybeSingle(); // Use maybeSingle to return null if not found, instead of erroring
+// Helper function to check if user has document access and permission level
+async function checkDocumentAccess(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string) {
+  // First check if user is the document owner
+  const { data: document, error: docError } = await supabase
+    .from('documents')
+    .select('user_id')
+    .eq('id', documentId)
+    .single();
 
-    if (error) {
-        console.error(`Error checking document ownership for doc ${documentId}, user ${userId}:`, error.message);
-        return false; // Assume no ownership on error
-    }
-    return !!data; // True if data is not null (document found and owned by user)
+  if (docError && docError.code !== 'PGRST116') {
+    throw new Error(`Database error checking document ownership: ${docError.message}`);
+  }
+
+  // If user is the document owner, return owner permission
+  if (document && document.user_id === userId) {
+    return { permission_level: 'owner' };
+  }
+
+  // Otherwise, check for explicit permission record
+  const { data: permission, error } = await supabase
+    .from('document_permissions')
+    .select('permission_level')
+    .eq('document_id', documentId)
+    .eq('user_id', userId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`Database error checking permissions: ${error.message}`);
+  }
+
+  return permission;
 }
 
 // Helper function to get Supabase URL and Key (replace with your actual env variables)
@@ -69,11 +85,16 @@ export async function GET(
     const { userId, errorResponse } = await getUserOrError(supabase);
     if (errorResponse) return errorResponse;
 
-    // Optional: Verify document ownership explicitly
-    // const isOwner = await checkDocumentOwnership(supabase, documentId, userId);
-    // if (!isOwner) { ... return 403 ... }
+    // Check if user has access to this document
+    const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+    if (!userPermission) {
+      return NextResponse.json({ 
+        error: { code: 'FORBIDDEN', message: 'You do not have access to this document.' } 
+      }, { status: 403 });
+    }
 
-    // Fetch messages - RLS ensures user can only access messages for owned documents
+    // Fetch only THIS USER's messages for this document
+    // Each user has their own private AI conversation per document
     const { data: messagesData, error: fetchError } = await supabase
       .from('messages')
       .select('id, user_id, role, content, created_at, metadata')
@@ -276,11 +297,13 @@ export async function POST(
         const { userId, errorResponse } = await getUserOrError(supabase);
         if (errorResponse) return errorResponse;
 
-        // Optional: Explicit ownership check (RLS should cover insert policy `is_document_owner`)
-        // const isOwner = await checkDocumentOwnership(supabase, documentId, userId);
-        // if (!isOwner) {
-        //     return NextResponse.json({ error: { code: 'UNAUTHORIZED_ACCESS', message: 'You do not have permission to add messages to this document.' } }, { status: 403 });
-        // }
+        // Check if user has permission to add messages to this document
+        const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+        if (!userPermission || !['owner', 'editor'].includes(userPermission.permission_level)) {
+          return NextResponse.json({ 
+            error: { code: 'FORBIDDEN', message: 'You do not have permission to add messages to this document.' } 
+          }, { status: 403 });
+        }
 
         // Parse Request Body
         let body;

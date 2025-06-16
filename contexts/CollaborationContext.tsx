@@ -112,8 +112,10 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
   // Comment threading - resolveUsers function
   const resolveUsers = useCallback(async (userIds: string[]) => {
     try {
+      console.log('[CollaborationContext] Resolving users:', userIds);
+      
       const { data: users, error } = await supabase
-        .from('profiles') // Assuming you have a profiles table
+        .from('profiles')
         .select('id, username, avatar_url')
         .in('id', userIds);
 
@@ -123,23 +125,26 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
         return userIds.map(id => ({
           id,
           username: 'Unknown User',
-          avatarUrl: '', // Ensure avatarUrl is always a string
+          avatarUrl: '',
         }));
       }
 
       // Map to BlockNote's expected format
-      return users?.map(user => ({
+      const resolvedUsers = users?.map(user => ({
         id: user.id,
         username: user.username || 'Unknown User',
-        avatarUrl: user.avatar_url || '', // Ensure avatarUrl is always a string
+        avatarUrl: user.avatar_url || '',
       })) || [];
+      
+      console.log('[CollaborationContext] Resolved users:', resolvedUsers);
+      return resolvedUsers;
     } catch (error) {
       console.error('[CollaborationContext] Error in resolveUsers:', error);
       // Return fallback user data
       return userIds.map(id => ({
         id,
         username: 'Unknown User',
-        avatarUrl: '', // Ensure avatarUrl is always a string
+        avatarUrl: '',
       }));
     }
   }, [supabase]);

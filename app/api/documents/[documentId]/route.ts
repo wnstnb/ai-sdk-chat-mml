@@ -16,6 +16,39 @@ async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerCl
   return { userId: session.user.id };
 }
 
+// Helper function to check if user has document access and permission level
+async function checkDocumentAccess(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string) {
+  // First check if user is the document owner
+  const { data: document, error: docError } = await supabase
+    .from('documents')
+    .select('user_id')
+    .eq('id', documentId)
+    .single();
+
+  if (docError && docError.code !== 'PGRST116') {
+    throw new Error(`Database error checking document ownership: ${docError.message}`);
+  }
+
+  // If user is the document owner, return owner permission
+  if (document && document.user_id === userId) {
+    return { permission_level: 'owner' };
+  }
+
+  // Otherwise, check for explicit permission record
+  const { data: permission, error } = await supabase
+    .from('document_permissions')
+    .select('permission_level')
+    .eq('document_id', documentId)
+    .eq('user_id', userId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`Database error checking permissions: ${error.message}`);
+  }
+
+  return permission;
+}
+
 // GET handler for fetching specific document details (including content)
 export async function GET(
   request: Request,
@@ -29,18 +62,25 @@ export async function GET(
         const { userId, errorResponse } = await getUserOrError(supabase);
         if (errorResponse) return errorResponse;
 
-        // Fetch document details - RLS ensures user owns the document
+        // Check if user has access to this document (owner or shared)
+        const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+        if (!userPermission) {
+            return NextResponse.json({ 
+                error: { code: 'FORBIDDEN', message: 'Document not found or you do not have permission to view it.' } 
+            }, { status: 403 });
+        }
+
+        // Fetch document details - user has verified access
         const { data: document, error: fetchError } = await supabase
             .from('documents')
             .select('*') // Select all columns, including content
             .eq('id', documentId)
-            .eq('user_id', userId) // Explicit user_id check
             .single(); // Expecting only one document
 
         if (fetchError) {
             console.error('Document GET Error:', fetchError.message);
             if (fetchError.code === 'PGRST116') { // Not found
-                return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Document not found or you do not have permission to view it.' } }, { status: 404 });
+                return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Document not found.' } }, { status: 404 });
             }
             return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch document: ${fetchError.message}` } }, { status: 500 });
         }
@@ -100,12 +140,19 @@ export async function PUT(
         updateData.folder_id = folderId;
     }
 
-    // Update document - RLS ensures user owns the document
+    // Check if user has permission to edit this document
+    const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+    if (!userPermission || !['owner', 'editor'].includes(userPermission.permission_level)) {
+      return NextResponse.json({ 
+        error: { code: 'FORBIDDEN', message: 'You do not have permission to edit this document.' } 
+      }, { status: 403 });
+    }
+
+    // Update document - user has verified edit access
     const { data: updatedDocument, error: updateError } = await supabase
       .from('documents')
       .update(updateData)
       .eq('id', documentId)
-      .eq('user_id', userId) // Explicit user_id check
       .select('id, user_id, folder_id, name, created_at, updated_at') // Exclude content
       .single();
 
@@ -143,13 +190,20 @@ export async function DELETE(
     const { userId, errorResponse } = await getUserOrError(supabase);
     if (errorResponse) return errorResponse;
 
-    // Delete document - RLS ensures user owns the document
+    // Check if user has permission to delete this document (only owners)
+    const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+    if (!userPermission || userPermission.permission_level !== 'owner') {
+      return NextResponse.json({ 
+        error: { code: 'FORBIDDEN', message: 'Only document owners can delete documents.' } 
+      }, { status: 403 });
+    }
+
+    // Delete document - user has verified owner access
     // ON DELETE CASCADE handles associated messages/tool_calls
     const { error: deleteError, count } = await supabase
       .from('documents')
       .delete({ count: 'exact' })
-      .eq('id', documentId)
-      .eq('user_id', userId);
+      .eq('id', documentId);
 
     if (deleteError) {
       console.error('Document Delete Error:', deleteError.message);

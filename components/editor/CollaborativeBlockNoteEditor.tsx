@@ -10,6 +10,11 @@ import '@blocknote/mantine/style.css';
 import * as Y from 'yjs';
 import YPartyKitProvider from 'y-partykit/provider';
 import { useCollaborationContext } from '@/contexts/CollaborationContext';
+import {
+  BlockNoteViewEditor,
+  ThreadsSidebar,
+  FloatingComposerController,
+} from '@blocknote/react';
 
 // Mobile breakpoint query constant
 const MOBILE_BREAKPOINT_QUERY = '(max-width: 768px)';
@@ -96,36 +101,10 @@ const CollaborativeBlockNoteEditor = ({
   const componentId = useRef(`editor-${Math.random().toString(36).substr(2, 9)}`);
   const isMobileViewport = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
 
-  console.log('[CollaborativeEditor] COMPONENT MOUNTED - Initial render', {
-    componentId: componentId.current,
-    documentId,
-    userId,
-    userName,
-    viewport: isMobileViewport ? 'mobile' : 'desktop'
-  });
-
-  console.log('[CollaborativeEditor] Rendering for document:', documentId, {
-    isMobileViewport,
-    userId,
-    userName,
-    hasInitialContent: initialContent.length > 0
-  });
-
   // DIRECT CALL: Bypass useMemo to fix collaboration issue
   const createCollaborationInstance = () => {
-    console.log('[CollaborativeEditor] Creating collaboration instance for:', {
-      documentId,
-      userId,
-      useCollaboration,
-      partyKitHost: process.env.NEXT_PUBLIC_PARTYKIT_HOST
-    });
-
     // CRITICAL: If there's already a global instance for a different document, destroy it
     if (globalEditorInstance && globalEditorInstance.documentId !== documentId) {
-      console.log('[CollaborativeEditor] DESTROYING EXISTING GLOBAL INSTANCE for different document:', {
-        existingDocId: globalEditorInstance.documentId,
-        newDocId: documentId
-      });
       try {
         if (globalEditorInstance.provider) {
           globalEditorInstance.provider.destroy();
@@ -143,16 +122,8 @@ const CollaborativeBlockNoteEditor = ({
       const needsCollaboration = useCollaboration && userId && userId !== 'anonymous';
       const hasProvider = !!globalEditorInstance.provider;
       
-      console.log('[CollaborativeEditor] CHECKING EXISTING GLOBAL INSTANCE for document:', documentId, {
-        hasProvider,
-        hasDoc: !!globalEditorInstance.doc,
-        needsCollaboration,
-        collaborationMatch: needsCollaboration === hasProvider
-      });
-      
       // If collaboration needs match, reuse the instance
       if (needsCollaboration === hasProvider) {
-        console.log('[CollaborativeEditor] REUSING EXISTING GLOBAL INSTANCE - collaboration needs match');
         return {
           doc: globalEditorInstance.doc,
           provider: globalEditorInstance.provider,
@@ -160,10 +131,6 @@ const CollaborativeBlockNoteEditor = ({
         };
       } else {
         // Collaboration needs don't match - destroy and recreate
-        console.log('[CollaborativeEditor] DESTROYING EXISTING GLOBAL INSTANCE - collaboration needs changed:', {
-          needsCollaboration,
-          hasProvider
-        });
         try {
           if (globalEditorInstance.provider) {
             globalEditorInstance.provider.destroy();
@@ -178,10 +145,7 @@ const CollaborativeBlockNoteEditor = ({
     }
 
     // Create new instance
-    console.log('[CollaborativeEditor] CREATING NEW GLOBAL INSTANCE for document:', documentId);
-
     if (!useCollaboration || !userId || userId === 'anonymous') {
-      console.log('[CollaborativeEditor] Collaboration disabled or no user - creating local-only document');
       const localDoc = new Y.Doc();
       const localSessionId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
       
@@ -204,13 +168,6 @@ const CollaborativeBlockNoteEditor = ({
     const doc = new Y.Doc();
     const sessionId = `${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
     
-    console.log('[CollaborativeEditor] Creating PartyKit provider with:', {
-      documentId,
-      sessionId,
-      userId,
-      partyKitHost: process.env.NEXT_PUBLIC_PARTYKIT_HOST
-    });
-
     const provider = new YPartyKitProvider(
       process.env.NEXT_PUBLIC_PARTYKIT_HOST!,
       `document-${documentId}`,
@@ -235,13 +192,6 @@ const CollaborativeBlockNoteEditor = ({
     // Also store in documentInstances for compatibility
     documentInstances.set(documentId, { doc, provider, sessionId });
 
-    console.log('[CollaborativeEditor] Created new document instance:', {
-      documentId,
-      sessionId,
-      hasProvider: !!provider,
-      componentId: componentId.current
-    });
-
     return { doc, provider, sessionId };
   };
   
@@ -249,10 +199,6 @@ const CollaborativeBlockNoteEditor = ({
 
   // Get comment functionality from CollaborationContext
   const { threadStore, resolveUsers } = useCollaborationContext();
-
-  // Check provider connection state - YPartyKitProvider doesn't expose 'connected' property
-  // but we know it's working when provider exists
-  const isConnected = !!provider;
 
   // Create BlockNote editor with collaboration and comments
   const editor = useCreateBlockNote({
@@ -276,18 +222,11 @@ const CollaborativeBlockNoteEditor = ({
     resolveUsers: enableComments ? resolveUsers : undefined,
   }, [provider, initialContent, sessionId, userName, userColor, documentId, enableComments, threadStore, resolveUsers]);
 
-  console.log('[CollaborativeEditor] Editor created with config:', {
-    hasInitialContent: initialContent.length > 0,
-    hasCollaboration: !!provider,
-    enableComments: false
-  });
-
   // Handle editor content changes
   useEffect(() => {
     if (!editor) return;
 
     const handleChange = () => {
-      console.log('[CollaborativeEditor] Editor content changed');
       if (onEditorContentChange) {
         onEditorContentChange(editor);
       }
@@ -295,6 +234,39 @@ const CollaborativeBlockNoteEditor = ({
 
     editor.onChange(handleChange);
   }, [editor, onEditorContentChange]);
+
+  // Debug comment interactions
+  useEffect(() => {
+    if (!editor || !enableComments || !threadStore) return;
+
+    console.log('[CollaborativeEditor] Setting up comment interaction debugging');
+    
+    // Try to listen for comment-related events
+    const handleSelectionChange = () => {
+      try {
+        const selection = editor.getTextCursorPosition();
+        console.log('[CollaborativeEditor] Selection changed:', selection);
+        
+        // Check if there are any comments at the current position
+        if (typeof threadStore.getThreads === 'function') {
+          const threads = threadStore.getThreads();
+          console.log('[CollaborativeEditor] Current threads:', {
+            threadsCount: threads instanceof Map ? threads.size : 0,
+            threads: threads instanceof Map ? Array.from(threads.entries()) : threads
+          });
+        }
+      } catch (error) {
+        console.error('[CollaborativeEditor] Error in selection change handler:', error);
+      }
+    };
+
+    // Listen for selection changes
+    editor.onSelectionChange(handleSelectionChange);
+    
+    return () => {
+      // Cleanup if needed
+    };
+  }, [editor, enableComments, threadStore]);
 
   // Expose editor to parent via ref
   useEffect(() => {
@@ -306,16 +278,7 @@ const CollaborativeBlockNoteEditor = ({
   // CRITICAL: Cleanup when component unmounts or document changes
   useEffect(() => {
     return () => {
-      console.log('[CollaborativeEditor] Component unmounting or document changing, cleaning up global instance for:', {
-        componentId: componentId.current,
-        documentId,
-        isGlobalInstance: globalEditorInstance?.componentId === componentId.current
-      });
-      
-      // Only clean up if this component created the global instance
       if (globalEditorInstance && globalEditorInstance.componentId === componentId.current) {
-        console.log('[CollaborativeEditor] Destroying global instance created by this component');
-        
         try {
           if (globalEditorInstance.provider) {
             globalEditorInstance.provider.destroy();
@@ -328,8 +291,6 @@ const CollaborativeBlockNoteEditor = ({
         // Clean up from documentInstances map
         documentInstances.delete(documentId);
         globalEditorInstance = null;
-      } else {
-        console.log('[CollaborativeEditor] Not cleaning up - global instance belongs to different component');
       }
     };
   }, [documentId]);
@@ -346,19 +307,13 @@ const CollaborativeBlockNoteEditor = ({
   }
 
   // Render standard collaborative editor
-  console.log('[CollaborativeEditor] RENDERING COLLABORATIVE EDITOR', { 
-    componentId: componentId.current,
-    hasProvider: !!provider,
-    isConnected
-  });
-
   return (
     <div className="collaborative-editor">
       <div className="collaboration-status text-xs text-gray-500 mb-2 flex items-center gap-2">
         <div className={`w-2 h-2 rounded-full ${
           !provider 
             ? 'bg-yellow-500' 
-            : isConnected 
+            : !!provider 
               ? 'bg-green-500' 
               : 'bg-red-500'
         }`} />
@@ -367,23 +322,55 @@ const CollaborativeBlockNoteEditor = ({
             ? useCollaboration 
               ? 'Waiting for authentication...' 
               : 'Working offline - changes saved locally'
-            : isConnected 
+            : !!provider 
               ? 'Connected - real-time collaboration active'
-              : 'Connecting to collaboration server...'
-          }
+              : 'Connecting to collaboration server...'}
         </span>
       </div>
 
-      <BlockNoteView 
-        editor={editor} 
-        theme={theme}
-        formattingToolbar={true}
-        linkToolbar={true}
-        sideMenu={true}
-        slashMenu={true}
-        filePanel={true}
-        tableHandles={true}
-      />
+      {/* Follow BlockNote documentation pattern for comments with sidebar */}
+      {enableComments && threadStore ? (
+        <BlockNoteView
+          editor={editor}
+          renderEditor={false}
+          comments={false}
+          theme={theme}
+          className="block-note-view"
+        >
+          <div className="editor-layout-wrapper flex">
+            <div className="editor-section flex-1">
+              <BlockNoteViewEditor />
+              <FloatingComposerController />
+            </div>
+            
+            <div className="threads-sidebar-section w-80 bg-gray-50 border-l border-gray-200 dark:bg-gray-800 dark:border-gray-700">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Comments</h3>
+              </div>
+              <ThreadsSidebar 
+                key={`threads-${documentId}-${componentId.current}`}
+                filter="open"
+                sort="position"
+                maxCommentsBeforeCollapse={5}
+              />
+            </div>
+          </div>
+        </BlockNoteView>
+      ) : (
+        <BlockNoteView
+          editor={editor}
+          renderEditor={false}
+          comments={false}
+          theme={theme}
+          className="block-note-view"
+        >
+          <div className="editor-layout-wrapper flex">
+            <div className="editor-section flex-1">
+              <BlockNoteViewEditor />
+            </div>
+          </div>
+        </BlockNoteView>
+      )}
     </div>
   );
 };
@@ -398,10 +385,6 @@ const arePropsEqual = (prevProps: CollaborativeBlockNoteEditorProps, nextProps: 
   
   for (const prop of propsToCompare) {
     if (prevProps[prop] !== nextProps[prop]) {
-      console.log('[CollaborativeEditor] Prop changed, re-rendering:', prop, {
-        prev: prevProps[prop],
-        next: nextProps[prop]
-      });
       return false;
     }
   }
@@ -409,12 +392,10 @@ const arePropsEqual = (prevProps: CollaborativeBlockNoteEditorProps, nextProps: 
   // Special handling for initialContent array comparison
   if (Array.isArray(prevProps.initialContent) && Array.isArray(nextProps.initialContent)) {
     if (prevProps.initialContent.length !== nextProps.initialContent.length) {
-      console.log('[CollaborativeEditor] initialContent length changed, re-rendering');
       return false;
     }
   }
   
-  console.log('[CollaborativeEditor] Props are equal, preventing re-render');
   return true;
 };
 

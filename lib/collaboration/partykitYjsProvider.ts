@@ -231,12 +231,18 @@ export class PartykitYjsProvider {
         this.onSynced?.();
       };
 
-      this.websocket.onmessage = (event) => {
+      this.websocket.onmessage = async (event) => {
         try {
-          // Handle both binary (Yjs updates) and text (awareness/sync) messages
+          // Handle different message data types properly
           if (event.data instanceof ArrayBuffer || event.data instanceof Uint8Array) {
+            // Direct binary data
             this.handleYjsBinaryMessage(new Uint8Array(event.data));
+          } else if (event.data instanceof Blob) {
+            // Blob data needs to be converted to ArrayBuffer first
+            const arrayBuffer = await event.data.arrayBuffer();
+            this.handleYjsBinaryMessage(new Uint8Array(arrayBuffer));
           } else {
+            // Text/JSON data
             const data = JSON.parse(event.data);
             this.handleYPartyServerMessage(data);
           }

@@ -15,6 +15,39 @@ async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerCl
   return { userId: session.user.id };
 }
 
+// Helper function to check if user has document access and permission level
+async function checkDocumentAccess(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string) {
+  // First check if user is the document owner
+  const { data: document, error: docError } = await supabase
+    .from('documents')
+    .select('user_id')
+    .eq('id', documentId)
+    .single();
+
+  if (docError && docError.code !== 'PGRST116') {
+    throw new Error(`Database error checking document ownership: ${docError.message}`);
+  }
+
+  // If user is the document owner, return owner permission
+  if (document && document.user_id === userId) {
+    return { permission_level: 'owner' };
+  }
+
+  // Otherwise, check for explicit permission record
+  const { data: permission, error } = await supabase
+    .from('document_permissions')
+    .select('permission_level')
+    .eq('document_id', documentId)
+    .eq('user_id', userId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`Database error checking permissions: ${error.message}`);
+  }
+
+  return permission;
+}
+
 export async function POST(
   request: Request,
   { params }: { params: { documentId: string } }
@@ -72,11 +105,18 @@ export async function POST(
       updateDocumentData.searchable_content = searchable_content;
     }
 
+    // Check if user has permission to edit this document
+    const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+    if (!userPermission || !['owner', 'editor'].includes(userPermission.permission_level)) {
+      return NextResponse.json({ 
+        error: { code: 'FORBIDDEN', message: 'You do not have permission to edit this document.' } 
+      }, { status: 403 });
+    }
+
     const { data: updatedDocInfo, error: updateError } = await supabase
       .from('documents')
       .update(updateDocumentData)
       .eq('id', documentId)
-      .eq('user_id', userId) // Ensure user owns the document
       .select('updated_at')
       .single();
 

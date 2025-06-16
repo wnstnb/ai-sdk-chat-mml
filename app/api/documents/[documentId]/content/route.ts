@@ -15,6 +15,39 @@ async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerCl
   return { userId: session.user.id };
 }
 
+// Helper function to check if user has document access and permission level
+async function checkDocumentAccess(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string) {
+  // First check if user is the document owner
+  const { data: document, error: docError } = await supabase
+    .from('documents')
+    .select('user_id')
+    .eq('id', documentId)
+    .single();
+
+  if (docError && docError.code !== 'PGRST116') {
+    throw new Error(`Database error checking document ownership: ${docError.message}`);
+  }
+
+  // If user is the document owner, return owner permission
+  if (document && document.user_id === userId) {
+    return { permission_level: 'owner' };
+  }
+
+  // Otherwise, check for explicit permission record
+  const { data: permission, error } = await supabase
+    .from('document_permissions')
+    .select('permission_level')
+    .eq('document_id', documentId)
+    .eq('user_id', userId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`Database error checking permissions: ${error.message}`);
+  }
+
+  return permission;
+}
+
 // PUT handler for updating document content
 export async function PUT(
   request: Request,
@@ -73,12 +106,19 @@ export async function PUT(
         updateData.searchable_content = searchable_content;
     }
 
-    // Update document content - RLS ensures user owns the document
+    // Check if user has permission to edit this document
+    const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+    if (!userPermission || !['owner', 'editor'].includes(userPermission.permission_level)) {
+      return NextResponse.json({ 
+        error: { code: 'FORBIDDEN', message: 'You do not have permission to edit this document.' } 
+      }, { status: 403 });
+    }
+
+    // Update document content - user has verified edit access
     const { data: updatedDocInfo, error: updateError } = await supabase
       .from('documents')
       .update(updateData)
       .eq('id', documentId)
-      .eq('user_id', userId) // Explicit user_id check
       .select('updated_at') // Only return the new timestamp as per plan
       .single();
 
