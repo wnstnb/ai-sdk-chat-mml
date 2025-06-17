@@ -51,8 +51,8 @@ DROP POLICY IF EXISTS "Allow users to insert messages for their documents" ON me
 DROP POLICY IF EXISTS "Allow users to view messages for their documents" ON messages;
 
 -- Keep only the simple user-based message policies (these should already exist)
--- CREATE POLICY "Users can view their own messages" ON messages
---   FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users can view their own messages" ON messages
+  FOR SELECT USING (user_id = auth.uid());
 -- etc. (these should already be there from previous migrations)
 
 -- Step 6: Simplify tool_calls policies (remove complex function calls)

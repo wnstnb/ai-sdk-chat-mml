@@ -257,7 +257,7 @@ export const ShareDocumentModal: React.FC<ShareDocumentModalProps> = ({
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Failed to update permissions' }));
-        throw new Error(errorData.error || 'Failed to update permissions');
+        throw new Error(errorData.error?.message || errorData.error || 'Failed to update permissions');
       }
 
       toast.success(`Updated ${permission.user_email}'s permission to ${newPermissionLevel}`);

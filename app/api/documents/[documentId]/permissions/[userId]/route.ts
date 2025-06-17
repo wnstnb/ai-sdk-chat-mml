@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseServerClient, createSupabaseServiceRoleClient } from '@/lib/supabase/server';
 
 // Re-use the helper function from the documents route
 async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerClient>) {
@@ -82,15 +82,30 @@ export async function PUT(
     }
 
     // Check if target user has access to the document
-    const targetPermission = await checkDocumentAccess(supabase, documentId, targetUserId);
-    if (!targetPermission) {
+    // Use service role to bypass RLS since we already verified current user is owner
+    const serviceSupabase = createSupabaseServiceRoleClient();
+    const { data: targetPermissionData, error: targetPermissionError } = await serviceSupabase
+      .from('document_permissions')
+      .select('permission_level')
+      .eq('document_id', documentId)
+      .eq('user_id', targetUserId)
+      .maybeSingle();
+
+    if (targetPermissionError) {
+      console.error('Error checking target user permission:', targetPermissionError.message);
+      return NextResponse.json({ 
+        error: { code: 'DATABASE_ERROR', message: `Failed to check user permission: ${targetPermissionError.message}` } 
+      }, { status: 500 });
+    }
+
+    if (!targetPermissionData) {
       return NextResponse.json({ 
         error: { code: 'NOT_FOUND', message: 'User does not have access to this document.' } 
       }, { status: 404 });
     }
 
     // Update permission
-    const { data: updatedPermission, error: updateError } = await supabase
+    const { data: updatedPermissions, error: updateError } = await serviceSupabase
       .from('document_permissions')
       .update({ 
         permission_level: permission_level,
@@ -98,8 +113,7 @@ export async function PUT(
       })
       .eq('document_id', documentId)
       .eq('user_id', targetUserId)
-      .select()
-      .single();
+      .select();
 
     if (updateError) {
       console.error('Permission update error:', updateError.message);
@@ -108,11 +122,18 @@ export async function PUT(
       }, { status: 500 });
     }
 
-    if (!updatedPermission) {
+    if (!updatedPermissions || updatedPermissions.length === 0) {
       return NextResponse.json({ 
         error: { code: 'NOT_FOUND', message: 'Permission not found.' } 
       }, { status: 404 });
     }
+
+    // Log if there are multiple rows (indicates potential data issue)
+    if (updatedPermissions.length > 1) {
+      console.warn(`Warning: Updated ${updatedPermissions.length} permission records for user ${targetUserId} on document ${documentId}. Expected only 1.`);
+    }
+
+    const updatedPermission = updatedPermissions[0];
 
     // Create notification for the user whose permission was changed
     await supabase
@@ -126,7 +147,7 @@ export async function PUT(
         created_by: currentUserId,
         data: {
           new_permission_level: permission_level,
-          previous_permission_level: targetPermission.permission_level
+          previous_permission_level: targetPermissionData.permission_level
         }
       });
 
