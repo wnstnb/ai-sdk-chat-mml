@@ -31,7 +31,30 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Verify user has access to the document
+    // Verify user has access to the document via document_permissions table
+    const { data: permission, error: permissionError } = await supabase
+      .from('document_permissions')
+      .select('permission_level')
+      .eq('document_id', documentId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (permissionError && permissionError.code !== 'PGRST116') {
+      console.error('Error checking document permissions:', permissionError);
+      return NextResponse.json(
+        { error: 'Failed to verify document access' },
+        { status: 500 }
+      );
+    }
+
+    // Check if user has access (either owns the document or has permissions)
+    let hasAccess = false;
+    
+    if (permission) {
+      // User has explicit permissions
+      hasAccess = true;
+    } else {
+      // Fallback: check if user owns the document
     const { data: document, error: docError } = await supabase
       .from('documents')
       .select('id, user_id')
@@ -39,7 +62,10 @@ export async function GET(request: NextRequest) {
       .eq('user_id', user.id)
       .single();
 
-    if (docError || !document) {
+      hasAccess = !docError && !!document;
+    }
+
+    if (!hasAccess) {
       return NextResponse.json(
         { error: 'Document not found or access denied' },
         { status: 404 }
@@ -62,11 +88,24 @@ export async function GET(request: NextRequest) {
     }
 
     // Convert binary data back to Uint8Array for client processing
-    const formattedUpdates = updates?.map(update => ({
-      data: Array.from(update.update_data), // Convert BYTEA to array
+    const formattedUpdates = updates?.map(update => {
+      // Handle the case where Supabase returns BYTEA as {type: "Buffer", data: [...]}
+      let dataArray;
+      if (update.update_data && typeof update.update_data === 'object' && update.update_data.type === 'Buffer') {
+        dataArray = update.update_data.data;
+      } else if (Array.isArray(update.update_data)) {
+        dataArray = update.update_data;
+      } else {
+        // Fallback: try to convert to array
+        dataArray = Array.from(update.update_data);
+      }
+      
+      return {
+        data: dataArray,
       createdAt: update.created_at,
       userId: update.user_id,
-    })) || [];
+      };
+    }) || [];
 
     return NextResponse.json({
       documentId,
@@ -110,7 +149,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify user has access to the document
+    // Verify user has access to the document via document_permissions table
+    const { data: permission, error: permissionError } = await supabase
+      .from('document_permissions')
+      .select('permission_level')
+      .eq('document_id', documentId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (permissionError && permissionError.code !== 'PGRST116') {
+      console.error('Error checking document permissions:', permissionError);
+      return NextResponse.json(
+        { error: 'Failed to verify document access' },
+        { status: 500 }
+      );
+    }
+
+    // Check if user has access (either owns the document or has permissions)
+    let hasAccess = false;
+    
+    if (permission) {
+      // User has explicit permissions
+      hasAccess = true;
+    } else {
+      // Fallback: check if user owns the document
     const { data: document, error: docError } = await supabase
       .from('documents')
       .select('id, user_id')
@@ -118,22 +180,42 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .single();
 
-    if (docError || !document) {
+      hasAccess = !docError && !!document;
+    }
+
+    if (!hasAccess) {
       return NextResponse.json(
         { error: 'Document not found or access denied' },
         { status: 404 }
       );
     }
 
-    // Convert update data array back to Uint8Array then to Buffer for storage
-    const updateBuffer = Buffer.from(new Uint8Array(updateData));
+    // Handle different formats of updateData
+    let updateBuffer: Buffer;
+    
+    if (Array.isArray(updateData)) {
+      // Client sent plain array [1, 2, 3, ...]
+      updateBuffer = Buffer.from(updateData);
+    } else if (updateData && typeof updateData === 'object' && updateData.type === 'Buffer' && Array.isArray(updateData.data)) {
+      // Client sent Buffer object {type: "Buffer", data: [1, 2, 3, ...]}
+      updateBuffer = Buffer.from(updateData.data);
+    } else if (updateData instanceof Uint8Array) {
+      // Client sent Uint8Array directly
+      updateBuffer = Buffer.from(updateData);
+    } else {
+      // Fallback: try to convert whatever we got
+      updateBuffer = Buffer.from(new Uint8Array(updateData));
+    }
+
+    // Convert Buffer to Uint8Array for proper BYTEA storage
+    const updateUint8Array = new Uint8Array(updateBuffer);
 
     // Store the Yjs update
     const { data: insertedUpdate, error: insertError } = await supabase
       .from('yjs_updates')
       .insert({
         document_id: documentId,
-        update_data: updateBuffer,
+        update_data: updateUint8Array,
         user_id: user.id,
       })
       .select('id, created_at')
@@ -190,7 +272,30 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Verify user has access to the document
+    // Verify user has access to the document via document_permissions table
+    const { data: permission, error: permissionError } = await supabase
+      .from('document_permissions')
+      .select('permission_level')
+      .eq('document_id', documentId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (permissionError && permissionError.code !== 'PGRST116') {
+      console.error('Error checking document permissions:', permissionError);
+      return NextResponse.json(
+        { error: 'Failed to verify document access' },
+        { status: 500 }
+      );
+    }
+
+    // Check if user has access (either owns the document or has permissions)
+    let hasAccess = false;
+    
+    if (permission) {
+      // User has explicit permissions
+      hasAccess = true;
+    } else {
+      // Fallback: check if user owns the document
     const { data: document, error: docError } = await supabase
       .from('documents')
       .select('id, user_id')
@@ -198,7 +303,10 @@ export async function DELETE(request: NextRequest) {
       .eq('user_id', user.id)
       .single();
 
-    if (docError || !document) {
+      hasAccess = !docError && !!document;
+    }
+
+    if (!hasAccess) {
       return NextResponse.json(
         { error: 'Document not found or access denied' },
         { status: 404 }

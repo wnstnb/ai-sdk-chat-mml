@@ -12,8 +12,9 @@ import YPartyKitProvider from 'y-partykit/provider';
 import { useCollaborationContext } from '@/contexts/CollaborationContext';
 import {
   BlockNoteViewEditor,
-  ThreadsSidebar,
-  FloatingComposerController,
+  // COMMENTED OUT: Comment UI imports temporarily disabled - see comment-system-challenges-prd.md
+  // ThreadsSidebar,
+  // FloatingComposerController,
 } from '@blocknote/react';
 
 // Mobile breakpoint query constant
@@ -83,7 +84,13 @@ const documentInstances = new Map<string, {
   doc: Y.Doc;
   provider: YPartyKitProvider;
   sessionId: string;
+  editor?: any; // Add editor to the instance tracking
 }>();
+
+// Make document instances globally accessible for thread store
+if (typeof globalThis !== 'undefined') {
+  (globalThis as any).__blockNoteDocumentInstances = documentInstances;
+}
 
 const CollaborativeBlockNoteEditor = ({
   documentId,
@@ -98,6 +105,15 @@ const CollaborativeBlockNoteEditor = ({
   enableComments = false,
   useCollaboration = true
 }: CollaborativeBlockNoteEditorProps) => {
+  console.log('[CollaborativeBlockNoteEditor] Component rendering with props:', {
+    documentId,
+    enableComments,
+    hasUserId: !!userId,
+    userName,
+    useCollaboration,
+    initialContentLength: initialContent?.length || 0
+  });
+
   const componentId = useRef(`editor-${Math.random().toString(36).substr(2, 9)}`);
   const isMobileViewport = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
 
@@ -197,8 +213,21 @@ const CollaborativeBlockNoteEditor = ({
   
   const { doc, provider, sessionId } = createCollaborationInstance();
 
+  // COMMENTED OUT: Comment functionality temporarily disabled - see comment-system-challenges-prd.md
   // Get comment functionality from CollaborationContext
   const { threadStore, resolveUsers } = useCollaborationContext();
+
+  // Debug comment setup
+  // useEffect(() => {
+  //   console.log('[CollaborativeEditor] Comment setup debug:', {
+  //     enableComments,
+  //     hasThreadStore: !!threadStore,
+  //     hasResolveUsers: !!resolveUsers,
+  //     userId,
+  //     userName,
+  //     documentId
+  //   });
+  // }, [enableComments, threadStore, resolveUsers, userId, userName, documentId]);
 
   // Create BlockNote editor with collaboration and comments
   const editor = useCreateBlockNote({
@@ -214,13 +243,38 @@ const CollaborativeBlockNoteEditor = ({
         color: userColor || getRandomColor(),
       },
     } : undefined,
+    // COMMENTED OUT: Comment support temporarily disabled - see comment-system-challenges-prd.md
     // Add comment support when enabled and threadStore is available
-    comments: enableComments && threadStore ? {
-      threadStore,
-    } : undefined,
+    // comments: enableComments && threadStore ? {
+    //   threadStore,
+    // } : undefined,
     // Add resolveUsers function for comment user resolution
-    resolveUsers: enableComments ? resolveUsers : undefined,
+    // resolveUsers: enableComments ? resolveUsers : undefined,
   }, [provider, initialContent, sessionId, userName, userColor, documentId, enableComments, threadStore, resolveUsers]);
+
+  // Debug editor creation
+  useEffect(() => {
+    if (editor) {
+      // COMMENTED OUT: Comment debug logging temporarily disabled - see comment-system-challenges-prd.md
+      // console.log('[CollaborativeEditor] Editor created with config:', {
+      //   hasEditor: !!editor,
+      //   hasComments: enableComments && !!threadStore,
+      //   commentsConfig: enableComments && threadStore ? { threadStore: !!threadStore } : undefined,
+      //   hasResolveUsers: !!resolveUsers,
+      //   editorType: editor.constructor.name
+      // });
+      
+      // Update the documentInstances with the editor instance
+      const existingInstance = documentInstances.get(documentId);
+      if (existingInstance) {
+        documentInstances.set(documentId, {
+          ...existingInstance,
+          editor: editor
+        });
+        console.log('[CollaborativeEditor] Updated documentInstances with editor for:', documentId);
+      }
+    }
+  }, [editor, enableComments, threadStore, resolveUsers, documentId]);
 
   // Handle editor content changes
   useEffect(() => {
@@ -235,45 +289,64 @@ const CollaborativeBlockNoteEditor = ({
     editor.onChange(handleChange);
   }, [editor, onEditorContentChange]);
 
+  // COMMENTED OUT: Comment interaction debugging temporarily disabled - see comment-system-challenges-prd.md
   // Debug comment interactions
-  useEffect(() => {
-    if (!editor || !enableComments || !threadStore) return;
+  // useEffect(() => {
+  //   if (!editor || !enableComments || !threadStore) return;
 
-    console.log('[CollaborativeEditor] Setting up comment interaction debugging');
+  //   console.log('[CollaborativeEditor] Setting up comment interaction debugging');
     
-    // Try to listen for comment-related events
-    const handleSelectionChange = () => {
-      try {
-        const selection = editor.getTextCursorPosition();
-        console.log('[CollaborativeEditor] Selection changed:', selection);
+  //   // Try to listen for comment-related events
+  //   const handleSelectionChange = () => {
+  //     try {
+  //       const selection = editor.getTextCursorPosition();
+  //       console.log('[CollaborativeEditor] Selection changed:', selection);
         
-        // Check if there are any comments at the current position
-        if (typeof threadStore.getThreads === 'function') {
-          const threads = threadStore.getThreads();
-          console.log('[CollaborativeEditor] Current threads:', {
-            threadsCount: threads instanceof Map ? threads.size : 0,
-            threads: threads instanceof Map ? Array.from(threads.entries()) : threads
-          });
-        }
-      } catch (error) {
-        console.error('[CollaborativeEditor] Error in selection change handler:', error);
-      }
-    };
+  //       // Also check for text selection
+  //       const textSelection = editor.getSelection();
+  //       console.log('[CollaborativeEditor] Text selection:', textSelection);
+        
+  //       // Check if there are any comments at the current position
+  //       if (typeof threadStore.getThreads === 'function') {
+  //         const threads = threadStore.getThreads();
+  //         console.log('[CollaborativeEditor] Current threads:', {
+  //           threadsCount: threads instanceof Map ? threads.size : 0,
+  //           threads: threads instanceof Map ? Array.from(threads.entries()) : threads
+  //         });
+  //       }
+  //     } catch (error) {
+  //       console.error('[CollaborativeEditor] Error in selection change handler:', error);
+  //     }
+  //   };
 
-    // Listen for selection changes
-    editor.onSelectionChange(handleSelectionChange);
+  //   // Listen for selection changes
+  //   editor.onSelectionChange(handleSelectionChange);
     
-    return () => {
-      // Cleanup if needed
-    };
-  }, [editor, enableComments, threadStore]);
+  //   // Additional debugging for BlockNote events
+  //   editor.onChange(() => {
+  //     console.log('[CollaborativeEditor] Editor content changed');
+  //   });
+    
+  //   return () => {
+  //     // Cleanup if needed
+  //   };
+  // }, [editor, enableComments, threadStore]);
 
   // Expose editor to parent via ref
   useEffect(() => {
     if (editorRef && editor) {
       (editorRef as any).current = editor;
+      
+      // Also update the global instance for thread store access
+      const existingInstance = documentInstances.get(documentId);
+      if (existingInstance) {
+        documentInstances.set(documentId, {
+          ...existingInstance,
+          editor: editor
+        });
+      }
     }
-  }, [editorRef, editor]);
+  }, [editorRef, editor, documentId]);
 
   // CRITICAL: Cleanup when component unmounts or document changes
   useEffect(() => {
@@ -328,8 +401,11 @@ const CollaborativeBlockNoteEditor = ({
         </span>
       </div>
 
-      {/* Follow BlockNote documentation pattern for comments with sidebar */}
-      {enableComments && threadStore ? (
+      {/* 
+      COMMENTED OUT: Comment UI temporarily disabled - see comment-system-challenges-prd.md
+      Follow BlockNote documentation pattern for comments with sidebar 
+      */}
+      {/* {enableComments && threadStore ? (
         <BlockNoteView
           editor={editor}
           renderEditor={false}
@@ -339,6 +415,45 @@ const CollaborativeBlockNoteEditor = ({
         >
           <div className="editor-layout-wrapper flex">
             <div className="editor-section flex-1">
+              {/* Clear corrupted threads button
+              <div className="mb-2 p-2 bg-red-100 border border-red-300 rounded">
+                <button 
+                  onClick={() => {
+                    console.log('[Clear] Clearing corrupted threads map...');
+                    
+                    if (doc) {
+                      try {
+                        const threadsMap = doc.getMap('threads');
+                        console.log('[Clear] Before clearing - threads map size:', threadsMap.size);
+                        console.log('[Clear] Before clearing - entries:', Array.from(threadsMap.entries()));
+                        
+                        // Clear all entries from the threads map
+                        threadsMap.clear();
+                        
+                        console.log('[Clear] After clearing - threads map size:', threadsMap.size);
+                        console.log('[Clear] Threads map cleared successfully');
+                        
+                        // Force a page refresh to restart with clean state
+                        setTimeout(() => {
+                          window.location.reload();
+                        }, 500);
+                        
+                      } catch (error) {
+                        console.error('[Clear] Error clearing threads map:', error);
+                      }
+                    } else {
+                      console.error('[Clear] Y.js document not available');
+                    }
+                  }}
+                  className="px-3 py-1 bg-red-500 text-white rounded text-sm mr-2"
+                >
+                  Clear Corrupted Threads & Refresh
+                </button>
+                <span className="ml-2 text-xs text-gray-600">
+                  Use this to fix Y.js thread corruption errors
+                </span>
+              </div>
+              
               <BlockNoteViewEditor />
               <FloatingComposerController />
             </div>
@@ -346,6 +461,35 @@ const CollaborativeBlockNoteEditor = ({
             <div className="threads-sidebar-section w-80 bg-gray-50 border-l border-gray-200 dark:bg-gray-800 dark:border-gray-700">
               <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                 <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Comments</h3>
+                {/* Debug thread store state
+                <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                  <div>Thread store: {threadStore ? 'Connected' : 'Not connected'}</div>
+                  {threadStore && (
+                    <div>
+                      Has getThreads: {typeof threadStore.getThreads === 'function' ? 'Yes' : 'No'}
+                    </div>
+                  )}
+                  {/* Add real-time thread count
+                  {threadStore && typeof threadStore.getThreads === 'function' && (
+                    <div>
+                      Thread count: {(() => {
+                        try {
+                          const threads = threadStore.getThreads();
+                          if (threads instanceof Map) {
+                            return threads.size;
+                          } else if (Array.isArray(threads)) {
+                            return (threads as any[]).length;
+                          } else if (threads && typeof threads === 'object') {
+                            return Object.keys(threads).length;
+                          }
+                          return 'Unknown';
+                        } catch (e) {
+                          return 'Error';
+                        }
+                      })()}
+                    </div>
+                  )}
+                </div>
               </div>
               <ThreadsSidebar 
                 key={`threads-${documentId}-${componentId.current}`}
@@ -356,7 +500,7 @@ const CollaborativeBlockNoteEditor = ({
             </div>
           </div>
         </BlockNoteView>
-      ) : (
+      ) : ( */}
         <BlockNoteView
           editor={editor}
           renderEditor={false}
@@ -370,7 +514,7 @@ const CollaborativeBlockNoteEditor = ({
             </div>
           </div>
         </BlockNoteView>
-      )}
+      {/* )} */}
     </div>
   );
 };

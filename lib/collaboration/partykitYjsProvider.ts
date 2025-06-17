@@ -61,6 +61,7 @@ export class PartykitYjsProvider {
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private tokenRefreshInterval: NodeJS.Timeout | null = null;
+  private lastUpdateTime?: number;
 
   // Event callbacks
   private onSynced?: () => void;
@@ -170,9 +171,78 @@ export class PartykitYjsProvider {
   }
 
   private async loadDocumentState() {
-    // Document state will be loaded via WebSocket sync with PartyKit server
-    // No need for API calls - the PartyKit server handles all persistence
-    console.log('[PartykitYjsProvider] Document state will be synced via WebSocket connection');
+    if (!this.supabase || !this.documentId) {
+      console.warn('[PartykitYjsProvider] Cannot load document state - missing Supabase client or document ID');
+      return;
+    }
+
+    try {
+      console.log('[PartykitYjsProvider] Loading Y.js document state from Supabase for document:', this.documentId);
+
+      // Fetch all Y.js updates for this document
+      const response = await fetch(`/api/collaboration/yjs-updates?documentId=${encodeURIComponent(this.documentId)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          // Include auth header if we have a token
+          ...(this.authToken && { 'Authorization': `Bearer ${this.authToken}` })
+        }
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log('[PartykitYjsProvider] No existing document state found - starting with empty document');
+          return;
+        }
+        
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Failed to load Y.js updates: ${response.status} ${response.statusText} - ${errorData.error || 'Unknown error'}`);
+      }
+
+      const result = await response.json();
+      const { updates, count } = result;
+
+      if (!updates || updates.length === 0) {
+        console.log('[PartykitYjsProvider] No Y.js updates found - document will start empty');
+        return;
+      }
+
+      console.log('[PartykitYjsProvider] Applying', count, 'Y.js updates to restore document state');
+
+      // Apply all updates in chronological order to restore complete document state
+      // This includes both document content AND comment threads
+      updates.forEach((updateInfo: any, index: number) => {
+        try {
+          const updateData = new Uint8Array(updateInfo.data);
+          
+          // Apply the update with a special origin to prevent persistence loops
+          Y.applyUpdate(this.doc, updateData, 'supabase-load');
+          
+          console.log(`[PartykitYjsProvider] Applied update ${index + 1}/${count} from ${updateInfo.createdAt}`);
+        } catch (error) {
+          console.error(`[PartykitYjsProvider] Error applying update ${index + 1}:`, error);
+        }
+      });
+
+      console.log('[PartykitYjsProvider] Successfully restored document state from Supabase');
+      
+      // Log what was restored
+      const threadsMap = this.doc.getMap('threads');
+      const blocksArray = this.doc.getArray('blocks');
+      
+      console.log('[PartykitYjsProvider] Restored state summary:', {
+        threadsCount: threadsMap.size,
+        blocksCount: blocksArray.length,
+        hasCommentThreads: threadsMap.size > 0
+      });
+
+    } catch (error) {
+      console.error('[PartykitYjsProvider] Error loading Y.js document state from Supabase:', error);
+      
+      // Don't throw - the document should still work without persisted state
+      // New content will be created and persisted going forward
+      console.log('[PartykitYjsProvider] Continuing with empty document state due to load error');
+    }
   }
 
   private async connectToPartyKit() {
@@ -284,12 +354,19 @@ export class PartykitYjsProvider {
   }
 
   private setupHeartbeat(): void {
+    // Clear any existing heartbeat interval first
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+    
     // Send ping every 30 seconds to keep connection alive
     this.heartbeatInterval = setInterval(() => {
       if (this.connectionState.isConnected && this.websocket?.readyState === WebSocket.OPEN) {
+        console.log('[PartykitYjsProvider] Sending heartbeat ping');
         this.sendMessage({ type: 'ping', userId: this.userId });
       }
-    }, 30000);
+    }, 30000); // 30 seconds
   }
 
   private scheduleReconnect(): void {
@@ -377,8 +454,8 @@ export class PartykitYjsProvider {
         break;
 
       case 'pong':
-        // Heartbeat response
-        console.log('[PartykitYjsProvider] Received heartbeat pong');
+        // Heartbeat response - reduce log verbosity
+        // console.log('[PartykitYjsProvider] Received heartbeat pong');
         break;
         
       case 'auth-error':
@@ -509,7 +586,18 @@ export class PartykitYjsProvider {
         return;
       }
 
-      console.log('[PartykitYjsProvider] Document updated, broadcasting to Y-PartyServer');
+      // Log details about what type of update this is to debug frequent updates
+      console.log('[PartykitYjsProvider] Document updated:', {
+        origin: origin,
+        updateSize: update.length,
+        timestamp: new Date().toISOString(),
+        userId: this.userId
+      });
+      
+      // Check if this is a content update or just awareness update
+      // We should only persist actual document content changes, not awareness changes
+      if (this.isContentUpdate(update)) {
+        console.log('[PartykitYjsProvider] Content update detected - broadcasting and persisting');
       
       // Broadcast binary update directly to Y-PartyServer for real-time sync
       if (this.connectionState.isConnected && this.websocket?.readyState === WebSocket.OPEN) {
@@ -529,7 +617,60 @@ export class PartykitYjsProvider {
 
       // Persist to Supabase (debounced to avoid too many requests)
       this.debouncedPersist(update);
+      } else {
+        console.log('[PartykitYjsProvider] Awareness-only update detected - broadcasting but not persisting');
+        
+        // Still broadcast for real-time awareness, but don't persist to database
+        if (this.connectionState.isConnected && this.websocket?.readyState === WebSocket.OPEN) {
+          try {
+            this.websocket.send(update);
+          } catch (error) {
+            console.error('[PartykitYjsProvider] Error sending awareness update:', error);
+          }
+        }
+      }
     });
+  }
+
+  /**
+   * Check if a Y.js update contains actual document content changes
+   * vs just awareness/presence updates
+   */
+  private isContentUpdate(update: Uint8Array): boolean {
+    try {
+      // Heuristic approach: awareness updates are typically small and frequent
+      // Content updates are typically larger and less frequent
+      
+      // Very small updates (< 30 bytes) are almost certainly awareness-only
+      if (update.length < 30) {
+        return false;
+      }
+      
+      // Medium-sized updates (30-100 bytes) need more analysis
+      if (update.length < 100) {
+        // Check if this looks like an awareness-only update by examining frequency
+        // If we're getting many small updates in quick succession, they're likely awareness
+        const now = Date.now();
+        if (!this.lastUpdateTime) {
+          this.lastUpdateTime = now;
+          return true; // First update, assume content
+        }
+        
+        const timeSinceLastUpdate = now - this.lastUpdateTime;
+        this.lastUpdateTime = now;
+        
+        // If we got an update within 1 second of the last one and it's small, likely awareness
+        if (timeSinceLastUpdate < 1000 && update.length < 80) {
+          return false;
+        }
+      }
+      
+      // Larger updates or well-spaced updates are likely content changes
+      return true;
+    } catch (error) {
+      console.warn('[PartykitYjsProvider] Error checking update type, assuming content update:', error);
+      return true; // If we can't determine, err on the side of caution and persist
+    }
   }
 
   private sendMessage(message: any) {
@@ -572,14 +713,104 @@ export class PartykitYjsProvider {
     }
 
     this.persistTimeout = setTimeout(async () => {
-      await this.persistUpdate(update);
+      await this.persistUpdate(update, origin);
     }, 1000); // Debounce for 1 second
   }
 
-  private async persistUpdate(update: Uint8Array): Promise<void> {
-    // Persistence is handled by the PartyKit server automatically
-    // No need for API calls - the server manages all document persistence
-    console.log('[PartykitYjsProvider] Update will be persisted by PartyKit server');
+  private async persistUpdate(update: Uint8Array, origin: any) {
+    if (!this.documentId || !this.userId) {
+      console.warn('[PartykitYjsProvider] Missing documentId or userId for persistence');
+      return;
+    }
+
+    try {
+      // Convert update to array for persistence
+      let updateData: number[];
+      
+      // Log detailed type information for debugging
+      console.log('[PartykitYjsProvider] Persisting Y.js document update to Supabase:', {
+        documentId: this.documentId,
+        updateSize: update.length,
+        userId: this.userId,
+        updateDataType: typeof update,
+        isArray: Array.isArray(update),
+        isUint8Array: update instanceof Uint8Array,
+        isBuffer: Buffer.isBuffer(update),
+        constructor: update.constructor.name
+      });
+
+      // Handle different data types properly
+      if (Buffer.isBuffer(update)) {
+        // Convert Buffer to array of bytes
+        updateData = Array.from(update);
+        console.log('[PartykitYjsProvider] Converted Buffer to array, first 10 bytes:', updateData.slice(0, 10));
+      } else if (update instanceof Uint8Array) {
+        // Convert Uint8Array to array of bytes
+        updateData = Array.from(update);
+        console.log('[PartykitYjsProvider] Converted Uint8Array to array, first 10 bytes:', updateData.slice(0, 10));
+      } else if (Array.isArray(update)) {
+        // Already an array
+        updateData = update;
+        console.log('[PartykitYjsProvider] Using existing array, first 10 bytes:', updateData.slice(0, 10));
+      } else {
+        // Fallback: try to convert to array
+        console.warn('[PartykitYjsProvider] Unknown update data type, attempting conversion:', typeof update);
+        updateData = Array.from(update as any);
+        console.log('[PartykitYjsProvider] Fallback conversion result, first 10 bytes:', updateData.slice(0, 10));
+      }
+      
+      console.log('[PartykitYjsProvider] Persisting Y.js document update to Supabase:', {
+        documentId: this.documentId,
+        updateSize: updateData.length,
+        userId: this.userId,
+        updateDataType: typeof updateData,
+        isArray: Array.isArray(updateData),
+        isBuffer: Buffer.isBuffer(updateData),
+        updateConstructor: updateData.constructor.name,
+        firstFewBytes: updateData.slice(0, 20),
+        originalUpdateType: typeof update,
+        originalUpdateConstructor: update.constructor.name
+      });
+
+      // Ensure updateData is a plain array for JSON serialization
+      const updateArray = Array.isArray(updateData) ? updateData : Array.from(updateData);
+
+      // Call the existing Y.js updates API
+      const response = await fetch('/api/collaboration/yjs-updates', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Include auth header if we have a token
+          ...(this.authToken && { 'Authorization': `Bearer ${this.authToken}` })
+        },
+        body: JSON.stringify({
+          documentId: this.documentId,
+          updateData: updateArray
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Failed to persist Y.js update: ${response.status} ${response.statusText} - ${errorData.error || 'Unknown error'}`);
+      }
+
+      const result = await response.json();
+      console.log('[PartykitYjsProvider] Successfully persisted Y.js update:', {
+        updateId: result.updateId,
+        createdAt: result.createdAt
+      });
+
+    } catch (error) {
+      console.error('[PartykitYjsProvider] Error persisting Y.js update to Supabase:', error);
+      
+      // If it's a network error, we might want to retry
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        console.log('[PartykitYjsProvider] Network error detected, will retry on next update');
+      }
+      
+      // Don't throw - persistence failures shouldn't break real-time collaboration
+      // The update is still broadcasted via PartyKit for real-time sync
+    }
   }
 
   // Update user awareness/presence

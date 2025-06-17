@@ -236,7 +236,7 @@ export function useCollaborativeDocument(
       if (providerRef.current) {
         setConnectionState(providerRef.current.getConnectionState());
       }
-    }, 5000); // Update every 5 seconds
+    }, 30000); // Update every 30 seconds instead of 5 to reduce frequency
 
     // Initial users update
     const users = getActiveUsers(yjsDocument);

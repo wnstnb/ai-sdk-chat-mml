@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { X } from 'lucide-react';
 import type { BlockNoteEditor, PartialBlock } from '@blocknote/core';
@@ -243,9 +243,16 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
         );
     };
 
-
-
-
+    // Memoize the form ref callback to prevent infinite loops
+    const formRefCallback = useCallback((node: HTMLFormElement | null) => {
+        // Handle multiple refs for the form element
+        if (typeof formRef === 'function') {
+            formRef(node);
+        }
+        
+        // Also assign to our chat input area ref
+        (chatInputAreaRef as React.MutableRefObject<HTMLFormElement | null>).current = node;
+    }, [formRef]);
 
     return (
         <div className="flex-1 flex flex-col relative bg-[--editor-bg] overflow-hidden">
@@ -265,7 +272,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                         userName={user?.user_metadata?.name || user?.email || 'Anonymous User'}
                         userColor={undefined} // Let the component generate a color based on userId
                         useCollaboration={true} // EXPLICITLY ENABLE: Real-time collaboration
-                        enableComments={true} // ENABLED: Comments for real-time comment synchronization
+                        enableComments={false} // DISABLED: Comments temporarily disabled - see comment-system-challenges-prd.md
                     />
                 </BlockHighlightWrapper>
             </div>
@@ -346,15 +353,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 </div>
                             </div>
                         )}
-                        <form ref={(node) => {
-                            // Handle multiple refs for the form element
-                            if (typeof formRef === 'function') {
-                                formRef(node);
-                            }
-                            
-                            // Also assign to our chat input area ref
-                            (chatInputAreaRef as React.MutableRefObject<HTMLFormElement | null>).current = node;
-                        }} onSubmit={sendMessage} className="w-full flex flex-col items-center">
+                        <form ref={formRefCallback} onSubmit={sendMessage} className="w-full flex flex-col items-center">
                             {/* Use ChatInputUI directly here */}
                             <ChatInputUI 
                                 key={isChatCollapsed ? 'collapsed-input' : 'unmounted'}

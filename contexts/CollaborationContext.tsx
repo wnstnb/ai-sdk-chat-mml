@@ -2,12 +2,12 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { PartialBlock } from '@blocknote/core';
-import { YjsThreadStore, DefaultThreadStoreAuth } from '@blocknote/core/comments';
+import { YjsThreadStore, DefaultThreadStoreAuth, ThreadStore, RESTYjsThreadStore } from '@blocknote/core/comments';
+import * as Y from 'yjs';
 import { UserAwareness } from '@/lib/collaboration/yjsDocument';
 import { ConnectionState } from '@/lib/collaboration/partykitYjsProvider';
 import { useCollaborativeDocument, UseCollaborativeDocumentReturn } from '@/lib/hooks/editor/useCollaborativeDocument';
 import { createClient } from '@/lib/supabase/client';
-import { SupabaseThreadStoreAuth } from '@/lib/comments/supabaseThreadStoreAuth';
 
 export interface CollaborationUser {
   id: string;
@@ -53,8 +53,9 @@ interface CollaborationContextType {
   currentSession: CollaborationSession | null;
   
   // Comment threading
-  threadStore: YjsThreadStore | null;
+  threadStore: ThreadStore | null;
   resolveUsers: (userIds: string[]) => Promise<Array<{ id: string; username: string; avatarUrl: string }>>;
+  refreshThreads: () => Promise<void>;
   
   // Actions
   initializeCollaboration: (documentId: string, userId?: string, userName?: string, userColor?: string) => void;
@@ -94,10 +95,12 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
   onConnectionError,
   onAuthError,
 }) => {
+  console.log('[CollaborationProvider] Initializing provider');
+  
   // State management
   const [documentId, setDocumentId] = useState<string | null>(null);
-  const [isCollaborationEnabled, setIsCollaborationEnabled] = useState(false);
   const [currentUser, setCurrentUser] = useState<CollaborationUser | null>(null);
+  const [isCollaborationEnabled, setIsCollaborationEnabled] = useState(false);
   const [activeUsers, setActiveUsers] = useState<CollaborationUser[]>([]);
   const [userPresence, setUserPresence] = useState<Map<string, UserAwareness>>(new Map());
   const [activeSessions, setActiveSessions] = useState<CollaborationSession[]>([]);
@@ -107,7 +110,11 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
   // Refs for cleanup
   const collaborationRef = useRef<UseCollaborativeDocumentReturn | null>(null);
   const sessionCleanupRef = useRef<(() => void) | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
   const supabase = createClient();
+
+  // Create thread store when collaboration is ready - state declaration
+  const [threadStore, setThreadStore] = useState<any>(null);
 
   // Comment threading - resolveUsers function
   const resolveUsers = useCallback(async (userIds: string[]) => {
@@ -149,18 +156,13 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
     }
   }, [supabase]);
 
-  // Initialize collaborative document when needed
-  const collaboration = useCollaborativeDocument({
-    documentId: documentId || '',
-    initialContent: [],
-    userId: currentUser?.id,
-    userName: currentUser?.name,
-    userColor: currentUser?.color,
-    onContentChange: (blocks) => {
+  // Memoize callback functions to prevent useCollaborativeDocument from re-initializing
+  const handleContentChange = useCallback((blocks: PartialBlock[]) => {
       console.log('[CollaborationContext] Content changed:', blocks.length, 'blocks');
       onContentChange?.(blocks);
-    },
-    onUsersChange: (users) => {
+  }, [onContentChange]);
+
+  const handleUsersChange = useCallback((users: Array<UserAwareness & { userId: string; lastSeen: string }>) => {
       console.log('[CollaborationContext] Users changed:', users.length, 'users');
       // Convert users to CollaborationUser format
       const collaborationUsers: CollaborationUser[] = users.map(user => ({
@@ -172,76 +174,121 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
       }));
       setActiveUsers(collaborationUsers);
       onUsersChange?.(collaborationUsers);
-    },
-    onConnectionError: (error) => {
+  }, [onUsersChange]);
+
+  const handleConnectionError = useCallback((error: Error) => {
       console.error('[CollaborationContext] Connection error:', error);
       setConnectionError(error.message);
       onConnectionError?.(error);
-    },
-    onAuthError: (error) => {
+  }, [onConnectionError]);
+
+  const handleAuthError = useCallback((error: Error) => {
       console.error('[CollaborationContext] Auth error:', error);
       onAuthError?.(error);
-    },
+  }, [onAuthError]);
+
+  // Initialize collaborative document when needed
+  const collaboration = useCollaborativeDocument({
+    documentId: documentId || '',
+    initialContent: [],
+    userId: currentUser?.id,
+    userName: currentUser?.name,
+    userColor: currentUser?.color,
+    onContentChange: handleContentChange,
+    onUsersChange: handleUsersChange,
+    onConnectionError: handleConnectionError,
+    onAuthError: handleAuthError,
   });
-
-  // Create thread store when collaboration is ready
-  const threadStore = useMemo(() => {
-    if (!collaboration.yjsDocument || !currentUser) {
-      return null;
-    }
-
-    try {
-      // Get the threads Y.Map from the Yjs document
-      const threadsMap = collaboration.yjsDocument.doc.getMap('threads');
-      
-      // Use DefaultThreadStoreAuth for now - simpler approach
-      // We can enhance with custom auth later
-      const threadStoreAuth = new DefaultThreadStoreAuth(
-        currentUser.id,
-        'editor' // Default role - can be made dynamic later
-      );
-
-      // Create and return YjsThreadStore
-      return new YjsThreadStore(
-        currentUser.id,
-        threadsMap,
-        threadStoreAuth
-      );
-    } catch (error) {
-      console.error('[CollaborationContext] Error creating thread store:', error);
-      return null;
-    }
-  }, [collaboration.yjsDocument, currentUser]);
 
   // Update collaboration ref
   useEffect(() => {
     collaborationRef.current = collaboration;
   }, [collaboration]);
 
-  // Monitor authentication state for user updates
+  // COMMENTED OUT: Thread store creation temporarily disabled - see comment-system-challenges-prd.md
+  // Create thread store when collaboration is ready
   useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        const user: CollaborationUser = {
-          id: session.user.id,
-          name: session.user.user_metadata?.name || session.user.email || 'Anonymous User',
-          email: session.user.email,
-          avatar: session.user.user_metadata?.avatar_url,
-          color: generateUserColor(session.user.id),
-          isActive: true,
-          lastSeen: new Date().toISOString(),
-        };
-        setCurrentUser(user);
-      } else if (event === 'SIGNED_OUT') {
-        setCurrentUser(null);
-        await leaveSession();
-      }
-    });
+    // Disable thread store creation - comments are temporarily disabled
+    setThreadStore(null);
+    return;
+    
+    // console.log('[CollaborationContext] Thread store creation debug:', {
+    //   hasYjsDocument: !!collaboration.yjsDocument,
+    //   hasCurrentUser: !!currentUser,
+    //   hasDocumentId: !!documentId,
+    //   currentUserId: currentUser?.id,
+    //   documentId,
+    //   isCollaborationReady: collaboration.isReady
+    // });
 
-    return () => {
-      authListener?.subscription.unsubscribe();
-    };
-  }, [supabase]);
+    // // Ensure all required dependencies are available AND collaboration is ready
+    // if (!currentUser || !documentId || !collaboration.isReady) {
+    //   console.log('[CollaborationContext] Thread store creation skipped - missing requirements or collaboration not ready');
+    //   setThreadStore(null);
+    //   return;
+    // }
+
+    // // Create thread store with proper auth
+    // const createThreadStore = async () => {
+    //   try {
+    //     // Get the editor's Y.js document from the global documentInstances
+    //     // This ensures we use the same Y.js document that BlockNote editor is using
+    //     const globalInstances = (globalThis as any).__blockNoteDocumentInstances;
+    //     const editorInstance = globalInstances?.get(documentId);
+        
+    //     if (!editorInstance?.doc) {
+    //       console.log('[CollaborationContext] Editor Y.js document not ready yet, retrying...');
+    //       // Retry after a short delay to allow editor to initialize
+    //       setTimeout(() => createThreadStore(), 100);
+    //       return;
+    //     }
+
+    //     console.log('[CollaborationContext] Using editor Y.js document for thread store');
+
+    //     // Get the threads Y.Map from the editor's Yjs document for real-time reads
+    //     const threadsMap = editorInstance.doc.getMap('threads') as Y.Map<Y.Map<any>>;
+
+    //     // Get current auth session for API calls
+    //     const { data: { session } } = await supabase.auth.getSession();
+        
+    //     if (!session?.access_token) {
+    //       throw new Error('No authentication token available');
+    //     }
+
+    //     // Create auth token for API calls (simpler format like demo)
+    //     const authToken = session.access_token;
+        
+    //     console.log('[CollaborationContext] Auth token prepared for RESTYjsThreadStore');
+
+    //     // Create the REST + Y.js thread store with proper auth (matching demo format)
+    //     const threadStoreAuth = new DefaultThreadStoreAuth(
+    //       currentUser.id,
+    //       'editor' // Default role - can be made dynamic based on document permissions
+    //     );
+
+    //     // Use RESTYjsThreadStore with simpler configuration (matching demo pattern)
+    //     const baseStore = new RESTYjsThreadStore(
+    //       `${window.location.origin}/api/documents/${documentId}/threads`, // Full URL like demo
+    //       {
+    //         'Authorization': `Bearer ${authToken}` // Simple auth header like demo
+    //       },
+    //       threadsMap, // Y.Map for real-time reads
+    //       threadStoreAuth // Authorization rules
+    //     );
+
+    //     // RESTYjsThreadStore handles REST writes and Y.js reads automatically
+    //     // No manual refresh needed - the store handles synchronization
+    //     setThreadStore(baseStore);
+    //     console.log('[CollaborationContext] Thread store created successfully');
+
+    //   } catch (error) {
+    //     console.error('[CollaborationContext] Error creating thread store:', error);
+    //     setThreadStore(null);
+    //   }
+    // };
+
+    // createThreadStore();
+  }, [collaboration.isReady, currentUser, documentId, supabase]);
 
   // Generate consistent user color based on user ID
   const generateUserColor = useCallback((userId: string): string => {
@@ -259,6 +306,34 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
     return colors[Math.abs(hash) % colors.length];
   }, []);
 
+  // Monitor authentication state for user updates
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        const user: CollaborationUser = {
+          id: session.user.id,
+          name: session.user.user_metadata?.name || session.user.email || 'Anonymous User',
+          email: session.user.email,
+          avatar: session.user.user_metadata?.avatar_url,
+          color: generateUserColor(session.user.id),
+          isActive: true,
+          lastSeen: new Date().toISOString(),
+        };
+        setCurrentUser(user);
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+        // Call cleanup directly to avoid dependency loops
+        if (cleanupRef.current) {
+          cleanupRef.current();
+        }
+      }
+    });
+
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
+  }, [supabase, generateUserColor]); // Remove documentId and currentUser dependencies
+
   // Initialize collaboration for a document
   const initializeCollaboration = useCallback((
     docId: string, 
@@ -266,10 +341,18 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
     userName?: string, 
     userColor?: string
   ) => {
-    console.log('[CollaborationContext] Initializing collaboration for document:', docId);
+    console.log('[CollaborationContext] initializeCollaboration called with:', {
+      docId,
+      userId,
+      userName,
+      userColor,
+      timestamp: new Date().toISOString()
+    });
     
     setDocumentId(docId);
     setIsCollaborationEnabled(true);
+    
+    console.log('[CollaborationContext] Set documentId to:', docId);
     
     if (userId && userName) {
       const user: CollaborationUser = {
@@ -280,8 +363,9 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
         lastSeen: new Date().toISOString(),
       };
       setCurrentUser(user);
+      console.log('[CollaborationContext] Set currentUser to:', user);
     }
-  }, [generateUserColor]);
+  }, [generateUserColor]); // Remove documentId dependency
 
   // Session management
   const joinSession = useCallback(async (sessionData: Record<string, any> = {}) => {
@@ -406,12 +490,19 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
     setConnectionError(null);
   }, [leaveSession]);
 
+  // Store cleanup function in ref for unmount
+  useEffect(() => {
+    cleanupRef.current = cleanup;
+  }, [cleanup]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      cleanup();
+      if (cleanupRef.current) {
+        cleanupRef.current();
+      }
     };
-  }, [cleanup]);
+  }, []); // Empty dependency array - only run on mount/unmount
 
   // Clear connection error when connection is restored
   useEffect(() => {
@@ -419,6 +510,42 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
       setConnectionError(null);
     }
   }, [collaboration.isConnected]);
+
+  // Add refresh function to context value
+  const refreshThreads = useCallback(async () => {
+    if (!collaboration.yjsDocument || !documentId) return;
+
+    try {
+      console.log('[CollaborationContext] Manual thread refresh requested...');
+      
+      // Get fresh Y.js updates from Supabase
+      const response = await fetch(`/api/collaboration/yjs-updates?documentId=${encodeURIComponent(documentId)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.updates && Array.isArray(data.updates)) {
+          // Apply fresh updates to current Y.js document
+          for (const updateData of data.updates) {
+            if (updateData.update_data) {
+              const update = new Uint8Array(updateData.update_data);
+              Y.applyUpdate(collaboration.yjsDocument.doc, update);
+            }
+          }
+          console.log('[CollaborationContext] Manual thread refresh completed successfully');
+        }
+      } else {
+        console.warn('[CollaborationContext] Failed to refresh threads:', response.status);
+      }
+    } catch (error) {
+      console.error('[CollaborationContext] Error in manual thread refresh:', error);
+    }
+  }, [collaboration.yjsDocument, documentId, supabase]);
 
   const contextValue: CollaborationContextType = {
     // State
@@ -438,6 +565,7 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
     // Comment threading
     threadStore,
     resolveUsers,
+    refreshThreads,
     
     // Actions
     initializeCollaboration,
