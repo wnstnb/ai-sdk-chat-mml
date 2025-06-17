@@ -10,6 +10,7 @@ import '@blocknote/mantine/style.css';
 import * as Y from 'yjs';
 import YPartyKitProvider from 'y-partykit/provider';
 import { useCollaborationContext } from '@/contexts/CollaborationContext';
+import { useDocumentPermissions } from '@/hooks/useDocumentPermissions';
 import {
   BlockNoteViewEditor,
   // COMMENTED OUT: Comment UI imports temporarily disabled - see comment-system-challenges-prd.md
@@ -105,6 +106,15 @@ const CollaborativeBlockNoteEditor = ({
   enableComments = false,
   useCollaboration = true
 }: CollaborativeBlockNoteEditorProps) => {
+  // Fetch document permissions to determine edit capabilities
+  const {
+    userPermission,
+    canEdit,
+    canComment,
+    canView,
+    isLoading: permissionsLoading,
+    error: permissionsError
+  } = useDocumentPermissions(documentId);
   console.log('[CollaborativeBlockNoteEditor] Component rendering with props:', {
     documentId,
     enableComments,
@@ -275,6 +285,58 @@ const CollaborativeBlockNoteEditor = ({
       }
     }
   }, [editor, enableComments, threadStore, resolveUsers, documentId]);
+
+  // Initialize Y.js document with database content if it's empty
+  useEffect(() => {
+    if (!editor || !provider || !initialContent || initialContent.length === 0) return;
+    
+    // Wait for the provider to connect and sync
+    const initializeContent = () => {
+      try {
+        const currentBlocks = editor.document;
+        console.log('[CollaborativeEditor] Checking if Y.js document needs initialization:', {
+          currentBlocksLength: currentBlocks.length,
+          hasInitialContent: initialContent.length > 0,
+          firstBlockType: currentBlocks[0]?.type,
+          firstBlockContentType: typeof currentBlocks[0]?.content
+        });
+
+        // Only initialize if the collaborative document is empty and we have initial content
+        const isEmptyDocument = currentBlocks.length === 0 || 
+          (currentBlocks.length === 1 && (
+            !currentBlocks[0].content || 
+            (Array.isArray(currentBlocks[0].content) && currentBlocks[0].content.length === 0)
+          ));
+
+        if (isEmptyDocument && initialContent.length > 0) {
+          console.log('[CollaborativeEditor] Initializing Y.js document with database content:', initialContent);
+          editor.replaceBlocks(editor.document, initialContent);
+          console.log('[CollaborativeEditor] Successfully initialized Y.js document with database content');
+        } else {
+          console.log('[CollaborativeEditor] Y.js document already has content or no initial content to set');
+        }
+      } catch (error) {
+        console.error('[CollaborativeEditor] Error initializing Y.js document with database content:', error);
+      }
+    };
+
+    if (provider.wsconnected) {
+      // Provider is already connected, initialize immediately
+      initializeContent();
+    } else {
+      // Wait for provider to connect
+      const handleConnection = () => {
+        console.log('[CollaborativeEditor] Provider connected, initializing content');
+        setTimeout(initializeContent, 100); // Small delay to ensure sync is complete
+        provider.off('status', handleConnection);
+      };
+      provider.on('status', ({ status }: { status: string }) => {
+        if (status === 'connected') {
+          handleConnection();
+        }
+      });
+    }
+  }, [editor, provider, initialContent, documentId]);
 
   // Handle editor content changes
   useEffect(() => {
@@ -506,6 +568,12 @@ const CollaborativeBlockNoteEditor = ({
           renderEditor={false}
           comments={false}
           theme={theme}
+          // PERMISSION ENFORCEMENT: Set editor to readonly mode for viewers
+          editable={canEdit}
+          // PERMISSION ENFORCEMENT: Hide UI features for non-editors
+          formattingToolbar={canEdit}
+          slashMenu={canEdit}
+          sideMenu={canEdit}
           className="block-note-view"
         >
           <div className="editor-layout-wrapper flex">

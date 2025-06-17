@@ -25,6 +25,14 @@ export interface Document {
   is_starred: boolean; // Added for Quick Access feature
 }
 
+// Extended document interface for API responses that include sharing information
+export interface DocumentWithSharingInfo extends Document {
+  access_type: 'owned' | 'shared';
+  permission_level?: string;
+  owner_id: string;
+  owner_email?: string;
+}
+
 export interface Message {
   id: string; // uuid
   document_id: string; // uuid, references public.documents.id

@@ -1,6 +1,19 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
+
+// Create service role client for cross-user queries
+const supabaseServiceRole = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+);
 
 // Re-use the helper function from the documents route
 async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerClient>) {
@@ -17,35 +30,22 @@ async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerCl
 
 // Helper function to check if user has document access and permission level
 async function checkDocumentAccess(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string) {
-  // First check if user is the document owner
-  const { data: document, error: docError } = await supabase
-    .from('documents')
-    .select('user_id')
-    .eq('id', documentId)
-    .single();
+  // Use the database function that safely checks access without circular dependencies
+  const { data: accessResult, error } = await supabase.rpc('check_shared_document_access', {
+    doc_id: documentId,
+    user_uuid: userId
+  });
 
-  if (docError && docError.code !== 'PGRST116') {
-    throw new Error(`Database error checking document ownership: ${docError.message}`);
+  if (error) {
+    throw new Error(`Database error checking document access: ${error.message}`);
   }
 
-  // If user is the document owner, return owner permission
-  if (document && document.user_id === userId) {
-    return { permission_level: 'owner' };
+  // The function returns an array with one row: { has_access: boolean, permission_level: string }
+  if (accessResult && accessResult.length > 0 && accessResult[0].has_access) {
+    return { permission_level: accessResult[0].permission_level };
   }
 
-  // Otherwise, check for explicit permission record
-  const { data: permission, error } = await supabase
-    .from('document_permissions')
-    .select('permission_level')
-    .eq('document_id', documentId)
-    .eq('user_id', userId)
-    .single();
-
-  if (error && error.code !== 'PGRST116') {
-    throw new Error(`Database error checking permissions: ${error.message}`);
-  }
-
-  return permission;
+  return null; // No access
 }
 
 // GET handler - Fetch document permissions/collaborators
@@ -68,8 +68,9 @@ export async function GET(
       }, { status: 403 });
     }
 
-    // Fetch all permissions for the document
-    const { data: permissions, error: fetchError } = await supabase
+    // Fetch all permissions for this document using service role client
+    // (User access has been verified above)
+    const { data: permissions, error: fetchError } = await supabaseServiceRole
       .from('document_permissions')
       .select(`
         id,
@@ -88,12 +89,47 @@ export async function GET(
       }, { status: 500 });
     }
 
-    // Fetch user details for each permission
+    // Also get the document owner information
+    const { data: documentOwner, error: ownerError } = await supabaseServiceRole
+      .from('documents')
+      .select('user_id, created_at')
+      .eq('id', documentId)
+      .single();
+
+    if (ownerError) {
+      console.error('Document owner fetch error:', ownerError.message);
+      return NextResponse.json({ 
+        error: { code: 'DATABASE_ERROR', message: `Failed to fetch document owner: ${ownerError.message}` } 
+      }, { status: 500 });
+    }
+
+    // Fetch user details for each permission using service role client
     const transformedPermissions = [];
+    
+    // First, add the document owner if they don't have an explicit permission record
+    if (documentOwner) {
+      const ownerHasExplicitPermission = permissions?.some(p => p.user_id === documentOwner.user_id);
+      
+      if (!ownerHasExplicitPermission) {
+        const { data: ownerUserData } = await supabaseServiceRole.auth.admin.getUserById(documentOwner.user_id);
+        
+        transformedPermissions.push({
+          id: 'owner', // Special ID for owner
+          user_id: documentOwner.user_id,
+          user_email: ownerUserData?.user?.email || 'Unknown',
+          user_name: ownerUserData?.user?.user_metadata?.full_name || null,
+          permission_level: 'owner',
+          granted_at: documentOwner.created_at, // Use document creation date
+          granted_by: documentOwner.user_id, // Owner granted to themselves
+        });
+      }
+    }
+    
+    // Then add all explicit permissions
     if (permissions) {
       for (const p of permissions) {
-        // Get user details from auth.users
-        const { data: userData } = await supabase.auth.admin.getUserById(p.user_id);
+        // Get user details from auth.users using service role client
+        const { data: userData } = await supabaseServiceRole.auth.admin.getUserById(p.user_id);
         
         transformedPermissions.push({
           id: p.id,
@@ -179,11 +215,11 @@ export async function POST(
       }, { status: 403 });
     }
 
-    // Find user by email using auth admin API
+    // Find user by email using auth admin API with service role client
     let targetUser = null;
     try {
       // List all users and find by email (Supabase doesn't have a direct getUserByEmail method)
-      const { data: users, error: listError } = await supabase.auth.admin.listUsers();
+      const { data: users, error: listError } = await supabaseServiceRole.auth.admin.listUsers();
       
       if (listError) {
         console.error('User list error:', listError.message);

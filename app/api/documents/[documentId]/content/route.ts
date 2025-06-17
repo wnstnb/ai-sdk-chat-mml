@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 
-// Re-use helper function
+// Re-use or adapt the helper function from folders route
 async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerClient>) {
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) {
@@ -17,35 +17,22 @@ async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerCl
 
 // Helper function to check if user has document access and permission level
 async function checkDocumentAccess(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string) {
-  // First check if user is the document owner
-  const { data: document, error: docError } = await supabase
-    .from('documents')
-    .select('user_id')
-    .eq('id', documentId)
-    .single();
+  // Use the database function that safely checks access without circular dependencies
+  const { data: accessResult, error } = await supabase.rpc('check_shared_document_access', {
+    doc_id: documentId,
+    user_uuid: userId
+  });
 
-  if (docError && docError.code !== 'PGRST116') {
-    throw new Error(`Database error checking document ownership: ${docError.message}`);
+  if (error) {
+    throw new Error(`Database error checking document access: ${error.message}`);
   }
 
-  // If user is the document owner, return owner permission
-  if (document && document.user_id === userId) {
-    return { permission_level: 'owner' };
+  // The function returns an array with one row: { has_access: boolean, permission_level: string }
+  if (accessResult && accessResult.length > 0 && accessResult[0].has_access) {
+    return { permission_level: accessResult[0].permission_level };
   }
 
-  // Otherwise, check for explicit permission record
-  const { data: permission, error } = await supabase
-    .from('document_permissions')
-    .select('permission_level')
-    .eq('document_id', documentId)
-    .eq('user_id', userId)
-    .single();
-
-  if (error && error.code !== 'PGRST116') {
-    throw new Error(`Database error checking permissions: ${error.message}`);
-  }
-
-  return permission;
+  return null; // No access
 }
 
 // PUT handler for updating document content

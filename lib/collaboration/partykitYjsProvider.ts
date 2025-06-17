@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import { createClient } from '@supabase/supabase-js';
+import { CollaborativeSaveCoordinator, SaveCoordinatorOptions } from './collaborativeSaveCoordinator';
 
 /**
  * PartyKit + Supabase Yjs Provider
@@ -52,6 +53,7 @@ export class PartykitYjsProvider {
   private supabase: any;
   private awareness: Map<string, any> = new Map();
   private options: PartykitYjsProviderOptions;
+  private saveCoordinator: CollaborativeSaveCoordinator | null = null;
 
   // Authentication and connection management
   private authToken?: string;
@@ -97,7 +99,38 @@ export class PartykitYjsProvider {
       this.supabase = createClient(options.supabaseUrl, options.supabaseAnonKey);
     }
 
+    // Initialize collaborative save coordinator
+    this.initializeSaveCoordinator();
+
     this.initialize();
+  }
+
+  private initializeSaveCoordinator(): void {
+    if (!this.options.supabaseUrl || !this.options.supabaseAnonKey) {
+      console.warn('[PartykitYjsProvider] Save coordinator disabled - missing Supabase configuration');
+      return;
+    }
+
+    this.saveCoordinator = new CollaborativeSaveCoordinator({
+      documentId: this.documentId,
+      userId: this.userId,
+      supabaseUrl: this.options.supabaseUrl,
+      supabaseAnonKey: this.options.supabaseAnonKey,
+      authToken: this.authToken,
+      saveDeduplicationWindow: 2000, // 2 seconds
+      maxRetries: 3,
+      onSaveCoordinated: (operation) => {
+        console.log('[PartykitYjsProvider] Save coordinated successfully:', operation.saveType);
+      },
+      onSaveSkipped: (operation, reason) => {
+        console.log('[PartykitYjsProvider] Save skipped:', reason);
+      },
+      onSaveError: (error, operation) => {
+        console.error('[PartykitYjsProvider] Coordinated save error:', error.message);
+      }
+    });
+
+    console.log('[PartykitYjsProvider] Collaborative save coordinator initialized');
   }
 
   private async initialize() {
@@ -143,9 +176,12 @@ export class PartykitYjsProvider {
 
       if (session?.access_token) {
         this.authToken = session.access_token;
+        // Update save coordinator with new token
+        this.saveCoordinator?.updateAuthToken(this.authToken);
         console.log('[PartykitYjsProvider] JWT token obtained successfully');
       } else {
         console.warn('[PartykitYjsProvider] No valid session found - proceeding without authentication');
+        this.saveCoordinator?.updateAuthToken(undefined);
         // Proceed without auth for anonymous users
       }
     } catch (error) {
@@ -723,6 +759,36 @@ export class PartykitYjsProvider {
       return;
     }
 
+    // Use collaborative save coordinator if available
+    if (this.saveCoordinator) {
+      return this.coordinatedPersistUpdate(update);
+    }
+
+    // Fallback to direct persistence
+    return this.directPersistUpdate(update);
+  }
+
+  private async coordinatedPersistUpdate(update: Uint8Array): Promise<void> {
+    if (!this.saveCoordinator) {
+      return this.directPersistUpdate(update);
+    }
+
+    try {
+      // Convert update to content for hashing
+      const updateArray = Array.from(update);
+      
+      await this.saveCoordinator.coordinateSave(
+        updateArray,
+        'yjs',
+        () => this.directPersistUpdate(update)
+      );
+    } catch (error) {
+      console.error('[PartykitYjsProvider] Coordinated save failed, falling back to direct persistence:', error);
+      await this.directPersistUpdate(update);
+    }
+  }
+
+  private async directPersistUpdate(update: Uint8Array): Promise<void> {
     try {
       // Convert update to array for persistence
       let updateData: number[];
@@ -846,6 +912,12 @@ export class PartykitYjsProvider {
 
   public destroy() {
     console.log('[PartykitYjsProvider] Destroying provider...');
+    
+    // Destroy save coordinator
+    if (this.saveCoordinator) {
+      this.saveCoordinator.destroy();
+      this.saveCoordinator = null;
+    }
     
     // Clear all timeouts and intervals
     if (this.persistTimeout) {

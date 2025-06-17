@@ -5,6 +5,79 @@ import * as Y from 'yjs';
 export const dynamic = 'force-dynamic';
 
 /**
+ * Helper function to check document access permissions
+ * @param supabase - Supabase client
+ * @param documentId - Document ID to check
+ * @param userId - User ID to check
+ * @param requiredLevel - Required permission level ('read' | 'write')
+ * @returns Promise<{hasAccess: boolean, permissionLevel?: string, error?: NextResponse}>
+ */
+async function checkDocumentAccess(supabase: any, documentId: string, userId: string, requiredLevel: 'read' | 'write' = 'read') {
+  // Check document permissions table first
+  const { data: permission, error: permissionError } = await supabase
+    .from('document_permissions')
+    .select('permission_level')
+    .eq('document_id', documentId)
+    .eq('user_id', userId)
+    .single();
+
+  if (permissionError && permissionError.code !== 'PGRST116') {
+    console.error('Error checking document permissions:', permissionError);
+    return { 
+      hasAccess: false, 
+      error: NextResponse.json(
+        { error: 'Failed to verify document access' },
+        { status: 500 }
+      )
+    };
+  }
+
+  if (permission) {
+    // User has explicit permissions - check if sufficient for required level
+    const level = permission.permission_level;
+    
+    if (requiredLevel === 'read') {
+      // Any permission level allows reading
+      return { hasAccess: true, permissionLevel: level };
+    } else if (requiredLevel === 'write') {
+      // Only editor and owner can write
+      const canWrite = level === 'editor' || level === 'owner';
+      if (!canWrite) {
+        return {
+          hasAccess: false,
+          error: NextResponse.json(
+            { error: 'Insufficient permissions to edit document. Editor access required.' },
+            { status: 403 }
+          )
+        };
+      }
+      return { hasAccess: true, permissionLevel: level };
+    }
+  }
+
+  // Fallback: check if user owns the document
+  const { data: document, error: docError } = await supabase
+    .from('documents')
+    .select('id, user_id')
+    .eq('id', documentId)
+    .eq('user_id', userId)
+    .single();
+
+  const isOwner = !docError && !!document;
+  if (!isOwner) {
+    return {
+      hasAccess: false,
+      error: NextResponse.json(
+        { error: 'Document not found or access denied' },
+        { status: 404 }
+      )
+    };
+  }
+
+  return { hasAccess: true, permissionLevel: 'owner' };
+}
+
+/**
  * GET /api/collaboration/yjs-updates
  * Retrieves all Yjs updates for a document to restore document state
  */
@@ -31,45 +104,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Verify user has access to the document via document_permissions table
-    const { data: permission, error: permissionError } = await supabase
-      .from('document_permissions')
-      .select('permission_level')
-      .eq('document_id', documentId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (permissionError && permissionError.code !== 'PGRST116') {
-      console.error('Error checking document permissions:', permissionError);
-      return NextResponse.json(
-        { error: 'Failed to verify document access' },
-        { status: 500 }
-      );
-    }
-
-    // Check if user has access (either owns the document or has permissions)
-    let hasAccess = false;
-    
-    if (permission) {
-      // User has explicit permissions
-      hasAccess = true;
-    } else {
-      // Fallback: check if user owns the document
-    const { data: document, error: docError } = await supabase
-      .from('documents')
-      .select('id, user_id')
-      .eq('id', documentId)
-      .eq('user_id', user.id)
-      .single();
-
-      hasAccess = !docError && !!document;
-    }
-
-    if (!hasAccess) {
-      return NextResponse.json(
-        { error: 'Document not found or access denied' },
-        { status: 404 }
-      );
+    // Check document access permission (read access)
+    const accessCheck = await checkDocumentAccess(supabase, documentId, user.id, 'read');
+    if (!accessCheck.hasAccess) {
+      return accessCheck.error!;
     }
 
     // Retrieve all Yjs updates for the document
@@ -102,8 +140,8 @@ export async function GET(request: NextRequest) {
       
       return {
         data: dataArray,
-      createdAt: update.created_at,
-      userId: update.user_id,
+        createdAt: update.created_at,
+        userId: update.user_id,
       };
     }) || [];
 
@@ -149,45 +187,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify user has access to the document via document_permissions table
-    const { data: permission, error: permissionError } = await supabase
-      .from('document_permissions')
-      .select('permission_level')
-      .eq('document_id', documentId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (permissionError && permissionError.code !== 'PGRST116') {
-      console.error('Error checking document permissions:', permissionError);
-      return NextResponse.json(
-        { error: 'Failed to verify document access' },
-        { status: 500 }
-      );
-    }
-
-    // Check if user has access (either owns the document or has permissions)
-    let hasAccess = false;
-    
-    if (permission) {
-      // User has explicit permissions
-      hasAccess = true;
-    } else {
-      // Fallback: check if user owns the document
-    const { data: document, error: docError } = await supabase
-      .from('documents')
-      .select('id, user_id')
-      .eq('id', documentId)
-      .eq('user_id', user.id)
-      .single();
-
-      hasAccess = !docError && !!document;
-    }
-
-    if (!hasAccess) {
-      return NextResponse.json(
-        { error: 'Document not found or access denied' },
-        { status: 404 }
-      );
+    // Check document access permission (write access required for POST)
+    const accessCheck = await checkDocumentAccess(supabase, documentId, user.id, 'write');
+    if (!accessCheck.hasAccess) {
+      return accessCheck.error!;
     }
 
     // Handle different formats of updateData
@@ -272,45 +275,10 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Verify user has access to the document via document_permissions table
-    const { data: permission, error: permissionError } = await supabase
-      .from('document_permissions')
-      .select('permission_level')
-      .eq('document_id', documentId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (permissionError && permissionError.code !== 'PGRST116') {
-      console.error('Error checking document permissions:', permissionError);
-      return NextResponse.json(
-        { error: 'Failed to verify document access' },
-        { status: 500 }
-      );
-    }
-
-    // Check if user has access (either owns the document or has permissions)
-    let hasAccess = false;
-    
-    if (permission) {
-      // User has explicit permissions
-      hasAccess = true;
-    } else {
-      // Fallback: check if user owns the document
-    const { data: document, error: docError } = await supabase
-      .from('documents')
-      .select('id, user_id')
-      .eq('id', documentId)
-      .eq('user_id', user.id)
-      .single();
-
-      hasAccess = !docError && !!document;
-    }
-
-    if (!hasAccess) {
-      return NextResponse.json(
-        { error: 'Document not found or access denied' },
-        { status: 404 }
-      );
+    // Check document access permission (write access required for DELETE)
+    const accessCheck = await checkDocumentAccess(supabase, documentId, user.id, 'write');
+    if (!accessCheck.hasAccess) {
+      return accessCheck.error!;
     }
 
     let query = supabase

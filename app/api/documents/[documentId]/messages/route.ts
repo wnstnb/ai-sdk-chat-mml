@@ -4,6 +4,8 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { Message, ToolCall as DbToolCall } from '@/types/supabase';
 import type { Message as FrontendMessage } from 'ai/react';
 import { createClient } from '@supabase/supabase-js';
+import { getUserOrError } from '@/lib/utils/getUserOrError';
+import { getSupabaseCredentials } from '@/lib/utils/getSupabaseCredentials';
 
 interface MessageWithDetails extends Message {
   signedDownloadUrl: string | null;
@@ -12,62 +14,28 @@ interface MessageWithDetails extends Message {
 
 const SIGNED_URL_EXPIRY = 60 * 5; // Signed URLs expire in 5 minutes
 
-// Helper function (can be shared or defined locally)
-async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerClient>) {
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError) {
-    console.error('Auth User Error:', userError.message);
-    return { errorResponse: NextResponse.json({ error: { code: 'SERVER_ERROR', message: 'Failed to get user.' } }, { status: 500 }) };
-  }
-  if (!user) {
-    return { errorResponse: NextResponse.json({ error: { code: 'UNAUTHENTICATED', message: 'User not authenticated.' } }, { status: 401 }) };
-  }
-  return { userId: user.id };
-}
-
 // Helper function to check if user has document access and permission level
 async function checkDocumentAccess(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string) {
-  // First check if user is the document owner
-  const { data: document, error: docError } = await supabase
-    .from('documents')
-    .select('user_id')
-    .eq('id', documentId)
-    .single();
+  try {
+    // Use the new database function to check access without causing RLS recursion
+    const { data, error } = await supabase
+      .rpc('check_shared_document_access', {
+        doc_id: documentId,
+        user_uuid: userId
+      });
 
-  if (docError && docError.code !== 'PGRST116') {
-    throw new Error(`Database error checking document ownership: ${docError.message}`);
-  }
-
-  // If user is the document owner, return owner permission
-  if (document && document.user_id === userId) {
-    return { permission_level: 'owner' };
-  }
-
-  // Otherwise, check for explicit permission record
-  const { data: permission, error } = await supabase
-    .from('document_permissions')
-    .select('permission_level')
-    .eq('document_id', documentId)
-    .eq('user_id', userId)
-    .single();
-
-  if (error && error.code !== 'PGRST116') {
-    throw new Error(`Database error checking permissions: ${error.message}`);
-  }
-
-  return permission;
-}
-
-// Helper function to get Supabase URL and Key (replace with your actual env variables)
-function getSupabaseCredentials() {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // Use service key on backend
-
-    if (!supabaseUrl || !supabaseServiceKey) {
-        console.error('Supabase URL or Service Key is missing in environment variables.');
-        throw new Error('Server configuration error.');
+    if (error) {
+      throw new Error(`Database error checking document access: ${error.message}`);
     }
-    return { supabaseUrl, supabaseServiceKey };
+
+    if (!data || data.length === 0 || !data[0]?.has_access) {
+      return null;
+    }
+
+    return { permission_level: data[0].permission_level };
+  } catch (error: any) {
+    throw new Error(`Database error checking document ownership: ${error.message}`);
+  }
 }
 
 // GET handler for fetching messages for a document

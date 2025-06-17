@@ -115,6 +115,8 @@ import { useChatPane } from '@/lib/hooks/editor/useChatPane';
 import { useFileUpload } from '@/lib/hooks/editor/useFileUpload'; // Corrected Path
 // --- NEW: Import the useChatInteractions hook ---
 import { useChatInteractions } from '@/lib/hooks/editor/useChatInteractions';
+// --- NEW: Import document permissions hook ---
+import { useDocumentPermissions } from '@/hooks/useDocumentPermissions';
 import { ChatInputArea } from '@/components/editor/ChatInputArea'; // Import the new component
 import { ChatMessagesList } from '@/components/editor/ChatMessagesList'; // Import the new component
 import { ChatPaneWrapper } from '@/components/editor/ChatPaneWrapper'; // Import the new wrapper
@@ -293,6 +295,9 @@ function EditorPageContent() {
 
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
+    
+    // --- NEW: Get document permissions ---
+    const { canEdit, canView, userPermission, isLoading: permissionsLoading } = useDocumentPermissions(documentId);
     
     // Initialize collaboration when document and user are available
     useEffect(() => {
@@ -773,6 +778,7 @@ function EditorPageContent() {
     const handleEditorChange = useCallback((editor: BlockNoteEditorType) => {
         console.log('[handleEditorChange] CALLED - document length:', editor.document.length);
         console.log('[handleEditorChange] Current batch context:', autosaveBatchContext);
+        console.log('[handleEditorChange] User permission:', userPermission, 'canEdit:', canEdit);
         setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
 
         const editorContent = editor.document;
@@ -780,6 +786,19 @@ function EditorPageContent() {
             isContentLoadedRef.current = true;
             latestEditorBlocksRef.current = editorContent;
             latestEditorContentRef.current = JSON.stringify(editorContent);
+            return;
+        }
+
+        // PERMISSION CHECK: Only allow autosave for users with edit permissions
+        if (!canEdit) {
+            console.log('[handleEditorChange] Skipping autosave - user does not have edit permissions');
+            // Still update the refs to track content for collaboration, but don't trigger save
+            latestEditorBlocksRef.current = editorContent;
+            try {
+                latestEditorContentRef.current = JSON.stringify(editorContent);
+            } catch (stringifyError) {
+                console.error("[handleEditorChange] Failed to stringify editor content:", stringifyError);
+            }
             return;
         }
         
@@ -937,7 +956,7 @@ function EditorPageContent() {
             }
         }, delay);
         setAutosaveTimerId(newTimerId);
-    }, [documentId, autosaveTimerId, revertStatusTimerId, setEditorRef, autosaveBatchContext, getAutosaveDelay]);
+    }, [documentId, autosaveTimerId, revertStatusTimerId, setEditorRef, autosaveBatchContext, getAutosaveDelay, canEdit, userPermission]);
 
     // Effect to set editorRef object in the global store - Reinstated and Corrected
     useEffect(() => {
@@ -3196,6 +3215,60 @@ function EditorPageContent() {
         }
     }, [chatPanePreviousWidth, handleChatPaneWidthChange]);
     // --- END NEW ---
+
+    // --- EARLY RETURNS FOR LOADING AND PERMISSION STATES ---
+    
+    // Show loading while document or permissions are loading
+    if (isLoadingDocument || permissionsLoading) {
+        return (
+            <div className="flex items-center justify-center h-screen w-screen bg-[--bg-color]">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
+                    <p className="text-sm text-gray-500">Loading document...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Show error if document failed to load
+    if (documentError) {
+        return (
+            <div className="flex items-center justify-center h-screen w-screen bg-[--bg-color]">
+                <div className="text-center max-w-md mx-auto p-6">
+                    <div className="text-red-500 text-xl mb-4">⚠️</div>
+                    <h1 className="text-xl font-semibold text-[--text-color] mb-2">Failed to Load Document</h1>
+                    <p className="text-sm text-[--muted-text-color] mb-4">{documentError}</p>
+                    <button 
+                        onClick={() => router.push('/dashboard')}
+                        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                    >
+                        Return to Dashboard
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // Show access denied if user doesn't have view permissions
+    if (!canView) {
+        return (
+            <div className="flex items-center justify-center h-screen w-screen bg-[--bg-color]">
+                <div className="text-center max-w-md mx-auto p-6">
+                    <div className="text-orange-500 text-xl mb-4">🔒</div>
+                    <h1 className="text-xl font-semibold text-[--text-color] mb-2">Access Denied</h1>
+                    <p className="text-sm text-[--muted-text-color] mb-4">
+                        You don't have permission to view this document.
+                    </p>
+                    <button 
+                        onClick={() => router.push('/dashboard')}
+                        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                    >
+                        Return to Dashboard
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     // Main Render
     return (

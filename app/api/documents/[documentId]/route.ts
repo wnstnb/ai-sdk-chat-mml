@@ -1,7 +1,20 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 import { Document } from '@/types/supabase'; // Import Document type
+
+// Create service role client for cross-user queries
+const supabaseServiceRole = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+);
 
 // Re-use or adapt the helper function from folders route
 async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerClient>) {
@@ -18,35 +31,35 @@ async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerCl
 
 // Helper function to check if user has document access and permission level
 async function checkDocumentAccess(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string) {
-  // First check if user is the document owner
-  const { data: document, error: docError } = await supabase
-    .from('documents')
-    .select('user_id')
-    .eq('id', documentId)
-    .single();
+  try {
+    // Use the database function that safely checks access without circular dependencies
+    const { data: accessResult, error } = await supabase.rpc('check_shared_document_access', {
+      doc_id: documentId,
+      user_uuid: userId
+    });
 
-  if (docError && docError.code !== 'PGRST116') {
-    throw new Error(`Database error checking document ownership: ${docError.message}`);
+    if (error) {
+      console.error('RPC Error details:', error);
+      throw new Error(`Database error checking document access: ${error.message}`);
+    }
+
+    console.log('Access result from function:', accessResult);
+
+    // The function returns a table, so we expect an array of rows
+    if (accessResult && Array.isArray(accessResult) && accessResult.length > 0) {
+      const result = accessResult[0];
+      console.log('First result row:', result);
+      
+      if (result.has_access) {
+        return { permission_level: result.permission_level };
+      }
+    }
+
+    return null; // No access
+  } catch (error) {
+    console.error('Error in checkDocumentAccess:', error);
+    throw error;
   }
-
-  // If user is the document owner, return owner permission
-  if (document && document.user_id === userId) {
-    return { permission_level: 'owner' };
-  }
-
-  // Otherwise, check for explicit permission record
-  const { data: permission, error } = await supabase
-    .from('document_permissions')
-    .select('permission_level')
-    .eq('document_id', documentId)
-    .eq('user_id', userId)
-    .single();
-
-  if (error && error.code !== 'PGRST116') {
-    throw new Error(`Database error checking permissions: ${error.message}`);
-  }
-
-  return permission;
 }
 
 // GET handler for fetching specific document details (including content)
@@ -70,8 +83,8 @@ export async function GET(
             }, { status: 403 });
         }
 
-        // Fetch document details - user has verified access
-        const { data: document, error: fetchError } = await supabase
+        // Fetch document details using service role - user has verified access
+        const { data: document, error: fetchError } = await supabaseServiceRole
             .from('documents')
             .select('*') // Select all columns, including content
             .eq('id', documentId)
