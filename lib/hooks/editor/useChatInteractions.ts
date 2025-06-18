@@ -77,6 +77,7 @@ interface UseChatInteractionsReturn {
     handleMicrophoneClick: () => void;
     handleStopRecording: () => void;
     audioTimeDomainData: AudioTimeDomainData;
+    recordingDuration: number; // Duration in seconds
     
     // Tagged documents props
     taggedDocuments: TaggedDocument[];
@@ -526,6 +527,7 @@ export function useChatInteractions({
         pendingFileUpload: orchestratorPendingFile,
         isHistoryConsistentForAPICall,
         operationState,
+        recordingDuration, // NEW: Recording timer duration
     } = orchestrator;
 
     // Derive audio state from orchestrator operation state
@@ -791,6 +793,7 @@ export function useChatInteractions({
         isTranscribing,
         micPermissionError,
         audioTimeDomainData,
+        recordingDuration,
         handleMicrophoneClick,
         handleStopRecording,  
         handleFileUpload: orchestratorHandleFileUploadStart,      

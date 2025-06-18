@@ -486,6 +486,7 @@ function EditorPageContent() {
         handleMicrophoneClick,
         handleStopRecording, 
         audioTimeDomainData, // <<< NEW: Exposed audio data for visualization
+        recordingDuration, // NEW: Recording timer duration
         // --- END NEW AUDIO PROPS ---
         // --- NEW TAGGED DOCUMENTS PROPS ---
         taggedDocuments,
@@ -523,6 +524,14 @@ function EditorPageContent() {
     const orchestratorIsFileUploadInProgress = isFileUploadInProgress;
     const orchestratorIsChatInputBusy = isChatInputBusy;
     const orchestratorCurrentOperationStatusText = currentOperationStatusText;
+    
+    // --- NEW: Silence detection callback ---
+    const handleSilenceDetected = useCallback(() => {
+        console.log('[EditorPage] Silence detected, triggering auto-stop');
+        if (isRecording) {
+            handleStopRecording(); // This will stop recording and trigger transcription
+        }
+    }, [isRecording, handleStopRecording]);
     
     const { followUpContext, setFollowUpContext } = useFollowUpStore();
 
@@ -1040,7 +1049,7 @@ function EditorPageContent() {
             latestEditorBlocksRef.current = currentEditorContentJSON;
             latestEditorContentRef.current = JSON.stringify(currentEditorContentJSON);
             
-            toast.success('Document saved manually!');
+            console.log('Document saved manually!');
             setAutosaveStatus('saved'); // Reflects that the document is now in a saved state
             
             // Update document's last updated time in UI if available from response (e.g. for optimistic update)
@@ -3350,6 +3359,8 @@ function EditorPageContent() {
                                         startRecording={startRecording}
                                         stopRecording={stopRecording}
                                         audioTimeDomainData={audioTimeDomainData}
+                                        recordingDuration={recordingDuration}
+                                        onSilenceDetected={handleSilenceDetected}
                                         clearPreview={clearPreview}
                                         taggedDocuments={taggedDocuments}
                                         setTaggedDocuments={setTaggedDocuments}
@@ -3419,6 +3430,8 @@ function EditorPageContent() {
                                 startRecording={startRecording}
                                 stopRecording={stopRecording}
                                 audioTimeDomainData={audioTimeDomainData}
+                                recordingDuration={recordingDuration}
+                                onSilenceDetected={handleSilenceDetected}
                                 clearPreview={clearPreview}
                                 isMiniPaneOpen={isMiniPaneOpen}
                                 onToggleMiniPane={handleToggleMiniPane}
@@ -3508,6 +3521,8 @@ function EditorPageContent() {
                                 startRecording={startRecording}
                                 stopRecording={stopRecording}
                                 audioTimeDomainData={audioTimeDomainData}
+                                recordingDuration={recordingDuration}
+                                onSilenceDetected={handleSilenceDetected}
                                 clearPreview={clearPreview}
                                 taggedDocuments={taggedDocuments}
                                 setTaggedDocuments={setTaggedDocuments}
@@ -3613,6 +3628,8 @@ function EditorPageContent() {
                                     startRecording={startRecording}
                                     stopRecording={stopRecording}
                                     audioTimeDomainData={audioTimeDomainData}
+                                    recordingDuration={recordingDuration}
+                                    onSilenceDetected={handleSilenceDetected}
                                     clearPreview={clearPreview}
                                     isMiniPaneOpen={isMiniPaneOpen}
                                     onToggleMiniPane={handleToggleMiniPane}

@@ -349,10 +349,9 @@ class CrossBrowserPerformanceOptimizer {
         transform: translateZ(0);
       }
       
-      /* Handle Safari backdrop-filter performance */
+      /* Safari optimization for highlight overlays */
       .highlight-overlay {
-        -webkit-backdrop-filter: blur(0.5px);
-        backdrop-filter: blur(0.5px);
+        /* Glass effects removed for better performance */
       }
       
       /* Optimize scrolling for Safari */

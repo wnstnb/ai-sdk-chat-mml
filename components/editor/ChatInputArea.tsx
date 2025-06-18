@@ -55,6 +55,8 @@ interface ChatInputAreaProps {
     startRecording: () => void;
     stopRecording: (timedOut?: boolean) => void;
     audioTimeDomainData: AudioTimeDomainData; // <<< Add the prop type here
+    recordingDuration: number; // Duration in seconds
+    onSilenceDetected?: () => void; // Silence detection callback
     // --- END NEW AUDIO PROPS ---
 
     // --- ADD CLEAR PREVIEW PROP --- 
@@ -98,6 +100,8 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     startRecording,
     stopRecording,
     audioTimeDomainData, // <<< Destructure the new prop
+    recordingDuration,
+    onSilenceDetected,
     // --- END NEW AUDIO PROPS DESTRUCTURED ---
     files,
     handleFileChange,
@@ -246,6 +250,8 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     startRecording={startRecording}
                     stopRecording={stopRecording}
                     audioTimeDomainData={audioTimeDomainData} // <<< Pass the prop down
+                    recordingDuration={recordingDuration}
+                    onSilenceDetected={onSilenceDetected}
                     clearPreview={clearPreview} // <-- PASS PROP DOWN
                     // --- END NEW AUDIO PROPS PASSED DOWN ---
                     

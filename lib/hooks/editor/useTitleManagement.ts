@@ -97,12 +97,12 @@ export function useTitleManagement({
         }
 
         setIsInferringTitle(true);
-        toast.info("Generating title based on content...");
+        console.log("Generating title based on content...");
 
         try {
             const blocks = editor.document;
             if (!blocks || blocks.length === 0) {
-                toast.warning("Cannot generate title from empty content.");
+                console.warn("Cannot generate title from empty content.");
                 setIsInferringTitle(false);
                 return;
             }
@@ -110,7 +110,7 @@ export function useTitleManagement({
             const snippet = markdown.substring(0, 500);
 
             if (!snippet.trim()) {
-                toast.warning("Cannot generate title from empty content.");
+                console.warn("Cannot generate title from empty content.");
                 setIsInferringTitle(false);
                 return;
             }
@@ -132,7 +132,7 @@ export function useTitleManagement({
                 throw new Error("Received empty title from API.");
             }
 
-            toast.success("Title suggested!");
+            console.log("Title suggested:", title);
             setNewTitleValue(title); // Update the input field value
             setIsEditingTitle(true); // Enter edit mode if not already
             await handleSaveTitle(title); // Directly save the inferred title
@@ -140,7 +140,7 @@ export function useTitleManagement({
         } catch (error) {
             console.error("Error inferring title:", error);
             const message = error instanceof Error ? error.message : "Unknown error occurred";
-            toast.error(`Title generation failed: ${message}`);
+            console.error(`Title generation failed: ${message}`);
         } finally {
             setIsInferringTitle(false);
         }

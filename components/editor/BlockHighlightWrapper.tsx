@@ -102,10 +102,6 @@ export const BlockHighlightWrapper: React.FC<BlockHighlightWrapperProps> = ({
           border-radius: 8px;
           z-index: 1;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          backdrop-filter: blur(0.5px);
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05), 
-                      0 1px 2px rgba(0, 0, 0, 0.05),
-                      inset 0 1px 0 rgba(255, 255, 255, 0.05);
         `;
 
         // Add subtle gradient overlay for depth
@@ -147,7 +143,6 @@ export const BlockHighlightWrapper: React.FC<BlockHighlightWrapperProps> = ({
             ${colors.border}
           );
           border-radius: 8px;
-          box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
         `;
         overlay.appendChild(accentBar);
 
@@ -320,9 +315,6 @@ export const BlockHighlightWrapper: React.FC<BlockHighlightWrapperProps> = ({
       
       .block-highlight-overlay:hover {
         transform: scale(1.005) !important;
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15), 
-                    0 2px 6px rgba(0, 0, 0, 0.1),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
       }
       
       @media (prefers-reduced-motion: reduce) {

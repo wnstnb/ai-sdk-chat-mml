@@ -64,6 +64,8 @@ interface ChatPaneWrapperProps {
     startRecording: () => void;
     stopRecording: (timedOut?: boolean) => void;
     audioTimeDomainData: AudioTimeDomainData;
+    recordingDuration: number; // Duration in seconds
+    onSilenceDetected?: () => void; // Silence detection callback
     // --- END NEW AUDIO PROPS --- 
 
     // --- ADD CLEAR PREVIEW PROP --- 
@@ -134,6 +136,8 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     startRecording,
     stopRecording,
     audioTimeDomainData,
+    recordingDuration,
+    onSilenceDetected,
     clearPreview,
     taggedDocuments,
     setTaggedDocuments,
@@ -243,6 +247,8 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                     startRecording={startRecording}
                     stopRecording={stopRecording}
                     audioTimeDomainData={audioTimeDomainData}
+                    recordingDuration={recordingDuration}
+                    onSilenceDetected={onSilenceDetected}
                     clearPreview={clearPreview}
                     taggedDocuments={taggedDocuments}
                     setTaggedDocuments={setTaggedDocuments}

@@ -90,6 +90,10 @@ type ClientChatOrchestratorResult = {
   handleAudioTranscriptionComplete: (transcript: string | null, error?: any) => void;
   handleCompleteAudioFlow: () => Promise<void>;
   
+  // --- NEW: Recording timer ---
+  recordingDuration: number; // Duration in seconds
+  // --- END NEW ---
+  
   // File upload handlers
   handleFileUploadStart: (file: File) => Promise<string | null>;
   handleFileUploadComplete: (filePath: string | null, error?: any) => string | null;
@@ -149,6 +153,12 @@ export function useClientChatOrchestrator({
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null); // State for the recorded audio blob
   const [pendingFileUpload, setPendingFileUpload] = useState<PendingFileUpload | null>(null);
   
+  // --- NEW: Recording timer state ---
+  const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
+  const [recordingDuration, setRecordingDuration] = useState<number>(0);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // --- END NEW ---
+  
   // --- NEW: Resource management state ---
   const [managedResources, setManagedResources] = useState<Map<string, ManagedResource>>(new Map());
   const LARGE_FILE_THRESHOLD = 50 * 1024 * 1024; // 50MB threshold
@@ -167,6 +177,41 @@ export function useClientChatOrchestrator({
   useEffect(() => {
     processedToolCallIdsRef.current = processedToolCallIds;
   }, [processedToolCallIds]);
+
+  // --- NEW: Timer management effect ---
+  useEffect(() => {
+    if (operationState.audioState === AudioState.RECORDING && recordingStartTime) {
+      // Start timer
+      timerIntervalRef.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+        setRecordingDuration(elapsed);
+      }, 1000);
+      
+      console.log('[Orchestrator] Recording timer started');
+    } else {
+      // Clear timer
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+        console.log('[Orchestrator] Recording timer cleared');
+      }
+      
+      // Reset duration if not recording
+      if (operationState.audioState !== AudioState.RECORDING) {
+        setRecordingDuration(0);
+        setRecordingStartTime(null);
+      }
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+    };
+  }, [operationState.audioState, recordingStartTime]);
+  // --- END NEW ---
 
   // Derived state
   const isChatInputBusy = isAnyOperationInProgress(operationState) || isLoading;
@@ -315,6 +360,11 @@ export function useClientChatOrchestrator({
     
     console.log('[Orchestrator] Audio recording start requested');
     try {
+      // --- NEW: Set recording start time ---
+      const startTime = Date.now();
+      setRecordingStartTime(startTime);
+      // --- END NEW ---
+      
       setOperationStates({
         audioState: AudioState.RECORDING,
         currentOperationDescription: 'Recording audio...'
@@ -323,6 +373,10 @@ export function useClientChatOrchestrator({
       console.log('[Orchestrator] Audio recording actually started');
     } catch (error) {
       console.error('[Orchestrator] Failed to start recording:', error);
+      // --- NEW: Reset timer on error ---
+      setRecordingStartTime(null);
+      setRecordingDuration(0);
+      // --- END NEW ---
       setOperationStates({
         audioState: AudioState.IDLE,
         currentOperationDescription: undefined
@@ -1152,6 +1206,10 @@ export function useClientChatOrchestrator({
     handleAudioTranscriptionStart,
     handleAudioTranscriptionComplete,
     handleCompleteAudioFlow,
+    
+    // --- NEW: Recording timer ---
+    recordingDuration,
+    // --- END NEW ---
     
     // File upload handlers
     handleFileUploadStart,

@@ -73,6 +73,8 @@ interface EditorPaneWrapperProps {
     // --- END NEW AUDIO PROPS ---
     // --- ADD AUDIO VISUALIZATION PROP ---
     audioTimeDomainData: Uint8Array | null;
+    recordingDuration: number; // Duration in seconds
+    onSilenceDetected?: () => void; // Silence detection callback
     // --- END AUDIO VISUALIZATION PROP ---
     // --- ADD CLEAR PREVIEW PROP --- 
     clearPreview: () => void;
@@ -136,6 +138,8 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     // --- END NEW AUDIO PROPS DESTRUCTURED ---
     // --- DESTRUCTURE AUDIO VISUALIZATION PROP ---
     audioTimeDomainData,
+    recordingDuration,
+    onSilenceDetected,
     // --- END AUDIO VISUALIZATION PROP ---
     // --- DESTRUCTURE CLEAR PREVIEW PROP ---
     clearPreview,
@@ -381,6 +385,8 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 startRecording={startRecording}
                                 stopRecording={stopRecording}
                                 audioTimeDomainData={audioTimeDomainData}
+                                recordingDuration={recordingDuration}
+                                onSilenceDetected={onSilenceDetected}
                                 clearPreview={clearPreview}
                                 taggedDocuments={taggedDocuments}
                                 onAddTaggedDocument={handleAddTaggedDocument}

@@ -63,6 +63,8 @@ interface ChatInputUIProps {
     clearPreview: () => void; // Add clearPreview from useFileUpload hook
     // --- NEW: Add recordingDuration prop ---
     recordingDuration?: number;
+    // --- NEW: Silence detection callback ---
+    onSilenceDetected?: () => void;
     // --- END AUDIO PROPS ---
 
     // --- NEW Document Tagging Props ---
@@ -118,6 +120,8 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     audioTimeDomainData = null, // Default to null
     // --- NEW: Destructure recordingDuration ---
     recordingDuration = 0,
+    // --- NEW: Destructure silence detection callback ---
+    onSilenceDetected,
     // --- END AUDIO PROPS DESTRUCTURED ---
 
     // --- NEW Document Tagging Props DESTRUCTURED ---
@@ -182,6 +186,18 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
         return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
     };
     // --- END: Format recording duration ---
+
+    // --- NEW: Silence detection handler ---
+    const handleSilenceDetected = useCallback(() => {
+        console.log('[ChatInputUI] Silence detected, auto-stopping recording');
+        if (isRecording && stopRecording) {
+            stopRecording(); // This should trigger transcription
+        }
+        // Call the provided callback if available
+        if (onSilenceDetected) {
+            onSilenceDetected();
+        }
+    }, [isRecording, stopRecording, onSilenceDetected]);
 
     // Simplified Mic button handler (check if functions exist)
     const handleMicButtonClick = () => {
@@ -258,8 +274,100 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
         buttonOnClick = undefined; // Form submission handles it
     }
 
+    // --- NEW: Keyboard navigation for recording controls ---
+    const handleKeyboardShortcuts = useCallback((event: React.KeyboardEvent) => {
+        // Only handle shortcuts when not typing in textarea
+        if (event.target instanceof HTMLTextAreaElement) return;
+
+        // Ctrl/Cmd + R: Start/Stop recording
+        if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
+            event.preventDefault();
+            if (isRecording && stopRecording) {
+                stopRecording();
+            } else if (!isRecording && startRecording && !isTranscribing) {
+                startRecording();
+            }
+        }
+
+        // Escape: Stop recording
+        if (event.key === 'Escape' && isRecording && stopRecording) {
+            event.preventDefault();
+            stopRecording();
+        }
+    }, [isRecording, isTranscribing, startRecording, stopRecording]);
+
+    // --- NEW: Handle reduced motion preferences ---
+    const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+        setPrefersReducedMotion(mediaQuery.matches);
+
+        const handleChange = (e: MediaQueryListEvent) => {
+            setPrefersReducedMotion(e.matches);
+        };
+
+        mediaQuery.addEventListener('change', handleChange);
+        return () => mediaQuery.removeEventListener('change', handleChange);
+    }, []);
+
+    // --- NEW: Enhanced accessibility announcements ---
+    const [lastAnnouncedState, setLastAnnouncedState] = useState<string>('');
+
+    useEffect(() => {
+        let newState = '';
+        if (isRecording) {
+            newState = 'Recording started';
+        } else if (isTranscribing) {
+            newState = 'Transcribing audio';
+        } else if (micPermissionError) {
+            newState = 'Microphone permission required';
+        }
+
+        if (newState && newState !== lastAnnouncedState) {
+            setLastAnnouncedState(newState);
+            // Announce to screen readers
+            const announcement = document.createElement('div');
+            announcement.setAttribute('aria-live', 'assertive');
+            announcement.setAttribute('aria-atomic', 'true');
+            announcement.className = 'sr-only';
+            announcement.textContent = newState;
+            document.body.appendChild(announcement);
+            
+            // Remove after announcement
+            setTimeout(() => {
+                document.body.removeChild(announcement);
+            }, 1000);
+        }
+    }, [isRecording, isTranscribing, micPermissionError, lastAnnouncedState]);
+
+    // --- NEW: Focus management for recording state changes ---
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        // Manage focus when recording state changes
+        if (isRecording && containerRef.current) {
+            // Announce recording start and focus container for keyboard shortcuts
+            containerRef.current.focus();
+        }
+    }, [isRecording]);
+
+    // --- NEW: Enhanced keyboard shortcut help ---
+    const keyboardShortcutsHelp = `
+        Keyboard shortcuts:
+        • Ctrl+R (Cmd+R on Mac): Start/stop recording
+        • Escape: Stop recording
+        • Enter: Send message (when text is entered)
+        • Ctrl+Enter: Send message with Shift held
+    `;
+
     return (
         <>
+            {/* --- Keyboard Shortcuts Help (Screen Reader Only) --- */}
+            <div className="sr-only" aria-live="polite">
+                {keyboardShortcutsHelp}
+            </div>
+
             {/* --- File Preview & Upload Status Area --- */} 
             <AnimatePresence>
                 {/* Conditional rendering wrapper for the entire status/preview block */}
@@ -338,7 +446,14 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
             />
 
             {/* --- Main Input and Controls Area --- */}
-            <div className="flex flex-col w-full bg-[--input-bg] rounded-lg p-2 border border-[--border-color] shadow-sm">
+            <div 
+                ref={containerRef}
+                className="flex flex-col w-full bg-[--input-bg] rounded-lg p-2 border border-[--border-color] shadow-sm"
+                onKeyDown={handleKeyboardShortcuts}
+                tabIndex={-1}
+                role="region"
+                aria-label="Chat input area with voice recording support. Press Ctrl+R to start/stop recording, Escape to stop recording."
+            >
                 {/* Row 1: Document Search Input and Tagged Pills */}
                 {onAddTaggedDocument && (
                     <div className="flex items-start gap-x-2 mb-2"> {/* Main flex container for this row */}
@@ -384,30 +499,99 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                 <div className="relative w-full flex items-center min-h-[40px]">
                     {/* Conditional Rendering (Check isRecording before rendering visualizer) */}
                     {isRecording ? (
-                        <div className="absolute inset-0 flex items-center justify-center p-1 z-10">
-                            {/* --- NEW: Display Timer --- */}
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-[--muted-text-color] z-20">
-                                {formatDuration(recordingDuration)}
-                            </span>
-                            {/* --- END: Display Timer --- */}
-                            <CustomAudioVisualizer
-                                audioTimeDomainData={audioTimeDomainData} // Pass potentially null data
-                            />
+                        <div className="relative w-full">
+                            {/* Recording State Overlay */}
+                            <div className={`absolute inset-0 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md ${
+                                prefersReducedMotion ? '' : 'animate-pulse'
+                            }`} />
+                            
+                            {/* Recording Content Container - Overlaid status elements */}
+                            <div className="relative w-full p-3">
+                                {/* Audio Visualizer - Full Width Container (No constraints) */}
+                                <div className="w-full">
+                                    <CustomAudioVisualizer
+                                        audioTimeDomainData={audioTimeDomainData} // Pass potentially null data
+                                        onSilenceDetected={handleSilenceDetected} // Pass silence detection callback
+                                        enableSilenceDetection={true} // Enable silence detection during recording
+                                    />
+                                </div>
+                                
+                                {/* Overlaid Status Elements - Positioned absolutely to not interfere with width */}
+                                <div className="absolute inset-0 pointer-events-none flex items-center justify-between px-3 py-3 z-20">
+                                    {/* Left: Recording Status Indicator */}
+                                    <div className="flex items-center gap-2 pointer-events-none">
+                                        {/* Recording Dot */}
+                                        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-lg" />
+                                        
+                                        {/* Timer Display - Enhanced */}
+                                        <span 
+                                            className="text-sm font-mono font-medium text-red-600 dark:text-red-400 bg-white/90 dark:bg-gray-900/90 px-2 py-1 rounded-md shadow-sm backdrop-blur-sm"
+                                            aria-live="polite"
+                                            aria-label={`Recording duration: ${formatDuration(recordingDuration)}`}
+                                        >
+                                            {formatDuration(recordingDuration)}
+                                        </span>
+                                        
+                                        {/* Recording Status Text */}
+                                        <span className="text-xs text-red-600 dark:text-red-400 font-medium bg-white/80 dark:bg-gray-900/80 px-1.5 py-0.5 rounded backdrop-blur-sm">
+                                            Recording...
+                                        </span>
+                                    </div>
+                                    
+                                    {/* Right: Placeholder for future controls if needed */}
+                                    <div className="flex items-center gap-2 pointer-events-none">
+                                        {/* Auto-stop text removed per user request */}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : isTranscribing ? (
+                        /* Transcribing State */
+                        <div className="relative w-full">
+                            {/* Transcribing State Overlay */}
+                            <div className="absolute inset-0 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md" />
+                            
+                            {/* Transcribing Content */}
+                            <div className="relative flex items-center justify-center p-3 z-10">
+                                <div className="flex items-center gap-3">
+                                    {/* Processing Spinner */}
+                                    <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                                    
+                                    {/* Transcribing Text */}
+                                    <span 
+                                        className="text-sm text-blue-600 dark:text-blue-400 font-medium"
+                                        aria-live="polite"
+                                    >
+                                        Transcribing audio...
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     ) : (
+                        /* Normal Input State */
                         <textarea
                             ref={textareaCallbackRef} // Use the callback ref here
                             rows={1}
-                            className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40"
+                            className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40 transition-all duration-200 focus:ring-2 focus:ring-[--primary-color]/20 focus:border-[--primary-color]/30 rounded-md px-3 py-2"
                             // Adjust placeholder based on optional props
-                            placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (isRecording ? "Recording audio..." : (isTranscribing ? "Transcribing audio..." : (micAvailable ? "Type, show or say anything..." : "Type or show something...") ) ))}
+                            placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (micAvailable ? "Type, show or say anything..." : "Type or show something...") )}
                             value={input}
                             onChange={handleInputChange}
                             onKeyDown={handleKeyDown}
                             onPaste={handlePaste}
                             // Disable based on optional props
-                            disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)} 
+                            disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)}
+                            // Enhanced accessibility
+                            aria-label="Message input"
+                            aria-describedby={micAvailable ? "voice-input-help" : undefined}
                         />
+                    )}
+                    
+                    {/* Voice Input Help Text (Hidden, for accessibility) */}
+                    {micAvailable && (
+                        <div id="voice-input-help" className="sr-only">
+                            You can use voice input by clicking the microphone button or typing your message.
+                        </div>
                     )}
                 </div>
                 {/* Bottom controls (Adjust ModelSelector/Button disabled states) */} 
@@ -427,29 +611,76 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                             type="button"
                             onClick={handleUploadClick}
                             disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)} 
-                            className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-8 h-8 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                             title="Attach Image"
                         >
-                            <span className="w-5 h-5 block"><ImageUp aria-hidden="true" /></span>
+                            <ImageUp size={20} aria-hidden="true" />
                         </button>
                         <div className="relative w-8 h-8 flex items-center justify-center">
-                            {showLoadingSpinner && (
-                                <div className="absolute inset-0 border-2 border-[--primary-color] border-t-transparent rounded-full animate-spin pointer-events-none"></div>
+                            {/* Loading Spinner for AI Generation */}
+                            {showLoadingSpinner && !isRecording && !isTranscribing && (
+                                <div className={`absolute inset-0 border-2 border-[--primary-color] border-t-transparent rounded-full pointer-events-none ${
+                                    prefersReducedMotion ? '' : 'animate-spin'
+                                }`}></div>
                             )}
+                            
+                            {/* Recording State Indicators */}
                             {isRecording && (
-                                <div className="absolute inset-0 rounded-full bg-red-500 opacity-50 animate-ping pointer-events-none"></div> // Pulsing effect
+                                <>
+                                    {/* Pulsing Recording Ring */}
+                                    <div className={`absolute inset-0 rounded-full bg-red-500 opacity-30 pointer-events-none ${
+                                        prefersReducedMotion ? '' : 'animate-ping'
+                                    }`}></div>
+                                    {/* Secondary Ring for Depth */}
+                                    <div className={`absolute inset-1 rounded-full bg-red-500 opacity-50 pointer-events-none ${
+                                        prefersReducedMotion ? '' : 'animate-pulse'
+                                    }`}></div>
+                                </>
                             )}
+                            
+                            {/* Transcribing State Indicator */}
+                            {isTranscribing && (
+                                <div className={`absolute inset-0 border-2 border-blue-500 border-t-transparent rounded-full pointer-events-none ${
+                                    prefersReducedMotion ? '' : 'animate-spin'
+                                }`}></div>
+                            )}
+                            
+                            {/* Microphone Permission Error Indicator */}
+                            {micPermissionError && (
+                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-white dark:border-gray-800 pointer-events-none">
+                                    <span className="sr-only">Microphone permission denied</span>
+                                </div>
+                            )}
+                            
+                            {/* Main Button */}
                             <button
                                 type={buttonType}
                                 onClick={buttonOnClick} // Already checks if functions exist
                                 disabled={buttonDisabled}
-                                className={buttonClassName}
+                                className={`w-8 h-8 rounded-md flex items-center justify-center transition-all duration-200 relative z-10 ${
+                                    isRecording ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' :
+                                    isTranscribing ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' :
+                                    micPermissionError ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' : 
+                                    'text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color]'
+                                } focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed`}
                                 title={buttonTitle}
+                                aria-label={buttonTitle}
+                                aria-pressed={isRecording ? "true" : "false"}
+                                aria-describedby={micPermissionError ? "mic-error-help" : undefined}
                             >
-                                <span className="w-5 h-5 block">
+                                <div className={`transition-transform duration-200 ${
+                                    isRecording ? 'scale-110' : 'hover:scale-110'
+                                }`}>
                                     {buttonIcon}
-                                </span>
+                                </div>
                             </button>
+                            
+                            {/* Error Help Text (Hidden, for accessibility) */}
+                            {micPermissionError && (
+                                <div id="mic-error-help" className="sr-only">
+                                    Microphone access is required for voice input. Please enable microphone permissions in your browser settings.
+                                </div>
+                            )}
                         </div>
                        {/* Render the passed-in toggle icon button if it exists */}
                        {renderCollapsedMessageToggle}

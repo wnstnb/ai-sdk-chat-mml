@@ -115,7 +115,7 @@ const NewDocumentModal: React.FC<NewDocumentModalProps> = ({ isOpen, onClose }) 
         throw new Error('Failed to get new document ID from response.');
       }
 
-      toast.success('New document created successfully!');
+      console.log('New document created successfully!');
       onClose(); 
       router.push(`/editor/${newDocumentId}?initialMsg=${encodeURIComponent(input)}`);
     } catch (error: any) {

@@ -110,7 +110,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     
     setIsCreatingNewNote(true);
     try {
-      toast.info('Creating new document...');
+      console.log('Creating new document...');
       
       const response = await fetch('/api/documents/create-with-content', {
         method: 'POST',
@@ -135,7 +135,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
         throw new Error('Failed to get new document ID from response.');
       }
 
-      toast.success('New document created!');
+      console.log('New document created!');
       router.push(`/editor/${newDocumentId}`);
     } catch (error: any) {
       console.error('Error creating new document:', error);
