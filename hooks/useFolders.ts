@@ -618,7 +618,7 @@ export function useFolders(): UseFoldersReturn {
           { event: '*', schema: 'public', table: 'folders' },
           (payload) => {
             // Re-fetch folders when a change occurs
-            toast.info('Folder list updated.', { duration: 2000 });
+            // Silently refresh folder list - no toast needed for automatic updates
             fetchFolders();
           }
         )
@@ -627,7 +627,7 @@ export function useFolders(): UseFoldersReturn {
             isSubscribed = true;
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             console.error('[useFolders] Realtime subscription error:', err);
-            toast.error('Realtime update connection issue.');
+            // Connection status is now handled by ConnectionStatusIndicator
           }
         });
     } catch (error) {

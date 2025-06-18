@@ -334,9 +334,20 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
           </div>
         )}
         
-        {/* Footer with Date, Owner Info, and Badges */}
-        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mt-auto">
-          <div className="flex items-center gap-2">
+        {/* Footer with Owner Info (top row) and Date/Badges (bottom row) */}
+        <div className="mt-auto space-y-1">
+          {/* Top Row: Owner Info */}
+          {showOwnerInfo && access_type === 'shared' && owner_email && (
+            <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300">
+              <UserCheck className="w-3 h-3 text-blue-500" />
+              <span className="truncate" title={owner_email}>
+                {owner_email.split('@')[0]}
+              </span>
+            </div>
+          )}
+          
+          {/* Bottom Row: Date and Badges */}
+          <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
             <div className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
               <time 
@@ -348,46 +359,39 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
               </time>
             </div>
             
-            {showOwnerInfo && access_type === 'shared' && owner_email && (
-              <div className="flex items-center gap-1 truncate max-w-[100px]" title={owner_email}>
-                <UserCheck className="w-3 h-3 text-blue-500" />
-                <span className="truncate">{owner_email.split('@')[0]}</span>
-              </div>
-            )}
-          </div>
-          
-          {/* Badge Icons */}
-          <div className="flex items-center gap-2">
-            {permission_level && getPermissionInfo && (
-              <Badge 
-                variant="outline" 
-                className={`${getPermissionInfo.color} flex items-center justify-center w-5 h-5 p-0 rounded-full`}
-                title={`${getPermissionInfo.label}: ${getPermissionInfo.description}`}
-              >
-                <getPermissionInfo.icon className="w-2.5 h-2.5" />
-              </Badge>
-            )}
-            
-            {access_type === 'shared' && (
-              <Badge 
-                variant="outline" 
-                className="bg-blue-50 text-blue-700 border-blue-200 flex items-center justify-center w-5 h-5 p-0 rounded-full"
-                title="Shared document"
-              >
-                <Users className="w-2.5 h-2.5" />
-              </Badge>
-            )}
-            
-            {/* Indicator for documents shared with others */}
-            {is_shared_with_others && !access_type && (
-              <Badge 
-                variant="outline" 
-                className="bg-blue-50 text-blue-700 border-blue-200 flex items-center justify-center w-5 h-5 p-0 rounded-full"
-                title="Shared document"
-              >
-                <Users className="w-2.5 h-2.5" />
-              </Badge>
-            )}
+            {/* Badge Icons */}
+            <div className="flex items-center gap-2">
+              {permission_level && getPermissionInfo && (
+                <Badge 
+                  variant="outline" 
+                  className={`${getPermissionInfo.color} flex items-center justify-center w-5 h-5 p-0 rounded-full`}
+                  title={`${getPermissionInfo.label}: ${getPermissionInfo.description}`}
+                >
+                  <getPermissionInfo.icon className="w-2.5 h-2.5" />
+                </Badge>
+              )}
+              
+              {access_type === 'shared' && (
+                <Badge 
+                  variant="outline" 
+                  className="bg-blue-50 text-blue-700 border-blue-200 flex items-center justify-center w-5 h-5 p-0 rounded-full"
+                  title="Shared document"
+                >
+                  <Users className="w-2.5 h-2.5" />
+                </Badge>
+              )}
+              
+              {/* Indicator for documents shared with others */}
+              {is_shared_with_others && !access_type && (
+                <Badge 
+                  variant="outline" 
+                  className="bg-blue-50 text-blue-700 border-blue-200 flex items-center justify-center w-5 h-5 p-0 rounded-full"
+                  title="Shared document"
+                >
+                  <Users className="w-2.5 h-2.5" />
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
       </div>

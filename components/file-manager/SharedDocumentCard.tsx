@@ -117,7 +117,7 @@ const SharedDocumentCard: React.FC<SharedDocumentCardProps> = ({
       `}
       role="button"
       tabIndex={0}
-      onClick={handleCardClick}
+        onClick={handleCardClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
@@ -189,7 +189,7 @@ const SharedDocumentCard: React.FC<SharedDocumentCardProps> = ({
               </div>
             </div>
           )}
-          
+
           {/* Second Row: Timestamp and Badges */}
           <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
             <div className="flex items-center gap-1">
@@ -221,12 +221,12 @@ const SharedDocumentCard: React.FC<SharedDocumentCardProps> = ({
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Hover overlay for external link indication */}
+              </div>
+        
+        {/* Hover overlay for external link indication */}
       <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
         <ExternalLink className="w-3 h-3 text-gray-400" />
-      </div>
+        </div>
     </motion.article>
   );
 };

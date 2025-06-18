@@ -157,7 +157,7 @@ export function useAllDocuments(): UseMappedDocumentListReturn { // Updated retu
             // Re-fetch documents when a change occurs
             // No need to check payload specifics for now, just refresh the list
             // This handles inserts, updates, and deletes
-            toast.info('Document list updated.', { duration: 2000 }); // Notify user
+            // Silently refresh document list - no toast needed for automatic updates
             fetchDocuments();
           }
         )
@@ -167,7 +167,7 @@ export function useAllDocuments(): UseMappedDocumentListReturn { // Updated retu
             // console.log('[useAllDocuments] Subscribed to realtime documents changes!'); // Optional: for debugging
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             console.error('[useAllDocuments] Realtime subscription error:', err);
-            toast.error('Realtime update connection issue.');
+            // Connection status is now handled by ConnectionStatusIndicator
           }
         });
     } catch (error) {
@@ -272,7 +272,7 @@ export function useUnifiedDocuments(): UseUnifiedDocumentsReturn {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'documents' },
           (payload) => {
-            toast.info('Document list updated.', { duration: 2000 });
+            // Silently refresh document list - no toast needed for automatic updates
             fetchDocuments();
           }
         )
@@ -281,7 +281,7 @@ export function useUnifiedDocuments(): UseUnifiedDocumentsReturn {
             isSubscribed = true;
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             console.error('[useUnifiedDocuments] Realtime subscription error:', err);
-            toast.error('Realtime update connection issue.');
+            // Connection status is now handled by ConnectionStatusIndicator
           }
         });
     } catch (error) {

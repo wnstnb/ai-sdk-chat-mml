@@ -122,13 +122,6 @@ export default function LaunchPage() {
   // --- Return JSX ---
   return (
     <div className="flex flex-col h-screen bg-[--bg-primary] text-[--text-color] overflow-hidden">
-      {/* Header */}
-      <div className="border-b border-[--border-color] p-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Documents</h1>
-        </div>
-      </div>
-
       {/* Main Content Area */}
       <div className="flex-grow overflow-y-auto">
         <div className="pt-2 px-2 md:pt-4 md:px-4 h-full flex flex-col">

@@ -48,6 +48,7 @@ import TuonLogoIcon from '@/components/ui/TuonLogoIcon';
 import styles from '@/components/sidebar/Sidebar.module.css';
 import { useModalStore } from '@/stores/useModalStore';
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
+import { ConnectionStatusIndicator } from '@/components/ui/ConnectionStatusIndicator';
 
 // Define types for sorting
 /**
@@ -352,9 +353,11 @@ const DocumentCardGrid: React.FC = () => {
             lastUpdated: doc.lastUpdated || new Date().toISOString(),
             is_starred: currentIsStarred, // Use potentially updated value from store
             folder_id: doc.folder_id || null,
-            access_type: doc.access_type,
-            permission_level: doc.permission_level,
+            // NEW: Include sharing/permission fields from enhanced search API
+            access_type: doc.access_type || 'owned',
+            permission_level: doc.permission_level || 'owner',
             owner_email: doc.owner_email,
+            is_shared_with_others: doc.is_shared_with_others || false,
           };
         });
         setSearchResults(mappedResults);
@@ -467,9 +470,9 @@ const DocumentCardGrid: React.FC = () => {
     if (documentFilter === 'all') {
       return documents;
     } else if (documentFilter === 'my-documents') {
-      // Documents I own that are NOT shared with others
+      // Documents I own (regardless of whether they're shared with others)
       return documents.filter(doc => 
-        doc.permission_level === 'owner' && doc.access_type === 'owned'
+        doc.permission_level === 'owner'
       );
     } else if (documentFilter === 'shared-with-me') {
       // Documents owned by others that were shared with me
@@ -560,12 +563,12 @@ const DocumentCardGrid: React.FC = () => {
    * @returns {{ id: string; type: 'document' | 'folder'; name: string } | null} Item details or null if not found.
    */
   const getItemDetails = (id: string): { id: string; type: 'document' | 'folder'; name: string } | null => {
-    const doc = getCurrentDisplayItems().documents.find(d => d.id === id);
+    const doc = currentDisplayItems.documents.find(d => d.id === id);
     if (doc) return { id: doc.id, type: 'document', name: doc.title };
     
     // Handle potential "folder-" prefix for selectedItemIds if they are stored that way
     const cleanId = id.startsWith('folder-') ? id.replace('folder-', '') : id;
-    const folder = getCurrentDisplayItems().folders.find(f => f.id === cleanId);
+    const folder = currentDisplayItems.folders.find(f => f.id === cleanId);
     if (folder) return { id: folder.id, type: 'folder', name: folder.name };
     
     return null;
@@ -890,44 +893,45 @@ const DocumentCardGrid: React.FC = () => {
   }, [storeDocuments]);
 
   // Get folders and documents to display based on current navigation
-  const getCurrentDisplayItems = useCallback(() => {
+  const getCurrentDisplayItems = useMemo(() => {
     if (searchQuery) {
       // If a search query is active, display search results (documents only)
       return {
         folders: [], // No folders in search results view
-        documents: enhanceDocumentsWithStore(searchResults),
+        documents: filterDocuments(searchResults),
       };
     }
 
+    // NEW: Only show folders when filter is 'all', otherwise show documents only
+    const shouldShowFolders = documentFilter === 'all';
+
     if (isInFolderView && currentFolderId) {
-      // Show documents in current folder + subfolders of current folder
-      const currentFolderDocs = folderContents[currentFolderId] || [];
-      const currentFolderSubfolders = folderTree.find(f => f.id === currentFolderId)?.children || [];
+      // Show documents in current folder + subfolders of current folder (if filter allows)
+      const currentFolderSubfolders = shouldShowFolders ? 
+        (folderTree.find(f => f.id === currentFolderId)?.children || []) : 
+        [];
       
       return {
         folders: currentFolderSubfolders,
-        documents: enhanceDocumentsWithStore(currentFolderDocs)
+        documents: filterDocuments(folderContents[currentFolderId] || [])
       };
     } else {
-      // Show root level folders and documents
-      const rootLevelDocs = fetchedDocs ? fetchedDocs.filter(doc => !doc.folder_id) : [];
+      // Show root level folders and documents (folders only if filter is 'all')
       return {
-        folders: folderTree,
-        documents: sortDocuments(enhanceDocumentsWithStore(rootLevelDocs), sortKey, sortDirection)
+        folders: shouldShowFolders ? folderTree : [],
+        documents: filterDocuments(fetchedDocs ? fetchedDocs.filter(doc => !doc.folder_id) : [])
       };
     }
   }, [
+    searchQuery,
+    searchResults,
     isInFolderView, 
     currentFolderId, 
-    folderContents, 
-    folderTree, 
-    fetchedDocs, 
-    sortKey, 
-    sortDirection, 
-    sortDocuments,
-    searchQuery, // Added dependency
-    searchResults, // Added dependency
-    enhanceDocumentsWithStore, // Critical dependency for store enhancement
+    folderTree,
+    folderContents,
+    fetchedDocs,
+    documentFilter,
+    filterDocuments,
   ]);
 
   // Get all folder IDs for drag and drop context
@@ -995,18 +999,23 @@ const DocumentCardGrid: React.FC = () => {
       };
     }
 
+    // NEW: Only show folders when filter is 'all', otherwise show documents only
+    const shouldShowFolders = documentFilter === 'all';
+
     if (isInFolderView && currentFolderId) {
-      // Show documents in current folder + subfolders of current folder
-      const currentFolderSubfolders = folderTree.find(f => f.id === currentFolderId)?.children || [];
+      // Show documents in current folder + subfolders of current folder (if filter allows)
+      const currentFolderSubfolders = shouldShowFolders ? 
+        (folderTree.find(f => f.id === currentFolderId)?.children || []) : 
+        [];
       
       return {
         folders: currentFolderSubfolders,
         documents: filterDocuments(processedFolderContents)
       };
     } else {
-      // Show root level folders and documents
+      // Show root level folders and documents (folders only if filter is 'all')
       return {
-        folders: folderTree,
+        folders: shouldShowFolders ? folderTree : [],
         documents: filterDocuments(processedRootDocuments)
       };
     }
@@ -1018,7 +1027,8 @@ const DocumentCardGrid: React.FC = () => {
     folderTree,
     processedFolderContents,
     processedRootDocuments,
-    filterDocuments, // Added dependency for filtering
+    filterDocuments,
+    documentFilter,
   ]);
 
   // ADD: Combine folders and documents for virtualization
@@ -1470,6 +1480,9 @@ const DocumentCardGrid: React.FC = () => {
             </Button>
           )}
         </div>
+        
+        {/* Connection Status Indicator */}
+        <ConnectionStatusIndicator className="ml-2" />
       </div>
 
       {/* Sorting Controls, Filter Controls & New Folder Button */}
@@ -1485,31 +1498,34 @@ const DocumentCardGrid: React.FC = () => {
                 <ChevronDown className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
+            <DropdownMenuContent 
+              align="start"
+              className="bg-gray-50 dark:bg-gray-800 border-input text-[var(--text-color)] shadow-md"
+            >
               <DropdownMenuItem 
                 onClick={() => setDocumentFilter('all')}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
               >
                 <FileText className="w-4 h-4" />
                 All Documents
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={() => setDocumentFilter('my-documents')}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
               >
                 <Home className="w-4 h-4" />
                 My Documents
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={() => setDocumentFilter('shared-with-me')}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
               >
                 <Users className="w-4 h-4" />
                 Shared with Me
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={() => setDocumentFilter('shared-with-others')}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
               >
                 <UserPlus className="w-4 h-4" />
                 Shared with Others
@@ -1525,19 +1541,28 @@ const DocumentCardGrid: React.FC = () => {
                 <ChevronDown className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={() => handleSortKeyChange('lastUpdated')}
+            <DropdownMenuContent 
+              align="start"
+              className="bg-gray-50 dark:bg-gray-800 border-input text-[var(--text-color)] shadow-md"
+            >
+              <DropdownMenuItem 
+                onClick={() => handleSortKeyChange('lastUpdated')}
                 aria-pressed={sortKey === 'lastUpdated'}
+                className="hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
               >
                 Last Updated
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleSortKeyChange('title')}
+              <DropdownMenuItem 
+                onClick={() => handleSortKeyChange('title')}
                 aria-pressed={sortKey === 'title'}
+                className="hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
               >
                 Title
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleSortKeyChange('is_starred')}
+              <DropdownMenuItem 
+                onClick={() => handleSortKeyChange('is_starred')}
                 aria-pressed={sortKey === 'is_starred'}
+                className="hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
               >
                 Starred
               </DropdownMenuItem>
