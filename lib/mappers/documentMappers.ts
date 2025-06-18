@@ -11,6 +11,7 @@ export interface MappedDocumentCardData {
   snippet: string;
   is_starred: boolean;
   folder_id?: string | null; // Added for folder filtering
+  is_shared_with_others?: boolean; // Added for sharing indicator
 }
 
 const MAX_SNIPPET_LENGTH = 150;
@@ -36,6 +37,10 @@ export function mapDocumentToMappedCardData(document: Document): MappedDocumentC
   // Log final snippet
   // console.log(`[DEBUG_SNIPPET_MAPPER] ID: ${document.id}, Final snippet: "${displaySnippet}"`);
 
+  // Check if document is shared with others using the shared documents function result
+  const isSharedWithOthers = Boolean(document.sharing_info && 
+    document.sharing_info.permission_count > 1);
+
   return {
     id: document.id,
     title: document.name, // DocumentCard handles untitled cases
@@ -43,6 +48,7 @@ export function mapDocumentToMappedCardData(document: Document): MappedDocumentC
     snippet: displaySnippet,
     is_starred: document.is_starred ?? false,
     folder_id: document.folder_id,
+    is_shared_with_others: isSharedWithOthers,
   };
 }
 

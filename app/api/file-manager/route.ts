@@ -91,8 +91,35 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch documents: ${documentsError.message}` } }, { status: 500 });
     }
 
+    // 3.5. Get sharing information for owned documents
+    let documentsWithSharingInfo = documents as Document[] || [];
+    if (documents && documents.length > 0) {
+      try {
+        // Get sharing info using the same function as shared documents API
+        const { data: sharedDocIds, error: sharedIdsError } = await supabase
+          .rpc('get_shared_document_ids');
+
+        if (!sharedIdsError && sharedDocIds) {
+          // Create a map of document IDs to permission counts
+          const sharingMap = new Map<string, number>();
+          sharedDocIds.forEach((row: any) => {
+            sharingMap.set(row.document_id, row.permission_count);
+          });
+
+          // Add sharing info to documents
+          documentsWithSharingInfo = documents.map(doc => ({
+            ...doc,
+            sharing_info: sharingMap.has(doc.id) ? { permission_count: sharingMap.get(doc.id)! } : null
+          }));
+        }
+      } catch (error) {
+        console.warn('Failed to fetch sharing info, proceeding without it:', error);
+        // Continue without sharing info rather than failing completely
+      }
+    }
+
     // 4. Return Data
-    return NextResponse.json({ data: { documents: (documents as Document[] || []), folders: (folders as Folder[] || []) } }, { status: 200 });
+    return NextResponse.json({ data: { documents: documentsWithSharingInfo, folders: (folders as Folder[] || []) } }, { status: 200 });
 
   } catch (error: any) {
     console.error('File Manager GET Error:', error.message);

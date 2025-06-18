@@ -3257,7 +3257,7 @@ function EditorPageContent() {
                     <div className="text-orange-500 text-xl mb-4">🔒</div>
                     <h1 className="text-xl font-semibold text-[--text-color] mb-2">Access Denied</h1>
                     <p className="text-sm text-[--muted-text-color] mb-4">
-                        You don't have permission to view this document.
+                        You don&apos;t have permission to view this document.
                     </p>
                     <button 
                         onClick={() => router.push('/dashboard')}

@@ -1,37 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, KeyboardEvent } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-// Import FileManager as per documentation
-import { FileManager } from '@cubone/react-file-manager'; 
-// Revert CSS path to the file confirmed to exist in node_modules
-import '@cubone/react-file-manager/dist/style.css'; 
 import { Document, Folder } from '@/types/supabase'; // Import types
-// Import the new file manager component
-import NewFileManager from '@/components/file-manager/NewFileManager';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // ADDED: Import preference store
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"; // Add Card imports
-import Link from 'next/link'; // Import Link for navigation
-import { Button } from "@/components/ui/button"; // ADDED: Import Button component
-// ADDED: Import Lucide icons
-import { FilePlus, AudioWaveform, Shovel, BookOpenText, Users, Home, ToggleLeft, ToggleRight } from 'lucide-react';
 // ADDED: Import useModalStore
 import { useModalStore } from '@/stores/useModalStore';
 
-// --- NEW: Import Omnibar ---
-import { Omnibar } from '@/components/search/Omnibar';
-// --- NEW: Import X icon for pills ---
-import { X } from 'lucide-react'; 
 // --- NEW: Import DocumentCardGrid component ---
 import DocumentCardGrid from '@/components/file-manager/DocumentCardGrid';
-import SharedDocumentCard from '@/components/file-manager/SharedDocumentCard';
-import { useSharedDocuments, useSharedDocumentsOnly } from '@/hooks/useSharedDocuments';
-import { DocumentWithSharingInfo } from '@/types/supabase';
-
-// --- NEW: Import TaggedDocument type ---
-import type { TaggedDocument } from '@/lib/types';
-import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions'; // <<< ADDED: Import type
 
 // Define the structure expected by Cubone File Manager (matching docs)
 type CuboneFileType = {
@@ -82,9 +59,6 @@ export default function LaunchPage() {
   const router = useRouter();
   // ADDED: Get openNewDocumentModal from the store
   const { openNewDocumentModal } = useModalStore();
-  
-  // Hook for shared documents only (no owned documents)
-  const { documents: sharedDocuments, isLoading: isLoadingShared, error: sharedError, refetch } = useSharedDocumentsOnly();
 
   // --- Preference Store --- ADDED
   const {
@@ -96,7 +70,6 @@ export default function LaunchPage() {
   const [cuboneFiles, setCuboneFiles] = useState<CuboneFileType[]>([]); 
   const [isLoading, setIsLoading] = useState(true); // For initial data fetch
   const [error, setError] = useState<string | null>(null);
-  const [showSharedDocuments, setShowSharedDocuments] = useState(false);
 
   // ADDED: Effect to update local model state if preference loads *after* initial render
   useEffect(() => {
@@ -146,114 +119,23 @@ export default function LaunchPage() {
     fetchData();
   }, [fetchData]);
 
-  // Handle star toggle for shared documents
-  const handleToggleStar = async (documentId: string) => {
-    try {
-      const response = await fetch(`/api/documents/${documentId}/star`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to toggle star.' }));
-        throw new Error(errorData.message || 'Failed to toggle star.');
-      }
-
-      const result = await response.json();
-      toast.success(`Document ${result.is_starred ? 'starred' : 'unstarred'}.`);
-      
-      // Trigger refetch of shared documents to update the star status
-      await refetch();
-    } catch (error: any) {
-      toast.error(error.message || "Error toggling star status.");
-    }
-  };
-
   // --- Return JSX ---
   return (
     <div className="flex flex-col h-screen bg-[--bg-primary] text-[--text-color] overflow-hidden">
-      {/* Header with Toggle */}
+      {/* Header */}
       <div className="border-b border-[--border-color] p-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Documents</h1>
-          
-          {/* View Toggle */}
-          <div className="flex items-center gap-4">
-            <Button
-              variant={!showSharedDocuments ? "default" : "outline"}
-              size="sm"
-              onClick={() => setShowSharedDocuments(false)}
-              className="flex items-center gap-2"
-            >
-              <Home className="w-4 h-4" />
-              My Documents
-            </Button>
-            <Button
-              variant={showSharedDocuments ? "default" : "outline"}
-              size="sm"
-              onClick={() => setShowSharedDocuments(true)}
-              className="flex items-center gap-2"
-            >
-              <Users className="w-4 h-4" />
-              Shared Documents
-            </Button>
-          </div>
         </div>
       </div>
 
       {/* Main Content Area */}
       <div className="flex-grow overflow-y-auto">
         <div className="pt-2 px-2 md:pt-4 md:px-4 h-full flex flex-col">
-          {showSharedDocuments ? (
-            /* Shared Documents View */
-            <div className="flex-grow">
-              {isLoadingShared ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
-                    <p className="text-gray-600">Loading shared documents...</p>
-                  </div>
-                </div>
-              ) : sharedError ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <p className="text-red-600 mb-4">Error: {sharedError}</p>
-                    <Button onClick={() => window.location.reload()}>
-                      Retry
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Shared Documents Grid */}
-                  {sharedDocuments.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                      {sharedDocuments.map((doc) => (
-                        <SharedDocumentCard
-                          key={doc.id}
-                          document={doc}
-                          onToggleStar={handleToggleStar}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <div className="text-center">
-                        <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">No shared documents</h3>
-                        <p className="text-gray-600">Documents shared with you will appear here.</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ) : (
-            /* Regular Document Grid */
-            <div className="flex-grow">
-              <DocumentCardGrid />
-            </div>
-          )}
+          {/* Unified Document Grid with Filtering */}
+          <div className="flex-grow">
+            <DocumentCardGrid />
+          </div>
         </div>
       </div>
     </div>

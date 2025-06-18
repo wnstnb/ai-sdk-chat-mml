@@ -16,6 +16,7 @@ interface DocumentWithSharingInfo {
   permission_level?: string;
   owner_id?: string;
   owner_email?: string;
+  sharing_info?: { permission_count: number } | null;
 }
 
 // Create service role client for cross-user queries
@@ -63,13 +64,29 @@ export async function GET(request: Request) {
         }, { status: 500 });
       }
 
-      const ownedDocuments: DocumentWithSharingInfo[] = (ownedDocs || []).map(doc => ({
-        ...doc,
-        access_type: 'owned' as const,
-        permission_level: 'owner',
-        owner_id: doc.user_id,
-        owner_email: undefined // User is the owner
-      }));
+      // Get sharing info for owned documents to determine if they should be treated as shared
+      const { data: sharedDocIds, error: sharedIdsError } = await supabaseServiceRole
+        .rpc('get_shared_document_ids');
+
+      const sharingMap = new Map<string, number>();
+      if (!sharedIdsError && sharedDocIds) {
+        sharedDocIds.forEach((row: any) => {
+          sharingMap.set(row.document_id, row.permission_count);
+        });
+      }
+
+      const ownedDocuments: DocumentWithSharingInfo[] = (ownedDocs || []).map(doc => {
+        const permissionCount = sharingMap.get(doc.id) || 1;
+        const isSharedWithOthers = permissionCount > 1;
+        return {
+          ...doc,
+          access_type: isSharedWithOthers ? 'shared' as const : 'owned' as const,
+          permission_level: 'owner',
+          owner_id: doc.user_id,
+          owner_email: undefined, // User is the owner, no need to show their own email
+          sharing_info: isSharedWithOthers ? { permission_count: permissionCount } : null
+        };
+      });
 
       console.log(`[Documents API] Found ${ownedDocuments.length} owned documents`);
       allDocuments.push(...ownedDocuments);
@@ -183,11 +200,27 @@ export async function GET(request: Request) {
       }
     }
 
-    console.log(`[Documents API] Total documents returned: ${allDocuments.length}`);
+    // Deduplicate documents: prioritize 'shared' version over 'owned' version
+    const documentMap = new Map<string, DocumentWithSharingInfo>();
+    
+    // First, add all owned documents
+    allDocuments.filter(doc => doc.access_type === 'owned').forEach(doc => {
+      documentMap.set(doc.id, doc);
+    });
+    
+    // Then, override with shared versions (they have more complete info)
+    allDocuments.filter(doc => doc.access_type === 'shared').forEach(doc => {
+      documentMap.set(doc.id, doc);
+    });
+    
+    const deduplicatedDocuments = Array.from(documentMap.values())
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+
+    console.log(`[Documents API] Total documents returned: ${deduplicatedDocuments.length} (after deduplication)`);
 
     return NextResponse.json({ 
-      documents: allDocuments,
-      total: allDocuments.length 
+      documents: deduplicatedDocuments,
+      total: deduplicatedDocuments.length 
     });
 
   } catch (error: any) {
