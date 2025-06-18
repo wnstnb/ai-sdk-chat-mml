@@ -54,6 +54,7 @@ interface ChatInputAreaProps {
     micPermissionError: boolean;
     startRecording: () => void;
     stopRecording: (timedOut?: boolean) => void;
+    onCancelRecording?: () => void; // Cancel recording without sending
     audioTimeDomainData: AudioTimeDomainData; // <<< Add the prop type here
     recordingDuration: number; // Duration in seconds
     onSilenceDetected?: () => void; // Silence detection callback
@@ -99,6 +100,7 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     micPermissionError,
     startRecording,
     stopRecording,
+    onCancelRecording, // Cancel recording without sending
     audioTimeDomainData, // <<< Destructure the new prop
     recordingDuration,
     onSilenceDetected,
@@ -249,6 +251,7 @@ export const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     micPermissionError={micPermissionError}
                     startRecording={startRecording}
                     stopRecording={stopRecording}
+                    onCancelRecording={onCancelRecording} // Cancel recording without sending
                     audioTimeDomainData={audioTimeDomainData} // <<< Pass the prop down
                     recordingDuration={recordingDuration}
                     onSilenceDetected={onSilenceDetected}

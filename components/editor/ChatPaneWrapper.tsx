@@ -63,6 +63,7 @@ interface ChatPaneWrapperProps {
     micPermissionError: boolean;
     startRecording: () => void;
     stopRecording: (timedOut?: boolean) => void;
+    onCancelRecording?: () => void; // Cancel recording without sending
     audioTimeDomainData: AudioTimeDomainData;
     recordingDuration: number; // Duration in seconds
     onSilenceDetected?: () => void; // Silence detection callback
@@ -135,6 +136,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     micPermissionError,
     startRecording,
     stopRecording,
+    onCancelRecording,
     audioTimeDomainData,
     recordingDuration,
     onSilenceDetected,
@@ -246,6 +248,7 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
                     micPermissionError={micPermissionError}
                     startRecording={startRecording}
                     stopRecording={stopRecording}
+                    onCancelRecording={onCancelRecording}
                     audioTimeDomainData={audioTimeDomainData}
                     recordingDuration={recordingDuration}
                     onSilenceDetected={onSilenceDetected}

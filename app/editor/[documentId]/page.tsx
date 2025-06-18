@@ -484,7 +484,8 @@ function EditorPageContent() {
         isTranscribing,
         micPermissionError,
         handleMicrophoneClick,
-        handleStopRecording, 
+        handleStopRecording,
+        handleCancelRecording, // Cancel recording without sending
         audioTimeDomainData, // <<< NEW: Exposed audio data for visualization
         recordingDuration, // NEW: Recording timer duration
         // --- END NEW AUDIO PROPS ---
@@ -518,6 +519,7 @@ function EditorPageContent() {
     // Create aliases for missing functions expected by components
     const startRecording = handleMicrophoneClick;
     const stopRecording = handleStopRecording;
+    const onCancelRecording = handleCancelRecording; // Cancel recording without sending
     const orchestratorHandleFileUploadStart = handleFileUpload;
     const orchestratorCancelFileUpload = cancelFileUpload;
     const orchestratorPendingFile = pendingFile;
@@ -3429,6 +3431,7 @@ function EditorPageContent() {
                                 micPermissionError={micPermissionError}
                                 startRecording={startRecording}
                                 stopRecording={stopRecording}
+                                onCancelRecording={onCancelRecording}
                                 audioTimeDomainData={audioTimeDomainData}
                                 recordingDuration={recordingDuration}
                                 onSilenceDetected={handleSilenceDetected}
@@ -3520,6 +3523,7 @@ function EditorPageContent() {
                                 micPermissionError={micPermissionError}
                                 startRecording={startRecording}
                                 stopRecording={stopRecording}
+                                onCancelRecording={onCancelRecording}
                                 audioTimeDomainData={audioTimeDomainData}
                                 recordingDuration={recordingDuration}
                                 onSilenceDetected={handleSilenceDetected}
@@ -3627,6 +3631,7 @@ function EditorPageContent() {
                                     micPermissionError={micPermissionError}
                                     startRecording={startRecording}
                                     stopRecording={stopRecording}
+                                    onCancelRecording={onCancelRecording}
                                     audioTimeDomainData={audioTimeDomainData}
                                     recordingDuration={recordingDuration}
                                     onSilenceDetected={handleSilenceDetected}

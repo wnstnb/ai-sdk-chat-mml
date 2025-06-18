@@ -86,6 +86,7 @@ type ClientChatOrchestratorResult = {
   // Audio handlers
   handleAudioRecordingStart: () => Promise<void>;
   handleAudioRecordingStop: () => Promise<Blob | null>;
+  handleAudioRecordingCancel: () => Promise<void>; // Cancel recording without transcription
   handleAudioTranscriptionStart: () => Promise<string | null>;
   handleAudioTranscriptionComplete: (transcript: string | null, error?: any) => void;
   handleCompleteAudioFlow: () => Promise<void>;
@@ -551,6 +552,33 @@ export function useClientChatOrchestrator({
       });
     }
   }, [handleAudioRecordingStop, transcribeAudio, handleAudioTranscriptionComplete, setOperationStates]);
+
+  // Cancel recording without transcription
+  const handleAudioRecordingCancel = useCallback(async (): Promise<void> => {
+    console.log('[Orchestrator] Audio recording cancel requested');
+    try {
+      if (stopRecording && operationState.audioState === AudioState.RECORDING) {
+        // Stop recording but don't save the blob or transcribe
+        await stopRecording();
+        console.log('[Orchestrator] Recording stopped for cancellation');
+      }
+      // Reset to idle state without processing audio
+      setOperationStates({
+        audioState: AudioState.IDLE,
+        currentOperationDescription: undefined
+      });
+      setAudioBlob(null); // Clear any audio blob
+      console.log('[Orchestrator] Audio recording cancelled, state reset to IDLE');
+    } catch (error) {
+      console.error('[Orchestrator] Failed to cancel recording:', error);
+      // Still reset state even if cancellation had errors
+      setOperationStates({
+        audioState: AudioState.IDLE,
+        currentOperationDescription: undefined
+      });
+      setAudioBlob(null);
+    }
+  }, [stopRecording, operationState.audioState, setOperationStates, setAudioBlob]);
 
   // File upload handlers - Enhanced with resource management
   const handleFileUploadStart = useCallback(async (file: File): Promise<string | null> => {
@@ -1203,6 +1231,7 @@ export function useClientChatOrchestrator({
     // Audio handlers
     handleAudioRecordingStart,
     handleAudioRecordingStop,
+    handleAudioRecordingCancel,
     handleAudioTranscriptionStart,
     handleAudioTranscriptionComplete,
     handleCompleteAudioFlow,

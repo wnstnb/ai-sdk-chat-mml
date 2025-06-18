@@ -305,7 +305,7 @@ const CustomAudioVisualizerComponent: React.FC<CustomAudioVisualizerProps> = ({
 
   return (
     <div 
-      className="w-full h-16"
+      className="w-full h-full"
       role="img"
       aria-label={enableSilenceDetection 
         ? `Audio visualizer with silence detection. Current volume: ${(lastVolumeRef.current * 100).toFixed(0)}%`

@@ -70,6 +70,7 @@ interface EditorPaneWrapperProps {
     micPermissionError: boolean;
     startRecording: () => void;
     stopRecording: (timedOut?: boolean) => void;
+    onCancelRecording?: () => void; // Cancel recording without sending
     // --- END NEW AUDIO PROPS ---
     // --- ADD AUDIO VISUALIZATION PROP ---
     audioTimeDomainData: Uint8Array | null;
@@ -135,6 +136,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     micPermissionError,
     startRecording,
     stopRecording,
+    onCancelRecording, // Cancel recording without sending
     // --- END NEW AUDIO PROPS DESTRUCTURED ---
     // --- DESTRUCTURE AUDIO VISUALIZATION PROP ---
     audioTimeDomainData,
@@ -384,6 +386,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 micPermissionError={micPermissionError}
                                 startRecording={startRecording}
                                 stopRecording={stopRecording}
+                                onCancelRecording={onCancelRecording}
                                 audioTimeDomainData={audioTimeDomainData}
                                 recordingDuration={recordingDuration}
                                 onSilenceDetected={onSilenceDetected}

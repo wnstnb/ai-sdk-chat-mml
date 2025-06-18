@@ -76,6 +76,7 @@ interface UseChatInteractionsReturn {
     micPermissionError: boolean;
     handleMicrophoneClick: () => void;
     handleStopRecording: () => void;
+    handleCancelRecording: () => void; // Cancel recording without sending
     audioTimeDomainData: AudioTimeDomainData;
     recordingDuration: number; // Duration in seconds
     
@@ -519,6 +520,7 @@ export function useChatInteractions({
         isChatInputBusy,
         currentOperationStatusText,
         handleAudioRecordingStart: orchestratorHandleAudioRecordingStart,
+        handleAudioRecordingCancel: orchestratorHandleAudioRecordingCancel,
         handleCompleteAudioFlow,
         handleFileUploadStart,
         handleFileUploadComplete,
@@ -761,6 +763,14 @@ export function useChatInteractions({
         handleCompleteAudioFlow(); 
     }, [handleCompleteAudioFlow]);
 
+    const handleCancelRecording = useCallback(() => {
+        console.log('[Editor Audio] handleCancelRecording called, cancelling recording without transcription');
+        // Reset transcription states to prevent auto-submit
+        setWasTranscribing(false);
+        setAudioTranscriptionPending(false);
+        orchestratorHandleAudioRecordingCancel(); 
+    }, [orchestratorHandleAudioRecordingCancel]);
+
     // Create aliases for missing functions expected by components
     const startRecording = handleMicrophoneClick;
     const stopRecording = handleStopRecording;
@@ -795,7 +805,8 @@ export function useChatInteractions({
         audioTimeDomainData,
         recordingDuration,
         handleMicrophoneClick,
-        handleStopRecording,  
+        handleStopRecording,
+        handleCancelRecording,
         handleFileUpload: orchestratorHandleFileUploadStart,      
         taggedDocuments,
         setTaggedDocuments,

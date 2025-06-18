@@ -59,6 +59,7 @@ interface ChatInputUIProps {
     micPermissionError?: boolean; // << Made optional
     startRecording?: () => void; // << Made optional
     stopRecording?: () => void; // << Made optional
+    onCancelRecording?: () => void; // << NEW: Cancel recording without sending
     audioTimeDomainData?: AudioTimeDomainData; // << Made optional
     clearPreview: () => void; // Add clearPreview from useFileUpload hook
     // --- NEW: Add recordingDuration prop ---
@@ -117,6 +118,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     micPermissionError = false, // Default to false
     startRecording,
     stopRecording,
+    onCancelRecording, // << NEW: Destructure cancel recording function
     audioTimeDomainData = null, // Default to null
     // --- NEW: Destructure recordingDuration ---
     recordingDuration = 0,
@@ -499,25 +501,18 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                 <div className="relative w-full flex items-center min-h-[40px]">
                     {/* Conditional Rendering (Check isRecording before rendering visualizer) */}
                     {isRecording ? (
-                        <div className="relative w-full">
-                            {/* Recording State Overlay */}
-                            <div className={`absolute inset-0 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md ${
-                                prefersReducedMotion ? '' : 'animate-pulse'
-                            }`} />
+                        <div className="relative w-full h-10 flex items-center">
+                            {/* Audio Visualizer - Constrained to same height as textarea */}
+                            <div className="w-full h-full px-3">
+                                <CustomAudioVisualizer
+                                    audioTimeDomainData={audioTimeDomainData} // Pass potentially null data
+                                    onSilenceDetected={handleSilenceDetected} // Pass silence detection callback
+                                    enableSilenceDetection={true} // Enable silence detection during recording
+                                />
+                            </div>
                             
-                            {/* Recording Content Container - Overlaid status elements */}
-                            <div className="relative w-full p-3">
-                                {/* Audio Visualizer - Full Width Container (No constraints) */}
-                                <div className="w-full">
-                                    <CustomAudioVisualizer
-                                        audioTimeDomainData={audioTimeDomainData} // Pass potentially null data
-                                        onSilenceDetected={handleSilenceDetected} // Pass silence detection callback
-                                        enableSilenceDetection={true} // Enable silence detection during recording
-                                    />
-                                </div>
-                                
-                                {/* Overlaid Status Elements - Positioned absolutely to not interfere with width */}
-                                <div className="absolute inset-0 pointer-events-none flex items-center justify-between px-3 py-3 z-20">
+                            {/* Overlaid Status Elements - Positioned absolutely to not interfere with width */}
+                            <div className="absolute inset-0 pointer-events-none flex items-center justify-between px-3 z-20">
                                     {/* Left: Recording Status Indicator */}
                                     <div className="flex items-center gap-2 pointer-events-none">
                                         {/* Recording Dot */}
@@ -538,12 +533,31 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                                         </span>
                                     </div>
                                     
-                                    {/* Right: Placeholder for future controls if needed */}
-                                    <div className="flex items-center gap-2 pointer-events-none">
-                                        {/* Auto-stop text removed per user request */}
-                                    </div>
+                                                                    {/* Right: Cancel Recording Button */}
+                                <div className="flex items-center gap-2 pointer-events-auto z-30">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            if (typeof onCancelRecording === 'function') {
+                                                onCancelRecording();
+                                            }
+                                        }}
+                                        onMouseDown={(e) => {
+                                            console.log('[ChatInputUI] Cancel button mouse down');
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                        }}
+                                        className="w-6 h-6 rounded-full bg-gray-500/80 hover:bg-gray-600/80 dark:bg-gray-400/80 dark:hover:bg-gray-300/80 text-white dark:text-gray-900 flex items-center justify-center transition-colors duration-200 backdrop-blur-sm cursor-pointer"
+                                        title="Cancel recording"
+                                        aria-label="Cancel recording"
+                                        style={{ pointerEvents: 'auto' }}
+                                    >
+                                        <X size={14} />
+                                    </button>
                                 </div>
-                            </div>
+                                </div>
                         </div>
                     ) : isTranscribing ? (
                         /* Transcribing State */
