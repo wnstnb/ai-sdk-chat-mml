@@ -283,8 +283,6 @@ export const useFileData = () => {
         throw new Error(errorData.error?.message || `Failed to rename document (${response.status})`);
       }
 
-      toast.success(`Document renamed to "${trimmedName}" successfully.`);
-
       // Refetch data for the current folder to update the view
       await fetchData(currentFolderId);
       return true; // Indicate success

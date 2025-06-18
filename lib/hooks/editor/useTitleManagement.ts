@@ -70,7 +70,6 @@ export function useTitleManagement({
 
             // const { data: updatedDoc } = await response.json(); // We might not need updatedDoc directly
             setCurrentTitle(optimisticNewTitle); // Update the persisted title state
-            toast.success('Document renamed successfully!');
             onTitleSaveSuccess?.(optimisticNewTitle); // Notify parent component
 
         } catch (err: any) {
