@@ -183,9 +183,17 @@ const CustomAudioVisualizerComponent: React.FC<CustomAudioVisualizerProps> = ({
       if (i < 5) {
         // For the rightmost bars, use current audio data with better sampling
         if (audioTimeDomainData && audioTimeDomainData.length > 0) {
+          // Better fix: Sample evenly across the available audio data
           const dataIndex = Math.floor((i / 5) * audioTimeDomainData.length);
-          const sample = (audioTimeDomainData[dataIndex] - 128) / 128;
-          barHeight = Math.abs(sample) * height * sensitivity;
+          const clampedIndex = Math.min(dataIndex, audioTimeDomainData.length - 1);
+          const sample = (audioTimeDomainData[clampedIndex] - 128) / 128;
+          // Reduce sensitivity to prevent bars from being too tall
+          barHeight = Math.abs(sample) * height * (sensitivity * 0.5);
+          
+          // Debug logging for tall bars
+          if (barHeight > height * 0.5 && i < 3) {
+            console.log(`[AudioVisualizer] Tall bar detected: i=${i}, sample=${sample.toFixed(3)}, barHeight=${barHeight.toFixed(1)}, height=${height}`);
+          }
         } else {
           barHeight = 3; // Minimum height when no data
         }
@@ -201,7 +209,7 @@ const CustomAudioVisualizerComponent: React.FC<CustomAudioVisualizerProps> = ({
       }
 
       // Ensure minimum and maximum bar heights with better scaling
-      barHeight = Math.max(3, Math.min(barHeight, height * 0.85));
+      barHeight = Math.max(2, Math.min(barHeight, height * 0.6));
 
       // Calculate y position (center the bar)
       const y = (height - barHeight) / 2;

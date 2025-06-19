@@ -7,6 +7,8 @@ import { ModelSelector } from '@/components/ModelSelector';
 import { TextFilePreview } from './TextFilePreview'; // Import from sibling file
 import Image from 'next/image'; // Import Next.js Image
 import CustomAudioVisualizer from './CustomAudioVisualizer'; // <<< NEW: Import custom visualizer
+import RecordingStatusOverlay from '@/components/ui/RecordingStatusOverlay'; // Import shared recording status overlay
+import { formatRecordingTime } from '@/lib/utils/formatRecordingTime'; // Import shared timer utility
 import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions'; // <<< NEW: Import type
 import { DocumentSearchInput } from '../chat/DocumentSearchInput'; // <<< NEW: Import DocumentSearchInput
 import { TaggedDocument } from '@/lib/types'; // Import TaggedDocument from shared types
@@ -181,13 +183,8 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     const canRecord = !!startRecording && !!stopRecording && !isLoading && !isUploading && !(isRecording ?? false) && !(isTranscribing ?? false) && !(micPermissionError ?? false);
     const micAvailable = !!startRecording && !!stopRecording; // Check if mic functions are even provided
 
-    // --- NEW: Format recording duration ---
-    const formatDuration = (seconds: number): string => {
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
-        return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
-    };
-    // --- END: Format recording duration ---
+    // Use shared timer formatting utility
+    const formatDuration = formatRecordingTime;
 
     // --- NEW: Silence detection handler ---
     const handleSilenceDetected = useCallback(() => {
@@ -511,53 +508,14 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                                 />
                             </div>
                             
-                            {/* Overlaid Status Elements - Positioned absolutely to not interfere with width */}
-                            <div className="absolute inset-0 pointer-events-none flex items-center justify-between px-3 z-20">
-                                    {/* Left: Recording Status Indicator */}
-                                    <div className="flex items-center gap-2 pointer-events-none">
-                                        {/* Recording Dot */}
-                                        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-lg" />
-                                        
-                                        {/* Timer Display - Enhanced */}
-                                        <span 
-                                            className="text-sm font-mono font-medium text-red-600 dark:text-red-400 bg-white/90 dark:bg-gray-900/90 px-2 py-1 rounded-md shadow-sm backdrop-blur-sm"
-                                            aria-live="polite"
-                                            aria-label={`Recording duration: ${formatDuration(recordingDuration)}`}
-                                        >
-                                            {formatDuration(recordingDuration)}
-                                        </span>
-                                        
-                                        {/* Recording Status Text */}
-                                        <span className="text-xs text-red-600 dark:text-red-400 font-medium bg-white/80 dark:bg-gray-900/80 px-1.5 py-0.5 rounded backdrop-blur-sm">
-                                            Recording...
-                                        </span>
-                                    </div>
-                                    
-                                                                    {/* Right: Cancel Recording Button */}
-                                <div className="flex items-center gap-2 pointer-events-auto z-30">
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            if (typeof onCancelRecording === 'function') {
-                                                onCancelRecording();
-                                            }
-                                        }}
-                                        onMouseDown={(e) => {
-                                            console.log('[ChatInputUI] Cancel button mouse down');
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                        }}
-                                        className="w-6 h-6 rounded-full bg-gray-500/80 hover:bg-gray-600/80 dark:bg-gray-400/80 dark:hover:bg-gray-300/80 text-white dark:text-gray-900 flex items-center justify-center transition-colors duration-200 backdrop-blur-sm cursor-pointer"
-                                        title="Cancel recording"
-                                        aria-label="Cancel recording"
-                                        style={{ pointerEvents: 'auto' }}
-                                    >
-                                        <X size={14} />
-                                    </button>
-                                </div>
-                                </div>
+                            {/* Recording Status Overlay - Using shared component */}
+                            <RecordingStatusOverlay
+                                isRecording={isRecording}
+                                formattedTime={formatDuration(recordingDuration)}
+                                onCancelRecording={onCancelRecording}
+                                showCancelButton={true}
+                                timerAriaLabel={`Recording duration: ${formatDuration(recordingDuration)}`}
+                            />
                         </div>
                     ) : isTranscribing ? (
                         /* Transcribing State */

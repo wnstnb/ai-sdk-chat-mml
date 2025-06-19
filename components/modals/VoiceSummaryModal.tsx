@@ -22,6 +22,8 @@ import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import CustomAudioVisualizer from '@/components/editor/CustomAudioVisualizer';
+import RecordingStatusOverlay from '@/components/ui/RecordingStatusOverlay';
+import { useRecordingTimer } from '@/hooks/useRecordingTimer';
 import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions';
 import { debounce } from '@/lib/utils/debounce';
 import { useRouter } from 'next/navigation';
@@ -90,6 +92,9 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
   const [targetDocument, setTargetDocument] = React.useState<TargetDocumentType>('new'); // State for target selection
   const [isCreatingNewDocument, setIsCreatingNewDocument] = React.useState<boolean>(false);
   const [recordingStartTime, setRecordingStartTime] = React.useState<string | null>(null);
+  
+  // Use shared recording timer hook
+  const { formattedTime } = useRecordingTimer(isRecordingFromStore, recordingStartTime);
 
   // --- NEW: State for WebSocket configuration ---
   const [websocketUrl, setWebsocketUrl] = React.useState<string | null>(null);
@@ -134,6 +139,8 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
   React.useEffect(() => {
     isRecordingRef.current = isRecordingFromStore;
   }, [isRecordingFromStore]);
+
+  // Timer is now handled by the useRecordingTimer hook
 
   // --- NEW: Function to fetch WebSocket configuration ---
   const fetchWebsocketConfig = React.useCallback(async (): Promise<{ websocketUrl: string; websocketAuthToken: string } | null> => {
@@ -185,6 +192,8 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
     () => debounce((text: string) => setVoiceSummaryTranscription(text), 100),
     [setVoiceSummaryTranscription]
   );
+
+  // Timer formatting is now handled by the useRecordingTimer hook
 
   // Memoized helper functions
   const stopAudioCapture = React.useCallback(() => {
@@ -628,6 +637,8 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
       analyserNodeRef.current.fftSize = 2048; // Example FFT size
       const bufferLength = analyserNodeRef.current.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
+      // Initialize with "silent" audio data (128 is the center value for silent audio)
+      dataArray.fill(128);
       setAnalyserData(dataArray); // Initialize state with correct size
 
       const workletBlob = new Blob([audioProcessorWorkletCode], { type: 'application/javascript' });
@@ -1092,8 +1103,23 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
         
         {/* Audio Visualizer - Placed above tabs for visibility during recording */}
         {isRecordingRef.current && (
-          <div className="my-3 h-16 w-full bg-gray-800 rounded-md overflow-hidden">
-            <CustomAudioVisualizer audioTimeDomainData={analyserData} barColor='#4A90E2' barWidth={3} barGap={2} sensitivity={3} />
+          <div className="my-3 h-10 w-full rounded-md overflow-hidden relative">
+            {/* Audio Visualizer - Aligned with ChatInputUI design */}
+            <div className="w-full h-full px-3">
+              <CustomAudioVisualizer 
+                audioTimeDomainData={analyserData} 
+                barWidth={5} 
+                barGap={2} 
+                sensitivity={2} 
+              />
+            </div>
+
+            {/* Recording Status Overlay - Using shared component */}
+            <RecordingStatusOverlay
+              isRecording={isRecordingRef.current}
+              formattedTime={formattedTime()}
+              timerAriaLabel={`Recording duration: ${formattedTime()}`}
+            />
           </div>
         )}
 
