@@ -24,6 +24,7 @@ export interface PartykitYjsProviderOptions {
   onAwarenessChange?: (awareness: any) => void;
   onAuthError?: (error: Error) => void;
   onConnectionError?: (error: Error) => void;
+  onPermissionUpdate?: () => void; // Callback for when permissions are updated
   WebSocketPolyfill?: typeof WebSocket; // For Node.js environments
   maxReconnectAttempts?: number;
   reconnectDelay?: number;
@@ -71,6 +72,7 @@ export class PartykitYjsProvider {
   private onAwarenessChange?: (awareness: any) => void;
   private onAuthError?: (error: Error) => void;
   private onConnectionError?: (error: Error) => void;
+  private onPermissionUpdate?: () => void;
 
   constructor(doc: Y.Doc, options: PartykitYjsProviderOptions) {
     this.doc = doc;
@@ -93,6 +95,7 @@ export class PartykitYjsProvider {
     this.onAwarenessChange = options.onAwarenessChange;
     this.onAuthError = options.onAuthError;
     this.onConnectionError = options.onConnectionError;
+    this.onPermissionUpdate = options.onPermissionUpdate;
 
     // Initialize Supabase client for persistence and auth
     if (options.supabaseUrl && options.supabaseAnonKey) {
@@ -499,6 +502,12 @@ export class PartykitYjsProvider {
         const authError = new Error(`Authentication error: ${data.message || 'Unknown error'}`);
         console.error('[PartykitYjsProvider] Auth error from server:', authError.message);
         this.onAuthError?.(authError);
+        break;
+        
+      case 'permissionsUpdated':
+        // Permission update notification from another client
+        console.log('[PartykitYjsProvider] Received permission update notification:', data);
+        this.onPermissionUpdate?.();
         break;
         
       default:
@@ -908,6 +917,32 @@ export class PartykitYjsProvider {
 
   public async refreshAuthToken(): Promise<void> {
     await this.ensureValidAuthToken();
+  }
+
+  /**
+   * Send a permission update notification to all connected clients
+   * This triggers other clients to re-fetch their permissions from the server
+   */
+  public sendPermissionUpdateNotification(): void {
+    if (!this.connectionState.isConnected) {
+      console.warn('[PartykitYjsProvider] Cannot send permission update - not connected to PartyKit');
+      return;
+    }
+
+    if (!this.documentId || !this.userId) {
+      console.error('[PartykitYjsProvider] Cannot send permission update - missing documentId or userId');
+      return;
+    }
+
+    const permissionUpdateMessage = {
+      type: 'permissionsUpdated',
+      documentId: this.documentId,
+      timestamp: Date.now(),
+      triggeredBy: this.userId
+    };
+
+    console.log('[PartykitYjsProvider] Sending permission update notification:', permissionUpdateMessage);
+    this.sendMessage(permissionUpdateMessage);
   }
 
   public destroy() {

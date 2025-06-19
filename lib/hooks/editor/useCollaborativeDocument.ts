@@ -26,6 +26,7 @@ export interface UseCollaborativeDocumentOptions {
   onUsersChange?: (users: Array<UserAwareness & { userId: string; lastSeen: string }>) => void;
   onConnectionError?: (error: Error) => void;
   onAuthError?: (error: Error) => void;
+  onPermissionUpdate?: () => void;
 }
 
 export interface UseCollaborativeDocumentReturn {
@@ -43,6 +44,8 @@ export interface UseCollaborativeDocumentReturn {
   updateSingleBlock: (blockId: string, updates: Partial<PartialBlock>) => boolean;
   insertSingleBlock: (block: PartialBlock, position?: number) => boolean;
   deleteSingleBlock: (blockId: string) => boolean;
+  // Permission notifications
+  sendPermissionUpdateNotification: () => void;
 }
 
 /**
@@ -66,6 +69,7 @@ export function useCollaborativeDocument(
     onUsersChange,
     onConnectionError,
     onAuthError,
+    onPermissionUpdate,
   } = options;
 
   const [yjsDocument, setYjsDocument] = useState<CollaborativeDocument | null>(null);
@@ -142,6 +146,10 @@ export function useCollaborativeDocument(
             console.error('[useCollaborativeDocument] Connection error:', error.message);
             setConnectionState(provider.getConnectionState());
             onConnectionError?.(error);
+          },
+          onPermissionUpdate: () => {
+            console.log('[useCollaborativeDocument] Permission update notification received');
+            onPermissionUpdate?.();
           },
         });
 
@@ -297,6 +305,17 @@ export function useCollaborativeDocument(
     return deleteBlock(yjsDocument, blockId, userId);
   }, [yjsDocument, userId]);
 
+  // Send permission update notification to all connected clients
+  const sendPermissionUpdateNotification = useCallback(() => {
+    if (!providerRef.current) {
+      console.warn('[useCollaborativeDocument] Cannot send permission update - provider not available');
+      return;
+    }
+    
+    console.log('[useCollaborativeDocument] Sending permission update notification');
+    providerRef.current.sendPermissionUpdateNotification();
+  }, []);
+
   // Cleanup function
   const cleanup = useCallback(() => {
     if (cleanupRef.current) {
@@ -328,5 +347,7 @@ export function useCollaborativeDocument(
     updateSingleBlock,
     insertSingleBlock,
     deleteSingleBlock,
+    // Permission notifications
+    sendPermissionUpdateNotification,
   };
 } 

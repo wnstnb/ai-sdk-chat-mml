@@ -1,6 +1,21 @@
 import type * as Party from "partykit/server";
 import { onConnect } from "y-partykit";
 
+// Type definitions for custom messages
+interface PermissionUpdateMessage {
+  type: 'permissionsUpdated';
+  documentId: string;
+  timestamp: number;
+  triggeredBy: string; // userId
+}
+
+interface CommentMessage {
+  type: string; // comment:* types
+  [key: string]: any;
+}
+
+type CustomMessage = PermissionUpdateMessage | CommentMessage;
+
 export default class Server implements Party.Server {
   constructor(readonly room: Party.Room) {}
 
@@ -56,10 +71,42 @@ export default class Server implements Party.Server {
     // Log message for debugging
     console.log('[PartyKit] Message from user:', (sender as any).userId, 'client:', (sender as any).clientId);
     
-    // Handle string messages (could be comment events)
+    // Handle string messages (custom events)
     if (typeof message === 'string') {
       try {
-        const parsedMessage = JSON.parse(message);
+        const parsedMessage: CustomMessage = JSON.parse(message);
+        
+        // Handle permission update events
+        if (parsedMessage.type === 'permissionsUpdated') {
+          console.log('[PartyKit] Permission update event received from user:', (sender as any).userId);
+          
+          const permissionMsg = parsedMessage as PermissionUpdateMessage;
+          
+          // Validate message structure
+          if (!permissionMsg.documentId || !permissionMsg.timestamp || !permissionMsg.triggeredBy) {
+            console.error('[PartyKit] Invalid permission update message structure:', permissionMsg);
+            return;
+          }
+          
+          // Validate that the document ID matches the room ID
+          const roomDocumentId = this.room.id;
+          if (permissionMsg.documentId !== roomDocumentId) {
+            console.error('[PartyKit] Permission update document ID mismatch. Expected:', roomDocumentId, 'Received:', permissionMsg.documentId);
+            return;
+          }
+          
+          // Validate that the sender is the one who triggered the update
+          const senderUserId = (sender as any).userId;
+          if (permissionMsg.triggeredBy !== senderUserId) {
+            console.error('[PartyKit] Permission update sender validation failed. Expected:', senderUserId, 'Received:', permissionMsg.triggeredBy);
+            return;
+          }
+          
+          // Broadcast permission update to all connected clients EXCEPT the sender
+          console.log('[PartyKit] Broadcasting permission update to all clients except sender');
+          this.room.broadcast(message, [sender.id]);
+          return;
+        }
         
         // Handle comment-related events
         if (parsedMessage.type && parsedMessage.type.startsWith('comment:')) {
@@ -69,6 +116,10 @@ export default class Server implements Party.Server {
           this.room.broadcast(message, [sender.id]);
           return;
         }
+        
+        // Log unhandled custom message types
+        console.log('[PartyKit] Unhandled custom message type:', parsedMessage.type);
+        
       } catch (e) {
         // Not JSON, probably Y.js binary data as string
         console.log('[PartyKit] Non-JSON string message, treating as Y.js data');

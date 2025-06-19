@@ -71,6 +71,9 @@ interface CollaborationContextType {
   insertSingleBlock: (block: PartialBlock, position?: number) => boolean;
   deleteSingleBlock: (blockId: string) => boolean;
   
+  // Permission notifications
+  sendPermissionUpdateNotification: () => void;
+  
   // Event handlers
   onContentChange?: (blocks: PartialBlock[]) => void;
   onUsersChange?: (users: CollaborationUser[]) => void;
@@ -186,6 +189,8 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
       console.error('[CollaborationContext] Auth error:', error);
       onAuthError?.(error);
   }, [onAuthError]);
+
+
 
   // Initialize collaborative document when needed
   const collaboration = useCollaborativeDocument({
@@ -580,6 +585,9 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
     updateSingleBlock: collaboration.updateSingleBlock,
     insertSingleBlock: collaboration.insertSingleBlock,
     deleteSingleBlock: collaboration.deleteSingleBlock,
+    
+    // Permission notifications
+    sendPermissionUpdateNotification: collaboration.sendPermissionUpdateNotification,
     
     // Event handlers
     onContentChange,

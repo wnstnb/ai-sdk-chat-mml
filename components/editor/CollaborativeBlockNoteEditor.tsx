@@ -11,6 +11,7 @@ import * as Y from 'yjs';
 import YPartyKitProvider from 'y-partykit/provider';
 import { useCollaborationContext } from '@/contexts/CollaborationContext';
 import { useDocumentPermissions } from '@/hooks/useDocumentPermissions';
+
 import {
   BlockNoteViewEditor,
   // COMMENTED OUT: Comment UI imports temporarily disabled - see comment-system-challenges-prd.md
@@ -113,8 +114,10 @@ const CollaborativeBlockNoteEditor = ({
     canComment,
     canView,
     isLoading: permissionsLoading,
-    error: permissionsError
+    error: permissionsError,
+    refreshPermissions
   } = useDocumentPermissions(documentId);
+  
   console.log('[CollaborativeBlockNoteEditor] Component rendering with props:', {
     documentId,
     enableComments,
