@@ -34,6 +34,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     isVoiceSummaryModalOpen, 
     openVoiceSummaryModal, 
     closeVoiceSummaryModal,
+    isVoiceSummaryActive, // NEW: for exclusive usage check
     isMobileSidebarOpen,
     openMobileSidebar,
     closeMobileSidebar,
@@ -147,6 +148,15 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   
   const openWebScrapingModal = () => setIsWebScrapingModalOpen(true);
   const closeWebScrapingModal = () => setIsWebScrapingModalOpen(false);
+  
+  // NEW: Wrapper function for voice summary modal with exclusive usage check
+  const handleVoiceSummaryOpen = () => {
+    if (isVoiceSummaryActive) {
+      toast.info('Voice summary is already active. Please close or complete the current session before starting a new one.');
+      return;
+    }
+    openVoiceSummaryModal();
+  };
 
   const NO_SIDEBAR_PATHS = ['/', '/login', '/signup', '/signup/confirm-email', '/signup/success', '/terms', '/privacy', '/auth/callback', '/auth/reset-password'];
   const displaySidebar = isAuthenticated && isMounted && !NO_SIDEBAR_PATHS.includes(pathname);
@@ -180,9 +190,9 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
           onNewNote={handleNewNote}
           isNewNoteLoading={isCreatingNewNote}
           isNewNoteDisabled={isCreatingNewNote}
-          onVoiceSummary={openVoiceSummaryModal}
+          onVoiceSummary={handleVoiceSummaryOpen}
           isVoiceSummaryLoading={false}
-          isVoiceSummaryDisabled={false}
+          isVoiceSummaryDisabled={isVoiceSummaryActive}
           onPdfSummary={openPDFModal}
           isPdfSummaryLoading={false}
           isPdfSummaryDisabled={false}
