@@ -21,7 +21,7 @@ const CustomAudioVisualizerComponent: React.FC<CustomAudioVisualizerProps> = ({
   barColor, // Keep for backward compatibility but use as override
   barWidth = 5, // Slightly wider bars for better visibility
   barGap = 2, // Default gap between bars
-  sensitivity = 5, // Increased sensitivity
+  sensitivity = 3, // Increased sensitivity
   // NEW: Silence detection props with defaults
   onSilenceDetected,
   silenceThreshold = 1.5, // 1.5 seconds
