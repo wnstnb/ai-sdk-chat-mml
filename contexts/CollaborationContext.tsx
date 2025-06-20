@@ -8,6 +8,7 @@ import { UserAwareness } from '@/lib/collaboration/yjsDocument';
 import { ConnectionState } from '@/lib/collaboration/partykitYjsProvider';
 import { useCollaborativeDocument, UseCollaborativeDocumentReturn } from '@/lib/hooks/editor/useCollaborativeDocument';
 import { createClient } from '@/lib/supabase/client';
+import { useUserProfile } from '@/hooks/useUserProfile';
 
 export interface CollaborationUser {
   id: string;
@@ -115,6 +116,9 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
   const sessionCleanupRef = useRef<(() => void) | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const supabase = createClient();
+  
+  // Get user profile data including username
+  const { profile } = useUserProfile();
 
   // Create thread store when collaboration is ready - state declaration
   const [threadStore, setThreadStore] = useState<any>(null);
@@ -311,21 +315,29 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
     return colors[Math.abs(hash) % colors.length];
   }, []);
 
-  // Monitor authentication state for user updates
+  // Monitor profile changes and authentication state for user updates
+  useEffect(() => {
+    if (profile) {
+      const user: CollaborationUser = {
+        id: profile.id,
+        name: profile.username,
+        email: profile.email,
+        avatar: profile.avatar_url,
+        color: generateUserColor(profile.id),
+        isActive: true,
+        lastSeen: new Date().toISOString(),
+      };
+      setCurrentUser(user);
+      console.log('[CollaborationContext] Updated current user with profile data:', user);
+    } else {
+      setCurrentUser(null);
+    }
+  }, [profile, generateUserColor]);
+
+  // Monitor authentication state for cleanup on sign out
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        const user: CollaborationUser = {
-          id: session.user.id,
-          name: session.user.user_metadata?.name || session.user.email || 'Anonymous User',
-          email: session.user.email,
-          avatar: session.user.user_metadata?.avatar_url,
-          color: generateUserColor(session.user.id),
-          isActive: true,
-          lastSeen: new Date().toISOString(),
-        };
-        setCurrentUser(user);
-      } else if (event === 'SIGNED_OUT') {
+      if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
         // Call cleanup directly to avoid dependency loops
         if (cleanupRef.current) {
@@ -337,7 +349,7 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({
     return () => {
       authListener?.subscription.unsubscribe();
     };
-  }, [supabase, generateUserColor]); // Remove documentId and currentUser dependencies
+  }, [supabase]); // Remove documentId and currentUser dependencies
 
   // Initialize collaboration for a document
   const initializeCollaboration = useCallback((

@@ -9,6 +9,7 @@ import { AttachedToastContainer } from '@/components/chat/AttachedToastContainer
 import { useAttachedToastContext } from '@/contexts/AttachedToastContext';
 import { ChatMessagesList } from './ChatMessagesList';
 import { useAuthStore } from '@/lib/stores/useAuthStore';
+import { useUserProfile } from '@/hooks/useUserProfile';
 
 
 // Dynamically import CollaborativeBlockNoteEditor with SSR disabled
@@ -177,15 +178,18 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     // Initialize attached toasts for collapsed chat input
     const { toasts } = useAttachedToastContext();
     
-    // Get current user from auth store
+    // Get current user from auth store and profile data
     const { user } = useAuthStore();
+    const { profile } = useUserProfile();
     
     // Debug user data
     console.log('[EditorPaneWrapper] User data for collaboration:', {
         userId: user?.id,
-        userName: user?.user_metadata?.name || user?.email || 'Anonymous User',
+        userName: profile?.username || 'Anonymous User',
         hasUser: !!user,
-        userObject: user
+        hasProfile: !!profile,
+        userObject: user,
+        profileObject: profile
     });
     
     // Refs for click-off behavior
@@ -285,7 +289,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                         onEditorContentChange={onEditorContentChange}
                         theme={currentTheme} // Pass the theme to CollaborativeBlockNoteEditor
                         userId={user?.id}
-                        userName={user?.user_metadata?.name || user?.email || 'Anonymous User'}
+                        userName={profile?.username || 'Anonymous User'}
                         userColor={undefined} // Let the component generate a color based on userId
                         useCollaboration={true} // EXPLICITLY ENABLE: Real-time collaboration
                         enableComments={false} // DISABLED: Comments temporarily disabled - see comment-system-challenges-prd.md

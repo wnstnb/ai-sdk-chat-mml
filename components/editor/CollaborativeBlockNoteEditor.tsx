@@ -10,6 +10,7 @@ import '@blocknote/mantine/style.css';
 import * as Y from 'yjs';
 import YPartyKitProvider from 'y-partykit/provider';
 import { useCollaborationContext } from '@/contexts/CollaborationContext';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { useDocumentPermissions } from '@/hooks/useDocumentPermissions';
 
 import {
@@ -118,14 +119,26 @@ const CollaborativeBlockNoteEditor = ({
     refreshPermissions
   } = useDocumentPermissions(documentId);
   
-  console.log('[CollaborativeBlockNoteEditor] Component rendering with props:', {
-    documentId,
-    enableComments,
-    hasUserId: !!userId,
-    userName,
-    useCollaboration,
-    initialContentLength: initialContent?.length || 0
-  });
+  // Get user profile data to use the most up-to-date username
+  const { profile } = useUserProfile();
+  
+  // Use profile username if available, otherwise fall back to prop
+  const effectiveUserName = profile?.username || userName || 'Anonymous User';
+  
+  // Only add session info for anonymous/fallback users, not for real usernames
+  const hasRealUsername = !!profile?.username;
+  
+      console.log('[CollaborativeBlockNoteEditor] Component rendering with props:', {
+      documentId,
+      enableComments,
+      hasUserId: !!userId,
+      userName,
+      profileUsername: profile?.username,
+      effectiveUserName,
+      hasRealUsername,
+      useCollaboration,
+      initialContentLength: initialContent?.length || 0
+    });
 
   const componentId = useRef(`editor-${Math.random().toString(36).substr(2, 9)}`);
   const isMobileViewport = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
@@ -250,9 +263,13 @@ const CollaborativeBlockNoteEditor = ({
       provider,
       // Where to store BlockNote data in the Y.Doc - use document-specific fragment
       fragment: doc.getXmlFragment(`document-store-${documentId}`),
-      // Information (name and color) for this user - include session info for unique identification
+      // Information (name and color) for this user - include session info only for anonymous/fallback users
       user: {
-        name: sessionId ? `${userName || 'Anonymous'} (${sessionId.split('_')[2]?.substr(0, 4) || 'A'})` : (userName || 'Anonymous'),
+        name: hasRealUsername 
+          ? effectiveUserName 
+          : sessionId 
+            ? `${effectiveUserName} (${sessionId.split('_')[2]?.substr(0, 4) || 'A'})` 
+            : effectiveUserName,
         color: userColor || getRandomColor(),
       },
     } : undefined,
@@ -263,7 +280,7 @@ const CollaborativeBlockNoteEditor = ({
     // } : undefined,
     // Add resolveUsers function for comment user resolution
     // resolveUsers: enableComments ? resolveUsers : undefined,
-  }, [provider, initialContent, sessionId, userName, userColor, documentId, enableComments, threadStore, resolveUsers]);
+  }, [provider, initialContent, sessionId, effectiveUserName, userColor, documentId, enableComments, threadStore, resolveUsers]);
 
   // Debug editor creation
   useEffect(() => {
@@ -594,7 +611,7 @@ const CollaborativeBlockNoteEditor = ({
 const arePropsEqual = (prevProps: CollaborativeBlockNoteEditorProps, nextProps: CollaborativeBlockNoteEditorProps) => {
   // Compare all props except onEditorContentChange (which is often recreated)
   const propsToCompare: (keyof CollaborativeBlockNoteEditorProps)[] = [
-    'documentId', 'initialContent', 'theme', 'userId', 'userName', 
+    'documentId', 'initialContent', 'theme', 'userId', 
     'userColor', 'enableComments', 'useCollaboration'
   ];
   
