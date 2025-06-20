@@ -1,0 +1,37 @@
+[
+    {
+      "schemaname": "public",
+      "tablename": "comment_threads",
+      "rls_enabled": true
+    },
+    {
+      "schemaname": "public",
+      "tablename": "comments",
+      "rls_enabled": true
+    },
+    {
+      "schemaname": "public",
+      "tablename": "document_permissions",
+      "rls_enabled": true
+    },
+    {
+      "schemaname": "public",
+      "tablename": "documents",
+      "rls_enabled": true
+    },
+    {
+      "schemaname": "public",
+      "tablename": "folders",
+      "rls_enabled": true
+    },
+    {
+      "schemaname": "public",
+      "tablename": "messages",
+      "rls_enabled": true
+    },
+    {
+      "schemaname": "public",
+      "tablename": "tool_calls",
+      "rls_enabled": true
+    }
+  ]

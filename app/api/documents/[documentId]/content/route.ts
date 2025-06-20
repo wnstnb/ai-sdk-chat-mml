@@ -1,18 +1,80 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseServerClient } from '../../../../../lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
+
+// Simple test handler to verify route is working
+export async function GET() {
+  console.log('[Content API] GET request received - route is working!');
+  return NextResponse.json({ message: 'Content API route is working' }, { status: 200 });
+}
+
+/**
+ * Create a Supabase client for JWT token authentication (for user validation)
+ */
+function createSupabaseClientForAuth(request: Request) {
+  const authHeader = request.headers.get('authorization');
+  const accessToken = authHeader?.replace('Bearer ', '');
+
+  if (accessToken) {
+    // Create client with anon key and set the access token for this request
+    return createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      }
+    );
+  }
+
+  // Fallback: create client with anon key for cookie-based auth
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
+}
+
+/**
+ * Create a Supabase client with service role key (bypasses RLS)
+ */
+function createSupabaseServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
+}
 
 // Re-use or adapt the helper function from folders route
-async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerClient>) {
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) {
-    console.error('Session Error:', sessionError.message);
-    return { errorResponse: NextResponse.json({ error: { code: 'SERVER_ERROR', message: 'Failed to get session.' } }, { status: 500 }) };
+async function getUserOrError(supabase: any) {
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError) {
+    console.error('[Content API] Auth error:', authError.message);
+    return { errorResponse: NextResponse.json({ error: { code: 'SERVER_ERROR', message: 'Failed to get user.' } }, { status: 500 }) };
   }
-  if (!session) {
+  if (!user) {
     return { errorResponse: NextResponse.json({ error: { code: 'UNAUTHENTICATED', message: 'User not authenticated.' } }, { status: 401 }) };
   }
-  return { userId: session.user.id };
+  return { userId: user.id };
 }
 
 // Helper function to check if user has document access and permission level
@@ -40,13 +102,17 @@ export async function PUT(
   request: Request,
   { params }: { params: { documentId: string } }
 ) {
-  const documentId = params.documentId;
-  const cookieStore = cookies();
-  const supabase = createSupabaseServerClient();
 
   try {
-    const { userId, errorResponse } = await getUserOrError(supabase);
+    const documentId = params.documentId;
+    
+    // Create auth client for user validation
+    const authSupabase = createSupabaseClientForAuth(request);
+    const { userId, errorResponse } = await getUserOrError(authSupabase);
     if (errorResponse) return errorResponse;
+
+    // Create service client for database operations (bypasses RLS)
+    const supabase = createSupabaseServiceClient();
 
     // Parse Request Body
     let body;
@@ -78,7 +144,7 @@ export async function PUT(
       });
 
     if (autosaveError) {
-      console.error('Autosave Insert Error:', autosaveError.message);
+      console.error('[Content API] Autosave failed:', autosaveError.message);
       return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to create autosave: ${autosaveError.message}` } }, { status: 500 });
     }
 
@@ -94,7 +160,8 @@ export async function PUT(
     }
 
     // Check if user has permission to edit this document
-    const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+    const userPermission = await checkDocumentAccess(authSupabase, documentId, userId);
+
     if (!userPermission || !['owner', 'editor'].includes(userPermission.permission_level)) {
       return NextResponse.json({ 
         error: { code: 'FORBIDDEN', message: 'You do not have permission to edit this document.' } 
@@ -106,26 +173,26 @@ export async function PUT(
       .from('documents')
       .update(updateData)
       .eq('id', documentId)
-      .select('updated_at') // Only return the new timestamp as per plan
-      .single();
+      .select('updated_at');
 
     if (updateError) {
-      console.error('Document Content Update Error:', updateError.message);
-       if (updateError.code === 'PGRST116') { // Not found
-         return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Document not found or you do not have permission to update it.' } }, { status: 404 });
-       }
+      console.error('[Content API] Document update failed:', updateError.message);
+      if (updateError.code === 'PGRST116') { // Not found
+        return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Document not found or you do not have permission to update it.' } }, { status: 404 });
+      }
       return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to update document content: ${updateError.message}` } }, { status: 500 });
     }
 
-     if (!updatedDocInfo) {
+     if (!updatedDocInfo || updatedDocInfo.length === 0) {
          return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Document not found after content update attempt.' } }, { status: 404 });
      }
 
     // Return only the updated_at timestamp as specified in the plan
-    return NextResponse.json({ data: { updated_at: updatedDocInfo.updated_at } }, { status: 200 });
+    console.log('[Content API] Document auto-save successful:', { documentId, userId });
+    return NextResponse.json({ data: { updated_at: updatedDocInfo[0].updated_at } }, { status: 200 });
 
   } catch (error: any) {
-    console.error('Document Content PUT Error:', error.message);
+    console.error('[Content API] PUT Error:', error.message, error.stack);
     return NextResponse.json({ error: { code: 'SERVER_ERROR', message: `An unexpected error occurred: ${error.message}` } }, { status: 500 });
   }
 } 

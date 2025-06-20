@@ -1,8 +1,59 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import * as Y from 'yjs';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Create a Supabase client that respects the Authorization header
+ * This is critical for Y.js collaboration where the auth token is passed in headers
+ */
+function createSupabaseClientFromRequest(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  const accessToken = authHeader?.replace('Bearer ', '');
+
+  console.log('[YJS Updates] createSupabaseClientFromRequest:', {
+    hasAuthHeader: !!authHeader,
+    authHeaderValue: authHeader ? `${authHeader.substring(0, 20)}...` : null,
+    hasAccessToken: !!accessToken,
+    accessTokenLength: accessToken?.length || 0
+  });
+
+  if (accessToken) {
+    // Create client with anon key and set the access token for this request
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      }
+    );
+    console.log('[YJS Updates] Created client with access token from Authorization header');
+    return supabase;
+  }
+
+  // Fallback: create client with anon key for cookie-based auth
+  console.log('[YJS Updates] No access token found, creating anon client for cookie-based auth');
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
+}
 
 /**
  * Helper function to check document access permissions
@@ -13,6 +64,12 @@ export const dynamic = 'force-dynamic';
  * @returns Promise<{hasAccess: boolean, permissionLevel?: string, error?: NextResponse}>
  */
 async function checkDocumentAccess(supabase: any, documentId: string, userId: string, requiredLevel: 'read' | 'write' = 'read') {
+  console.log('[YJS Updates] checkDocumentAccess starting:', {
+    documentId,
+    userId,
+    requiredLevel
+  });
+
   // Check document permissions table first
   const { data: permission, error: permissionError } = await supabase
     .from('document_permissions')
@@ -20,6 +77,24 @@ async function checkDocumentAccess(supabase: any, documentId: string, userId: st
     .eq('document_id', documentId)
     .eq('user_id', userId)
     .single();
+
+  console.log('[YJS Updates] document_permissions query result:', {
+    permission,
+    permissionError: permissionError?.message,
+    permissionErrorCode: permissionError?.code
+  });
+
+  // Additional debugging: let's also check if ANY permissions exist for this document
+  const { data: allPermissions, error: allPermError } = await supabase
+    .from('document_permissions')
+    .select('user_id, permission_level')
+    .eq('document_id', documentId);
+    
+  console.log('[YJS Updates] All permissions for this document:', {
+    allPermissions,
+    allPermError: allPermError?.message,
+    totalPermissions: allPermissions?.length || 0
+  });
 
   if (permissionError && permissionError.code !== 'PGRST116') {
     console.error('Error checking document permissions:', permissionError);
@@ -56,6 +131,7 @@ async function checkDocumentAccess(supabase: any, documentId: string, userId: st
   }
 
   // Fallback: check if user owns the document
+  console.log('[YJS Updates] Checking document ownership fallback');
   const { data: document, error: docError } = await supabase
     .from('documents')
     .select('id, user_id')
@@ -63,8 +139,15 @@ async function checkDocumentAccess(supabase: any, documentId: string, userId: st
     .eq('user_id', userId)
     .single();
 
+  console.log('[YJS Updates] Document ownership query result:', {
+    document,
+    docError: docError?.message,
+    docErrorCode: docError?.code
+  });
+
   const isOwner = !docError && !!document;
   if (!isOwner) {
+    console.log('[YJS Updates] Access denied - not owner and no explicit permissions');
     return {
       hasAccess: false,
       error: NextResponse.json(
@@ -74,6 +157,7 @@ async function checkDocumentAccess(supabase: any, documentId: string, userId: st
     };
   }
 
+  console.log('[YJS Updates] Access granted via document ownership');
   return { hasAccess: true, permissionLevel: 'owner' };
 }
 
@@ -93,11 +177,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = createSupabaseClientFromRequest(request);
 
     // Get the current user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    console.log('[YJS Updates] POST - Auth check result:', {
+      hasUser: !!user,
+      userId: user?.id,
+      userEmail: user?.email,
+      authError: authError?.message,
+      timestamp: new Date().toISOString()
+    });
+    
     if (authError || !user) {
+      console.error('[YJS Updates] POST - Authentication failed:', {
+        authError: authError?.message,
+        hasUser: !!user
+      });
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -176,7 +273,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = createSupabaseClientFromRequest(request);
 
     // Get the current user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -187,11 +284,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Debug logging for permission checking
+    console.log('[YJS Updates] POST - Permission check for user:', {
+      userId: user.id,
+      documentId,
+      userEmail: user.email,
+      timestamp: new Date().toISOString()
+    });
+
     // Check document access permission (write access required for POST)
     const accessCheck = await checkDocumentAccess(supabase, documentId, user.id, 'write');
     if (!accessCheck.hasAccess) {
+      console.error('[YJS Updates] POST - Access denied:', {
+        userId: user.id,
+        documentId,
+        userEmail: user.email,
+        accessCheck
+      });
       return accessCheck.error!;
     }
+
+    console.log('[YJS Updates] POST - Access granted:', {
+      userId: user.id,
+      documentId,
+      permissionLevel: accessCheck.permissionLevel
+    });
 
     // Handle different formats of updateData
     let updateBuffer: Buffer;
@@ -264,7 +381,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = createSupabaseClientFromRequest(request);
 
     // Get the current user
     const { data: { user }, error: authError } = await supabase.auth.getUser();

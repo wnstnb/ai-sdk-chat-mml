@@ -1,0 +1,462 @@
+[
+  {
+    "schemaname": "public",
+    "tablename": "comment_threads",
+    "policyname": "Thread creators and document owners can update threads",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "((created_by = auth.uid()) OR (document_id IN ( SELECT document_permissions.document_id\n   FROM document_permissions\n  WHERE ((document_permissions.user_id = auth.uid()) AND ((document_permissions.permission_level)::text = 'owner'::text)))))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "comment_threads",
+    "policyname": "Users can view comment threads for documents they have access t",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(document_id IN ( SELECT document_permissions.document_id\n   FROM document_permissions\n  WHERE (document_permissions.user_id = auth.uid())))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "comment_threads",
+    "policyname": "Users with comment/edit permissions can create threads",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(document_id IN ( SELECT document_permissions.document_id\n   FROM document_permissions\n  WHERE ((document_permissions.user_id = auth.uid()) AND ((document_permissions.permission_level)::text = ANY ((ARRAY['owner'::character varying, 'editor'::character varying, 'commenter'::character varying])::text[])))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "comments",
+    "policyname": "Comment authors can update their own comments",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "(author_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "comments",
+    "policyname": "Users can view comments for accessible documents",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(thread_id IN ( SELECT ct.id\n   FROM (comment_threads ct\n     JOIN document_permissions dp ON ((ct.document_id = dp.document_id)))\n  WHERE (dp.user_id = auth.uid())))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "comments",
+    "policyname": "Users with comment/edit permissions can create comments",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(thread_id IN ( SELECT ct.id\n   FROM (comment_threads ct\n     JOIN document_permissions dp ON ((ct.document_id = dp.document_id)))\n  WHERE ((dp.user_id = auth.uid()) AND ((dp.permission_level)::text = ANY ((ARRAY['owner'::character varying, 'editor'::character varying, 'commenter'::character varying])::text[])))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "document_autosaves",
+    "policyname": "Allow users to manage their own document autosaves",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(auth.uid() = user_id)",
+    "with_check": "(auth.uid() = user_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "document_autosaves",
+    "policyname": "Users with editor permissions can create autosaves",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(document_id IN ( SELECT dp.document_id\n   FROM document_permissions dp\n  WHERE ((dp.user_id = auth.uid()) AND ((dp.permission_level)::text = ANY ((ARRAY['owner'::character varying, 'editor'::character varying])::text[])))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "document_manual_saves",
+    "policyname": "Allow users to manage their own document manual saves",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(auth.uid() = user_id)",
+    "with_check": "(auth.uid() = user_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "document_permissions",
+    "policyname": "Document owners can grant permissions",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(document_id IN ( SELECT documents.id\n   FROM documents\n  WHERE (documents.user_id = auth.uid())))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "document_permissions",
+    "policyname": "Document owners can manage permissions",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(document_id IN ( SELECT documents.id\n   FROM documents\n  WHERE (documents.user_id = auth.uid())))",
+    "with_check": "(document_id IN ( SELECT documents.id\n   FROM documents\n  WHERE (documents.user_id = auth.uid())))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "document_permissions",
+    "policyname": "Users can view their own permissions",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(user_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "documents",
+    "policyname": "Allow users to manage their own documents",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(auth.uid() = user_id)",
+    "with_check": "(auth.uid() = user_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "documents",
+    "policyname": "Users can create documents",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(user_id = auth.uid())"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "documents",
+    "policyname": "Users can delete their own documents",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "DELETE",
+    "qual": "(user_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "documents",
+    "policyname": "Users can edit their own documents",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "(user_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "documents",
+    "policyname": "Users can view their own documents",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(user_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "documents",
+    "policyname": "Users with editor permissions can edit documents",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "(id IN ( SELECT dp.document_id\n   FROM document_permissions dp\n  WHERE ((dp.user_id = auth.uid()) AND ((dp.permission_level)::text = ANY ((ARRAY['owner'::character varying, 'editor'::character varying])::text[])))))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "documents_embeddings",
+    "policyname": "Allow user access to own embeddings",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(auth.uid() = user_id)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "folders",
+    "policyname": "Allow users to manage their own folders",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(auth.uid() = user_id)",
+    "with_check": "(auth.uid() = user_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "messages",
+    "policyname": "Allow INSERT for document owners",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(EXISTS ( SELECT 1\n   FROM documents d\n  WHERE ((d.id = messages.document_id) AND (d.user_id = auth.uid()))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "messages",
+    "policyname": "Allow SELECT for document owners",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(EXISTS ( SELECT 1\n   FROM documents d\n  WHERE ((d.id = messages.document_id) AND (d.user_id = auth.uid()))))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "messages",
+    "policyname": "Allow users to insert messages for their documents",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "((auth.uid() = user_id) AND is_document_owner(document_id))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "messages",
+    "policyname": "Allow users to view messages for their documents",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "((auth.uid() = user_id) AND is_document_owner(document_id))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "messages",
+    "policyname": "Users can create their own messages",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(user_id = auth.uid())"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "messages",
+    "policyname": "Users can delete their own messages",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "DELETE",
+    "qual": "(user_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "messages",
+    "policyname": "Users can update their own messages",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "(user_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "messages",
+    "policyname": "Users can view their own messages",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(user_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "notifications",
+    "policyname": "Users can only see their own notifications",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(user_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "notifications",
+    "policyname": "Users can update status of their own notifications",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "(auth.uid() = user_id)",
+    "with_check": "(auth.uid() = user_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "notifications",
+    "policyname": "Users can view their own notifications",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(auth.uid() = user_id)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "preferences",
+    "policyname": "Allow individual insert access",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(auth.uid() = user_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "preferences",
+    "policyname": "Allow individual read access",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(auth.uid() = user_id)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "preferences",
+    "policyname": "Allow individual update access",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "(auth.uid() = user_id)",
+    "with_check": "(auth.uid() = user_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "profiles",
+    "policyname": "Allow individual user access to their own profile",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(auth.uid() = id)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "profiles",
+    "policyname": "Allow individual user to update their own profile",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "(auth.uid() = id)",
+    "with_check": "(auth.uid() = id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tool_calls",
+    "policyname": "Allow users to manage tool calls for their messages",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "((auth.uid() = user_id) AND is_message_owner(message_id))",
+    "with_check": "((auth.uid() = user_id) AND is_message_owner(message_id))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tool_calls",
+    "policyname": "Users can create their own tool calls",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(user_id = auth.uid())"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tool_calls",
+    "policyname": "Users can delete their own tool calls",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "DELETE",
+    "qual": "(user_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tool_calls",
+    "policyname": "Users can update their own tool calls",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "(user_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tool_calls",
+    "policyname": "Users can view their own tool calls",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(user_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "user_notification_preferences",
+    "policyname": "Users can manage their own notification preferences",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(auth.uid() = user_id)",
+    "with_check": "(auth.uid() = user_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "yjs_updates",
+    "policyname": "Users can delete their own Y.js updates or document owners can ",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "DELETE",
+    "qual": "((user_id = auth.uid()) OR (document_id IN ( SELECT dp.document_id\n   FROM document_permissions dp\n  WHERE ((dp.user_id = auth.uid()) AND ((dp.permission_level)::text = 'owner'::text)))) OR (document_id IN ( SELECT d.id\n   FROM documents d\n  WHERE (d.user_id = auth.uid()))))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "yjs_updates",
+    "policyname": "Users can only update their own Y.js updates",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "(user_id = auth.uid())",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "yjs_updates",
+    "policyname": "Users can view Y.js updates for accessible documents",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "((document_id IN ( SELECT dp.document_id\n   FROM document_permissions dp\n  WHERE (dp.user_id = auth.uid()))) OR (document_id IN ( SELECT d.id\n   FROM documents d\n  WHERE (d.user_id = auth.uid()))))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "yjs_updates",
+    "policyname": "Users with editor permissions can create Y.js updates",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "((document_id IN ( SELECT dp.document_id\n   FROM document_permissions dp\n  WHERE ((dp.user_id = auth.uid()) AND ((dp.permission_level)::text = ANY ((ARRAY['owner'::character varying, 'editor'::character varying])::text[]))))) OR (document_id IN ( SELECT d.id\n   FROM documents d\n  WHERE (d.user_id = auth.uid()))))"
+  }
+]

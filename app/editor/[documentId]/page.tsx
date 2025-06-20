@@ -68,6 +68,9 @@ import type {
     MessageWithSignedUrl,
 } from '@/types/supabase'; // Supabase data types
 
+// Supabase client for auth
+import { supabase } from '@/lib/supabase/client';
+
 // Utils
 import {
     getInlineContentText,
@@ -611,26 +614,50 @@ function EditorPageContent() {
         }
     };
 
+    // --- Helper function to get auth headers ---
+    const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
+        try {
+            console.log('[Auth Headers] Getting session for auto-save...');
+            const { data: { session } } = await supabase.auth.getSession();
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json'
+            };
+            if (session?.access_token) {
+                console.log('[Auth Headers] Adding Authorization header to auto-save request');
+                headers['Authorization'] = `Bearer ${session.access_token}`;
+            } else {
+                console.warn('[Auth Headers] No access token found in session');
+            }
+            return headers;
+        } catch (error) {
+            console.error('[Auth Headers] Failed to get session:', error);
+            return { 'Content-Type': 'application/json' };
+        }
+    }, []);
+
     // --- Callback Hooks (Defined BEFORE Early Returns) ---
     const triggerSaveDocument = useCallback(async (content: string, docId: string) => {
-        console.log(`[Autosave] Triggering save for document ${docId}`);
+        console.log(`[Autosave] triggerSaveDocument called for document ${docId}`);
         try {
+            console.log('[Autosave] Getting auth headers...');
+            const headers = await getAuthHeaders();
+            console.log('[Autosave] Making fetch request with headers:', Object.keys(headers));
             const response = await fetch(`/api/documents/${docId}/content`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ content: JSON.parse(content) }),
             });
             if (!response.ok) {
                 const errData = await response.json().catch(() => ({}));
                 throw new Error(errData.error?.message || `Autosave failed (${response.status})`);
             }
-            console.log(`[Autosave] Document ${docId} saved successfully.`);
+            console.log(`[Autosave] Document ${docId} saved successfully via triggerSaveDocument.`);
             return true;
         } catch (err: any) {
-            console.error(`[Autosave] Failed to save document ${docId}:`, err);
+            console.error(`[Autosave] triggerSaveDocument failed for document ${docId}:`, err);
             throw err;
         }
-    }, []); 
+    }, [getAuthHeaders]); 
 
     // --- NEW: Callback ref for the form ---
     const formCallbackRef = useCallback((node: HTMLFormElement | null) => {
@@ -748,9 +775,10 @@ function EditorPageContent() {
             if (!localData) return false;
 
             const { content } = JSON.parse(localData);
+            const headers = await getAuthHeaders();
             const response = await fetch(`/api/documents/${documentId}/content`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ content }),
             });
 
@@ -771,7 +799,7 @@ function EditorPageContent() {
             console.error('[Promote Save] Failed to promote local save to server:', error);
             return false;
         }
-    }, [documentId]);
+    }, [documentId, getAuthHeaders]);
 
     const getAutosaveDelay = useCallback((batchContext: typeof autosaveBatchContext) => {
         const currentTime = Date.now();
@@ -932,9 +960,12 @@ function EditorPageContent() {
             }
             
             try {
+                console.log('[Autosave Timer] Getting auth headers for direct fetch...');
+                const headers = await getAuthHeaders();
+                console.log('[Autosave Timer] Making direct fetch with headers:', Object.keys(headers));
                 const response = await fetch(`/api/documents/${documentId}/content`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify({ content: jsonContent, searchable_content: markdownContent }), 
                 });
                 if (!response.ok) {
@@ -974,7 +1005,7 @@ function EditorPageContent() {
             }
         }, delay);
         setAutosaveTimerId(newTimerId);
-    }, [documentId, autosaveTimerId, revertStatusTimerId, setEditorRef, autosaveBatchContext, getAutosaveDelay, canEdit, userPermission]);
+    }, [documentId, autosaveTimerId, revertStatusTimerId, setEditorRef, autosaveBatchContext, getAutosaveDelay, canEdit, userPermission, getAuthHeaders]);
 
     // Effect to set editorRef object in the global store - Reinstated and Corrected
     useEffect(() => {
@@ -1038,9 +1069,10 @@ function EditorPageContent() {
                 }
             }
 
+            const headers = await getAuthHeaders();
             const response = await fetch(`/api/documents/${documentId}/manual-save`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ 
                     content: currentEditorContentJSON, 
                     searchable_content: searchableMarkdownContent 
@@ -1082,7 +1114,7 @@ function EditorPageContent() {
         } finally {
             setIsSaving(false);
         }
-    }, [documentId, editorRef, isSaving, autosaveTimerId, revertStatusTimerId, setAutosaveStatus, setIsSaving, setPageError]);
+    }, [documentId, editorRef, isSaving, autosaveTimerId, revertStatusTimerId, setAutosaveStatus, setIsSaving, setPageError, getAuthHeaders]);
 
     const handleNewDocument = useCallback(() => {
         router.push('/launch');
@@ -2433,6 +2465,8 @@ function EditorPageContent() {
                             localStorage.removeItem(`tuon-editor-draft-${documentId}`);
                         }
                     } else {
+                        // Note: Cannot use async/await in beforeunload, so we'll try to get headers synchronously
+                        // This is a fallback - the main auto-save should handle auth properly
                         fetch(url, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
@@ -2459,6 +2493,8 @@ function EditorPageContent() {
                             const blob = new Blob([payload], { type: 'application/json' });
                             navigator.sendBeacon(url, blob);
                          } else {
+                            // Note: Cannot use async/await in beforeunload, so this is a fallback without auth
+                            // The main auto-save system should handle authenticated saves properly
                             fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true })
                                 .catch(err => console.warn('[beforeunload] fetch keepalive error:', err));
                         }
@@ -2566,9 +2602,10 @@ function EditorPageContent() {
                              }
                             
                             try {
+                                const headers = await getAuthHeaders();
                                 const response = await fetch(`/api/documents/${documentId}/content`, {
                                     method: 'PUT',
-                                    headers: { 'Content-Type': 'application/json' },
+                                    headers,
                                     body: JSON.stringify({ content: jsonContent, searchable_content: markdownContent }), 
                                 });
                                 if (!response.ok) {
@@ -2604,7 +2641,7 @@ function EditorPageContent() {
                 }
             }
         }
-    }, [isProcessingClientTools, isAiLoading, autosaveBatchContext, endAIToolsBatch, autosaveTimerId, getAutosaveDelay, documentId]);
+    }, [isProcessingClientTools, isAiLoading, autosaveBatchContext, endAIToolsBatch, autosaveTimerId, getAutosaveDelay, documentId, getAuthHeaders]);
     
     useEffect(() => { /* Effect for Embedding generation */
         return () => {
