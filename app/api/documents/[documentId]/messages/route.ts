@@ -61,14 +61,44 @@ export async function GET(
       }, { status: 403 });
     }
 
-    // Fetch only THIS USER's messages for this document
-    // Each user has their own private AI conversation per document
-    const { data: messagesData, error: fetchError } = await supabase
+    // Parse query parameters for pagination
+    const url = new URL(request.url);
+    const limitParam = url.searchParams.get('limit');
+    const offsetParam = url.searchParams.get('offset');
+    const loadAllParam = url.searchParams.get('loadAll'); // For AI context - loads all messages
+    
+    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+    const offset = offsetParam ? parseInt(offsetParam, 10) : undefined;
+    const loadAll = loadAllParam === 'true';
+
+    console.log(`[Messages API] Pagination params - limit: ${limit}, offset: ${offset}, loadAll: ${loadAll}`);
+
+    // Build the query for messages
+    let query = supabase
       .from('messages')
       .select('id, user_id, role, content, created_at, metadata')
       .eq('document_id', documentId)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: true });
+      .eq('user_id', userId);
+
+    // Apply pagination only if not loading all and parameters are provided
+    if (!loadAll && (limit !== undefined || offset !== undefined)) {
+      // For pagination, we order by created_at DESC to get most recent messages first
+      // then reverse the result to maintain chronological order for display
+      query = query.order('created_at', { ascending: false });
+      
+      if (limit !== undefined && limit > 0) {
+        query = query.limit(limit);
+      }
+      
+      if (offset !== undefined && offset > 0) {
+        query = query.range(offset, offset + (limit || 20) - 1);
+      }
+    } else {
+      // Default behavior: load all messages in chronological order (for AI context)
+      query = query.order('created_at', { ascending: true });
+    }
+
+    const { data: messagesData, error: fetchError } = await query;
 
     if (fetchError) {
       console.error('Messages GET Error:', fetchError.message);
@@ -76,7 +106,38 @@ export async function GET(
     }
 
     if (!messagesData || messagesData.length === 0) {
-      return NextResponse.json({ data: [] }, { status: 200 }); // Return empty array if no messages
+      return NextResponse.json({ 
+        data: [], 
+        meta: { 
+          hasMore: false, 
+          total: 0, 
+          limit: loadAll ? 0 : (limit || 20), 
+          offset: loadAll ? 0 : (offset || 0) 
+        } 
+      }, { status: 200 }); // Return consistent structure for empty messages
+    }
+
+    // If we used DESC ordering for pagination, reverse the messages to maintain chronological order
+    if (!loadAll && (limit !== undefined || offset !== undefined)) {
+      messagesData.reverse();
+    }
+
+    // Get total count for pagination metadata (only when paginating)
+    let totalCount = messagesData.length;
+    let hasMore = false;
+    
+    if (!loadAll && limit !== undefined) {
+      // Get total count to determine if there are more messages
+      const { count, error: countError } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('document_id', documentId)
+        .eq('user_id', userId);
+      
+      if (!countError && count !== null) {
+        totalCount = count;
+        hasMore = (offset || 0) + messagesData.length < totalCount;
+      }
     }
 
     // --- Fetch Tool Calls for these Messages --- 
@@ -244,7 +305,18 @@ export async function GET(
     }
     // --- END REFACTOR --- 
 
-    return NextResponse.json({ data: processedMessages }, { status: 200 });
+    // Return response with consistent structure
+    const response: any = { data: processedMessages };
+    
+    // Always include meta for consistency (even when loadAll=true)
+    response.meta = {
+      hasMore: loadAll ? false : hasMore, // No more to load when loadAll=true
+      total: totalCount,
+      limit: loadAll ? totalCount : (limit || 20),
+      offset: loadAll ? 0 : (offset || 0)
+    };
+
+    return NextResponse.json(response, { status: 200 });
 
   } catch (error: any) {
     console.error('Messages GET Error (Outer Catch):', error.message);

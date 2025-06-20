@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import type { Message } from 'ai/react';
-import { BotIcon, UserIcon } from 'lucide-react';
+import { BotIcon, UserIcon, ChevronUp } from 'lucide-react';
 import { ChatMessageItem } from './ChatMessageItem';
 import { getTextFromDataUrl } from '@/lib/editorUtils';
 
@@ -20,6 +20,10 @@ interface ChatMessagesListProps {
     messageLoadBatchSize?: number; // Optional prop for batch size
     onAddTaggedDocument: (doc: TaggedDocument) => void; // New prop
     displayMode?: 'full' | 'mini'; // Added displayMode prop
+    // NEW: Load More functionality props
+    canLoadMore?: boolean;
+    isLoadingMore?: boolean;
+    loadMoreMessages?: () => Promise<void>;
 }
 
 const DEFAULT_MESSAGE_LOAD_BATCH_SIZE = 20;
@@ -33,16 +37,51 @@ export const ChatMessagesList: React.FC<ChatMessagesListProps> = ({
     messageLoadBatchSize = DEFAULT_MESSAGE_LOAD_BATCH_SIZE,
     onAddTaggedDocument, // Destructure the new prop
     displayMode = 'full', // Added displayMode with default
+    // NEW: Load More functionality props
+    canLoadMore = false,
+    isLoadingMore = false,
+    loadMoreMessages,
 }) => {
     const totalMessages = chatMessages.length;
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const prevScrollHeightRef = useRef<number>(0);
+
+    // NEW: Handle Load More with scroll position preservation
+    const handleLoadMore = useCallback(async () => {
+        if (!loadMoreMessages || isLoadingMore) return;
+        
+        // Store current scroll info before loading more messages
+        const scrollContainer = scrollContainerRef.current;
+        if (scrollContainer) {
+            prevScrollHeightRef.current = scrollContainer.scrollHeight;
+        }
+        
+        await loadMoreMessages();
+    }, [loadMoreMessages, isLoadingMore]);
+
+    // NEW: Preserve scroll position after loading more messages
+    useEffect(() => {
+        const scrollContainer = scrollContainerRef.current;
+        if (scrollContainer && prevScrollHeightRef.current > 0) {
+            const newScrollHeight = scrollContainer.scrollHeight;
+            const scrollDiff = newScrollHeight - prevScrollHeightRef.current;
+            if (scrollDiff > 0) {
+                scrollContainer.scrollTop = scrollContainer.scrollTop + scrollDiff;
+                prevScrollHeightRef.current = 0; // Reset
+            }
+        }
+    }, [chatMessages]);
 
     // Scroll to the bottom whenever messages change or the component mounts
+    // BUT NOT when loading more messages (to preserve position)
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [chatMessages, messagesEndRef]); // Add chatMessages and messagesEndRef as dependencies
+        if (!isLoadingMore) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [chatMessages, messagesEndRef, isLoadingMore]); // Add isLoadingMore to dependencies
 
     return (
-        <div className="flex-1 overflow-y-auto styled-scrollbar pr-2 pt-4">
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto styled-scrollbar pr-2 pt-4">
             {/* Initial Loading Indicator */}
             {isLoadingMessages && totalMessages === 0 && (
                 displayMode === 'mini' ? (
@@ -74,6 +113,35 @@ export const ChatMessagesList: React.FC<ChatMessagesListProps> = ({
                         </div>
                     </motion.div>
                 )
+            )}
+
+            {/* NEW: Load More Button */}
+            {canLoadMore && totalMessages > 0 && (
+                <div className={`flex justify-center ${displayMode === 'mini' ? 'p-2' : 'p-4'}`}>
+                    <button
+                        onClick={handleLoadMore}
+                        disabled={isLoadingMore}
+                        className={`flex items-center gap-2 font-medium text-[--text-secondary] bg-[--bg-secondary] hover:bg-[--bg-tertiary] border border-[--border-color] rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm ${
+                            displayMode === 'mini' 
+                                ? 'px-2 py-1 text-xs' // Smaller for mini mode
+                                : 'px-4 py-2 text-sm'  // Normal size for full mode
+                        }`}
+                    >
+                        {isLoadingMore ? (
+                            <>
+                                <div className={`border-2 border-[--accent-color] border-t-transparent rounded-full animate-spin ${
+                                    displayMode === 'mini' ? 'w-3 h-3' : 'w-4 h-4'
+                                }`} />
+                                {displayMode === 'mini' ? 'Loading...' : 'Loading...'}
+                            </>
+                        ) : (
+                            <>
+                                <ChevronUp size={displayMode === 'mini' ? 12 : 16} />
+                                {displayMode === 'mini' ? 'Load More' : 'Load More Messages'}
+                            </>
+                        )}
+                    </button>
+                </div>
             )}
 
             {/* Render Messages using ChatMessageItem */}

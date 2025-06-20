@@ -350,7 +350,14 @@ function EditorPageContent() {
     
     // Debug: Image upload state (removed due to infinite loop)
     
-    const { isLoadingMessages, initialMessages } = useInitialChatMessages({
+    const { 
+        isLoadingMessages, 
+        initialMessages, 
+        displayedMessages, 
+        canLoadMore, 
+        isLoadingMore, 
+        loadMoreMessages 
+    } = useInitialChatMessages({
         documentId,
         setPageError
     });
@@ -3373,9 +3380,14 @@ function EditorPageContent() {
                                         unreadMiniPaneCount={unreadMiniPaneCount}
                                         // Mini pane content props
                                         miniPaneMessages={messages}
+                                        miniPaneDisplayedMessages={displayedMessages} // NEW: Use paginated messages for display
                                         miniPaneIsLoadingMessages={isLoadingMessages}
                                         miniPaneIsAiLoading={isAiLoading}
                                         miniPaneMessagesEndRef={messagesEndRef}
+                                        // NEW: Mini-Pane Load More functionality props
+                                        miniPaneCanLoadMore={canLoadMore}
+                                        miniPaneIsLoadingMore={isLoadingMore}
+                                        miniPaneLoadMoreMessages={loadMoreMessages}
                                         currentTheme={currentTheme} // Pass down the theme
                                     />
                                 </div>
@@ -3397,8 +3409,13 @@ function EditorPageContent() {
                              <ChatPaneWrapper
                                 isChatCollapsed={false} // Chat is visible in the drawer, so not collapsed
                                 chatMessages={messages}
+                                displayedMessages={displayedMessages} // NEW: Use paginated messages for display
                                 isLoadingMessages={isLoadingMessages}
                                 isChatLoading={isAiLoading || isProcessingClientTools} // MODIFIED HERE
+                                // NEW: Load More functionality props
+                                canLoadMore={canLoadMore}
+                                isLoadingMore={isLoadingMore}
+                                loadMoreMessages={loadMoreMessages}
                                 handleSendToEditor={handleSendToEditor}
                                 messagesEndRef={messagesEndRef}
                                 messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
@@ -3537,9 +3554,14 @@ function EditorPageContent() {
                                 unreadMiniPaneCount={unreadMiniPaneCount}
                                 // Mini pane content props
                                 miniPaneMessages={messages}
+                                miniPaneDisplayedMessages={displayedMessages} // NEW: Use paginated messages for display
                                 miniPaneIsLoadingMessages={isLoadingMessages}
                                 miniPaneIsAiLoading={isAiLoading}
                                 miniPaneMessagesEndRef={messagesEndRef}
+                                // NEW: Mini-Pane Load More functionality props
+                                miniPaneCanLoadMore={canLoadMore}
+                                miniPaneIsLoadingMore={isLoadingMore}
+                                miniPaneLoadMoreMessages={loadMoreMessages}
                                 currentTheme={currentTheme} // Pass down the theme
                             />
                         </div>
@@ -3598,8 +3620,13 @@ function EditorPageContent() {
                                 <ChatPaneWrapper
                                     isChatCollapsed={isChatPaneCollapsed} // Pass the correct state
                                     chatMessages={messages}
+                                    displayedMessages={displayedMessages} // NEW: Use paginated messages for display
                                     isLoadingMessages={isLoadingMessages}
                                     isChatLoading={isAiLoading || isProcessingClientTools} // MODIFIED HERE
+                                    // NEW: Load More functionality props
+                                    canLoadMore={canLoadMore}
+                                    isLoadingMore={isLoadingMore}
+                                    loadMoreMessages={loadMoreMessages}
                                     handleSendToEditor={handleSendToEditor}
                                     messagesEndRef={messagesEndRef}
                                     messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}

@@ -24,12 +24,17 @@ interface ChatPaneWrapperProps {
     // handleMouseDownResize: (e: ReactMouseEvent<HTMLDivElement>) => void; // No longer needed by Resizable
     
     // Props for ChatMessagesList
-    chatMessages: Message[];
+    chatMessages: Message[]; // Keep for backwards compatibility if needed
+    displayedMessages: Message[] | null; // NEW: Paginated messages for display
     isLoadingMessages: boolean;
     isChatLoading: boolean; // Passed to ChatMessagesList and ChatInputArea
     handleSendToEditor: (content: string) => Promise<void>;
     messagesEndRef: RefObject<HTMLDivElement>;
     messageLoadBatchSize: number;
+    // NEW: Load More functionality props
+    canLoadMore: boolean;
+    isLoadingMore: boolean;
+    loadMoreMessages: () => Promise<void>;
     
     // Props for ChatInputArea
     input: string;
@@ -106,11 +111,16 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
     // dragHandleRef, // No longer needed for Resizable
     // handleMouseDownResize, // No longer needed for Resizable
     chatMessages,
+    displayedMessages, // NEW: Paginated messages for display
     isLoadingMessages,
     isChatLoading,
     handleSendToEditor,
     messagesEndRef,
     messageLoadBatchSize,
+    // NEW: Load More functionality props
+    canLoadMore,
+    isLoadingMore,
+    loadMoreMessages,
     input,
     setInput,
     handleInputChange,
@@ -206,13 +216,17 @@ export const ChatPaneWrapper: React.FC<ChatPaneWrapperProps> = ({
         // <Resizable ... > // REMOVED
             <div className="flex flex-col flex-1 overflow-hidden h-full px-3"> {/* Added px-3 */}
                 <ChatMessagesList
-                    chatMessages={chatMessages}
+                    chatMessages={displayedMessages || chatMessages} // Use displayedMessages if available, fallback to chatMessages
                     isLoadingMessages={isLoadingMessages}
                     isChatLoading={isChatLoading || isBusyFromStore}
                     handleSendToEditor={handleSendToEditor}
                     messagesEndRef={messagesEndRef}
                     {...(messageLoadBatchSize && { messageLoadBatchSize })}
                     onAddTaggedDocument={handleAddTaggedDocument}
+                    // NEW: Pass pagination props
+                    canLoadMore={canLoadMore}
+                    isLoadingMore={isLoadingMore}
+                    loadMoreMessages={loadMoreMessages}
                 />
                 {/* ADDED: Display operation status text */}
                 {statusTextFromStore && (

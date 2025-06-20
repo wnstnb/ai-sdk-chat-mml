@@ -91,10 +91,15 @@ interface EditorPaneWrapperProps {
     miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
     unreadMiniPaneCount?: number; // Count of unread messages for indicator
     // --- NEW: Props for Mini-Pane content ---
-    miniPaneMessages?: any[]; // Chat messages for mini pane
+    miniPaneMessages?: any[]; // Chat messages for mini pane (full context)
+    miniPaneDisplayedMessages?: any[] | null; // NEW: Paginated messages for mini pane display
     miniPaneIsLoadingMessages?: boolean;
     miniPaneIsAiLoading?: boolean;
     miniPaneMessagesEndRef?: React.RefObject<HTMLDivElement>;
+    // NEW: Mini-Pane Load More functionality props
+    miniPaneCanLoadMore?: boolean;
+    miniPaneIsLoadingMore?: boolean;
+    miniPaneLoadMoreMessages?: () => Promise<void>;
     // --- END NEW ---
     currentTheme: 'light' | 'dark'; // CHANGED: Made non-optional
 }
@@ -158,9 +163,14 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     unreadMiniPaneCount, // Destructure the unread count
     // --- NEW: Destructure Mini-Pane content props ---
     miniPaneMessages,
+    miniPaneDisplayedMessages, // NEW: Paginated messages for mini pane display
     miniPaneIsLoadingMessages,
     miniPaneIsAiLoading,
     miniPaneMessagesEndRef,
+    // NEW: Mini-Pane Load More functionality props
+    miniPaneCanLoadMore,
+    miniPaneIsLoadingMore,
+    miniPaneLoadMoreMessages,
     // --- END NEW ---
     currentTheme, // ADDED: Destructure currentTheme
 }) => {
@@ -339,19 +349,23 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 <div className="flex flex-col gap-2 px-4">
                                     <div className="w-full max-w-[780px] mx-auto max-h-[350px] overflow-y-auto bg-[--input-bg] border border-[--border-color] rounded-md shadow-lg flex flex-col">
                                         <div className="flex-1 overflow-y-auto styled-scrollbar p-2">
-                                            {miniPaneMessages && miniPaneMessages.length > 0 ? (
+                                            {(miniPaneDisplayedMessages || miniPaneMessages) && (miniPaneDisplayedMessages || miniPaneMessages)!.length > 0 ? (
                                                 <ChatMessagesList 
-                                                    chatMessages={miniPaneMessages}
+                                                    chatMessages={miniPaneDisplayedMessages || miniPaneMessages || []}
                                                     isLoadingMessages={miniPaneIsLoadingMessages || false}
                                                     isChatLoading={miniPaneIsAiLoading || false}
                                                     handleSendToEditor={handleSendToEditor}
                                                     messagesEndRef={miniPaneMessagesEndRef || { current: null }}
                                                     onAddTaggedDocument={handleAddTaggedDocument}
                                                     displayMode="mini"
+                                                    // NEW: Pass pagination props for mini pane
+                                                    canLoadMore={miniPaneCanLoadMore || false}
+                                                    isLoadingMore={miniPaneIsLoadingMore || false}
+                                                    loadMoreMessages={miniPaneLoadMoreMessages}
                                                 />
                                             ) : (
                                                 <div className="text-sm text-[--muted-text-color] p-4 text-center">
-                                                    {miniPaneMessages ? `No messages (${miniPaneMessages.length})` : 'No chat history available'}
+                                                    {(miniPaneDisplayedMessages || miniPaneMessages) ? `No messages (${(miniPaneDisplayedMessages || miniPaneMessages)!.length})` : 'No chat history available'}
                                                 </div>
                                             )}
                                         </div>
