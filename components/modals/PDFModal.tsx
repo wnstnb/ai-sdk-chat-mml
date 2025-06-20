@@ -407,17 +407,16 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose, setBlockSta
     }
 
     try {
-      const blocksToInsert: PartialBlock[] = await editorRef.current.tryParseMarkdownToBlocks(contentToInsert);
-
-      if (blocksToInsert.length === 0 && contentToInsert.trim() !== '') {
-        // If parsing to blocks results in empty array but there was text, create a simple paragraph
-        blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: contentToInsert, styles: {} }] });
-      }
+      // Use improved preprocessing for consistent block creation
+      const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+      const preprocessingResult = await preprocessAIContent(contentToInsert, editorRef.current);
       
-      if (blocksToInsert.length === 0) {
-        toast.info("Content parsed to empty blocks. Nothing to insert.");
+      if (!preprocessingResult.success || preprocessingResult.blocks.length === 0) {
+        toast.info("Content preprocessing failed or resulted in empty blocks. Nothing to insert.");
         return;
       }
+      
+      const blocksToInsert = preprocessingResult.blocks;
 
       const currentDocumentBlocks = editorRef.current.document;
       let insertedBlocks: any = [];
@@ -483,17 +482,23 @@ export const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose, setBlockSta
 
     if (editorRef?.current) {
       try {
-        blocksForNewDocument = await editorRef.current.tryParseMarkdownToBlocks(contentToSave);
-        if (blocksForNewDocument.length === 0 && contentToSave.trim() !== '') {
-           blocksForNewDocument = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
+        // Use improved preprocessing for consistent block creation
+        const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+        const preprocessingResult = await preprocessAIContent(contentToSave, editorRef.current);
+        
+        if (preprocessingResult.success && preprocessingResult.blocks.length > 0) {
+          blocksForNewDocument = preprocessingResult.blocks;
+        } else {
+          // Fallback for failed preprocessing
+          blocksForNewDocument = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
         }
       } catch (parseError) {
-        console.error("[PDFModal] Error parsing markdown to blocks with editor, falling back to simple paragraph:", parseError);
+        console.error("[PDFModal] Error preprocessing content, falling back to simple paragraph:", parseError);
         toast.info("Could not fully parse content for new document; formatting will be simplified.");
         blocksForNewDocument = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
       }
     } else {
-      console.warn("[PDFModal] Editor instance not available for tryParseMarkdownToBlocks. Creating document with content in a single paragraph. Advanced formatting may be lost.");
+      console.warn("[PDFModal] Editor instance not available for preprocessing. Creating document with content in a single paragraph. Advanced formatting may be lost.");
       blocksForNewDocument = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
     }
 

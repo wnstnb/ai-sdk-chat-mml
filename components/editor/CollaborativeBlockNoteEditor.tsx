@@ -3,6 +3,17 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   useCreateBlockNote,
+  FormattingToolbar,
+  FormattingToolbarController,
+  useBlockNoteEditor,
+  useComponentsContext,
+  BlockTypeSelect,
+  BasicTextStyleButton,
+  TextAlignButton,
+  ColorStyleButton,
+  CreateLinkButton,
+  NestBlockButton,
+  UnnestBlockButton,
 } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/mantine';
 import '@blocknote/core/fonts/inter.css';
@@ -12,6 +23,8 @@ import YPartyKitProvider from 'y-partykit/provider';
 import { useCollaborationContext } from '@/contexts/CollaborationContext';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useDocumentPermissions } from '@/hooks/useDocumentPermissions';
+import { useFollowUpStore } from '@/lib/stores/followUpStore';
+import { Quote } from 'lucide-react';
 
 import {
   BlockNoteViewEditor,
@@ -72,6 +85,40 @@ const colors = [
 ];
 
 const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)];
+
+// AddFollowUpButton component for the collaborative editor
+function AddFollowUpButton() {
+  const editor = useBlockNoteEditor();
+  const Components = useComponentsContext()!;
+  const setFollowUpContext = useFollowUpStore((state) => state.setFollowUpContext);
+
+  const handleAddForFollowUp = () => {
+    console.log("[CollaborativeEditor FollowUp Button] Clicked!");
+    if (!editor) {
+      console.error("[CollaborativeEditor FollowUp Button] Editor instance not found.");
+      return;
+    }
+    const selectedText = editor.getSelectedText();
+    console.log("[CollaborativeEditor FollowUp Button] Selected Text:", selectedText);
+
+    if (selectedText) {
+      console.log("[CollaborativeEditor FollowUp Button] Calling setFollowUpContext with:", selectedText);
+      setFollowUpContext(selectedText);
+    } else {
+      console.log("[CollaborativeEditor FollowUp Button] No text selected, not setting context.");
+    }
+  };
+
+  return (
+    <Components.FormattingToolbar.Button
+      mainTooltip="Add selection for follow-up"
+      onClick={handleAddForFollowUp}
+      className="p-1"
+    >
+      <Quote size={18} className="block min-w-[18px] min-h-[18px]" />
+    </Components.FormattingToolbar.Button>
+  );
+}
 
 // Global singleton to ensure only one editor instance exists at a time
 let globalEditorInstance: {
@@ -573,13 +620,34 @@ const CollaborativeBlockNoteEditor = ({
           // PERMISSION ENFORCEMENT: Set editor to readonly mode for viewers
           editable={canEdit}
           // PERMISSION ENFORCEMENT: Hide UI features for non-editors
-          formattingToolbar={canEdit}
+          formattingToolbar={false} // Disable default toolbar to use custom one
           slashMenu={canEdit}
           sideMenu={canEdit}
           className="block-note-view"
         >
           <div className="editor-layout-wrapper flex">
             <div className="editor-section flex-1">
+              {canEdit && (
+                <FormattingToolbarController
+                  formattingToolbar={() => (
+                    <FormattingToolbar>
+                      <AddFollowUpButton key={"addFollowUpButton"} />
+                      <BlockTypeSelect key={"blockTypeSelect"} />
+                      <BasicTextStyleButton basicTextStyle={"bold"} key={"boldStyleButton"} />
+                      <BasicTextStyleButton basicTextStyle={"italic"} key={"italicStyleButton"} />
+                      <BasicTextStyleButton basicTextStyle={"underline"} key={"underlineStyleButton"} />
+                      <BasicTextStyleButton basicTextStyle={"strike"} key={"strikeStyleButton"} />
+                      <BasicTextStyleButton basicTextStyle={"code"} key={"codeStyleButton"} />
+                      <TextAlignButton textAlignment={"left"} key={"textAlignLeftButton"} />
+                      <TextAlignButton textAlignment={"center"} key={"textAlignCenterButton"} />
+                      <TextAlignButton textAlignment={"right"} key={"textAlignRightButton"} />
+                      <CreateLinkButton key={"createLinkButton"} />
+                      <NestBlockButton key={"nestBlockButton"} />
+                      <UnnestBlockButton key={"unnestBlockButton"} />
+                    </FormattingToolbar>
+                  )}
+                />
+              )}
               <BlockNoteViewEditor />
             </div>
           </div>

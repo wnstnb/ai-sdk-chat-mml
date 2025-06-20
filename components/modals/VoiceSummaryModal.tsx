@@ -1012,16 +1012,16 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
     const editor = editorRef.current;
 
     try {
-      let blocksToInsert: PartialBlock[] = await editor.tryParseMarkdownToBlocks(content);
-
-      if (blocksToInsert.length === 0 && content.trim() !== '') {
-        blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: content, styles: {} }] }];
+      // Use improved preprocessing for consistent block creation
+      const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+      const preprocessingResult = await preprocessAIContent(content, editor);
+      
+      if (!preprocessingResult.success || preprocessingResult.blocks.length === 0) {
+        toast.info("No content to insert or preprocessing failed.");
+        return;
       }
       
-      if (blocksToInsert.length === 0) {
-          toast.info("No content to insert.");
-          return;
-      }
+      const blocksToInsert = preprocessingResult.blocks;
 
       const { block: currentBlock } = editor.getTextCursorPosition();
       let referenceBlockId: string | undefined = currentBlock?.id;
@@ -1088,17 +1088,23 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
 
     if (editorRef?.current) {
       try {
-        blocksToInsert = await editorRef.current.tryParseMarkdownToBlocks(contentToSave);
-        if (blocksToInsert.length === 0 && contentToSave.trim() !== '') {
+        // Use improved preprocessing for consistent block creation
+        const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+        const preprocessingResult = await preprocessAIContent(contentToSave, editorRef.current);
+        
+        if (preprocessingResult.success && preprocessingResult.blocks.length > 0) {
+          blocksToInsert = preprocessingResult.blocks;
+        } else {
+          // Fallback for failed preprocessing
           blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
         }
       } catch (parseError) {
-        console.error("[VoiceSummaryModal] Error parsing markdown to blocks with editor, falling back to simple paragraph:", parseError);
+        console.error("[VoiceSummaryModal] Error preprocessing content, falling back to simple paragraph:", parseError);
         toast.info("Could not fully parse content for new document; formatting will be simplified.");
         blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
       }
     } else {
-      console.warn("[VoiceSummaryModal] Editor instance not available for tryParseMarkdownToBlocks. Creating document with content in a single paragraph. Advanced formatting may be lost.");
+      console.warn("[VoiceSummaryModal] Editor instance not available for preprocessing. Creating document with content in a single paragraph. Advanced formatting may be lost.");
       // No toast here, proceed with simplified blocks if on /launch
       blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
     }

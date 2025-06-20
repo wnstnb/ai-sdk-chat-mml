@@ -164,7 +164,7 @@ const PricingSection = () => {
 // New FeatureListSection component
 const FeatureListSection = () => {
   const featureItems: FeatureListItem[] = [
-    { text: "Beautiful rich text editing with Markdown and drag-and-drop blocks." },
+    { text: "Rich text editing with Markdown, drag-and-drop blocks, and Multiplayer collaboration." },
     { text: "Live voice summaries to capture your thoughts as they come." },
     { text: "Scrape and summarize web content to easily capture online information." },
     { text: "Process PDFs by uploading files or providing URLs to extract full text or get AI-powered summaries." },
@@ -468,7 +468,7 @@ export default function LandingPageContent() {
                   variants={contentVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Upload and extract PDFs. Transcribe live audio. Save and summarize web pages. Track every version of your notes.<br />All in one place.
+                  Upload and extract PDFs. Transcribe live audio. Save and summarize web pages. Multiplayer out-of-the-box. Track every version of your notes.<br />All in one place.
 
                 </motion.p>
                 <motion.div 

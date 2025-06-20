@@ -1229,14 +1229,18 @@ function EditorPageContent() {
                 totalInserted: number;
             } = { success: [], failed: [], totalInserted: 0 };
             
-            // Parse markdown content once for reuse
-            let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(markdownContent);
-            if (blocksToInsert.length === 0 && markdownContent.trim() !== '') {
-                blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: markdownContent, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
-            } else if (blocksToInsert.length === 0) {
-                toast.error("No content to insert.");
+            // Parse markdown content using our improved preprocessing utility
+            const { preprocessAIContent, createPreprocessingSummary } = await import('@/lib/utils/contentPreprocessing');
+            const preprocessingResult = await preprocessAIContent(markdownContent, editor);
+            
+            console.log('[addContent] ' + createPreprocessingSummary(preprocessingResult));
+            
+            if (!preprocessingResult.success || preprocessingResult.blocks.length === 0) {
+                toast.error("No content to insert or preprocessing failed.");
                 return;
             }
+            
+            const blocksToInsert = preprocessingResult.blocks;
             
             // Process each target block ID
             for (let i = 0; i < targetBlockIds.length; i++) {
@@ -1470,9 +1474,12 @@ function EditorPageContent() {
                 children: [] 
               };
             } else {
-              const parsedBlocks = await editor.tryParseMarkdownToBlocks(currentMarkdown);
-              if (parsedBlocks && parsedBlocks.length > 0) {
-                const { id: parsedId, ...restOfParsedBlock } = parsedBlocks[0];
+              // Use improved preprocessing for consistent block creation
+              const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+              const preprocessingResult = await preprocessAIContent(currentMarkdown, editor);
+              
+              if (preprocessingResult.success && preprocessingResult.blocks.length > 0) {
+                const { id: parsedId, ...restOfParsedBlock } = preprocessingResult.blocks[0];
                 blockDefinitionToUpdate = { ...restOfParsedBlock };
 
                 if (listTypes.includes(blockDefinitionToUpdate.type as string)) {
@@ -1934,23 +1941,26 @@ function EditorPageContent() {
                  return;
             }
 
-            // Parse the new markdown content into BlockNote blocks
-            let newBlocks: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(newTableMarkdown);
+            // Parse the new markdown content using our improved preprocessing utility
+            const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+            const preprocessingResult = await preprocessAIContent(newTableMarkdown, editor);
             
             // Handle potential empty result from parsing (e.g., AI returns empty string)
-            if (newBlocks.length === 0 && newTableMarkdown.trim() === '') {
+            if ((!preprocessingResult.success || preprocessingResult.blocks.length === 0) && newTableMarkdown.trim() === '') {
                 // If the AI intended to empty the table, remove the original block
                 editor.removeBlocks([tableBlockId]);
                 toast.success(`Table block ${tableBlockId} removed as replacement was empty.`);
                 handleEditorChange(editor);
                 return;
-            } else if (newBlocks.length === 0) {
+            } else if (!preprocessingResult.success || preprocessingResult.blocks.length === 0) {
                  // If parsing failed but markdown wasn't empty, treat as error
                  console.warn(`Failed to parse new table markdown for ${tableBlockId}. Markdown: ${newTableMarkdown}`);
                  // Keep the original table or revert? For now, just show error.
                  toast.error(`Failed to parse the updated table structure. Original table retained.`);
                  return;
             }
+            
+            const newBlocks = preprocessingResult.blocks;
             
             // Ensure the block still exists before replacing
              if (!editor.getBlock(tableBlockId)) {
@@ -2024,17 +2034,18 @@ function EditorPageContent() {
             const previousBlockIds = previousBlocks.map(block => block.id);
             console.log(`[ServerSide-ClientTool][replaceAllContent] Replacing ${previousBlockIds.length} blocks`);
             
-            // Parse the new markdown content
-            let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(newMarkdownContent);
-            if (blocksToInsert.length === 0 && newMarkdownContent.trim() !== '') {
-                blocksToInsert.push({ 
-                    type: 'paragraph', 
-                    content: [{ type: 'text', text: newMarkdownContent, styles: {} }] 
-                } as PartialBlock<typeof schema.blockSchema>);
-            } else if (blocksToInsert.length === 0) {
-                toast.error("No content to replace with.");
+            // Parse the new markdown content using our improved preprocessing utility
+            const { preprocessAIContent, createPreprocessingSummary } = await import('@/lib/utils/contentPreprocessing');
+            const preprocessingResult = await preprocessAIContent(newMarkdownContent, editor);
+            
+            console.log('[replaceAllContent] ' + createPreprocessingSummary(preprocessingResult));
+            
+            if (!preprocessingResult.success || preprocessingResult.blocks.length === 0) {
+                toast.error("No content to replace with or preprocessing failed.");
                 return;
             }
+            
+            const blocksToInsert = preprocessingResult.blocks;
             
              // Replace all document content using explicit transaction grouping
              // This ensures the entire replacement operation is grouped as a single undo/redo operation
@@ -2734,11 +2745,16 @@ function EditorPageContent() {
         }
 
         try {
-            let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(content);
-             if (blocksToInsert.length === 0 && content.trim() !== '') {
-                 blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: content, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
-             }
-            else if (blocksToInsert.length === 0) return;
+            // Use improved preprocessing for consistent block creation
+            const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+            const preprocessingResult = await preprocessAIContent(content, editor);
+            
+            if (!preprocessingResult.success || preprocessingResult.blocks.length === 0) {
+                console.log('[handleSendToEditor] No content to insert or preprocessing failed');
+                return;
+            }
+            
+            const blocksToInsert = preprocessingResult.blocks;
             const { block: currentBlock } = editor.getTextCursorPosition();
             let referenceBlockId: string | undefined = currentBlock?.id;
             if (!referenceBlockId) { referenceBlockId = editor.document[editor.document.length - 1]?.id; }
@@ -2971,11 +2987,12 @@ function EditorPageContent() {
                 // Short delay to ensure editor is fully rendered and ready after pane switch
                 setTimeout(async () => {
                     try {
-                        let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(pendingContentForEditor);
-                        if (blocksToInsert.length === 0 && pendingContentForEditor.trim() !== '') {
-                            blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: pendingContentForEditor, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
-                        }
-                        if (blocksToInsert.length > 0) {
+                        // Use improved preprocessing for consistent block creation
+                        const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+                        const preprocessingResult = await preprocessAIContent(pendingContentForEditor, editor);
+                        
+                        if (preprocessingResult.success && preprocessingResult.blocks.length > 0) {
+                            const blocksToInsert = preprocessingResult.blocks;
                             const { block: currentBlock } = editor.getTextCursorPosition();
                             let referenceBlockId: string | undefined = currentBlock?.id;
                             if (!referenceBlockId && editor.document.length > 0) {
