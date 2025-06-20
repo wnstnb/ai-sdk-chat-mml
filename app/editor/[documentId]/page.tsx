@@ -357,6 +357,7 @@ function EditorPageContent() {
         isLoadingMessages, 
         initialMessages, 
         displayedMessages, 
+        setDisplayedMessages,
         canLoadMore, 
         isLoadingMore, 
         loadMoreMessages 
@@ -2830,6 +2831,52 @@ function EditorPageContent() {
         }
     }, [messages, isMiniPaneOpen]);
 
+    // --- CRITICAL FIX: Sync useChat messages with displayedMessages for optimistic updates ---
+    useEffect(() => {
+        if (!messages || !displayedMessages) return;
+        
+        // Create maps for efficient lookup
+        const displayedMessagesMap = new Map(displayedMessages.map(msg => [msg.id, msg]));
+        const currentMessagesMap = new Map(messages.map(msg => [msg.id, msg]));
+        
+        // Find new messages that exist in `messages` but not in `displayedMessages`
+        const newMessages = messages.filter(msg => !displayedMessagesMap.has(msg.id));
+        
+        // Find existing messages that have been updated (content changed)
+        const updatedMessages = messages.filter(msg => {
+            const existingMsg = displayedMessagesMap.get(msg.id);
+            if (!existingMsg) return false; // This is a new message, handled above
+            
+            // Compare content to detect updates (e.g., streaming responses)
+            const currentContent = JSON.stringify(msg.content);
+            const existingContent = JSON.stringify(existingMsg.content);
+            return currentContent !== existingContent;
+        });
+        
+        if (newMessages.length > 0 || updatedMessages.length > 0) {
+            console.log(`[Chat Sync] Found ${newMessages.length} new messages and ${updatedMessages.length} updated messages to sync`, {
+                newMessages: newMessages.map(m => ({ id: m.id, role: m.role })),
+                updatedMessages: updatedMessages.map(m => ({ id: m.id, role: m.role, contentLength: typeof m.content === 'string' ? m.content.length : 'complex' }))
+            });
+            
+            // Update displayedMessages with both new and updated messages
+            setDisplayedMessages(prev => {
+                if (!prev) return prev;
+                
+                // Start with existing messages, but replace any that have been updated
+                let updatedList = prev.map(msg => {
+                    const updatedMsg = currentMessagesMap.get(msg.id);
+                    return updatedMsg || msg; // Use updated version if available, otherwise keep existing
+                });
+                
+                // Append any completely new messages
+                updatedList = [...updatedList, ...newMessages];
+                
+                return updatedList;
+            });
+        }
+    }, [messages, displayedMessages, setDisplayedMessages]);
+
     // --- NEW: Handler for Mini-Pane Toggle ---
     const handleToggleMiniPane = () => {
         setIsMiniPaneOpen(prev => {
@@ -3356,12 +3403,6 @@ function EditorPageContent() {
                                     isInferringTitle={isInferringTitle}
                                     handleInferTitle={handleInferTitle}
                                     editorRef={editorRef}
-                                    autosaveStatus={autosaveStatus}
-                                    handleSaveContent={handleSaveContent}
-                                    isSaving={isSaving}
-                                    onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
-                                    batchContext={autosaveBatchContext}
-                                    localSaveStatus={localSaveStatus}
                                     isDocumentStarred={currentDocIsStarred}
                                     onToggleDocumentStar={handleToggleCurrentDocumentStar}
                                 />
@@ -3426,6 +3467,13 @@ function EditorPageContent() {
                                         miniPaneIsLoadingMore={isLoadingMore}
                                         miniPaneLoadMoreMessages={loadMoreMessages}
                                         currentTheme={currentTheme} // Pass down the theme
+                                        // Props for EditorBottomActionBar
+                                        autosaveStatus={autosaveStatus}
+                                        handleSaveContent={handleSaveContent}
+                                        isSaving={isSaving}
+                                        onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
+                                        batchContext={autosaveBatchContext}
+                                        localSaveStatus={localSaveStatus}
                                     />
                                 </div>
                             </div>
@@ -3529,12 +3577,6 @@ function EditorPageContent() {
                             isInferringTitle={isInferringTitle}
                             handleInferTitle={handleInferTitle}
                             editorRef={editorRef}
-                            autosaveStatus={autosaveStatus}
-                            handleSaveContent={handleSaveContent}
-                            isSaving={isSaving}
-                            onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
-                            batchContext={autosaveBatchContext}
-                            localSaveStatus={localSaveStatus}
                             isDocumentStarred={currentDocIsStarred}
                             onToggleDocumentStar={handleToggleCurrentDocumentStar}
                          />
@@ -3600,6 +3642,13 @@ function EditorPageContent() {
                                 miniPaneIsLoadingMore={isLoadingMore}
                                 miniPaneLoadMoreMessages={loadMoreMessages}
                                 currentTheme={currentTheme} // Pass down the theme
+                                // Props for EditorBottomActionBar
+                                autosaveStatus={autosaveStatus}
+                                handleSaveContent={handleSaveContent}
+                                isSaving={isSaving}
+                                onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
+                                batchContext={autosaveBatchContext}
+                                localSaveStatus={localSaveStatus}
                             />
                         </div>
                     </div>

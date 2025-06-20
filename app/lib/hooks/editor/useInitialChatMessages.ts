@@ -36,6 +36,7 @@ export interface UseInitialChatMessagesReturn {
     initialMessages: UIMessage[] | null; // Full message list for AI context
     // NEW: Display-only message list and load more functionality
     displayedMessages: UIMessage[] | null; // Subset for UI display
+    setDisplayedMessages: React.Dispatch<React.SetStateAction<UIMessage[] | null>>; // For syncing with useChat messages
     canLoadMore: boolean;
     isLoadingMore: boolean;
     loadMoreMessages: () => Promise<void>;
@@ -347,6 +348,7 @@ export function useInitialChatMessages({
         initialMessages, // Full message context for AI
         // NEW: Display layer for UI
         displayedMessages,
+        setDisplayedMessages, // For syncing with useChat messages
         canLoadMore,
         isLoadingMore,
         loadMoreMessages,

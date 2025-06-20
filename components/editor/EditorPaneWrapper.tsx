@@ -10,6 +10,7 @@ import { useAttachedToastContext } from '@/contexts/AttachedToastContext';
 import { ChatMessagesList } from './ChatMessagesList';
 import { useAuthStore } from '@/lib/stores/useAuthStore';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { EditorBottomActionBar } from './EditorBottomActionBar';
 
 
 // Dynamically import CollaborativeBlockNoteEditor with SSR disabled
@@ -103,6 +104,18 @@ interface EditorPaneWrapperProps {
     miniPaneLoadMoreMessages?: () => Promise<void>;
     // --- END NEW ---
     currentTheme: 'light' | 'dark'; // CHANGED: Made non-optional
+    
+    // Props for EditorBottomActionBar
+    autosaveStatus: 'idle' | 'unsaved' | 'saving' | 'saved' | 'error';
+    handleSaveContent: () => void;
+    isSaving: boolean;
+    onOpenHistory: () => void;
+    batchContext?: {
+        isInBatch: boolean;
+        batchType: 'ai-tools' | 'user-typing' | 'manual';
+        batchChangesCount: number;
+    };
+    localSaveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 }
 
 export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
@@ -174,6 +187,14 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     miniPaneLoadMoreMessages,
     // --- END NEW ---
     currentTheme, // ADDED: Destructure currentTheme
+    
+    // Destructure props for EditorBottomActionBar
+    autosaveStatus,
+    handleSaveContent,
+    isSaving,
+    onOpenHistory,
+    batchContext,
+    localSaveStatus,
 }) => {
     // Initialize attached toasts for collapsed chat input
     const { toasts } = useAttachedToastContext();
@@ -424,6 +445,19 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                     </div>
                 </div>
             )}
+
+            {/* Bottom Action Bar - positioned below collapsed chat input with matching width constraints */}
+            <div className="relative max-w-[800px] mx-auto w-full">
+                <EditorBottomActionBar
+                    editorRef={editorRef}
+                    autosaveStatus={autosaveStatus}
+                    handleSaveContent={handleSaveContent}
+                    isSaving={isSaving}
+                    onOpenHistory={onOpenHistory}
+                    batchContext={batchContext}
+                    localSaveStatus={localSaveStatus}
+                />
+            </div>
         </div>
     );
 }; 

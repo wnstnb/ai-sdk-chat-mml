@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Edit, Save, X, Sparkles, Clock, ClipboardCopy, CheckCircle, SaveAll, Star, FileText, Undo, Redo, Share2 } from 'lucide-react';
-import { AutosaveStatusIndicator } from '@/app/components/editor/AutosaveStatusIndicator';
+import { Edit, Save, X, Sparkles, Star } from 'lucide-react';
 import { BlockNoteEditor } from '@blocknote/core'; // Added for editorRef type
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import TuonLogoIcon from '@/components/ui/TuonLogoIcon'; // ADDED: Import TuonLogoIcon
@@ -23,22 +22,6 @@ interface EditorTitleBarProps {
     handleInferTitle: () => Promise<void>;
     editorRef: React.RefObject<BlockNoteEditor<any>>; // Need editorRef for disabling infer title button
 
-    // From page.tsx state/handlers
-    autosaveStatus: 'idle' | 'unsaved' | 'saving' | 'saved' | 'error';
-    handleSaveContent: () => void;
-    isSaving: boolean; // Manual save button state
-    onOpenHistory: () => void; // Prop to open version history modal
-    
-    // --- ADDED: Batch context for enhanced auto-save status ---
-    batchContext?: {
-        isInBatch: boolean;
-        batchType: 'ai-tools' | 'user-typing' | 'manual';
-        batchChangesCount: number;
-    };
-    
-    // --- ADDED: Local save status for diff-based saves ---
-    localSaveStatus?: 'idle' | 'saving' | 'saved' | 'error';
-
     // ADDED for starring
     isDocumentStarred: boolean;
     onToggleDocumentStar: () => void;
@@ -56,61 +39,13 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
     isInferringTitle,
     handleInferTitle,
     editorRef, // Receive editorRef
-    autosaveStatus,
-    handleSaveContent,
-    isSaving,
-    onOpenHistory, // Destructure new prop
-    batchContext, // ADDED for batch context
-    localSaveStatus, // ADDED for local save status
     // ADDED for starring
     isDocumentStarred,
     onToggleDocumentStar,
 }) => {
-    const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'error'>('idle');
     const [titleValue, setTitleValue] = useState(currentTitle);
     const isMobile = useMediaQuery('(max-width: 768px)');
-    const { openMobileSidebar, openShareDocumentModal } = useModalStore(); // ADDED: Get functions from store
-
-    const handleCopyContent = async () => {
-        if (!editorRef.current || editorRef.current.document.length === 0) {
-            console.warn('Editor is empty or not available for copy.');
-            setCopyStatus('error'); // Briefly show error if trying to copy empty
-            setTimeout(() => setCopyStatus('idle'), 2000);
-            return;
-        }
-
-        try {
-            const editor = editorRef.current;
-            const markdown = await editor.blocksToMarkdownLossy(editor.document);
-
-            if (markdown.trim() === '') {
-                console.warn('Editor content is effectively empty after Markdown conversion.');
-                setCopyStatus('error'); // Treat as an error or neutral if preferred
-                setTimeout(() => setCopyStatus('idle'), 2000);
-                return;
-            }
-
-            await navigator.clipboard.writeText(markdown);
-            setCopyStatus('copied');
-            setTimeout(() => setCopyStatus('idle'), 2000); // Revert to idle after 2 seconds
-        } catch (err) {
-            console.error('Failed to copy content to clipboard:', err);
-            setCopyStatus('error');
-            setTimeout(() => setCopyStatus('idle'), 2000); // Revert to idle after 2 seconds
-        }
-    };
-
-    const handleUndo = () => {
-        if (editorRef.current) {
-            editorRef.current.undo();
-        }
-    };
-
-    const handleRedo = () => {
-        if (editorRef.current) {
-            editorRef.current.redo();
-        }
-    };
+    const { openMobileSidebar } = useModalStore(); // ADDED: Get functions from store
 
     return (
         <div className="flex justify-between items-center mb-2 flex-shrink-0">
@@ -174,59 +109,9 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
                     </>
                 )}
             </div>
+            {/* Quick action buttons moved to EditorBottomActionBar */}
             <div className="flex items-center space-x-2 flex-shrink-0">
-                <AutosaveStatusIndicator status={autosaveStatus} batchContext={batchContext} localSaveStatus={localSaveStatus} />
-                
-                {/* Undo/Redo buttons */}
-                <button 
-                    onClick={handleUndo} 
-                    disabled={!editorRef.current} 
-                    className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed" 
-                    title="Undo (Ctrl+Z)"
-                >
-                    <Undo size={18} />
-                </button>
-                <button 
-                    onClick={handleRedo} 
-                    disabled={!editorRef.current} 
-                    className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed" 
-                    title="Redo (Ctrl+Y)"
-                >
-                    <Redo size={18} />
-                </button>
-                
-                <button onClick={handleSaveContent} disabled={isSaving || autosaveStatus === 'saving'} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed" title="Save Document Manually">
-                   {isSaving ? <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <SaveAll className="h-5 w-5" />}
-                </button>
-
-                {/* NEW "COPY CONTENT" BUTTON - START */}
-                <button
-                    onClick={handleCopyContent}
-                    disabled={!editorRef.current || editorRef.current.document.length === 0 || copyStatus === 'copied' || copyStatus === 'error'}
-                    className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={
-                        copyStatus === 'copied' ? "Content Copied to Clipboard!" :
-                        copyStatus === 'error' ? "Failed to copy content" :
-                        "Copy Document Content (Markdown)"
-                    }
-                >
-                    {copyStatus === 'copied' ? (
-                        <CheckCircle size={20} className="text-green-500" />
-                    ) : copyStatus === 'error' ? (
-                        <X size={20} className="text-red-500" /> 
-                    ) : (
-                        <ClipboardCopy size={20} />
-                    )}
-                </button>
-                {/* NEW "COPY CONTENT" BUTTON - END */}
-
-                <button onClick={onOpenHistory} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded" title="Version History">
-                    <Clock size={20} />
-                </button>
-
-                <button onClick={openShareDocumentModal} className="p-1 text-[--text-color] hover:bg-[--hover-bg] rounded" title="Share Document">
-                    <Share2 size={20} />
-                </button>
+                {/* Keep only essential title bar elements - quick actions moved to bottom */}
             </div>
         </div>
     );
