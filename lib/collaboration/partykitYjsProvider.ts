@@ -782,9 +782,27 @@ export class PartykitYjsProvider {
       return this.directPersistUpdate(update);
     }
 
+    // Ensure valid auth token before coordinated save
+    if (!this.authToken) {
+      console.warn('[PartykitYjsProvider] No auth token available for coordinated save, refreshing...');
+      try {
+        await this.ensureValidAuthToken();
+      } catch (error) {
+        console.error('[PartykitYjsProvider] Failed to obtain auth token, falling back to direct persistence:', error);
+        return this.directPersistUpdate(update);
+      }
+    }
+
     try {
       // Convert update to content for hashing
       const updateArray = Array.from(update);
+      
+      console.log('[PartykitYjsProvider] Attempting coordinated save with auth token:', {
+        hasAuthToken: !!this.authToken,
+        userId: this.userId,
+        documentId: this.documentId,
+        updateSize: updateArray.length
+      });
       
       await this.saveCoordinator.coordinateSave(
         updateArray,
@@ -798,93 +816,108 @@ export class PartykitYjsProvider {
   }
 
   private async directPersistUpdate(update: Uint8Array): Promise<void> {
-    try {
-      // Convert update to array for persistence
-      let updateData: number[];
-      
-      // Log detailed type information for debugging
-      console.log('[PartykitYjsProvider] Persisting Y.js document update to Supabase:', {
-        documentId: this.documentId,
-        updateSize: update.length,
-        userId: this.userId,
-        updateDataType: typeof update,
-        isArray: Array.isArray(update),
-        isUint8Array: update instanceof Uint8Array,
-        isBuffer: Buffer.isBuffer(update),
-        constructor: update.constructor.name
-      });
+    const maxRetries = 2;
+    let retryCount = 0;
 
-      // Handle different data types properly
-      if (Buffer.isBuffer(update)) {
-        // Convert Buffer to array of bytes
-        updateData = Array.from(update);
-        console.log('[PartykitYjsProvider] Converted Buffer to array, first 10 bytes:', updateData.slice(0, 10));
-      } else if (update instanceof Uint8Array) {
-        // Convert Uint8Array to array of bytes
-        updateData = Array.from(update);
-        console.log('[PartykitYjsProvider] Converted Uint8Array to array, first 10 bytes:', updateData.slice(0, 10));
-      } else if (Array.isArray(update)) {
-        // Already an array
-        updateData = update;
-        console.log('[PartykitYjsProvider] Using existing array, first 10 bytes:', updateData.slice(0, 10));
-      } else {
-        // Fallback: try to convert to array
-        console.warn('[PartykitYjsProvider] Unknown update data type, attempting conversion:', typeof update);
-        updateData = Array.from(update as any);
-        console.log('[PartykitYjsProvider] Fallback conversion result, first 10 bytes:', updateData.slice(0, 10));
-      }
-      
-      console.log('[PartykitYjsProvider] Persisting Y.js document update to Supabase:', {
-        documentId: this.documentId,
-        updateSize: updateData.length,
-        userId: this.userId,
-        updateDataType: typeof updateData,
-        isArray: Array.isArray(updateData),
-        isBuffer: Buffer.isBuffer(updateData),
-        updateConstructor: updateData.constructor.name,
-        firstFewBytes: updateData.slice(0, 20),
-        originalUpdateType: typeof update,
-        originalUpdateConstructor: update.constructor.name
-      });
+    while (retryCount <= maxRetries) {
+      try {
+        // Ensure we have a valid token
+        if (!this.authToken) {
+          console.log('[PartykitYjsProvider] No auth token available, obtaining token...');
+          await this.ensureValidAuthToken();
+        }
 
-      // Ensure updateData is a plain array for JSON serialization
-      const updateArray = Array.isArray(updateData) ? updateData : Array.from(updateData);
-
-      // Call the existing Y.js updates API
-      const response = await fetch('/api/collaboration/yjs-updates', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Include auth header if we have a token
-          ...(this.authToken && { 'Authorization': `Bearer ${this.authToken}` })
-        },
-        body: JSON.stringify({
+        // Convert update to array for persistence
+        let updateData: number[];
+        
+        // Log detailed type information for debugging
+        console.log('[PartykitYjsProvider] Persisting Y.js document update to Supabase:', {
           documentId: this.documentId,
-          updateData: updateArray
-        })
-      });
+          updateSize: update.length,
+          userId: this.userId,
+          updateDataType: typeof update,
+          isArray: Array.isArray(update),
+          isUint8Array: update instanceof Uint8Array,
+          constructor: update.constructor.name,
+          retryAttempt: retryCount + 1
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Failed to persist Y.js update: ${response.status} ${response.statusText} - ${errorData.error || 'Unknown error'}`);
+        // Handle different data types properly
+        if (update instanceof Uint8Array) {
+          // Convert Uint8Array to array of bytes
+          updateData = Array.from(update);
+          console.log('[PartykitYjsProvider] Converted Uint8Array to array, first 10 bytes:', updateData.slice(0, 10));
+        } else if (Array.isArray(update)) {
+          // Already an array
+          updateData = update;
+          console.log('[PartykitYjsProvider] Using existing array, first 10 bytes:', updateData.slice(0, 10));
+        } else {
+          // Fallback: try to convert to array
+          console.warn('[PartykitYjsProvider] Unknown update data type, attempting conversion:', typeof update);
+          updateData = Array.from(update as any);
+          console.log('[PartykitYjsProvider] Fallback conversion result, first 10 bytes:', updateData.slice(0, 10));
+        }
+
+        // Ensure updateData is a plain array for JSON serialization
+        const updateArray = Array.isArray(updateData) ? updateData : Array.from(updateData);
+
+        // Call the existing Y.js updates API
+        const response = await fetch('/api/collaboration/yjs-updates', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // Include auth header if we have a token
+            ...(this.authToken && { 'Authorization': `Bearer ${this.authToken}` })
+          },
+          body: JSON.stringify({
+            documentId: this.documentId,
+            updateData: updateArray
+          })
+        });
+
+        if (response.status === 401 && retryCount < maxRetries) {
+          console.log('[PartykitYjsProvider] Authentication failed, refreshing token and retrying...');
+          await this.ensureValidAuthToken();
+          retryCount++;
+          continue;
+        }
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Failed to persist Y.js update: ${response.status} ${response.statusText} - ${errorData.error || 'Unknown error'}`);
+        }
+
+        const result = await response.json();
+        console.log('[PartykitYjsProvider] Successfully persisted Y.js update:', {
+          updateId: result.updateId,
+          createdAt: result.createdAt,
+          retryAttempt: retryCount + 1
+        });
+
+        return; // Success, exit retry loop
+
+      } catch (error) {
+        if (retryCount === maxRetries) {
+          console.error('[PartykitYjsProvider] Error persisting Y.js update after retries:', error);
+          
+          // If it's a network error, we might want to retry
+          if (error instanceof TypeError && error.message.includes('fetch')) {
+            console.log('[PartykitYjsProvider] Network error detected, will retry on next update');
+          }
+          
+          // Don't throw - persistence failures shouldn't break real-time collaboration
+          // The update is still broadcasted via PartyKit for real-time sync
+          return;
+        }
+        
+        console.warn('[PartykitYjsProvider] Save attempt failed, retrying...', {
+          error: error instanceof Error ? error.message : String(error),
+          retryAttempt: retryCount + 1,
+          maxRetries
+        });
+        
+        retryCount++;
       }
-
-      const result = await response.json();
-      console.log('[PartykitYjsProvider] Successfully persisted Y.js update:', {
-        updateId: result.updateId,
-        createdAt: result.createdAt
-      });
-
-    } catch (error) {
-      console.error('[PartykitYjsProvider] Error persisting Y.js update to Supabase:', error);
-      
-      // If it's a network error, we might want to retry
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        console.log('[PartykitYjsProvider] Network error detected, will retry on next update');
-      }
-      
-      // Don't throw - persistence failures shouldn't break real-time collaboration
-      // The update is still broadcasted via PartyKit for real-time sync
     }
   }
 

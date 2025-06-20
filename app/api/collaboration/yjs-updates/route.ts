@@ -13,6 +13,13 @@ export const dynamic = 'force-dynamic';
  * @returns Promise<{hasAccess: boolean, permissionLevel?: string, error?: NextResponse}>
  */
 async function checkDocumentAccess(supabase: any, documentId: string, userId: string, requiredLevel: 'read' | 'write' = 'read') {
+  console.log('[DEBUG] Permission check:', {
+    userId,
+    documentId,
+    requiredLevel,
+    timestamp: new Date().toISOString()
+  });
+
   // Check document permissions table first
   const { data: permission, error: permissionError } = await supabase
     .from('document_permissions')
@@ -32,17 +39,25 @@ async function checkDocumentAccess(supabase: any, documentId: string, userId: st
     };
   }
 
+  console.log('[DEBUG] Permission query result:', {
+    permissionFound: !!permission,
+    permissionLevel: permission?.permission_level,
+    permissionError: permissionError?.code
+  });
+
   if (permission) {
     // User has explicit permissions - check if sufficient for required level
     const level = permission.permission_level;
     
     if (requiredLevel === 'read') {
       // Any permission level allows reading
+      console.log('[DEBUG] Read access granted via explicit permission:', level);
       return { hasAccess: true, permissionLevel: level };
     } else if (requiredLevel === 'write') {
       // Only editor and owner can write
       const canWrite = level === 'editor' || level === 'owner';
       if (!canWrite) {
+        console.log('[DEBUG] Write access denied - insufficient permission level:', level);
         return {
           hasAccess: false,
           error: NextResponse.json(
@@ -51,11 +66,13 @@ async function checkDocumentAccess(supabase: any, documentId: string, userId: st
           )
         };
       }
+      console.log('[DEBUG] Write access granted via explicit permission:', level);
       return { hasAccess: true, permissionLevel: level };
     }
   }
 
   // Fallback: check if user owns the document
+  console.log('[DEBUG] No explicit permission found, checking document ownership');
   const { data: document, error: docError } = await supabase
     .from('documents')
     .select('id, user_id')
@@ -64,7 +81,14 @@ async function checkDocumentAccess(supabase: any, documentId: string, userId: st
     .single();
 
   const isOwner = !docError && !!document;
+  console.log('[DEBUG] Ownership check result:', {
+    isOwner,
+    docError: docError?.code,
+    documentFound: !!document
+  });
+
   if (!isOwner) {
+    console.log('[DEBUG] Access denied - not owner and no explicit permissions');
     return {
       hasAccess: false,
       error: NextResponse.json(
@@ -74,6 +98,7 @@ async function checkDocumentAccess(supabase: any, documentId: string, userId: st
     };
   }
 
+  console.log('[DEBUG] Access granted via document ownership');
   return { hasAccess: true, permissionLevel: 'owner' };
 }
 

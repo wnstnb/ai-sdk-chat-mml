@@ -81,6 +81,12 @@ export class CollaborativeSaveCoordinator {
     saveType: 'manual' | 'auto' | 'yjs',
     saveFunction: () => Promise<any>
   ): Promise<boolean> {
+    // Add authentication validation
+    if (!this.authToken) {
+      console.warn('[CollaborativeSaveCoordinator] No auth token available for save operation');
+      throw new Error('Authentication token required for save operation');
+    }
+
     const contentHash = this.generateContentHash(content);
     const operation: SaveOperation = {
       contentHash,
@@ -94,7 +100,8 @@ export class CollaborativeSaveCoordinator {
       contentHash: contentHash.substring(0, 8) + '...',
       saveType,
       userId: this.userId,
-      documentId: this.documentId
+      documentId: this.documentId,
+      hasAuthToken: !!this.authToken
     });
 
     // Check if this save should be deduplicated
