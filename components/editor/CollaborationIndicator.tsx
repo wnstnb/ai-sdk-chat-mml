@@ -1,11 +1,11 @@
 'use client';
 
 import React from 'react';
-import { UserAwareness } from '@/lib/collaboration/yjsDocument';
 import { ConnectionState } from '@/lib/collaboration/partykitYjsProvider';
+import { CollaborationUser } from '@/contexts/CollaborationContext';
 
 interface CollaborationIndicatorProps {
-  activeUsers: Array<UserAwareness & { userId: string; lastSeen: string }>;
+  activeUsers: CollaborationUser[];
   currentUserId?: string;
   isConnected?: boolean;
   connectionState?: ConnectionState | null;
@@ -22,7 +22,7 @@ export default function CollaborationIndicator({
   className = '',
 }: CollaborationIndicatorProps) {
   // Filter out current user from the display
-  const otherUsers = activeUsers.filter(user => user.userId !== currentUserId);
+  const otherUsers = activeUsers.filter(user => user.id !== currentUserId);
   
   // Calculate activity status
   const getActivityStatus = (lastSeen: string) => {
@@ -100,12 +100,12 @@ export default function CollaborationIndicator({
 
           return (
             <div
-              key={user.userId}
+              key={user.id}
               className={`relative w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium text-white ring-2 ${activityColors[activity]} transition-all duration-200`}
-              style={{ backgroundColor: user.user?.color || '#3b82f6' }}
-              title={`${user.user?.name || 'Anonymous User'} (${activity})`}
+              style={{ backgroundColor: user.color || '#3b82f6' }}
+              title={`${user.name || 'Anonymous User'} (${activity})`}
             >
-              {(user.user?.name || 'A').charAt(0).toUpperCase()}
+              {(user.name || 'A').charAt(0).toUpperCase()}
               {activity === 'active' && (
                 <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full border border-white" />
               )}
@@ -142,7 +142,7 @@ export default function CollaborationIndicator({
         </div>
         <span>
           {activeTypers.length === 1 
-            ? `${activeTypers[0].user?.name || 'Someone'} is typing...`
+            ? `${activeTypers[0].name || 'Someone'} is typing...`
             : `${activeTypers.length} people are typing...`
           }
         </span>
@@ -158,15 +158,7 @@ export default function CollaborationIndicator({
       </div>
       
       {isConnected && renderTypingIndicators()}
-      
-      {/* Connection details */}
-      {connectionState && connectionState.connectionStartTime && (
-        <div className="hidden md:flex items-center gap-2 text-xs text-gray-500">
-          <span>
-            Connected: {new Date(connectionState.connectionStartTime).toLocaleTimeString()}
-          </span>
-        </div>
-      )}
+
     </div>
   );
 } 

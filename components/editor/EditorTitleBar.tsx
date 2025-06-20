@@ -6,6 +6,9 @@ import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import TuonLogoIcon from '@/components/ui/TuonLogoIcon'; // ADDED: Import TuonLogoIcon
 import styles from '@/components/sidebar/Sidebar.module.css'; // ADDED: Import sidebar styles
 import { useModalStore } from '@/stores/useModalStore'; // ADDED: Import modal store
+import CollaborationIndicator from '@/components/editor/CollaborationIndicator'; // ADDED: Import CollaborationIndicator
+import { CollaborationUser } from '@/contexts/CollaborationContext';
+import { ConnectionState } from '@/lib/collaboration/partykitYjsProvider';
 
 // Define the props for the EditorTitleBar component
 interface EditorTitleBarProps {
@@ -25,6 +28,13 @@ interface EditorTitleBarProps {
     // ADDED for starring
     isDocumentStarred: boolean;
     onToggleDocumentStar: () => void;
+
+    // ADDED for collaboration indicator
+    activeUsers?: CollaborationUser[];
+    currentUserId?: string;
+    isCollaborationConnected?: boolean;
+    connectionState?: ConnectionState | null;
+    onRetryConnection?: () => void;
 }
 
 export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
@@ -42,6 +52,12 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
     // ADDED for starring
     isDocumentStarred,
     onToggleDocumentStar,
+    // ADDED for collaboration indicator
+    activeUsers = [],
+    currentUserId,
+    isCollaborationConnected = false,
+    connectionState,
+    onRetryConnection,
 }) => {
     const [titleValue, setTitleValue] = useState(currentTitle);
     const isMobile = useMediaQuery('(max-width: 768px)');
@@ -109,9 +125,16 @@ export const EditorTitleBar: React.FC<EditorTitleBarProps> = ({
                     </>
                 )}
             </div>
-            {/* Quick action buttons moved to EditorBottomActionBar */}
+            {/* Collaboration indicator in place of old action buttons */}
             <div className="flex items-center space-x-2 flex-shrink-0">
-                {/* Keep only essential title bar elements - quick actions moved to bottom */}
+                <CollaborationIndicator
+                    activeUsers={activeUsers}
+                    currentUserId={currentUserId}
+                    isConnected={isCollaborationConnected}
+                    connectionState={connectionState}
+                    onRetryConnection={onRetryConnection}
+                    className="text-xs"
+                />
             </div>
         </div>
     );

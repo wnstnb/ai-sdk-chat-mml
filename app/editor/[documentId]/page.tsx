@@ -184,7 +184,13 @@ function EditorPageContent() {
     const documentId = params?.documentId as string;
     
     // Get collaboration context and auth state
-    const { initializeCollaboration } = useCollaborationContext();
+    const { 
+        initializeCollaboration, 
+        activeUsers, 
+        isConnected: isCollaborationConnected, 
+        connectionState,
+        refreshConnection 
+    } = useCollaborationContext();
     const { user } = useAuthStore(); 
     
     // --- Refs --- (Declare refs early if needed by custom hooks)
@@ -3405,6 +3411,11 @@ function EditorPageContent() {
                                     editorRef={editorRef}
                                     isDocumentStarred={currentDocIsStarred}
                                     onToggleDocumentStar={handleToggleCurrentDocumentStar}
+                                    activeUsers={activeUsers}
+                                    currentUserId={user?.id}
+                                    isCollaborationConnected={isCollaborationConnected}
+                                    connectionState={connectionState}
+                                    onRetryConnection={refreshConnection}
                                 />
                                 {pageError && !pageError.startsWith("Chat Error:") && (
                                     <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -3579,6 +3590,11 @@ function EditorPageContent() {
                             editorRef={editorRef}
                             isDocumentStarred={currentDocIsStarred}
                             onToggleDocumentStar={handleToggleCurrentDocumentStar}
+                            activeUsers={activeUsers}
+                            currentUserId={user?.id}
+                            isCollaborationConnected={isCollaborationConnected}
+                            connectionState={connectionState}
+                            onRetryConnection={refreshConnection}
                          />
                         {pageError && !pageError.startsWith("Chat Error:") && (
                             <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>

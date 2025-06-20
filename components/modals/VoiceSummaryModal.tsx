@@ -1267,18 +1267,18 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
           // Note: When NOT minimized, we want normal click-outside behavior to trigger handleCloseModal
         }}
       >
-        <DialogHeader className="mb-4 relative">
+        {/* Minimize button positioned right next to the built-in close button */}
+        <button
+          onClick={handleMinimize}
+          aria-label="Minimize voice summary to floating widget"
+          className="absolute top-4 right-12 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground z-10"
+        >
+          <Minimize2 className="h-4 w-4" />
+          <span className="sr-only">Minimize</span>
+        </button>
+        
+        <DialogHeader className="mb-4">
           <DialogTitle id="voiceSummaryModalTitle" className="text-xl font-semibold text-center">Voice Summary</DialogTitle>
-          {/* Minimize button in top-right corner */}
-          <Button
-            onClick={handleMinimize}
-            aria-label="Minimize voice summary to floating widget"
-            variant="ghost"
-            size="sm"
-            className="absolute top-0 right-0 w-8 h-8 p-0 rounded-full"
-          >
-            <Minimize2 size={16} />
-          </Button>
         </DialogHeader>
         
         {/* Audio Visualizer - Placed above tabs for visibility during recording */}

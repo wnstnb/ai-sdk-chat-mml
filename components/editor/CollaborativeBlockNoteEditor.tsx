@@ -464,24 +464,6 @@ const CollaborativeBlockNoteEditor = ({
   // Render standard collaborative editor
   return (
     <div className="collaborative-editor">
-      <div className="collaboration-status text-xs text-gray-500 mb-2 flex items-center gap-2">
-        <div className={`w-2 h-2 rounded-full ${
-          !provider 
-            ? 'bg-yellow-500' 
-            : !!provider 
-              ? 'bg-green-500' 
-              : 'bg-red-500'
-        }`} />
-        <span>
-          {!provider 
-            ? useCollaboration 
-              ? 'Waiting for authentication...' 
-              : 'Working offline - changes saved locally'
-            : !!provider 
-              ? 'Connected - real-time collaboration active'
-              : 'Connecting to collaboration server...'}
-        </span>
-      </div>
 
       {/* 
       COMMENTED OUT: Comment UI temporarily disabled - see comment-system-challenges-prd.md
