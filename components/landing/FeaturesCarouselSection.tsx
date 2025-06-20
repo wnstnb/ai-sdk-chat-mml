@@ -179,6 +179,30 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
         </div>
   ],
     },
+    {
+      previewImageSrc: "/multiplayer-1.png",
+      title: "Collaborate<br />in Real-Time",
+      caption: "Work together seamlessly with live multiplayer editing.",
+      // category: "Collaboration",
+      content: [
+        <div key="section-multiplayer-1">
+          <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
+            <strong>Collaboration shouldn&apos;t mean constant back-and-forth or version conflicts.</strong> See changes as they happen, work on the same document simultaneously, and maintain your flow while building ideas together. Whether you&apos;re brainstorming with teammates or co-authoring with clients, everyone stays on the same page.
+          </p>
+          <div className="flex justify-center mt-4">
+            <img src="/multiplayer-collaboration.png" alt="Real-time Collaboration" className="w-full h-full object-cover rounded-xl max-w-xl" />
+          </div>
+        </div>,
+        <div key="section-multiplayer-2">
+          <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
+            <strong>Your AI assistant works alongside your team too.</strong> Multiple people can interact with the AI simultaneously, building on each other&apos;s ideas and AI suggestions in real-time. This creates a truly collaborative workspace where human creativity and AI assistance blend seamlessly.
+          </p>
+          <div className="flex justify-center mt-4">
+            <img src="/multiplayer-ai-collaboration.png" alt="Multiplayer AI Collaboration" className="w-full h-full object-cover rounded-xl max-w-xl" />
+          </div>
+        </div>
+      ],
+    },
   ];
 
   // const items = cards.map((card, idx) => (

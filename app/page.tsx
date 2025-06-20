@@ -46,11 +46,11 @@ const PricingSection = () => {
     {
       id: 'annual',
       name: "Annual",
-      price: "$12.50",
+      price: "$10",
       priceDetails: "/ month",
-      monthlyBreakdown: "($150 billed annually)",
+      monthlyBreakdown: "($120 billed annually)",
       features: ["7-day free trial", "Cancel anytime", "All features included", "Full access to multiple AI models"],
-      highlight: "Save 22%",
+      highlight: "Save 38%",
     },
   ];
 
