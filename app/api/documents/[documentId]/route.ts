@@ -1,7 +1,20 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 import { Document } from '@/types/supabase'; // Import Document type
+
+// Create service role client for cross-user queries
+const supabaseServiceRole = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+);
 
 // Re-use or adapt the helper function from folders route
 async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerClient>) {
@@ -14,6 +27,39 @@ async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerCl
     return { errorResponse: NextResponse.json({ error: { code: 'UNAUTHENTICATED', message: 'User not authenticated.' } }, { status: 401 }) };
   }
   return { userId: session.user.id };
+}
+
+// Helper function to check if user has document access and permission level
+async function checkDocumentAccess(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string) {
+  try {
+    // Use the database function that safely checks access without circular dependencies
+    const { data: accessResult, error } = await supabase.rpc('check_shared_document_access', {
+      doc_id: documentId,
+      user_uuid: userId
+    });
+
+    if (error) {
+      console.error('RPC Error details:', error);
+      throw new Error(`Database error checking document access: ${error.message}`);
+    }
+
+    console.log('Access result from function:', accessResult);
+
+    // The function returns a table, so we expect an array of rows
+    if (accessResult && Array.isArray(accessResult) && accessResult.length > 0) {
+      const result = accessResult[0];
+      console.log('First result row:', result);
+      
+      if (result.has_access) {
+        return { permission_level: result.permission_level };
+      }
+    }
+
+    return null; // No access
+  } catch (error) {
+    console.error('Error in checkDocumentAccess:', error);
+    throw error;
+  }
 }
 
 // GET handler for fetching specific document details (including content)
@@ -29,18 +75,25 @@ export async function GET(
         const { userId, errorResponse } = await getUserOrError(supabase);
         if (errorResponse) return errorResponse;
 
-        // Fetch document details - RLS ensures user owns the document
-        const { data: document, error: fetchError } = await supabase
+        // Check if user has access to this document (owner or shared)
+        const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+        if (!userPermission) {
+            return NextResponse.json({ 
+                error: { code: 'FORBIDDEN', message: 'Document not found or you do not have permission to view it.' } 
+            }, { status: 403 });
+        }
+
+        // Fetch document details using service role - user has verified access
+        const { data: document, error: fetchError } = await supabaseServiceRole
             .from('documents')
             .select('*') // Select all columns, including content
             .eq('id', documentId)
-            .eq('user_id', userId) // Explicit user_id check
             .single(); // Expecting only one document
 
         if (fetchError) {
             console.error('Document GET Error:', fetchError.message);
             if (fetchError.code === 'PGRST116') { // Not found
-                return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Document not found or you do not have permission to view it.' } }, { status: 404 });
+                return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Document not found.' } }, { status: 404 });
             }
             return NextResponse.json({ error: { code: 'DATABASE_ERROR', message: `Failed to fetch document: ${fetchError.message}` } }, { status: 500 });
         }
@@ -100,12 +153,19 @@ export async function PUT(
         updateData.folder_id = folderId;
     }
 
-    // Update document - RLS ensures user owns the document
+    // Check if user has permission to edit this document
+    const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+    if (!userPermission || !['owner', 'editor'].includes(userPermission.permission_level)) {
+      return NextResponse.json({ 
+        error: { code: 'FORBIDDEN', message: 'You do not have permission to edit this document.' } 
+      }, { status: 403 });
+    }
+
+    // Update document - user has verified edit access
     const { data: updatedDocument, error: updateError } = await supabase
       .from('documents')
       .update(updateData)
       .eq('id', documentId)
-      .eq('user_id', userId) // Explicit user_id check
       .select('id, user_id, folder_id, name, created_at, updated_at') // Exclude content
       .single();
 
@@ -143,13 +203,20 @@ export async function DELETE(
     const { userId, errorResponse } = await getUserOrError(supabase);
     if (errorResponse) return errorResponse;
 
-    // Delete document - RLS ensures user owns the document
+    // Check if user has permission to delete this document (only owners)
+    const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+    if (!userPermission || userPermission.permission_level !== 'owner') {
+      return NextResponse.json({ 
+        error: { code: 'FORBIDDEN', message: 'Only document owners can delete documents.' } 
+      }, { status: 403 });
+    }
+
+    // Delete document - user has verified owner access
     // ON DELETE CASCADE handles associated messages/tool_calls
     const { error: deleteError, count } = await supabase
       .from('documents')
       .delete({ count: 'exact' })
-      .eq('id', documentId)
-      .eq('user_id', userId);
+      .eq('id', documentId);
 
     if (deleteError) {
       console.error('Document Delete Error:', deleteError.message);

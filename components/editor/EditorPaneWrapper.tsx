@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { X } from 'lucide-react';
 import type { BlockNoteEditor, PartialBlock } from '@blocknote/core';
@@ -8,21 +8,24 @@ import type { TaggedDocument } from '@/lib/types';
 import { AttachedToastContainer } from '@/components/chat/AttachedToastContainer';
 import { useAttachedToastContext } from '@/contexts/AttachedToastContext';
 import { ChatMessagesList } from './ChatMessagesList';
+import { useAuthStore } from '@/lib/stores/useAuthStore';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { EditorBottomActionBar } from './EditorBottomActionBar';
 
 
-// Dynamically import BlockNoteEditorComponent with SSR disabled
+// Dynamically import CollaborativeBlockNoteEditor with SSR disabled
 // Define loading state consistent with page.tsx
-const BlockNoteEditorComponent = dynamic(
-    () => import('@/components/BlockNoteEditorComponent'),
+const CollaborativeBlockNoteEditor = dynamic(
+    () => import('@/components/editor/CollaborativeBlockNoteEditor'),
     {
         ssr: false,
-        loading: () => <p className="p-4 text-center text-[--muted-text-color]">Loading Editor...</p>,
+        loading: () => <p className="p-4 text-center text-[--muted-text-color]">Loading Collaborative Editor...</p>,
     }
 );
 
 // Define props required by the EditorPaneWrapper and its potential children
 interface EditorPaneWrapperProps {
-    // For BlockNoteEditorComponent
+    // For CollaborativeBlockNoteEditor
     documentId: string; // Needed for key prop
     initialContent: PartialBlock<any>[] | undefined;
     editorRef: React.RefObject<BlockNoteEditor<any>>; 
@@ -69,9 +72,12 @@ interface EditorPaneWrapperProps {
     micPermissionError: boolean;
     startRecording: () => void;
     stopRecording: (timedOut?: boolean) => void;
+    onCancelRecording?: () => void; // Cancel recording without sending
     // --- END NEW AUDIO PROPS ---
     // --- ADD AUDIO VISUALIZATION PROP ---
     audioTimeDomainData: Uint8Array | null;
+    recordingDuration: number; // Duration in seconds
+    onSilenceDetected?: () => void; // Silence detection callback
     // --- END AUDIO VISUALIZATION PROP ---
     // --- ADD CLEAR PREVIEW PROP --- 
     clearPreview: () => void;
@@ -85,13 +91,31 @@ interface EditorPaneWrapperProps {
     onToggleMiniPane?: () => void;
     isMainChatCollapsed?: boolean;
     miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
+    unreadMiniPaneCount?: number; // Count of unread messages for indicator
     // --- NEW: Props for Mini-Pane content ---
-    miniPaneMessages?: any[]; // Chat messages for mini pane
+    miniPaneMessages?: any[]; // Chat messages for mini pane (full context)
+    miniPaneDisplayedMessages?: any[] | null; // NEW: Paginated messages for mini pane display
     miniPaneIsLoadingMessages?: boolean;
     miniPaneIsAiLoading?: boolean;
     miniPaneMessagesEndRef?: React.RefObject<HTMLDivElement>;
+    // NEW: Mini-Pane Load More functionality props
+    miniPaneCanLoadMore?: boolean;
+    miniPaneIsLoadingMore?: boolean;
+    miniPaneLoadMoreMessages?: () => Promise<void>;
     // --- END NEW ---
     currentTheme: 'light' | 'dark'; // CHANGED: Made non-optional
+    
+    // Props for EditorBottomActionBar
+    autosaveStatus: 'idle' | 'unsaved' | 'saving' | 'saved' | 'error';
+    handleSaveContent: () => void;
+    isSaving: boolean;
+    onOpenHistory: () => void;
+    batchContext?: {
+        isInBatch: boolean;
+        batchType: 'ai-tools' | 'user-typing' | 'manual';
+        batchChangesCount: number;
+    };
+    localSaveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 }
 
 export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
@@ -131,9 +155,12 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     micPermissionError,
     startRecording,
     stopRecording,
+    onCancelRecording, // Cancel recording without sending
     // --- END NEW AUDIO PROPS DESTRUCTURED ---
     // --- DESTRUCTURE AUDIO VISUALIZATION PROP ---
     audioTimeDomainData,
+    recordingDuration,
+    onSilenceDetected,
     // --- END AUDIO VISUALIZATION PROP ---
     // --- DESTRUCTURE CLEAR PREVIEW PROP ---
     clearPreview,
@@ -147,16 +174,48 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
     onToggleMiniPane,
     isMainChatCollapsed,
     miniPaneToggleRef, // Destructure the ref
+    unreadMiniPaneCount, // Destructure the unread count
     // --- NEW: Destructure Mini-Pane content props ---
     miniPaneMessages,
+    miniPaneDisplayedMessages, // NEW: Paginated messages for mini pane display
     miniPaneIsLoadingMessages,
     miniPaneIsAiLoading,
     miniPaneMessagesEndRef,
+    // NEW: Mini-Pane Load More functionality props
+    miniPaneCanLoadMore,
+    miniPaneIsLoadingMore,
+    miniPaneLoadMoreMessages,
     // --- END NEW ---
     currentTheme, // ADDED: Destructure currentTheme
+    
+    // Destructure props for EditorBottomActionBar
+    autosaveStatus,
+    handleSaveContent,
+    isSaving,
+    onOpenHistory,
+    batchContext,
+    localSaveStatus,
 }) => {
     // Initialize attached toasts for collapsed chat input
     const { toasts } = useAttachedToastContext();
+    
+    // Get current user from auth store and profile data
+    const { user } = useAuthStore();
+    const { profile } = useUserProfile();
+    
+    // Debug user data
+    console.log('[EditorPaneWrapper] User data for collaboration:', {
+        userId: user?.id,
+        userName: profile?.username || 'Anonymous User',
+        hasUser: !!user,
+        hasProfile: !!profile,
+        userObject: user,
+        profileObject: profile
+    });
+    
+    // Refs for click-off behavior
+    const miniPaneRef = React.useRef<HTMLDivElement>(null);
+    const chatInputAreaRef = React.useRef<HTMLDivElement>(null);
     
     // Debug mini pane messages
     React.useEffect(() => {
@@ -169,6 +228,41 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
             });
         }
     }, [isMiniPaneOpen, miniPaneMessages, isMainChatCollapsed]);
+
+    // Click-off behavior for mini chat pane
+    React.useEffect(() => {
+        if (!isMiniPaneOpen || !onToggleMiniPane) return;
+
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as Node;
+            
+            // Don't close if clicking inside the mini pane
+            if (miniPaneRef.current?.contains(target)) {
+                return;
+            }
+            
+            // Don't close if clicking inside the chat input area
+            if (chatInputAreaRef.current?.contains(target)) {
+                return;
+            }
+            
+            // Don't close if clicking the toggle button (it has its own handler)
+            if (miniPaneToggleRef?.current?.contains(target)) {
+                return;
+            }
+            
+            // Close the mini pane for all other clicks
+            onToggleMiniPane();
+        };
+
+        // Add event listener to document
+        document.addEventListener('mousedown', handleClickOutside);
+        
+        // Cleanup
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isMiniPaneOpen, onToggleMiniPane, miniPaneToggleRef]);
     
 
 
@@ -190,30 +284,38 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
         );
     };
 
-
-
-
+    // Memoize the form ref callback to prevent infinite loops
+    const formRefCallback = useCallback((node: HTMLFormElement | null) => {
+        // Handle multiple refs for the form element
+        if (typeof formRef === 'function') {
+            formRef(node);
+        }
+        
+        // Also assign to our chat input area ref
+        (chatInputAreaRef as React.MutableRefObject<HTMLFormElement | null>).current = node;
+    }, [formRef]);
 
     return (
         <div className="flex-1 flex flex-col relative bg-[--editor-bg] overflow-hidden">
             {/* Editor Area */}
             <div className="flex-1 overflow-y-auto py-4 px-0 styled-scrollbar border-t border-[--border-color]">
-                {initialContent !== undefined ? (
-                    <BlockHighlightWrapper 
-                        isDarkTheme={currentTheme === 'dark'}
-                    >
-                        <BlockNoteEditorComponent
-                            key={documentId} 
-                            editorRef={editorRef}
-                            initialContent={initialContent}
-                            onEditorContentChange={onEditorContentChange}
-                            theme={currentTheme} // Pass the theme to BlockNoteEditorComponent
-                        />
-                    </BlockHighlightWrapper>
-                ) : (
-                    // Consistent loading state
-                    <p className="p-4 text-center text-[--muted-text-color]">Initializing editor...</p>
-                )}
+                <BlockHighlightWrapper 
+                    isDarkTheme={currentTheme === 'dark'}
+                >
+                    <CollaborativeBlockNoteEditor
+                        key={documentId} // FIXED: Use only documentId for key to prevent unnecessary remounts
+                        documentId={documentId}
+                        editorRef={editorRef}
+                        initialContent={initialContent || []} // Provide empty array as fallback
+                        onEditorContentChange={onEditorContentChange}
+                        theme={currentTheme} // Pass the theme to CollaborativeBlockNoteEditor
+                        userId={user?.id}
+                        userName={profile?.username || 'Anonymous User'}
+                        userColor={undefined} // Let the component generate a color based on userId
+                        useCollaboration={true} // EXPLICITLY ENABLE: Real-time collaboration
+                        enableComments={false} // DISABLED: Comments temporarily disabled - see comment-system-challenges-prd.md
+                    />
+                </BlockHighlightWrapper>
             </div>
 
             {/* Collapsed Chat Input (Rendered conditionally at the bottom) */}
@@ -262,29 +364,33 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                     {/* --- END NEW: Render Tagged Document Pills --- */}
 
                     {/* Pinned Input Area - Remove max-width/centering from here */}
-                    <div className="pt-4 border-t border-[--border-color] z-10 bg-[--editor-bg] flex-shrink-0 w-full relative">
+                    <div className="pt-4 z-10 bg-[--editor-bg] flex-shrink-0 w-full relative">
                         {/* Attached Toast Container for collapsed chat */}
                         <AttachedToastContainer toasts={toasts} />
                         
                         {/* Mini Chat Pane - positioned exactly like toast container */}
                         {isMiniPaneOpen && (
-                            <div className="absolute bottom-full left-0 right-0 mb-2 z-40">
+                            <div ref={miniPaneRef} className="absolute bottom-full left-0 right-0 mb-2 z-40">
                                 <div className="flex flex-col gap-2 px-4">
                                     <div className="w-full max-w-[780px] mx-auto max-h-[350px] overflow-y-auto bg-[--input-bg] border border-[--border-color] rounded-md shadow-lg flex flex-col">
                                         <div className="flex-1 overflow-y-auto styled-scrollbar p-2">
-                                            {miniPaneMessages && miniPaneMessages.length > 0 ? (
+                                            {(miniPaneDisplayedMessages || miniPaneMessages) && (miniPaneDisplayedMessages || miniPaneMessages)!.length > 0 ? (
                                                 <ChatMessagesList 
-                                                    chatMessages={miniPaneMessages}
+                                                    chatMessages={miniPaneDisplayedMessages || miniPaneMessages || []}
                                                     isLoadingMessages={miniPaneIsLoadingMessages || false}
                                                     isChatLoading={miniPaneIsAiLoading || false}
                                                     handleSendToEditor={handleSendToEditor}
                                                     messagesEndRef={miniPaneMessagesEndRef || { current: null }}
                                                     onAddTaggedDocument={handleAddTaggedDocument}
                                                     displayMode="mini"
+                                                    // NEW: Pass pagination props for mini pane
+                                                    canLoadMore={miniPaneCanLoadMore || false}
+                                                    isLoadingMore={miniPaneIsLoadingMore || false}
+                                                    loadMoreMessages={miniPaneLoadMoreMessages}
                                                 />
                                             ) : (
                                                 <div className="text-sm text-[--muted-text-color] p-4 text-center">
-                                                    {miniPaneMessages ? `No messages (${miniPaneMessages.length})` : 'No chat history available'}
+                                                    {(miniPaneDisplayedMessages || miniPaneMessages) ? `No messages (${(miniPaneDisplayedMessages || miniPaneMessages)!.length})` : 'No chat history available'}
                                                 </div>
                                             )}
                                         </div>
@@ -292,7 +398,7 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 </div>
                             </div>
                         )}
-                        <form ref={formRef} onSubmit={sendMessage} className="w-full flex flex-col items-center">
+                        <form ref={formRefCallback} onSubmit={sendMessage} className="w-full flex flex-col items-center">
                             {/* Use ChatInputUI directly here */}
                             <ChatInputUI 
                                 key={isChatCollapsed ? 'collapsed-input' : 'unmounted'}
@@ -319,7 +425,10 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 micPermissionError={micPermissionError}
                                 startRecording={startRecording}
                                 stopRecording={stopRecording}
+                                onCancelRecording={onCancelRecording}
                                 audioTimeDomainData={audioTimeDomainData}
+                                recordingDuration={recordingDuration}
+                                onSilenceDetected={onSilenceDetected}
                                 clearPreview={clearPreview}
                                 taggedDocuments={taggedDocuments}
                                 onAddTaggedDocument={handleAddTaggedDocument}
@@ -329,12 +438,26 @@ export const EditorPaneWrapper: React.FC<EditorPaneWrapperProps> = ({
                                 onToggleMiniPane={onToggleMiniPane}
                                 isMainChatCollapsed={isMainChatCollapsed}
                                 miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
+                                unreadMiniPaneCount={unreadMiniPaneCount} // Pass the unread count
                                 // --- END NEW ---
                             />
                         </form>
                     </div>
                 </div>
             )}
+
+            {/* Bottom Action Bar - positioned below collapsed chat input with matching width constraints */}
+            <div className="relative max-w-[800px] mx-auto w-full">
+                <EditorBottomActionBar
+                    editorRef={editorRef}
+                    autosaveStatus={autosaveStatus}
+                    handleSaveContent={handleSaveContent}
+                    isSaving={isSaving}
+                    onOpenHistory={onOpenHistory}
+                    batchContext={batchContext}
+                    localSaveStatus={localSaveStatus}
+                />
+            </div>
         </div>
     );
 }; 

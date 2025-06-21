@@ -1,34 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, KeyboardEvent } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-// Import FileManager as per documentation
-import { FileManager } from '@cubone/react-file-manager'; 
-// Revert CSS path to the file confirmed to exist in node_modules
-import '@cubone/react-file-manager/dist/style.css'; 
 import { Document, Folder } from '@/types/supabase'; // Import types
-// Import the new file manager component
-import NewFileManager from '@/components/file-manager/NewFileManager';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // ADDED: Import preference store
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"; // Add Card imports
-import Link from 'next/link'; // Import Link for navigation
-import { Button } from "@/components/ui/button"; // ADDED: Import Button component
-// ADDED: Import Lucide icons
-import { FilePlus, AudioWaveform, Shovel, BookOpenText } from 'lucide-react';
 // ADDED: Import useModalStore
 import { useModalStore } from '@/stores/useModalStore';
 
-// --- NEW: Import Omnibar ---
-import { Omnibar } from '@/components/search/Omnibar';
-// --- NEW: Import X icon for pills ---
-import { X } from 'lucide-react'; 
 // --- NEW: Import DocumentCardGrid component ---
 import DocumentCardGrid from '@/components/file-manager/DocumentCardGrid';
-
-// --- NEW: Import TaggedDocument type ---
-import type { TaggedDocument } from '@/lib/types';
-import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions'; // <<< ADDED: Import type
 
 // Define the structure expected by Cubone File Manager (matching docs)
 type CuboneFileType = {
@@ -145,7 +125,7 @@ export default function LaunchPage() {
       {/* Main Content Area */}
       <div className="flex-grow overflow-y-auto">
         <div className="pt-2 px-2 md:pt-4 md:px-4 h-full flex flex-col">
-          {/* Document Grid */}
+          {/* Unified Document Grid with Filtering */}
           <div className="flex-grow">
             <DocumentCardGrid />
           </div>

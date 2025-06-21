@@ -15,6 +15,26 @@ async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerCl
   return { userId: session.user.id };
 }
 
+// Helper function to check if user has document access and permission level
+async function checkDocumentAccess(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string) {
+  // Use the database function that safely checks access without circular dependencies
+  const { data: accessResult, error } = await supabase.rpc('check_shared_document_access', {
+    doc_id: documentId,
+    user_uuid: userId
+  });
+
+  if (error) {
+    throw new Error(`Database error checking document access: ${error.message}`);
+  }
+
+  // The function returns an array with one row: { has_access: boolean, permission_level: string }
+  if (accessResult && accessResult.length > 0 && accessResult[0].has_access) {
+    return { permission_level: accessResult[0].permission_level };
+  }
+
+  return null; // No access
+}
+
 export async function POST(
   request: Request,
   { params }: { params: { documentId: string } }
@@ -72,11 +92,18 @@ export async function POST(
       updateDocumentData.searchable_content = searchable_content;
     }
 
+    // Check if user has permission to edit this document
+    const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+    if (!userPermission || !['owner', 'editor'].includes(userPermission.permission_level)) {
+      return NextResponse.json({ 
+        error: { code: 'FORBIDDEN', message: 'You do not have permission to edit this document.' } 
+      }, { status: 403 });
+    }
+
     const { data: updatedDocInfo, error: updateError } = await supabase
       .from('documents')
       .update(updateDocumentData)
       .eq('id', documentId)
-      .eq('user_id', userId) // Ensure user owns the document
       .select('updated_at')
       .single();
 

@@ -1,10 +1,26 @@
 import React, { useRef, useEffect, useMemo, useCallback } from 'react';
-import { FileText, Star, CheckSquare, Square, Loader2 } from 'lucide-react'; // Added Loader2
+import { 
+  FileText, 
+  Star, 
+  CheckSquare, 
+  Square, 
+  Loader2, 
+  StarOff, 
+  Clock,
+  Crown,
+  Edit3,
+  MessageSquare,
+  Eye,
+  Users,
+  UserCheck,
+  ExternalLink
+} from 'lucide-react'; // Added missing icons
 import { formatRelativeDate } from '@/lib/utils/dateUtils'; // Import the new date utility
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+
+import { Badge } from "@/components/ui/badge"; // Added Badge component
+import { motion } from 'framer-motion'; // Added framer-motion for animations
 
 /**
  * Props for the DocumentCard component.
@@ -32,6 +48,18 @@ interface DocumentCardProps {
   isLoading?: boolean;
   /** Optional callback for when the card is clicked, typically to set loading state. */
   onClick?: () => void;
+  /** Optional document permission level for showing permission badges */
+  permission_level?: 'owner' | 'editor' | 'commenter' | 'viewer';
+  /** Optional access type to show sharing indicators */
+  access_type?: 'shared' | 'private';
+  /** Optional owner email for shared documents */
+  owner_email?: string;
+  /** Optional flag to show owner information */
+  showOwnerInfo?: boolean;
+  /** Optional compact mode for smaller card display */
+  compact?: boolean;
+  /** Optional flag indicating if this document is shared with others */
+  is_shared_with_others?: boolean;
 }
 
 /**
@@ -42,7 +70,26 @@ interface DocumentCardProps {
  * @returns {React.ReactElement} The rendered DocumentCard.
  */
 const DocumentCard: React.FC<DocumentCardProps> = (props) => {
-  const { title, lastUpdated, snippet, id, is_starred, isSelected = false, onToggleSelect, folderPath, onToggleStar, isLoading, onClick } = props;
+  const { 
+    title, 
+    lastUpdated, 
+    snippet, 
+    id, 
+    is_starred, 
+    isSelected = false, 
+    onToggleSelect, 
+    folderPath, 
+    onToggleStar, 
+    isLoading, 
+    onClick,
+    // NEW PROPS
+    permission_level,
+    access_type,
+    owner_email,
+    showOwnerInfo = true,
+    compact = false,
+    is_shared_with_others = false
+  } = props;
   
   /** Memoized display title, defaults to "(Untitled)" if title is not provided. */
   const displayTitle = useMemo(() => title || "(Untitled)", [title]);
@@ -96,7 +143,6 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
     const targetElement = e.target as HTMLElement;
 
     if (isDragStartedRef.current ||
-        targetElement.closest('[data-drag-handle="true"]') ||
         targetElement.closest('[data-interactive-element="true"]')) {
       e.preventDefault();
       e.stopPropagation();
@@ -134,130 +180,227 @@ const DocumentCard: React.FC<DocumentCardProps> = (props) => {
     [displayTitle, is_starred, formattedDate]
   );
 
-  /** Memoized CSS class string for the card's main article element, managing styles for selection and hover. */
-  const cardClassName = useMemo(() => 
-    `group relative flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-md \
-    transition-all duration-300 ease-in-out motion-reduce:transition-none overflow-hidden \
-    w-full max-w-[220px] aspect-[3/4] touch-manipulation \
-    focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 \
-    ${isSelected ? 'ring-2 ring-[--accent-color] shadow-lg' : 'focus:ring-[--accent-color]'} \
-    ${!isSelected ? 'hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none' : ''} \
-    will-change-[transform,box-shadow,opacity]`
-  , [isSelected]);
-
-  /** Memoized CSS class string for the star icon, managing its appearance based on starred state. */
-  const starIconClassName = useMemo(() => 
-    `w-5 h-5 transition-colors ${is_starred ? 'text-yellow-400 fill-yellow-400' : 'text-gray-500 dark:text-gray-400 hover:text-yellow-500 dark:hover:text-yellow-300'}`,
-    [is_starred]
-  );
+  // Permission level details - adapted from SharedDocumentCard
+  const getPermissionInfo = useMemo(() => {
+    if (!permission_level) return null;
+    
+    switch (permission_level) {
+      case 'owner':
+        return { 
+          icon: Crown, 
+          label: 'Owner', 
+          color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+          description: 'Full access'
+        };
+      case 'editor':
+        return { 
+          icon: Edit3, 
+          label: 'Editor', 
+          color: 'bg-green-100 text-green-800 border-green-200',
+          description: 'Can edit and comment'
+        };
+      case 'commenter':
+        return { 
+          icon: MessageSquare, 
+          label: 'Commenter', 
+          color: 'bg-blue-100 text-blue-800 border-blue-200',
+          description: 'Can comment only'
+        };
+      case 'viewer':
+        return { 
+          icon: Eye, 
+          label: 'Viewer', 
+          color: 'bg-gray-100 text-gray-800 border-gray-200',
+          description: 'Read-only access'
+        };
+      default:
+        return { 
+          icon: Users, 
+          label: 'Shared', 
+          color: 'bg-purple-100 text-purple-800 border-purple-200',
+          description: 'Shared document'
+        };
+    }
+  }, [permission_level]);
 
   return (
-    <article
+    <motion.article
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
       ref={setNodeRef}
       style={style}
       {...attributes}
-      className={cardClassName}
+      className={`
+        group relative flex flex-col rounded-lg bg-white dark:bg-gray-800 shadow-md 
+        transition-all duration-300 ease-in-out motion-reduce:transition-none 
+        overflow-hidden w-full max-w-[220px] aspect-[3/4] touch-manipulation 
+        focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 
+        ${isSelected ? 'ring-2 ring-[var(--title-hover-color)] shadow-lg' : 'focus:ring-[var(--title-hover-color)]'}
+        ${!isSelected ? 'hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] motion-reduce:hover:transform-none' : ''}
+        will-change-[transform,box-shadow,opacity]
+        cursor-pointer
+      `}
       aria-labelledby={titleId}
       aria-describedby={`${dateId} ${contentId}`}
+      aria-label={ariaLabel}
       role="button"
       tabIndex={0}
-      aria-label={ariaLabel}
       onClick={handleCardClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleCardClick(e as any);
+        }
+      }}
     >
-      {/* ADDED: Loading Overlay */}
+      {/* Loading Overlay */}
       {isLoading && (
         <div className="absolute inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-30 rounded-lg">
           <Loader2 className="w-8 h-8 text-white animate-spin" />
         </div>
       )}
 
-      {/* Checkbox for selection - positioned absolutely */}
-      {onToggleSelect && (
-        <button 
-          data-interactive-element="true" // Mark this button
-          onClick={handleSelectToggle}
-          className="absolute top-2 left-2 z-20 p-1 rounded hover:bg-gray-200/70 dark:hover:bg-gray-700/70 transition-colors"
-          aria-label={isSelected ? `Deselect document ${displayTitle}` : `Select document ${displayTitle}`}
-          title={isSelected ? `Deselect document ${displayTitle}` : `Select document ${displayTitle}`}
-        >
-          {isSelected ? <CheckSquare size={18} className="text-[var(--title-hover-color)]" /> : <Square size={18} className="text-gray-500 dark:text-gray-400" />}
-        </button>
-      )}
-
-      {/* Glass-like Top Section (Drag Handle) */}
+            {/* Glass Header Section (Top 20%) - Functions as large drag handle */}
       <div 
-        {...listeners} // <-- APPLY listeners ONLY to this drag handle element
-        data-drag-handle="true" // Add data attribute to identify the drag handle
-        className="h-[20%] bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md p-3 flex items-center justify-end border-b border-gray-200/50 dark:border-gray-600/50 cursor-grab active:cursor-grabbing"
+        {...listeners}
+        className="relative h-[20%] p-3 flex items-center justify-between border-b border-gray-200/50 dark:border-gray-600/50 bg-gray-100/30 dark:bg-gray-700/50 backdrop-blur-md rounded-t-lg cursor-grab active:cursor-grabbing"
       >
-        {/* Icons container pushed to the right, now includes Star button and FileText */}
-        <div className="flex items-center space-x-2" role="group" aria-label={`Document actions and indicators${is_starred ? ': starred document' : ''}`}>
-          <button
+        {/* Selection Checkbox */}
+        {onToggleSelect && (
+          <button 
+            onClick={handleSelectToggle}
             data-interactive-element="true"
-            onClick={handleStarToggle}
-            className="p-1.5 rounded-full hover:bg-gray-500/20 dark:hover:bg-gray-300/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-[--accent-color] focus-visible:ring-offset-1 dark:focus-visible:ring-offset-gray-700/50 transition-colors"
-            aria-pressed={is_starred}
-            aria-label={is_starred ? `Unstar document ${displayTitle}` : `Star document ${displayTitle}`}
-            title={is_starred ? `Unstar document ${displayTitle}` : `Star document ${displayTitle}`}
+            className="flex-shrink-0 p-1 rounded hover:bg-gray-300/70 dark:hover:bg-gray-600/70 transition-colors"
+            aria-label={isSelected ? `Deselect document ${title}` : `Select document ${title}`}
+            title={isSelected ? `Deselect document ${title}` : `Select document ${title}`}
           >
-            <Star 
-              className={starIconClassName}
-              aria-hidden="true" // Decorative, button has aria-label
-            />
+            {isSelected ? 
+              <CheckSquare size={16} className="text-[var(--title-hover-color)]" /> : 
+              <Square size={16} className="text-gray-500 dark:text-gray-400" />
+            }
           </button>
-          
-          <FileText 
-            className="w-5 h-5 text-gray-600 dark:text-gray-400" 
-            aria-label="Document file type"
-            role="img" // role can be img if it's purely decorative in this context, or button if it becomes interactive
-          />
-        </div>
+        )}
+
+        {/* Star Button */}
+        <button
+          onClick={handleStarToggle}
+          data-interactive-element="true"
+          className={`flex-shrink-0 p-1 rounded-md hover:bg-gray-200/50 dark:hover:bg-gray-600/50 transition-colors transition-opacity ${
+            is_starred ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          }`}
+          aria-label={is_starred ? 'Remove from favorites' : 'Add to favorites'}
+          title={is_starred ? 'Remove from favorites' : 'Add to favorites'}
+        >
+          {is_starred ? (
+            <Star className="w-4 h-4 text-yellow-500 fill-current" />
+          ) : (
+            <StarOff className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+          )}
+        </button>
+        
       </div>
 
-      {/* Solid Body Section (approx 80%) */}
-      {/* Using the same background as the card container for the body, or a slightly off shade like dark:bg-gray-750 if needed */}
-      <div className="h-[80%] bg-white dark:bg-gray-800 px-4 py-3 flex flex-col space-y-1">
+      {/* Content Section (Bottom 80%) */}
+      <div className="flex-1 flex flex-col p-3 bg-white dark:bg-gray-800 rounded-b-lg min-h-0">
+        {/* Title */}
+        <h3 
+          id={titleId}
+          title={displayTitle}
+          className="text-base font-semibold leading-tight text-gray-900 dark:text-gray-100 truncate mb-2"
+        >
+          {displayTitle}
+        </h3>
+        
+        {/* Folder Path */}
         {folderPath && (
           <p 
-            className="text-xs text-gray-500 dark:text-gray-400 truncate"
-            title={folderPath} // Show full path on hover
+            className="text-xs text-gray-500 dark:text-gray-400 truncate mb-2"
+            title={folderPath}
             aria-label={`Location: ${folderPath}`}
           >
             {folderPath}
           </p>
         )}
-        <h3 
-          id={titleId}
-          title={displayTitle} // Show full title on hover
-          className="text-lg font-semibold leading-normal flex-shrink-0 text-gray-900 dark:text-gray-100 line-clamp-2 group-hover:text-[var(--title-hover-color)] transition-colors"
-        >
-          {displayTitle}
-        </h3>
-        <p 
-          id={dateId}
-          className="text-xs text-gray-500 dark:text-gray-400"
-          aria-label={`Last updated ${formattedDate}`}
-        >
-          <span aria-hidden="true">Last updated: </span>
-          <time dateTime={new Date(lastUpdated || Date.now()).toISOString()}>
-            {formattedDate}
-          </time>
-        </p>
-        <div 
-          id={contentId}
-          className="prose prose-sm dark:prose-invert overflow-y-auto flex-grow text-sm text-gray-700 dark:text-gray-300"
-          aria-label={`Document preview: ${snippet}`}
-        >
-          {useMemo(() => (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{snippet}</ReactMarkdown>
-          ), [snippet])}
+        
+        {/* Content Snippet */}
+        {!compact && (
+          <div 
+            id={contentId}
+            className="text-sm text-gray-600 dark:text-gray-300 line-clamp-3 mb-3 flex-1"
+            aria-label={`Document preview: ${snippet}`}
+          >
+            {snippet}
+          </div>
+        )}
+        
+        {/* Footer with Owner Info (top row) and Date/Badges (bottom row) */}
+        <div className="mt-auto space-y-1">
+          {/* Top Row: Owner Info */}
+          {showOwnerInfo && access_type === 'shared' && owner_email && (
+            <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300">
+              <UserCheck className="w-3 h-3 text-blue-500" />
+              <span className="truncate" title={owner_email}>
+                {owner_email.split('@')[0]}
+              </span>
+            </div>
+          )}
+          
+          {/* Bottom Row: Date and Badges */}
+          <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              <time 
+                id={dateId}
+                dateTime={new Date(lastUpdated || Date.now()).toISOString()}
+                aria-label={`Last updated ${formattedDate}`}
+              >
+                {formattedDate}
+              </time>
+            </div>
+            
+            {/* Badge Icons */}
+            <div className="flex items-center gap-2">
+              {permission_level && getPermissionInfo && (
+                <Badge 
+                  variant="outline" 
+                  className={`${getPermissionInfo.color} flex items-center justify-center w-5 h-5 p-0 rounded-full`}
+                  title={`${getPermissionInfo.label}: ${getPermissionInfo.description}`}
+                >
+                  <getPermissionInfo.icon className="w-2.5 h-2.5" />
+                </Badge>
+              )}
+              
+              {access_type === 'shared' && (
+                <Badge 
+                  variant="outline" 
+                  className="bg-blue-50 text-blue-700 border-blue-200 flex items-center justify-center w-5 h-5 p-0 rounded-full"
+                  title="Shared document"
+                >
+                  <Users className="w-2.5 h-2.5" />
+                </Badge>
+              )}
+              
+              {/* Indicator for documents shared with others */}
+              {is_shared_with_others && !access_type && (
+                <Badge 
+                  variant="outline" 
+                  className="bg-blue-50 text-blue-700 border-blue-200 flex items-center justify-center w-5 h-5 p-0 rounded-full"
+                  title="Shared document"
+                >
+                  <Users className="w-2.5 h-2.5" />
+                </Badge>
+              )}
+            </div>
+          </div>
         </div>
-        {/* Optional: Action area or more details could go here */}
       </div>
 
-      {/* Subtle hover effects - e.g., a slight scale or border highlight (optional) */}
-      {/* <div className="absolute inset-0 rounded-lg border-2 border-transparent group-hover:border-blue-500 transition-all duration-300 pointer-events-none"></div> */}
-    </article>
+      {/* Hover overlay for external link indication */}
+      <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+        <ExternalLink className="w-3 h-3 text-gray-400" />
+      </div>
+    </motion.article>
   );
 };
 
@@ -281,7 +424,14 @@ const areDocumentCardPropsEqual = (prevProps: DocumentCardProps, nextProps: Docu
     prevProps.isSelected === nextProps.isSelected &&
     prevProps.folderPath === nextProps.folderPath &&
     prevProps.isLoading === nextProps.isLoading &&
-    prevProps.onClick === nextProps.onClick;
+    prevProps.onClick === nextProps.onClick &&
+    // NEW PROPS FOR SHARED DOCUMENT CARD STYLE
+    prevProps.permission_level === nextProps.permission_level &&
+    prevProps.access_type === nextProps.access_type &&
+    prevProps.owner_email === nextProps.owner_email &&
+    prevProps.showOwnerInfo === nextProps.showOwnerInfo &&
+    prevProps.compact === nextProps.compact &&
+    prevProps.is_shared_with_others === nextProps.is_shared_with_others;
     // Removed function comparisons as they prevent proper optimistic updates
 
   // if (!areEqual) {

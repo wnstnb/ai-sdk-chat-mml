@@ -9,8 +9,9 @@ const withPWA = nextPWA({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
-  swcMinify: true,
+  experimental: {
+    serverComponentsExternalPackages: ['sharp', 'onnxruntime-node'],
+  },
   images: {
     remotePatterns: [
       {
@@ -20,7 +21,10 @@ const nextConfig = {
         pathname: '/storage/v1/object/sign/**',
       },
     ],
+    domains: ['localhost'],
   },
+  reactStrictMode: false,
+  swcMinify: true,
   // Other configurations...
 };
 

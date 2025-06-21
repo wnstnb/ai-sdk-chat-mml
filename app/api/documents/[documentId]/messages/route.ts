@@ -4,6 +4,8 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { Message, ToolCall as DbToolCall } from '@/types/supabase';
 import type { Message as FrontendMessage } from 'ai/react';
 import { createClient } from '@supabase/supabase-js';
+import { getUserOrError } from '@/lib/utils/getUserOrError';
+import { getSupabaseCredentials } from '@/lib/utils/getSupabaseCredentials';
 
 interface MessageWithDetails extends Message {
   signedDownloadUrl: string | null;
@@ -12,46 +14,28 @@ interface MessageWithDetails extends Message {
 
 const SIGNED_URL_EXPIRY = 60 * 5; // Signed URLs expire in 5 minutes
 
-// Helper function (can be shared or defined locally)
-async function getUserOrError(supabase: ReturnType<typeof createSupabaseServerClient>) {
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError) {
-    console.error('Auth User Error:', userError.message);
-    return { errorResponse: NextResponse.json({ error: { code: 'SERVER_ERROR', message: 'Failed to get user.' } }, { status: 500 }) };
-  }
-  if (!user) {
-    return { errorResponse: NextResponse.json({ error: { code: 'UNAUTHENTICATED', message: 'User not authenticated.' } }, { status: 401 }) };
-  }
-  return { userId: user.id };
-}
-
-// Helper to check if user owns the document (needed for RLS checks simulation/verification)
-// Note: RLS policy `is_document_owner` should handle this on the DB side. This is belt-and-suspenders or for contexts where RLS might not apply (e.g., admin client).
-async function checkDocumentOwnership(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string): Promise<boolean> {
+// Helper function to check if user has document access and permission level
+async function checkDocumentAccess(supabase: ReturnType<typeof createSupabaseServerClient>, documentId: string, userId: string) {
+  try {
+    // Use the new database function to check access without causing RLS recursion
     const { data, error } = await supabase
-        .from('documents')
-        .select('id')
-        .eq('id', documentId)
-        .eq('user_id', userId)
-        .maybeSingle(); // Use maybeSingle to return null if not found, instead of erroring
+      .rpc('check_shared_document_access', {
+        doc_id: documentId,
+        user_uuid: userId
+      });
 
     if (error) {
-        console.error(`Error checking document ownership for doc ${documentId}, user ${userId}:`, error.message);
-        return false; // Assume no ownership on error
+      throw new Error(`Database error checking document access: ${error.message}`);
     }
-    return !!data; // True if data is not null (document found and owned by user)
-}
 
-// Helper function to get Supabase URL and Key (replace with your actual env variables)
-function getSupabaseCredentials() {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // Use service key on backend
-
-    if (!supabaseUrl || !supabaseServiceKey) {
-        console.error('Supabase URL or Service Key is missing in environment variables.');
-        throw new Error('Server configuration error.');
+    if (!data || data.length === 0 || !data[0]?.has_access) {
+      return null;
     }
-    return { supabaseUrl, supabaseServiceKey };
+
+    return { permission_level: data[0].permission_level };
+  } catch (error: any) {
+    throw new Error(`Database error checking document ownership: ${error.message}`);
+  }
 }
 
 // GET handler for fetching messages for a document
@@ -69,17 +53,52 @@ export async function GET(
     const { userId, errorResponse } = await getUserOrError(supabase);
     if (errorResponse) return errorResponse;
 
-    // Optional: Verify document ownership explicitly
-    // const isOwner = await checkDocumentOwnership(supabase, documentId, userId);
-    // if (!isOwner) { ... return 403 ... }
+    // Check if user has access to this document
+    const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+    if (!userPermission) {
+      return NextResponse.json({ 
+        error: { code: 'FORBIDDEN', message: 'You do not have access to this document.' } 
+      }, { status: 403 });
+    }
 
-    // Fetch messages - RLS ensures user can only access messages for owned documents
-    const { data: messagesData, error: fetchError } = await supabase
+    // Parse query parameters for pagination
+    const url = new URL(request.url);
+    const limitParam = url.searchParams.get('limit');
+    const offsetParam = url.searchParams.get('offset');
+    const loadAllParam = url.searchParams.get('loadAll'); // For AI context - loads all messages
+    
+    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+    const offset = offsetParam ? parseInt(offsetParam, 10) : undefined;
+    const loadAll = loadAllParam === 'true';
+
+    console.log(`[Messages API] Pagination params - limit: ${limit}, offset: ${offset}, loadAll: ${loadAll}`);
+
+    // Build the query for messages
+    let query = supabase
       .from('messages')
       .select('id, user_id, role, content, created_at, metadata')
       .eq('document_id', documentId)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: true });
+      .eq('user_id', userId);
+
+    // Apply pagination only if not loading all and parameters are provided
+    if (!loadAll && (limit !== undefined || offset !== undefined)) {
+      // For pagination, we order by created_at DESC to get most recent messages first
+      // then reverse the result to maintain chronological order for display
+      query = query.order('created_at', { ascending: false });
+      
+      if (limit !== undefined && limit > 0) {
+        query = query.limit(limit);
+      }
+      
+      if (offset !== undefined && offset > 0) {
+        query = query.range(offset, offset + (limit || 20) - 1);
+      }
+    } else {
+      // Default behavior: load all messages in chronological order (for AI context)
+      query = query.order('created_at', { ascending: true });
+    }
+
+    const { data: messagesData, error: fetchError } = await query;
 
     if (fetchError) {
       console.error('Messages GET Error:', fetchError.message);
@@ -87,7 +106,38 @@ export async function GET(
     }
 
     if (!messagesData || messagesData.length === 0) {
-      return NextResponse.json({ data: [] }, { status: 200 }); // Return empty array if no messages
+      return NextResponse.json({ 
+        data: [], 
+        meta: { 
+          hasMore: false, 
+          total: 0, 
+          limit: loadAll ? 0 : (limit || 20), 
+          offset: loadAll ? 0 : (offset || 0) 
+        } 
+      }, { status: 200 }); // Return consistent structure for empty messages
+    }
+
+    // If we used DESC ordering for pagination, reverse the messages to maintain chronological order
+    if (!loadAll && (limit !== undefined || offset !== undefined)) {
+      messagesData.reverse();
+    }
+
+    // Get total count for pagination metadata (only when paginating)
+    let totalCount = messagesData.length;
+    let hasMore = false;
+    
+    if (!loadAll && limit !== undefined) {
+      // Get total count to determine if there are more messages
+      const { count, error: countError } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('document_id', documentId)
+        .eq('user_id', userId);
+      
+      if (!countError && count !== null) {
+        totalCount = count;
+        hasMore = (offset || 0) + messagesData.length < totalCount;
+      }
     }
 
     // --- Fetch Tool Calls for these Messages --- 
@@ -255,7 +305,18 @@ export async function GET(
     }
     // --- END REFACTOR --- 
 
-    return NextResponse.json({ data: processedMessages }, { status: 200 });
+    // Return response with consistent structure
+    const response: any = { data: processedMessages };
+    
+    // Always include meta for consistency (even when loadAll=true)
+    response.meta = {
+      hasMore: loadAll ? false : hasMore, // No more to load when loadAll=true
+      total: totalCount,
+      limit: loadAll ? totalCount : (limit || 20),
+      offset: loadAll ? 0 : (offset || 0)
+    };
+
+    return NextResponse.json(response, { status: 200 });
 
   } catch (error: any) {
     console.error('Messages GET Error (Outer Catch):', error.message);
@@ -276,11 +337,13 @@ export async function POST(
         const { userId, errorResponse } = await getUserOrError(supabase);
         if (errorResponse) return errorResponse;
 
-        // Optional: Explicit ownership check (RLS should cover insert policy `is_document_owner`)
-        // const isOwner = await checkDocumentOwnership(supabase, documentId, userId);
-        // if (!isOwner) {
-        //     return NextResponse.json({ error: { code: 'UNAUTHORIZED_ACCESS', message: 'You do not have permission to add messages to this document.' } }, { status: 403 });
-        // }
+        // Check if user has permission to add messages to this document
+        const userPermission = await checkDocumentAccess(supabase, documentId, userId);
+        if (!userPermission || !['owner', 'editor'].includes(userPermission.permission_level)) {
+          return NextResponse.json({ 
+            error: { code: 'FORBIDDEN', message: 'You do not have permission to add messages to this document.' } 
+          }, { status: 403 });
+        }
 
         // Parse Request Body
         let body;

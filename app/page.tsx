@@ -46,11 +46,11 @@ const PricingSection = () => {
     {
       id: 'annual',
       name: "Annual",
-      price: "$12.50",
+      price: "$10",
       priceDetails: "/ month",
-      monthlyBreakdown: "($150 billed annually)",
+      monthlyBreakdown: "($120 billed annually)",
       features: ["7-day free trial", "Cancel anytime", "All features included", "Full access to multiple AI models"],
-      highlight: "Save 22%",
+      highlight: "Save 38%",
     },
   ];
 
@@ -164,7 +164,7 @@ const PricingSection = () => {
 // New FeatureListSection component
 const FeatureListSection = () => {
   const featureItems: FeatureListItem[] = [
-    { text: "Beautiful rich text editing with Markdown and drag-and-drop blocks." },
+    { text: "Rich text editing with Markdown, drag-and-drop blocks, and Multiplayer collaboration." },
     { text: "Live voice summaries to capture your thoughts as they come." },
     { text: "Scrape and summarize web content to easily capture online information." },
     { text: "Process PDFs by uploading files or providing URLs to extract full text or get AI-powered summaries." },
@@ -392,9 +392,11 @@ export default function LandingPageContent() {
   };
 
   return (
-    // Removed min-h-screen from main, letting inner div control height
-    // <main ref={mainRef} className="parallax-bg text-[color:var(--text-color)] "> // REMOVED mainRef
-    <main className="parallax-bg text-[color:var(--text-color)] "> 
+    // Force dark theme for landing page regardless of user preference
+    <div data-theme="dark">
+      {/* Removed min-h-screen from main, letting inner div control height */}
+      {/* <main ref={mainRef} className="parallax-bg text-[color:var(--text-color)] "> // REMOVED mainRef */}
+      <main className="parallax-bg text-[color:var(--text-color)] "> 
       {/* Content wrapper - Make it a flex container filling height */}
       <div className="relative z-10 flex flex-col min-h-screen">
         {/* Header Section - Static glass-like background */}
@@ -466,7 +468,7 @@ export default function LandingPageContent() {
                   variants={contentVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Upload and extract PDFs. Transcribe live audio. Save and summarize web pages. Track every version of your notes.<br />All in one place.
+                  Summarize and scrape PDFs and webpages. Transcribe live audio into meaningful notes. Collaborate with others. Track the best version of your notes.<br />All in one place.
 
                 </motion.p>
                 <motion.div 
@@ -801,5 +803,6 @@ export default function LandingPageContent() {
         </footer>
       </div>
     </main>
+    </div>
   );
 } 

@@ -8,12 +8,25 @@ import {
     combineAndRankResults 
 } from '@/lib/ai/searchService';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 // NOTE: This route runs as a standard Serverless Function (Node.js runtime).
 
 const GEMINI_API_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 const GEMINI_EMBEDDING_MODEL = 'models/text-embedding-004';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/${GEMINI_EMBEDDING_MODEL}:embedContent?key=${GEMINI_API_KEY}`;
+
+// Create service role client for cross-user queries
+const supabaseServiceRole = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+);
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -131,6 +144,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const userId = user.id;
+
     let query: string;
     try {
         const body = await request.json();
@@ -155,18 +170,82 @@ export async function POST(request: NextRequest) {
             contentMatches
         );
 
-        // The Omnibar expects results with id, name, and optionally similarity (renamed to finalScore)
-        // It also handles folder_id, but our search service doesn't provide that directly.
-        // We can adapt this if folder_id is crucial and can be fetched.
-        const formattedResults = combinedResults.map(doc => ({
-            id: doc.id,
-            name: doc.name,
-            similarity: doc.finalScore, // Use finalScore as similarity for Omnibar
-            folder_id: null, // Placeholder for folder_id
-            summary: doc.summary, // Pass summary if available
-            lastUpdated: doc.updated_at, // Added lastUpdated for the frontend
-            is_starred: doc.is_starred // Added is_starred for starred status
-        }));
+        // Get sharing information for the search results
+        const documentIds = combinedResults.map(doc => doc.id);
+        
+        // Get sharing info for documents to determine if they should be treated as shared
+        const { data: sharedDocIds, error: sharedIdsError } = await supabaseServiceRole
+            .rpc('get_shared_document_ids');
+
+        const sharingMap = new Map<string, number>();
+        if (!sharedIdsError && sharedDocIds) {
+            sharedDocIds.forEach((row: any) => {
+                sharingMap.set(row.document_id, row.permission_count);
+            });
+        }
+
+        // Get user's permissions for these documents (for shared documents)
+        const { data: userPermissions, error: permissionsError } = await supabase
+            .from('document_permissions')
+            .select('document_id, permission_level')
+            .in('document_id', documentIds)
+            .eq('user_id', userId);
+
+        const permissionsMap = new Map<string, string>();
+        if (!permissionsError && userPermissions) {
+            userPermissions.forEach((perm: any) => {
+                permissionsMap.set(perm.document_id, perm.permission_level);
+            });
+        }
+
+        // Get owner information for documents not owned by current user
+        const { data: documentOwners, error: ownersError } = await supabaseServiceRole
+            .from('documents')
+            .select(`
+                id,
+                user_id,
+                profiles!documents_user_id_fkey(email)
+            `)
+            .in('id', documentIds)
+            .neq('user_id', userId);
+
+        const ownersMap = new Map<string, { user_id: string; email: string }>();
+        if (!ownersError && documentOwners) {
+            documentOwners.forEach((doc: any) => {
+                ownersMap.set(doc.id, {
+                    user_id: doc.user_id,
+                    email: doc.profiles?.email || 'Unknown'
+                });
+            });
+        }
+
+        // Format results with sharing information
+        const formattedResults = combinedResults.map(doc => {
+            const permissionCount = sharingMap.get(doc.id) || 1;
+            const isSharedWithOthers = permissionCount > 1;
+            const userPermission = permissionsMap.get(doc.id);
+            const ownerInfo = ownersMap.get(doc.id);
+            
+            // Determine if this is a document owned by the user or shared with them
+            const isOwnedByUser = !ownerInfo; // If no owner info, it's owned by current user
+            
+            return {
+                id: doc.id,
+                name: doc.name,
+                similarity: doc.finalScore,
+                folder_id: null,
+                summary: doc.summary,
+                lastUpdated: doc.updated_at,
+                is_starred: doc.is_starred,
+                // NEW: Add sharing/permission fields for unified styling
+                access_type: isOwnedByUser ? 
+                    (isSharedWithOthers ? 'shared' as const : 'owned' as const) : 
+                    'shared' as const,
+                permission_level: isOwnedByUser ? 'owner' : userPermission || 'viewer',
+                owner_email: ownerInfo?.email,
+                is_shared_with_others: isOwnedByUser ? isSharedWithOthers : false
+            };
+        });
 
         return NextResponse.json(formattedResults);
     } catch (error: any) {

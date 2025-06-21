@@ -1,10 +1,11 @@
 import { create } from 'zustand';
+import type { User } from '@supabase/supabase-js';
 
 interface AuthState {
   isAuthenticated: boolean;
-  user: object | null; // Replace 'object' with your actual User type if available
+  user: User | null;
   setIsAuthenticated: (isAuthenticated: boolean) => void;
-  setUser: (user: object | null) => void; // Replace 'object' with your actual User type
+  setUser: (user: User | null) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({

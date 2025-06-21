@@ -177,7 +177,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
     const renderContent = () => {
         if (typeof message.content === 'string') {
             return (
-                <div className={`prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 ${isMiniMode ? 'text-xs' : ''}`}>
+                <div className={`chat-message-text break-words ${isMiniMode ? 'text-xs' : 'text-sm'}`}>
                     <NonMemoizedMarkdown>
                         {extractUserDisplayContent(message.content, message.role)}
                     </NonMemoizedMarkdown>
@@ -185,7 +185,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
             );
         } else if (Array.isArray(message.content)) {
             return (
-                <div className={`prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 ${isMiniMode ? 'text-xs' : ''}`}>
+                <div className={`chat-message-text break-words ${isMiniMode ? 'text-xs' : 'text-sm'}`}>
                     {(message.content as ContentPart[]).map((part, index) => {
                         if (part.type === 'text') {
                             const textPart = part as TextPart;
@@ -461,7 +461,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({
                 
                 {/* 1. Render the main text content (if it exists) */}
                 {(typeof message.content === 'string' && message.content.trim()) && (
-                     <div className={`prose chat-message-text break-words dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 ${isMiniMode ? 'text-xs mb-1' : 'mb-2'}`}>
+                     <div className={`chat-message-text break-words ${isMiniMode ? 'text-xs mb-1' : 'text-sm mb-2'}`}>
                         <NonMemoizedMarkdown>
                             {extractUserDisplayContent(message.content, message.role)}
                         </NonMemoizedMarkdown>

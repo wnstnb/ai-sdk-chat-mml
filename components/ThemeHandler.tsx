@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore';
 import { useAuthStore } from '@/lib/stores/useAuthStore';
@@ -34,6 +34,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     isVoiceSummaryModalOpen, 
     openVoiceSummaryModal, 
     closeVoiceSummaryModal,
+    isVoiceSummaryActive, // NEW: for exclusive usage check
     isMobileSidebarOpen,
     openMobileSidebar,
     closeMobileSidebar,
@@ -61,25 +62,38 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
 
   // Apply theme from store once it's initialized and mounted
   useEffect(() => {
-    if (!isMounted) return; // Don't do anything until mounted
+    if (!isMounted || typeof document === 'undefined') return; // Don't do anything until mounted and on client
 
-    let themeToApply = 'dark';
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    let themeToApply: string | null = null;
 
     if (isAuthenticated && isPrefStoreInitialized) {
+      // User is authenticated and preferences are loaded - use their preference
       themeToApply = prefTheme || 'dark';
       console.log('[ThemeHandler] Authenticated and prefs initialized. Applying theme:', themeToApply);
     } else if (isAuthenticated && !isPrefStoreInitialized) {
-      console.log('[ThemeHandler] Authenticated, but prefs NOT initialized. Keeping current theme (expected dark).');
-      themeToApply = document.documentElement.getAttribute('data-theme') || 'dark';
+      // User is authenticated but preferences not loaded yet - keep current theme
+      console.log('[ThemeHandler] Authenticated, but prefs NOT initialized. Keeping current theme:', currentTheme);
+      // Don't change the theme - let the anti-flicker script's choice persist
+      return;
     } else {
-      console.log('[ThemeHandler] Not authenticated or not mounted. Ensuring dark theme:', themeToApply);
+      // Not authenticated - keep whatever theme is currently set (from anti-flicker script)
+      console.log('[ThemeHandler] Not authenticated. Keeping current theme from anti-flicker script:', currentTheme);
+      // Don't force dark theme for unauthenticated users
+      return;
     }
-    document.documentElement.setAttribute('data-theme', themeToApply);
+    
+    // Only apply theme if it's different from what's currently set
+    if (currentTheme !== themeToApply) {
+      document.documentElement.setAttribute('data-theme', themeToApply);
+      console.log('[ThemeHandler] Theme changed from', currentTheme, 'to', themeToApply);
+    }
 
   }, [prefTheme, isAuthenticated, isPrefStoreInitialized, isMounted]);
 
 
   const handleToggleTheme = () => {
+    if (typeof document === 'undefined') return; // Guard against SSR
     const currentAppliedTheme = document.documentElement.getAttribute('data-theme') || 'dark';
     const nextTheme = currentAppliedTheme === 'light' ? 'dark' : 'light';
     console.log('[ThemeHandler] Toggling theme to:', nextTheme);
@@ -97,7 +111,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
     
     setIsCreatingNewNote(true);
     try {
-      toast.info('Creating new document...');
+      console.log('Creating new document...');
       
       const response = await fetch('/api/documents/create-with-content', {
         method: 'POST',
@@ -122,7 +136,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
         throw new Error('Failed to get new document ID from response.');
       }
 
-      toast.success('New document created!');
+      console.log('New document created!');
       router.push(`/editor/${newDocumentId}`);
     } catch (error: any) {
       console.error('Error creating new document:', error);
@@ -134,10 +148,34 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
   
   const openWebScrapingModal = () => setIsWebScrapingModalOpen(true);
   const closeWebScrapingModal = () => setIsWebScrapingModalOpen(false);
+  
+  // NEW: Wrapper function for voice summary modal with exclusive usage check
+  const handleVoiceSummaryOpen = () => {
+    if (isVoiceSummaryActive) {
+      toast.info('Voice summary is already active. Please close or complete the current session before starting a new one.');
+      return;
+    }
+    openVoiceSummaryModal();
+  };
 
   const NO_SIDEBAR_PATHS = ['/', '/login', '/signup', '/signup/confirm-email', '/signup/success', '/terms', '/privacy', '/auth/callback', '/auth/reset-password'];
   const displaySidebar = isAuthenticated && isMounted && !NO_SIDEBAR_PATHS.includes(pathname);
-  const currentThemeForSidebar: 'light' | 'dark' = (isMounted && prefTheme) ? prefTheme : 'dark';
+  
+  // Get the actual current theme from document instead of defaulting to dark
+  const getCurrentTheme = useMemo((): 'light' | 'dark' => {
+    if (isMounted && isPrefStoreInitialized && prefTheme) {
+      return prefTheme;
+    }
+    // Only access document if we're on the client side (mounted)
+    if (!isMounted || typeof document === 'undefined') {
+      return 'dark'; // SSR fallback
+    }
+    // Fall back to reading from the document (which includes anti-flicker script setting)
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    return (currentTheme === 'light' || currentTheme === 'dark') ? currentTheme : 'dark';
+  }, [isMounted, isPrefStoreInitialized, prefTheme]);
+  
+  const currentThemeForSidebar: 'light' | 'dark' = getCurrentTheme;
 
   return (
     <div className="flex h-screen bg-[--bg-color] text-[--text-color]">
@@ -152,9 +190,9 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
           onNewNote={handleNewNote}
           isNewNoteLoading={isCreatingNewNote}
           isNewNoteDisabled={isCreatingNewNote}
-          onVoiceSummary={openVoiceSummaryModal}
+          onVoiceSummary={handleVoiceSummaryOpen}
           isVoiceSummaryLoading={false}
-          isVoiceSummaryDisabled={false}
+          isVoiceSummaryDisabled={isVoiceSummaryActive}
           onPdfSummary={openPDFModal}
           isPdfSummaryLoading={false}
           isPdfSummaryDisabled={false}
@@ -163,7 +201,7 @@ const ThemeHandler: React.FC<ThemeHandlerProps> = ({ children }) => {
           isWebScrapeDisabled={false}
         />
       )}
-      <main className="flex-1 flex flex-col overflow-y-auto">
+      <main className="flex-1 flex flex-col overflow-y-auto relative">
         {children}
       </main>
 

@@ -7,6 +7,8 @@ import { ModelSelector } from '@/components/ModelSelector';
 import { TextFilePreview } from './TextFilePreview'; // Import from sibling file
 import Image from 'next/image'; // Import Next.js Image
 import CustomAudioVisualizer from './CustomAudioVisualizer'; // <<< NEW: Import custom visualizer
+import RecordingStatusOverlay from '@/components/ui/RecordingStatusOverlay'; // Import shared recording status overlay
+import { formatRecordingTime } from '@/lib/utils/formatRecordingTime'; // Import shared timer utility
 import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions'; // <<< NEW: Import type
 import { DocumentSearchInput } from '../chat/DocumentSearchInput'; // <<< NEW: Import DocumentSearchInput
 import { TaggedDocument } from '@/lib/types'; // Import TaggedDocument from shared types
@@ -59,10 +61,13 @@ interface ChatInputUIProps {
     micPermissionError?: boolean; // << Made optional
     startRecording?: () => void; // << Made optional
     stopRecording?: () => void; // << Made optional
+    onCancelRecording?: () => void; // << NEW: Cancel recording without sending
     audioTimeDomainData?: AudioTimeDomainData; // << Made optional
     clearPreview: () => void; // Add clearPreview from useFileUpload hook
     // --- NEW: Add recordingDuration prop ---
     recordingDuration?: number;
+    // --- NEW: Silence detection callback ---
+    onSilenceDetected?: () => void;
     // --- END AUDIO PROPS ---
 
     // --- NEW Document Tagging Props ---
@@ -75,6 +80,7 @@ interface ChatInputUIProps {
     onToggleMiniPane?: () => void;
     isMainChatCollapsed?: boolean;
     miniPaneToggleRef?: React.RefObject<HTMLButtonElement>; // Ref for the toggle button
+    unreadMiniPaneCount?: number; // Count of unread messages for indicator
     // --- END NEW ---
 
     // --- NEW: Orchestrator file upload props ---
@@ -114,9 +120,12 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     micPermissionError = false, // Default to false
     startRecording,
     stopRecording,
+    onCancelRecording, // << NEW: Destructure cancel recording function
     audioTimeDomainData = null, // Default to null
     // --- NEW: Destructure recordingDuration ---
     recordingDuration = 0,
+    // --- NEW: Destructure silence detection callback ---
+    onSilenceDetected,
     // --- END AUDIO PROPS DESTRUCTURED ---
 
     // --- NEW Document Tagging Props DESTRUCTURED ---
@@ -129,6 +138,7 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     onToggleMiniPane,
     isMainChatCollapsed,
     miniPaneToggleRef, // Destructure the ref
+    unreadMiniPaneCount, // Destructure the unread count
     // --- END NEW ---
 
     // --- NEW: Destructure orchestrator props ---
@@ -173,13 +183,20 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
     const canRecord = !!startRecording && !!stopRecording && !isLoading && !isUploading && !(isRecording ?? false) && !(isTranscribing ?? false) && !(micPermissionError ?? false);
     const micAvailable = !!startRecording && !!stopRecording; // Check if mic functions are even provided
 
-    // --- NEW: Format recording duration ---
-    const formatDuration = (seconds: number): string => {
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
-        return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
-    };
-    // --- END: Format recording duration ---
+    // Use shared timer formatting utility
+    const formatDuration = formatRecordingTime;
+
+    // --- NEW: Silence detection handler ---
+    const handleSilenceDetected = useCallback(() => {
+        console.log('[ChatInputUI] Silence detected, auto-stopping recording');
+        if (isRecording && stopRecording) {
+            stopRecording(); // This should trigger transcription
+        }
+        // Call the provided callback if available
+        if (onSilenceDetected) {
+            onSilenceDetected();
+        }
+    }, [isRecording, stopRecording, onSilenceDetected]);
 
     // Simplified Mic button handler (check if functions exist)
     const handleMicButtonClick = () => {
@@ -256,8 +273,100 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
         buttonOnClick = undefined; // Form submission handles it
     }
 
+    // --- NEW: Keyboard navigation for recording controls ---
+    const handleKeyboardShortcuts = useCallback((event: React.KeyboardEvent) => {
+        // Only handle shortcuts when not typing in textarea
+        if (event.target instanceof HTMLTextAreaElement) return;
+
+        // Ctrl/Cmd + R: Start/Stop recording
+        if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
+            event.preventDefault();
+            if (isRecording && stopRecording) {
+                stopRecording();
+            } else if (!isRecording && startRecording && !isTranscribing) {
+                startRecording();
+            }
+        }
+
+        // Escape: Stop recording
+        if (event.key === 'Escape' && isRecording && stopRecording) {
+            event.preventDefault();
+            stopRecording();
+        }
+    }, [isRecording, isTranscribing, startRecording, stopRecording]);
+
+    // --- NEW: Handle reduced motion preferences ---
+    const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+        setPrefersReducedMotion(mediaQuery.matches);
+
+        const handleChange = (e: MediaQueryListEvent) => {
+            setPrefersReducedMotion(e.matches);
+        };
+
+        mediaQuery.addEventListener('change', handleChange);
+        return () => mediaQuery.removeEventListener('change', handleChange);
+    }, []);
+
+    // --- NEW: Enhanced accessibility announcements ---
+    const [lastAnnouncedState, setLastAnnouncedState] = useState<string>('');
+
+    useEffect(() => {
+        let newState = '';
+        if (isRecording) {
+            newState = 'Recording started';
+        } else if (isTranscribing) {
+            newState = 'Transcribing audio';
+        } else if (micPermissionError) {
+            newState = 'Microphone permission required';
+        }
+
+        if (newState && newState !== lastAnnouncedState) {
+            setLastAnnouncedState(newState);
+            // Announce to screen readers
+            const announcement = document.createElement('div');
+            announcement.setAttribute('aria-live', 'assertive');
+            announcement.setAttribute('aria-atomic', 'true');
+            announcement.className = 'sr-only';
+            announcement.textContent = newState;
+            document.body.appendChild(announcement);
+            
+            // Remove after announcement
+            setTimeout(() => {
+                document.body.removeChild(announcement);
+            }, 1000);
+        }
+    }, [isRecording, isTranscribing, micPermissionError, lastAnnouncedState]);
+
+    // --- NEW: Focus management for recording state changes ---
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        // Manage focus when recording state changes
+        if (isRecording && containerRef.current) {
+            // Announce recording start and focus container for keyboard shortcuts
+            containerRef.current.focus();
+        }
+    }, [isRecording]);
+
+    // --- NEW: Enhanced keyboard shortcut help ---
+    const keyboardShortcutsHelp = `
+        Keyboard shortcuts:
+        • Ctrl+R (Cmd+R on Mac): Start/stop recording
+        • Escape: Stop recording
+        • Enter: Send message (when text is entered)
+        • Ctrl+Enter: Send message with Shift held
+    `;
+
     return (
         <>
+            {/* --- Keyboard Shortcuts Help (Screen Reader Only) --- */}
+            <div className="sr-only" aria-live="polite">
+                {keyboardShortcutsHelp}
+            </div>
+
             {/* --- File Preview & Upload Status Area --- */} 
             <AnimatePresence>
                 {/* Conditional rendering wrapper for the entire status/preview block */}
@@ -336,7 +445,14 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
             />
 
             {/* --- Main Input and Controls Area --- */}
-            <div className="flex flex-col w-full bg-[--input-bg] rounded-lg p-2 border border-[--border-color] shadow-sm">
+            <div 
+                ref={containerRef}
+                className="flex flex-col w-full bg-[--input-bg] rounded-lg p-2 border border-[--border-color] shadow-sm"
+                onKeyDown={handleKeyboardShortcuts}
+                tabIndex={-1}
+                role="region"
+                aria-label="Chat input area with voice recording support. Press Ctrl+R to start/stop recording, Escape to stop recording."
+            >
                 {/* Row 1: Document Search Input and Tagged Pills */}
                 {onAddTaggedDocument && (
                     <div className="flex items-start gap-x-2 mb-2"> {/* Main flex container for this row */}
@@ -382,30 +498,72 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                 <div className="relative w-full flex items-center min-h-[40px]">
                     {/* Conditional Rendering (Check isRecording before rendering visualizer) */}
                     {isRecording ? (
-                        <div className="absolute inset-0 flex items-center justify-center p-1 z-10">
-                            {/* --- NEW: Display Timer --- */}
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-[--muted-text-color] z-20">
-                                {formatDuration(recordingDuration)}
-                            </span>
-                            {/* --- END: Display Timer --- */}
-                            <CustomAudioVisualizer
-                                audioTimeDomainData={audioTimeDomainData} // Pass potentially null data
+                        <div className="relative w-full h-10 flex items-center">
+                            {/* Audio Visualizer - Constrained to same height as textarea */}
+                            <div className="w-full h-full px-3">
+                                <CustomAudioVisualizer
+                                    audioTimeDomainData={audioTimeDomainData} // Pass potentially null data
+                                    onSilenceDetected={handleSilenceDetected} // Pass silence detection callback
+                                    enableSilenceDetection={true} // Enable silence detection during recording
+                                />
+                            </div>
+                            
+                            {/* Recording Status Overlay - Using shared component */}
+                            <RecordingStatusOverlay
+                                isRecording={isRecording}
+                                formattedTime={formatDuration(recordingDuration)}
+                                onCancelRecording={onCancelRecording}
+                                showCancelButton={true}
+                                timerAriaLabel={`Recording duration: ${formatDuration(recordingDuration)}`}
                             />
                         </div>
+                    ) : isTranscribing ? (
+                        /* Transcribing State */
+                        <div className="relative w-full">
+                            {/* Transcribing State Overlay */}
+                            <div className="absolute inset-0 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md" />
+                            
+                            {/* Transcribing Content */}
+                            <div className="relative flex items-center justify-center p-3 z-10">
+                                <div className="flex items-center gap-3">
+                                    {/* Processing Spinner */}
+                                    <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                                    
+                                    {/* Transcribing Text */}
+                                    <span 
+                                        className="text-sm text-blue-600 dark:text-blue-400 font-medium"
+                                        aria-live="polite"
+                                    >
+                                        Transcribing audio...
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
                     ) : (
+                        /* Normal Input State */
                         <textarea
                             ref={textareaCallbackRef} // Use the callback ref here
                             rows={1}
-                            className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40"
+                            className="chat-input-text bg-transparent w-full outline-none text-[--text-color] placeholder-[--muted-text-color] resize-none overflow-y-auto max-h-40 transition-all duration-200 focus:ring-2 focus:ring-[--primary-color]/20 focus:border-[--primary-color]/30 rounded-md px-3 py-2"
                             // Adjust placeholder based on optional props
-                            placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (isRecording ? "Recording audio..." : (isTranscribing ? "Transcribing audio..." : (micAvailable ? "Type, show or say anything..." : "Type or show something...") ) ))}
+                            placeholder={isUploading ? "Uploading image..." : (isLoading ? "Generating response..." : (micAvailable ? "Type, show or say anything..." : "Type or show something...") )}
                             value={input}
                             onChange={handleInputChange}
                             onKeyDown={handleKeyDown}
                             onPaste={handlePaste}
                             // Disable based on optional props
-                            disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)} 
+                            disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)}
+                            // Enhanced accessibility
+                            aria-label="Message input"
+                            aria-describedby={micAvailable ? "voice-input-help" : undefined}
                         />
+                    )}
+                    
+                    {/* Voice Input Help Text (Hidden, for accessibility) */}
+                    {micAvailable && (
+                        <div id="voice-input-help" className="sr-only">
+                            You can use voice input by clicking the microphone button or typing your message.
+                        </div>
                     )}
                 </div>
                 {/* Bottom controls (Adjust ModelSelector/Button disabled states) */} 
@@ -425,44 +583,99 @@ export const ChatInputUI: React.FC<ChatInputUIProps> = ({
                             type="button"
                             onClick={handleUploadClick}
                             disabled={isLoading || isUploading || (isRecording ?? false) || (isTranscribing ?? false)} 
-                            className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-8 h-8 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                             title="Attach Image"
                         >
-                            <span className="w-5 h-5 block"><ImageUp aria-hidden="true" /></span>
+                            <ImageUp size={20} aria-hidden="true" />
                         </button>
                         <div className="relative w-8 h-8 flex items-center justify-center">
-                            {showLoadingSpinner && (
-                                <div className="absolute inset-0 border-2 border-[--primary-color] border-t-transparent rounded-full animate-spin pointer-events-none"></div>
+                            {/* Loading Spinner for AI Generation */}
+                            {showLoadingSpinner && !isRecording && !isTranscribing && (
+                                <div className={`absolute inset-0 border-2 border-[--primary-color] border-t-transparent rounded-full pointer-events-none ${
+                                    prefersReducedMotion ? '' : 'animate-spin'
+                                }`}></div>
                             )}
+                            
+                            {/* Recording State Indicators */}
                             {isRecording && (
-                                <div className="absolute inset-0 rounded-full bg-red-500 opacity-50 animate-ping pointer-events-none"></div> // Pulsing effect
+                                <>
+                                    {/* Pulsing Recording Ring */}
+                                    <div className={`absolute inset-0 rounded-full bg-red-500 opacity-30 pointer-events-none ${
+                                        prefersReducedMotion ? '' : 'animate-ping'
+                                    }`}></div>
+                                    {/* Secondary Ring for Depth */}
+                                    <div className={`absolute inset-1 rounded-full bg-red-500 opacity-50 pointer-events-none ${
+                                        prefersReducedMotion ? '' : 'animate-pulse'
+                                    }`}></div>
+                                </>
                             )}
+                            
+                            {/* Transcribing State Indicator */}
+                            {isTranscribing && (
+                                <div className={`absolute inset-0 border-2 border-blue-500 border-t-transparent rounded-full pointer-events-none ${
+                                    prefersReducedMotion ? '' : 'animate-spin'
+                                }`}></div>
+                            )}
+                            
+                            {/* Microphone Permission Error Indicator */}
+                            {micPermissionError && (
+                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-white dark:border-gray-800 pointer-events-none">
+                                    <span className="sr-only">Microphone permission denied</span>
+                                </div>
+                            )}
+                            
+                            {/* Main Button */}
                             <button
                                 type={buttonType}
                                 onClick={buttonOnClick} // Already checks if functions exist
                                 disabled={buttonDisabled}
-                                className={buttonClassName}
+                                className={`w-8 h-8 rounded-md flex items-center justify-center transition-all duration-200 relative z-10 ${
+                                    isRecording ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' :
+                                    isTranscribing ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' :
+                                    micPermissionError ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' : 
+                                    'text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color]'
+                                } focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed`}
                                 title={buttonTitle}
+                                aria-label={buttonTitle}
+                                aria-pressed={isRecording ? "true" : "false"}
+                                aria-describedby={micPermissionError ? "mic-error-help" : undefined}
                             >
-                                <span className="w-5 h-5 block">
+                                <div className={`transition-transform duration-200 ${
+                                    isRecording ? 'scale-110' : 'hover:scale-110'
+                                }`}>
                                     {buttonIcon}
-                                </span>
+                                </div>
                             </button>
+                            
+                            {/* Error Help Text (Hidden, for accessibility) */}
+                            {micPermissionError && (
+                                <div id="mic-error-help" className="sr-only">
+                                    Microphone access is required for voice input. Please enable microphone permissions in your browser settings.
+                                </div>
+                            )}
                         </div>
                        {/* Render the passed-in toggle icon button if it exists */}
                        {renderCollapsedMessageToggle}
                        {/* --- NEW: Mini-Pane Toggle Button --- */}
                        {isMainChatCollapsed && onToggleMiniPane && (
-                            <button
-                                ref={miniPaneToggleRef} // Apply the ref here
-                                type="button"
-                                onClick={onToggleMiniPane}
-                                className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                                title={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
-                                aria-label={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
-                            >
-                                {isMiniPaneOpen ? <Minimize size={20} /> : <GalleryVerticalEnd size={20} />}
-                            </button>
+                            <div className="relative">
+                                <button
+                                    ref={miniPaneToggleRef} // Apply the ref here
+                                    type="button"
+                                    onClick={onToggleMiniPane}
+                                    className="p-1 rounded-md text-[--muted-text-color] hover:bg-[--hover-bg] hover:text-[--text-color] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
+                                    aria-label={isMiniPaneOpen ? "Hide Chat History" : "Show Chat History"}
+                                >
+                                    {isMiniPaneOpen ? <Minimize size={20} /> : <GalleryVerticalEnd size={20} />}
+                                </button>
+                                {/* Unread message indicator */}
+                                {!isMiniPaneOpen && unreadMiniPaneCount != null && unreadMiniPaneCount > 0 && (
+                                    <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium shadow-sm">
+                                        {unreadMiniPaneCount > 99 ? '99+' : unreadMiniPaneCount}
+                                    </div>
+                                )}
+                            </div>
                        )}
                        {/* --- END NEW --- */}
                     </div>

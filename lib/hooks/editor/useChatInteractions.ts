@@ -76,7 +76,9 @@ interface UseChatInteractionsReturn {
     micPermissionError: boolean;
     handleMicrophoneClick: () => void;
     handleStopRecording: () => void;
+    handleCancelRecording: () => void; // Cancel recording without sending
     audioTimeDomainData: AudioTimeDomainData;
+    recordingDuration: number; // Duration in seconds
     
     // Tagged documents props
     taggedDocuments: TaggedDocument[];
@@ -133,15 +135,15 @@ const replaceAllContentSchema = z.object({
 // Define client-side tools (no execute functions)
 const clientTools = {
   addContent: tool({
-    description: "Adds new general Markdown content (e.g., paragraphs, headings, simple bullet/numbered lists, or single list/checklist items). For multi-item checklists, use createChecklist.",
+    description: "Adds new general Markdown content (e.g., paragraphs, headings, simple bullet/numbered lists, or single list/checklist items). For multi-item checklists, use createChecklist. IMPORTANT: Use this after deleteContent to replace a single block with multiple blocks.",
     parameters: addContentSchema,
   }),
   modifyContent: tool({
-    description: "Modifies content within specific NON-TABLE editor blocks. Can target a single block (with optional specific text replacement) or multiple blocks (replacing entire content of each with corresponding new Markdown from an array). Main tool for altering existing lists/checklists.",
+    description: "Modifies content within a SINGLE existing NON-TABLE editor block. Can replace the entire block's content or target specific text within the block. CRITICAL LIMITATION: This tool CANNOT split one block into multiple blocks - it only works with ONE block at a time. If you need to split content into multiple blocks, use deleteContent + addContent instead.",
     parameters: modifyContentSchema,
   }),
   deleteContent: tool({
-    description: "Deletes one or more NON-TABLE blocks, or specific text within a NON-TABLE block, from the editor.",
+    description: "Deletes specific blocks or content from the editor. IMPORTANT: Use this BEFORE addContent when you need to replace a single block with multiple blocks (e.g., splitting a poem into separate lines, breaking up a paragraph, formatting content with line breaks). EXAMPLE WORKFLOW: User says 'split this poem into separate lines' → 1) Use deleteContent to remove the original block, 2) Use addContent with the formatted content that will create multiple blocks.",
     parameters: deleteContentSchema,
   }),
   modifyTable: tool({
@@ -157,7 +159,7 @@ const clientTools = {
     parameters: searchAndTagDocumentsSchema,
   }),
   replaceAllContent: tool({
-    description: "Replaces the entire document content with new Markdown content. This is a destructive operation that requires user confirmation by default. Can be undone using Ctrl+Z/Cmd+Z or the Undo button in the toast notification.",
+    description: "Replaces the entire document content with new Markdown content. Use for complete document restructuring or when creating a new document from scratch.",
     parameters: replaceAllContentSchema,
   }),
 };
@@ -518,6 +520,7 @@ export function useChatInteractions({
         isChatInputBusy,
         currentOperationStatusText,
         handleAudioRecordingStart: orchestratorHandleAudioRecordingStart,
+        handleAudioRecordingCancel: orchestratorHandleAudioRecordingCancel,
         handleCompleteAudioFlow,
         handleFileUploadStart,
         handleFileUploadComplete,
@@ -526,6 +529,7 @@ export function useChatInteractions({
         pendingFileUpload: orchestratorPendingFile,
         isHistoryConsistentForAPICall,
         operationState,
+        recordingDuration, // NEW: Recording timer duration
     } = orchestrator;
 
     // Derive audio state from orchestrator operation state
@@ -759,6 +763,14 @@ export function useChatInteractions({
         handleCompleteAudioFlow(); 
     }, [handleCompleteAudioFlow]);
 
+    const handleCancelRecording = useCallback(() => {
+        console.log('[Editor Audio] handleCancelRecording called, cancelling recording without transcription');
+        // Reset transcription states to prevent auto-submit
+        setWasTranscribing(false);
+        setAudioTranscriptionPending(false);
+        orchestratorHandleAudioRecordingCancel(); 
+    }, [orchestratorHandleAudioRecordingCancel]);
+
     // Create aliases for missing functions expected by components
     const startRecording = handleMicrophoneClick;
     const stopRecording = handleStopRecording;
@@ -791,8 +803,10 @@ export function useChatInteractions({
         isTranscribing,
         micPermissionError,
         audioTimeDomainData,
+        recordingDuration,
         handleMicrophoneClick,
-        handleStopRecording,  
+        handleStopRecording,
+        handleCancelRecording,
         handleFileUpload: orchestratorHandleFileUploadStart,      
         taggedDocuments,
         setTaggedDocuments,

@@ -64,26 +64,227 @@ interface MessageWithDetails extends SupabaseMessage {
     tool_calls: SupabaseToolCall[] | null; 
 }
 
+// NEW: Interface for pagination metadata from API
+interface MessagesPaginationMeta {
+    hasMore: boolean;
+    total: number;
+    offset: number;
+    limit: number;
+}
+
+// NEW: Interface for paginated messages response
+interface PaginatedMessagesResponse {
+    data: MessageWithDetails[];
+    meta: MessagesPaginationMeta;
+}
+
 interface UseInitialChatMessagesProps {
     documentId: string | undefined | null;
     setPageError: (error: string | null) => void; 
+    // NEW: Optional initial display limit (defaults to 12)
+    initialDisplayLimit?: number;
 }
 
 export interface UseInitialChatMessagesReturn {
     isLoadingMessages: boolean;
-    initialMessages: CustomUIMessage[] | null; // Use our custom message type
+    initialMessages: CustomUIMessage[] | null; // Full message list for AI context
+    // NEW: Display-only message list and load more functionality
+    displayedMessages: CustomUIMessage[] | null; // Subset for UI display
+    canLoadMore: boolean;
+    isLoadingMore: boolean;
+    loadMoreMessages: () => Promise<void>;
 }
 
 export function useInitialChatMessages({
     documentId,
     setPageError,
+    initialDisplayLimit = 12, // NEW: Default to last 12 messages for display
 }: UseInitialChatMessagesProps): UseInitialChatMessagesReturn {
     const [isLoadingMessages, setIsLoadingMessages] = useState(true);
-    const [initialMessages, setInitialMessages] = useState<CustomUIMessage[] | null>(null); // Use our custom message type
+    const [initialMessages, setInitialMessages] = useState<CustomUIMessage[] | null>(null); // Full list for AI
+    
+    // NEW: Dual-layer state management
+    const [displayedMessages, setDisplayedMessages] = useState<CustomUIMessage[] | null>(null); // Subset for UI
+    const [canLoadMore, setCanLoadMore] = useState(false);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const [totalMessages, setTotalMessages] = useState(0);
+
+    // NEW: Function to format messages (extracted for reuse)
+    const formatMessages = useCallback((rawMessages: MessageWithDetails[]): CustomUIMessage[] => {
+        const formattedMessages: CustomUIMessage[] = [];
+        const allowedInitialRoles = ['user', 'assistant', 'system'];
+
+        for (const msg of rawMessages) {
+            if (!allowedInitialRoles.includes(msg.role as string)) { 
+                continue;
+            }
+            const role = msg.role as AiReactMessageRoot['role'];
+            const createdAtTimestamp = (msg as any).createdAt || msg.created_at;
+
+            if (role === 'system') {
+                console.log(`[useInitialChatMessages] Skipping system message ${msg.id}`);
+                continue; 
+            }
+            
+            if (role === 'user') {
+                // Process msg.content to a string (userTextContent)
+                let userTextContent = '';
+                if (typeof msg.content === 'string') {
+                    userTextContent = msg.content;
+                } else if (Array.isArray(msg.content)) {
+                    userTextContent = msg.content
+                        .filter((part): part is TextPart => part.type === 'text' && typeof part.text === 'string')
+                        .map(part => part.text)
+                        .join('\n');
+                }
+
+                const messageToPush: CustomUIMessage = {
+                    id: msg.id,
+                    role: 'user',
+                    content: userTextContent,
+                    createdAt: new Date(createdAtTimestamp),
+                    signedDownloadUrl: msg.signedDownloadUrl
+                };
+
+                formattedMessages.push(messageToPush);
+                continue;
+            }
+            
+            if (role === 'assistant') {
+                const assistantMessageContentParts: CustomMessageContentPart[] = [];
+                const assistantSdkToolCalls: AssistantToolCall[] = [];
+                let textualContentForAssistantMessage = '';
+
+                if (Array.isArray(msg.content)) {
+                    // Initialize a Map to store tool call results
+                    const resultsMap = new Map<string, any>();
+                    
+                    for (const part of msg.content as StoredMessageContentPart[]) {
+                        if (part.type === 'text') {
+                            assistantMessageContentParts.push({ type: 'text', text: part.text });
+                            textualContentForAssistantMessage += (textualContentForAssistantMessage ? '\n' : '') + part.text;
+                        } else if (part.type === 'tool-call') {
+                            const toolCallPartWithPotentialResult = part as StoredToolCallPartWithResult & { result?: any };
+
+                            if (toolCallPartWithPotentialResult.toolCallId && 
+                                toolCallPartWithPotentialResult.toolName && 
+                                toolCallPartWithPotentialResult.args !== undefined) {
+
+                                const argsString = typeof toolCallPartWithPotentialResult.args === 'string' 
+                                    ? toolCallPartWithPotentialResult.args 
+                                    : JSON.stringify(toolCallPartWithPotentialResult.args);
+
+                                const embeddedResult = toolCallPartWithPotentialResult.result;
+                                const resultFromMap = resultsMap.get(toolCallPartWithPotentialResult.toolCallId);
+                                const finalResult = embeddedResult !== undefined ? embeddedResult : resultFromMap;
+                                const state: 'result' | 'call' = finalResult !== undefined ? 'result' : 'call';
+
+                                assistantMessageContentParts.push({
+                                    type: 'tool-invocation',
+                                    toolInvocation: {
+                                        toolCallId: toolCallPartWithPotentialResult.toolCallId,
+                                        toolName: toolCallPartWithPotentialResult.toolName,
+                                        args: argsString,
+                                        result: finalResult,
+                                        state: state
+                                    },
+                                });
+                            }
+                        }
+                    }
+                } else if (typeof msg.content === 'string') {
+                    textualContentForAssistantMessage = msg.content;
+                    if (textualContentForAssistantMessage.trim()) {
+                        assistantMessageContentParts.push({ type: 'text', text: textualContentForAssistantMessage });
+                    }
+                    
+                    if (msg.tool_calls && msg.tool_calls.length > 0) {
+                        for (const tc of msg.tool_calls) {
+                            const argsString = typeof tc.tool_input === 'string' ? tc.tool_input : JSON.stringify(tc.tool_input);
+                            assistantSdkToolCalls.push({
+                                id: tc.tool_call_id, type: 'function', function: { name: tc.tool_name, arguments: argsString }
+                            });
+                            assistantMessageContentParts.push({
+                                type: 'tool-invocation',
+                                toolInvocation: {
+                                    toolCallId: tc.tool_call_id, toolName: tc.tool_name, args: tc.tool_input,
+                                    result: tc.tool_output,
+                                    state: 'result',
+                                } as AiSdkUIToolInvocation,
+                            });
+                            if (tc.tool_output !== undefined && tc.tool_output !== null) {
+                                const toolResultContentStr = typeof tc.tool_output === 'string' ? tc.tool_output : JSON.stringify(tc.tool_output);
+                                formattedMessages.push({
+                                    id: `${msg.id}-toolres-${tc.tool_call_id}`, role: 'tool', content: toolResultContentStr,
+                                    tool_call_id: tc.tool_call_id, createdAt: new Date(tc.created_at || createdAtTimestamp),
+                                });
+                            }
+                        }
+                    }
+                }
+                
+                const finalContentForSdkMessage = assistantMessageContentParts.length > 0 
+                    ? assistantMessageContentParts
+                    : textualContentForAssistantMessage;
+
+                const assistantMsgForSdk: CustomUIMessage = {
+                    id: msg.id,
+                    role: 'assistant',
+                    content: finalContentForSdkMessage,
+                    createdAt: new Date(createdAtTimestamp),
+                    signedDownloadUrl: msg.signedDownloadUrl,
+                };
+                
+                formattedMessages.push(assistantMsgForSdk);
+                continue;
+            }
+        }
+
+        return formattedMessages;
+    }, []);
+
+    // NEW: Load more messages function
+    const loadMoreMessages = useCallback(async () => {
+        if (!documentId || isLoadingMore || !canLoadMore) {
+            return;
+        }
+
+        setIsLoadingMore(true);
+
+        try {
+            const currentDisplayCount = displayedMessages?.length || 0;
+            const response = await fetch(
+                `/api/documents/${documentId}/messages?limit=${initialDisplayLimit}&offset=${currentDisplayCount}`
+            );
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({ error: { message: `HTTP ${response.status}` } }));
+                throw new Error(errData.error?.message || `Failed to fetch more messages (${response.status})`);
+            }
+
+            const { data, meta }: PaginatedMessagesResponse = await response.json();
+            const newFormattedMessages = formatMessages(data);
+
+            if (newFormattedMessages.length > 0 && displayedMessages) {
+                // Prepend older messages to the displayed list
+                setDisplayedMessages(prev => prev ? [...newFormattedMessages, ...prev] : newFormattedMessages);
+            }
+
+            // Update pagination state
+            setCanLoadMore(meta.hasMore);
+
+        } catch (err: any) {
+            console.error('[useInitialChatMessages] Error loading more messages:', err);
+            setPageError(`Failed to load more messages: ${err.message}`);
+        } finally {
+            setIsLoadingMore(false);
+        }
+    }, [documentId, isLoadingMore, canLoadMore, displayedMessages, initialDisplayLimit, formatMessages, setPageError]);
 
     const fetchInitialMessages = useCallback(async () => {
         setIsLoadingMessages(true);
-        setInitialMessages(null); 
+        setInitialMessages(null);
+        setDisplayedMessages(null);
 
         if (!documentId) {
             setIsLoadingMessages(false);
@@ -91,224 +292,54 @@ export function useInitialChatMessages({
         }
 
         try {
-            // Initialize a Map to store tool call results
-            const resultsMap = new Map<string, any>();
+            // DUAL APPROACH: Fetch all messages for AI context AND paginated for display
             
-            try {
-                const response = await fetch(`/api/documents/${documentId}/messages`);
-                
-                console.log(`[useInitialChatMessages] API Response Status: ${response.status}, OK: ${response.ok}`);
-
-                if (!response.ok) {
-                    const errData = await response.json().catch(() => ({ error: { message: `HTTP ${response.status}` } }));
-                    // Throw error to be caught by outer catch
-                    throw new Error(
-                        errData.error?.message || `Failed to fetch messages (${response.status})`
-                    );
-                }
-                const { data }: { data: MessageWithDetails[] } = await response.json();
-
-                console.log(`[useInitialChatMessages] Raw data received from API:`, JSON.stringify(data, null, 2));
-                console.log(`[useInitialChatMessages] Type of data: ${typeof data}, Is Array: ${Array.isArray(data)}`);
-                console.log(`[useInitialChatMessages] Data length: ${data?.length ?? 'undefined'}`);
-
-                const formattedMessages: CustomUIMessage[] = []; // Use our custom message type
-                const allowedInitialRoles = ['user', 'assistant', 'system'];
-
-                console.log(`[useInitialChatMessages] About to start formatting loop...`);
-
-                for (const msg of data) {
-                    console.log(`[useInitialChatMessages] INSIDE LOOP. Processing msg:`, JSON.stringify(msg, null, 2));
-                    if (!allowedInitialRoles.includes(msg.role as string)) { 
-                        continue;
-                    }
-                    const role = msg.role as AiReactMessageRoot['role']; // Role from ai/react Message
-                    const createdAtTimestamp = (msg as any).createdAt || msg.created_at;
-
-                    if (role === 'system') {
-                        console.log(`[useInitialChatMessages] Skipping system message ${msg.id}`);
-                        continue; 
-                    }
-                    if (role === 'user') {
-                        // Process msg.content to a string (userTextContent)
-                        let userTextContent = '';
-                        if (typeof msg.content === 'string') {
-                            userTextContent = msg.content;
-                        } else if (Array.isArray(msg.content)) {
-                            userTextContent = msg.content
-                                .filter((part): part is TextPart => part.type === 'text' && typeof part.text === 'string')
-                                .map(part => part.text)
-                                .join('\n');
-                        }
-                        // userTextContent is now a string (possibly empty)
-
-                        console.log(`[useInitialChatMessages] Processing USER message ID: ${msg.id}`);
-                        console.log(`[useInitialChatMessages]   Raw msg object:`, JSON.stringify(msg, null, 2));
-                        console.log(`[useInitialChatMessages]   User Text Content Processed:`, userTextContent);
-                        console.log(`[useInitialChatMessages]   Value of msg.signedDownloadUrl:`, msg.signedDownloadUrl);
-
-                        const uiTextParts: Array<{type: 'text', text: string}> = [];
-                        if (userTextContent.trim()) {
-                            uiTextParts.push({ type: 'text', text: userTextContent });
-                        }
-                        // Image from msg.signedDownloadUrl will be handled by custom UI rendering, not added to standard parts.
-
-                        const messageToPush: CustomUIMessage = {
-                            id: msg.id,
-                            role: 'user',
-                            content: userTextContent, // User content is string
-                            createdAt: new Date(createdAtTimestamp),
-                            signedDownloadUrl: msg.signedDownloadUrl
-                        };
-
-                        console.log(`[useInitialChatMessages]   User Message OBJECT being pushed:`, JSON.stringify(messageToPush, null, 2));
-                        formattedMessages.push(messageToPush);
-                        continue;
-                    }
-                    if (role === 'assistant') {
-                        console.log(`[useInitialChatMessages] Processing ASSISTANT message ID: ${msg.id}, Raw msg:`, JSON.stringify(msg, null, 2));
-                        // --- MODIFIED LOGS FOR ASSISTANT createdAt ---
-                        console.log(`[useInitialChatMessages] Assistant msg ID ${msg.id} - Original createdAtTimestamp:`, createdAtTimestamp, "Type:", typeof createdAtTimestamp);
-                        const createdAt = new Date(createdAtTimestamp); // Use the determined timestamp
-                        console.log(`[useInitialChatMessages] Assistant msg ID ${msg.id} - Parsed createdAt object:`, createdAt, "Is Valid Date:", !isNaN(createdAt.getTime()));
-                        // --- END MODIFIED LOGS ---
-                        
-                        const assistantMessageContentParts: CustomMessageContentPart[] = [];
-                        const assistantSdkToolCalls: AssistantToolCall[] = [];
-                        let textualContentForAssistantMessage = '';
-
-                        if (Array.isArray(msg.content)) {
-                            // msg.content is an array of parts from the database (JSONB)
-                            console.log(`[useInitialChatMessages] Assistant msg ${msg.id} content is ARRAY:`, JSON.stringify(msg.content, null, 2));
-                            for (const part of msg.content as StoredMessageContentPart[]) { // Cast to our StoredMessageContentPart union
-                                if (part.type === 'text') { // No need to check typeof part.text due to StoredTextPart definition
-                                    assistantMessageContentParts.push({ type: 'text', text: part.text });
-                                    textualContentForAssistantMessage += (textualContentForAssistantMessage ? '\n' : '') + part.text;
-                                } else if (part.type === 'tool-call') { // Redundant checks for toolCallId etc. removed due to StoredToolCallPartWithResult definition
-                                    // This 'part' is from the stored messages.content array
-                                    // It has 'toolCallId', 'toolName', 'args', and 'result' due to StoredToolCallPartWithResult type
-                                    console.log(`[useInitialChatMessages] DB Content tool-call part for msg ${msg.id}:`, JSON.stringify(part, null, 2));
-
-                                    const toolCallPartWithPotentialResult = part as StoredToolCallPartWithResult & { result?: any };
-
-                                    if (toolCallPartWithPotentialResult.toolCallId && 
-                                        toolCallPartWithPotentialResult.toolName && 
-                                        toolCallPartWithPotentialResult.args !== undefined) {
-
-                                        // Ensure args is stringified
-                                        const argsString = typeof toolCallPartWithPotentialResult.args === 'string' 
-                                            ? toolCallPartWithPotentialResult.args 
-                                            : JSON.stringify(toolCallPartWithPotentialResult.args);
-
-                                        // Check if the result is directly embedded in this "tool-call" part
-                                        const embeddedResult = toolCallPartWithPotentialResult.result;
-                                        
-                                        // Still try to get from resultsMap in case the structure is mixed or changes in the future,
-                                        // but prioritize embeddedResult if present.
-                                        const resultFromMap = resultsMap.get(toolCallPartWithPotentialResult.toolCallId);
-                                        
-                                        const finalResult = embeddedResult !== undefined ? embeddedResult : resultFromMap;
-                                        const state: 'result' | 'call' = finalResult !== undefined ? 'result' : 'call';
-
-                                        // Log the determined state and result for this tool call
-                                        console.log(`[useInitialChatMessages] Tool Call ID: ${toolCallPartWithPotentialResult.toolCallId}, Name: ${toolCallPartWithPotentialResult.toolName}, Args: ${argsString}, Embedded Result Found: ${embeddedResult !== undefined}, Result from Map: ${resultFromMap !== undefined}, Final State: ${state}`);
-
-                                        assistantMessageContentParts.push({
-                                            type: 'tool-invocation',
-                                            toolInvocation: {
-                                                toolCallId: toolCallPartWithPotentialResult.toolCallId,
-                                                toolName: toolCallPartWithPotentialResult.toolName,
-                                                args: argsString, // Use the stringified args
-                                                result: finalResult,
-                                                state: state
-                                            },
-                                        });
-                                    }
-                                }
-                            }
-                        } else if (typeof msg.content === 'string') {
-                            // Content is just a string, likely no tool calls involved in this message's direct content
-                            textualContentForAssistantMessage = msg.content;
-                            if (textualContentForAssistantMessage.trim()) {
-                                assistantMessageContentParts.push({ type: 'text', text: textualContentForAssistantMessage });
-                            }
-                            // If content is string, but there are joined msg.tool_calls, we might need to process them.
-                            // This case implies tool calls were made, but their details weren't stored in msg.content as parts.
-                            // This is less ideal but we should handle it.
-                            if (msg.tool_calls && msg.tool_calls.length > 0) {
-                                console.log(`[useInitialChatMessages] Assistant msg ${msg.id} content is STRING, but has ${msg.tool_calls.length} joined tool_calls from DB.`);
-                                for (const tc of msg.tool_calls) { // tc is SupabaseToolCall
-                                    const argsString = typeof tc.tool_input === 'string' ? tc.tool_input : JSON.stringify(tc.tool_input);
-                                    assistantSdkToolCalls.push({
-                                        id: tc.tool_call_id, type: 'function', function: { name: tc.tool_name, arguments: argsString }
-                                    });
-                                    assistantMessageContentParts.push({
-                                        type: 'tool-invocation',
-                                        toolInvocation: {
-                                            toolCallId: tc.tool_call_id, toolName: tc.tool_name, args: tc.tool_input,
-                                            result: tc.tool_output, // Result from SupabaseToolCall.tool_output
-                                            state: 'result',
-                                        } as AiSdkUIToolInvocation,
-                                    });
-                                    if (tc.tool_output !== undefined && tc.tool_output !== null) {
-                                        const toolResultContentStr = typeof tc.tool_output === 'string' ? tc.tool_output : JSON.stringify(tc.tool_output);
-                                        formattedMessages.push({
-                                            id: `${msg.id}-toolres-${tc.tool_call_id}`, role: 'tool', content: toolResultContentStr,
-                                            tool_call_id: tc.tool_call_id, createdAt: new Date(tc.created_at || createdAtTimestamp), // Use determined timestamp as fallback
-                                        });
-                                        console.log(`[useInitialChatMessages] Pushed tool result message for ${tc.tool_call_id} from JOINED SupabaseToolCall (string content path).`);
-                                    }
-                                }
-                            }
-                        }
-                        
-                        const finalContentForSdkMessage = assistantMessageContentParts.length > 0 
-                            ? assistantMessageContentParts
-                            : textualContentForAssistantMessage; // Fallback to simple string if no parts were generated
-
-                        const assistantMsgForSdk: CustomUIMessage = {
-                            id: msg.id,
-                            role: 'assistant',
-                            content: finalContentForSdkMessage,
-                            createdAt: new Date(createdAtTimestamp), // Use the determined timestamp
-                            signedDownloadUrl: msg.signedDownloadUrl,
-                        };
-                        
-                        formattedMessages.push(assistantMsgForSdk);
-                        console.log(`[useInitialChatMessages] Pushed assistant message ${assistantMsgForSdk.id}. Content parts: ${assistantMessageContentParts.length}, Tool calls: ${assistantSdkToolCalls.length}`);
-                        if (assistantMessageContentParts.length > 0) {
-                             console.log(`[useInitialChatMessages] Assistant message ${assistantMsgForSdk.id} content (parts):`, JSON.stringify(assistantMessageContentParts, null, 2));
-                        }
-                        if (assistantSdkToolCalls.length > 0) {
-                            console.log(`[useInitialChatMessages] Assistant message ${assistantMsgForSdk.id} tool_calls (SDK):`, JSON.stringify(assistantSdkToolCalls, null, 2));
-                        }
-                        continue;
-                    }
-                }
-
-                console.log(`[useInitialChatMessages] Finished formatting loop.`);
-                
-                // --- LOGGING: Final array before setting state ---
-                console.log("[useInitialChatMessages] Final formattedMessages array:", JSON.stringify(formattedMessages, null, 2));
-                setInitialMessages(formattedMessages);
-
-            } catch (innerError: any) {
-                // --- LOGGING: Catch errors during fetch/format ---
-                console.error("[useInitialChatMessages] Error during fetch or format:", innerError);
-                // Re-throw to be caught by the outer catch which handles setPageError
-                throw innerError;
+            // 1. Fetch ALL messages for AI context (using loadAll=true)
+            const allMessagesResponse = await fetch(`/api/documents/${documentId}/messages?loadAll=true`);
+            
+            if (!allMessagesResponse.ok) {
+                const errData = await allMessagesResponse.json().catch(() => ({ error: { message: `HTTP ${allMessagesResponse.status}` } }));
+                throw new Error(errData.error?.message || `Failed to fetch all messages (${allMessagesResponse.status})`);
             }
-            // --- End Inner try-catch ---
+            
+            const { data: allMessagesData }: { data: MessageWithDetails[] } = await allMessagesResponse.json();
+            
+            // 2. Fetch paginated messages for display (last N messages)
+            const displayMessagesResponse = await fetch(
+                `/api/documents/${documentId}/messages?limit=${initialDisplayLimit}&offset=0`
+            );
+            
+            if (!displayMessagesResponse.ok) {
+                const errData = await displayMessagesResponse.json().catch(() => ({ error: { message: `HTTP ${displayMessagesResponse.status}` } }));
+                throw new Error(errData.error?.message || `Failed to fetch display messages (${displayMessagesResponse.status})`);
+            }
+            
+            const { data: displayMessagesData, meta }: PaginatedMessagesResponse = await displayMessagesResponse.json();
+
+            console.log(`[useInitialChatMessages] Fetched ${allMessagesData.length} total messages, ${displayMessagesData.length} for display`);
+
+            // Format both sets of messages
+            const allFormattedMessages = formatMessages(allMessagesData);
+            const displayFormattedMessages = formatMessages(displayMessagesData);
+
+            // Update state with dual-layer approach
+            setInitialMessages(allFormattedMessages); // Full context for AI
+            setDisplayedMessages(displayFormattedMessages); // Subset for UI
+            setTotalMessages(meta.total);
+            setCanLoadMore(meta.hasMore);
+
+            console.log(`[useInitialChatMessages] Set ${allFormattedMessages.length} AI messages, ${displayFormattedMessages.length} display messages`);
+            console.log(`[useInitialChatMessages] Can load more: ${meta.hasMore}, Total: ${meta.total}`);
 
         } catch (err: any) {
-            // Outer catch remains the same
-            console.error("[useInitialChatMessages] Caught final error:", err); // Added log here too
+            console.error("[useInitialChatMessages] Error fetching messages:", err);
             setPageError(`Failed to load messages: ${err.message}`);
-            setInitialMessages([]); 
+            setInitialMessages([]);
+            setDisplayedMessages([]);
         } finally {
             setIsLoadingMessages(false);
         }
-    }, [documentId, setPageError]);
+    }, [documentId, initialDisplayLimit, formatMessages, setPageError]);
 
     useEffect(() => {
         fetchInitialMessages();
@@ -316,6 +347,11 @@ export function useInitialChatMessages({
 
     return {
         isLoadingMessages,
-        initialMessages, // Return type is now CustomUIMessage[] | null
+        initialMessages, // Full message context for AI
+        // NEW: Display layer for UI
+        displayedMessages,
+        canLoadMore,
+        isLoadingMore,
+        loadMoreMessages,
     };
 } 

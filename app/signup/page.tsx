@@ -243,8 +243,8 @@ function SignupFormContent() {
   };
 
   const billingOptions = {
-    monthly: { id: 'monthly', name: 'Monthly', price: '$16', period: 'per month', savingsText: null },
-    annual: { id: 'annual', name: 'Annual', price: '$150', period: 'per year', savingsText: '(Save 22%)' }, 
+    monthly: { id: 'monthly', name: 'Monthly', price: '$16', period: 'per month', savingsText: null, monthlyBreakdown: null },
+    annual: { id: 'annual', name: 'Annual', price: '$10', period: 'per month', monthlyBreakdown: '($120 billed annually)', savingsText: '(Save 38%)' }, 
   };
   
   return (
@@ -401,7 +401,14 @@ function SignupFormContent() {
                       <CheckCircle2 size={24} className="text-[#C79553] flex-shrink-0" />
                     }
                   </div>
-                  <p className="text-xl font-bold text-[color:var(--accent-color)] mt-1">{option.price} <span className="text-sm font-normal text-[color:var(--muted-text-color)]">{option.period}</span></p>
+                  <div className="mt-1">
+                    <p className="text-xl font-bold text-[color:var(--accent-color)]">{option.price} <span className="text-sm font-normal text-[color:var(--muted-text-color)]">{option.period}</span></p>
+                    {option.monthlyBreakdown && (
+                      <p className="text-xs text-[color:var(--muted-text-color)] -mt-1">
+                        {option.monthlyBreakdown}
+                      </p>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

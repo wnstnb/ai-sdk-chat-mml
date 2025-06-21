@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { useAllDocuments } from '@/hooks/useDocumentLists';
+import { useUnifiedDocuments, type ExtendedMappedDocumentCardData } from '@/hooks/useDocumentLists';
 import DocumentCard from './DocumentCard';
 import CardSkeleton from './CardSkeleton';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, RotateCw, FileText, FolderPlus, CheckSquare, Square, FileText as FileTextIcon, Folder as FolderIcon, Search, X, ChevronDown } from 'lucide-react';
+import { AlertTriangle, RotateCw, FileText, FolderPlus, CheckSquare, Square, FileText as FileTextIcon, Folder as FolderIcon, Search, X, ChevronDown, Filter, Users, Home, UserPlus } from 'lucide-react';
 import CreateFolderModal from './CreateFolderModal';
 import { useFolders } from '@/hooks/useFolders';
 import { useFolderNavigation } from '@/hooks/useFolderNavigation';
@@ -48,6 +48,7 @@ import TuonLogoIcon from '@/components/ui/TuonLogoIcon';
 import styles from '@/components/sidebar/Sidebar.module.css';
 import { useModalStore } from '@/stores/useModalStore';
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
+import { ConnectionStatusIndicator } from '@/components/ui/ConnectionStatusIndicator';
 
 // Define types for sorting
 /**
@@ -222,12 +223,15 @@ const truncateText = (text: string, maxLength: number): string => {
  * @returns {React.ReactElement} The rendered DocumentCardGrid component.
  */
 const DocumentCardGrid: React.FC = () => {
-  const { mappedDocuments: fetchedDocs, isLoading, error, fetchDocuments } = useAllDocuments();
+  const { mappedDocuments: fetchedDocs, isLoading, error, fetchDocuments } = useUnifiedDocuments();
   const { updateDocumentInStore, allDocuments: storeDocuments } = useFileMediaStore();
   
   // State for sorting
   const [sortKey, setSortKey] = useState<SortKey>('lastUpdated');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  // NEW: State for document filtering
+  const [documentFilter, setDocumentFilter] = useState<'all' | 'my-documents' | 'shared-with-me' | 'shared-with-others'>('all');
 
   // Selection State
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
@@ -252,7 +256,7 @@ const DocumentCardGrid: React.FC = () => {
   } = useFolders();
   const { currentFolderId, breadcrumbPath, isInFolderView, navigateToFolder, navigateToRoot } = useFolderNavigation();
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
-  const [folderContents, setFolderContents] = useState<Record<string, MappedDocumentCardData[]>>({});
+  const [folderContents, setFolderContents] = useState<Record<string, ExtendedMappedDocumentCardData[]>>({});
 
   // ADD: State for search query
   const [searchQuery, setSearchQuery] = useState('');
@@ -260,7 +264,7 @@ const DocumentCardGrid: React.FC = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   // ADD: State for search results
-  const [searchResults, setSearchResults] = useState<MappedDocumentCardData[]>([]);
+  const [searchResults, setSearchResults] = useState<ExtendedMappedDocumentCardData[]>([]);
 
   // ADD: useEffect for logging draggedItems when it changes
   useEffect(() => {
@@ -334,12 +338,12 @@ const DocumentCardGrid: React.FC = () => {
         }
         const data = await response.json();
         
-        const mappedResults: MappedDocumentCardData[] = (data || []).map((doc: any) => {
+        const mappedResults: ExtendedMappedDocumentCardData[] = (data || []).map((doc: any) => {
           const rawSummary = doc.summary;
           const snippet = rawSummary || 'No summary available.';
           
           // Prioritize is_starred from the global store if available for search results
-          const storeDoc = storeDocuments.find(sDoc => sDoc.id === doc.id);
+          const storeDoc = storeDocuments.find((sDoc: any) => sDoc.id === doc.id);
           const currentIsStarred = storeDoc ? storeDoc.is_starred : (doc.is_starred || false);
 
           return {
@@ -349,6 +353,11 @@ const DocumentCardGrid: React.FC = () => {
             lastUpdated: doc.lastUpdated || new Date().toISOString(),
             is_starred: currentIsStarred, // Use potentially updated value from store
             folder_id: doc.folder_id || null,
+            // NEW: Include sharing/permission fields from enhanced search API
+            access_type: doc.access_type || 'owned',
+            permission_level: doc.permission_level || 'owner',
+            owner_email: doc.owner_email,
+            is_shared_with_others: doc.is_shared_with_others || false,
           };
         });
         setSearchResults(mappedResults);
@@ -370,7 +379,7 @@ const DocumentCardGrid: React.FC = () => {
     console.log('[DEBUG] Star toggle started for document:', documentId);
     
     // Prioritize finding the document in storeDocuments for the most up-to-date is_starred
-    let originalDocument = storeDocuments.find(doc => doc.id === documentId);
+    let originalDocument = storeDocuments.find((doc: any) => doc.id === documentId);
     let currentIsStarred = false;
 
     if (originalDocument) {
@@ -378,8 +387,8 @@ const DocumentCardGrid: React.FC = () => {
       console.log('[DEBUG] Found document in store. Current starred status:', currentIsStarred);
     } else {
       // Fallback to other sources if not in storeDocuments (though ideally it should be)
-      const fetchedDoc = (fetchedDocs || []).find(doc => doc.id === documentId);
-      const searchDoc = searchResults.find(doc => doc.id === documentId);
+      const fetchedDoc = (fetchedDocs || []).find((doc: ExtendedMappedDocumentCardData) => doc.id === documentId);
+      const searchDoc = searchResults.find((doc: ExtendedMappedDocumentCardData) => doc.id === documentId);
       const fallbackDoc = fetchedDoc || searchDoc;
       
       if (!fallbackDoc) {
@@ -400,36 +409,30 @@ const DocumentCardGrid: React.FC = () => {
     try {
       const response = await fetch(`/api/documents/${documentId}/star`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        // The body might not be strictly necessary if the backend toggles, 
-        // but sending the new state is explicit.
-        // body: JSON.stringify({ is_starred: newStarredStatus }), 
+        headers: { 'Content-Type': 'application/json' },
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to toggle star status.' }));
-        throw new Error(errorData.message || 'Failed to toggle star status.');
+        const errorData = await response.json().catch(() => ({ message: 'Failed to toggle star.' }));
+        throw new Error(errorData.message || 'Failed to toggle star.');
       }
 
       const result = await response.json();
-      if (result.success) {
-        // Confirm update with server response (already optimistically updated)
-        // Ensure the store reflects the true server state if different, though it should match.
-        updateDocumentInStore(documentId, { is_starred: result.is_starred }); 
-        console.log('[DEBUG] Server confirmed star status:', result.is_starred);
-        toast.success(`Document ${result.is_starred ? 'starred' : 'unstarred'}.`);
-      } else {
-        throw new Error(result.message || 'Failed to toggle star status on server.');
-      }
+      console.log('[DEBUG] Star toggle API response:', result);
+      
+      // Update store with server response (in case server state differs)
+      updateDocumentInStore(documentId, { is_starred: result.is_starred });
+      console.log('[DEBUG] Store updated with server response:', result.is_starred);
+      
+      toast.success(`Document ${result.is_starred ? 'starred' : 'unstarred'}.`);
     } catch (error: any) {
-      console.log('[DEBUG] Error occurred, reverting optimistic update');
-      toast.error(error.message || "An error occurred while toggling star status.");
-      // Revert optimistic update on error
+      console.error('[DEBUG] Star toggle failed:', error);
+      // Revert optimistic update on failure
       updateDocumentInStore(documentId, { is_starred: currentIsStarred });
+      console.log('[DEBUG] Reverted store to original starred status:', currentIsStarred);
+      toast.error(error.message || "Error toggling star status.");
     }
-  }, [storeDocuments, fetchedDocs, searchResults, updateDocumentInStore]);
+  }, [updateDocumentInStore, storeDocuments, fetchedDocs, searchResults]);
 
   const currentPathString = useMemo(() => {
     if (!isInFolderView || !breadcrumbPath || breadcrumbPath.length === 0) {
@@ -439,7 +442,7 @@ const DocumentCardGrid: React.FC = () => {
   }, [isInFolderView, breadcrumbPath]);
 
   // Helper function to sort documents
-  const sortDocuments = useCallback((items: MappedDocumentCardData[], key: SortKey, direction: SortDirection): MappedDocumentCardData[] => {
+  const sortDocuments = useCallback((items: ExtendedMappedDocumentCardData[], key: SortKey, direction: SortDirection): ExtendedMappedDocumentCardData[] => {
     const sortedItems = [...items]; // Create a shallow copy to avoid mutating the original array
 
     sortedItems.sort((a, b) => {
@@ -461,6 +464,29 @@ const DocumentCardGrid: React.FC = () => {
 
     return sortedItems;
   }, []);
+
+  // NEW: Filter documents based on access type
+  const filterDocuments = useCallback((documents: ExtendedMappedDocumentCardData[]): ExtendedMappedDocumentCardData[] => {
+    if (documentFilter === 'all') {
+      return documents;
+    } else if (documentFilter === 'my-documents') {
+      // Documents I own (regardless of whether they're shared with others)
+      return documents.filter(doc => 
+        doc.permission_level === 'owner'
+      );
+    } else if (documentFilter === 'shared-with-me') {
+      // Documents owned by others that were shared with me
+      return documents.filter(doc => 
+        doc.permission_level !== 'owner' && doc.access_type === 'shared'
+      );
+    } else if (documentFilter === 'shared-with-others') {
+      // Documents I own that I've shared with others
+      return documents.filter(doc => 
+        doc.permission_level === 'owner' && doc.access_type === 'shared'
+      );
+    }
+    return documents;
+  }, [documentFilter]);
 
   // Load folder contents for preview on cards and navigation
   const loadFolderContents = useCallback(async (folderId: string) => {
@@ -537,12 +563,12 @@ const DocumentCardGrid: React.FC = () => {
    * @returns {{ id: string; type: 'document' | 'folder'; name: string } | null} Item details or null if not found.
    */
   const getItemDetails = (id: string): { id: string; type: 'document' | 'folder'; name: string } | null => {
-    const doc = getCurrentDisplayItems().documents.find(d => d.id === id);
+    const doc = currentDisplayItems.documents.find(d => d.id === id);
     if (doc) return { id: doc.id, type: 'document', name: doc.title };
     
     // Handle potential "folder-" prefix for selectedItemIds if they are stored that way
     const cleanId = id.startsWith('folder-') ? id.replace('folder-', '') : id;
-    const folder = getCurrentDisplayItems().folders.find(f => f.id === cleanId);
+    const folder = currentDisplayItems.folders.find(f => f.id === cleanId);
     if (folder) return { id: folder.id, type: 'folder', name: folder.name };
     
     return null;
@@ -717,7 +743,7 @@ const DocumentCardGrid: React.FC = () => {
 
           const currentParentId = itemToMove.type === 'folder' 
             ? (currentItem as any)?.parent_folder_id // Cast needed if Folder type doesn't have parent_folder_id directly
-            : (currentItem as MappedDocumentCardData)?.folder_id;
+            : (currentItem as ExtendedMappedDocumentCardData)?.folder_id;
           
           if (itemToMove.id === targetFolderId && itemToMove.type === 'folder') {
             // console.log(`[handleDragEnd] Skipping move: Cannot move folder ${itemToMove.name} into itself.`);
@@ -845,7 +871,7 @@ const DocumentCardGrid: React.FC = () => {
   }, []);
 
   // Helper function to enhance documents with store data
-  const enhanceDocumentsWithStore = useCallback((docs: MappedDocumentCardData[]): MappedDocumentCardData[] => {
+  const enhanceDocumentsWithStore = useCallback((docs: ExtendedMappedDocumentCardData[]): ExtendedMappedDocumentCardData[] => {
     if (!storeDocuments || storeDocuments.length === 0) return docs;
     // console.log('[DEBUG] enhanceDocumentsWithStore called with', docs.length, 'documents. Store has', storeDocuments.length, 'documents');
     return docs.map(doc => {
@@ -867,44 +893,45 @@ const DocumentCardGrid: React.FC = () => {
   }, [storeDocuments]);
 
   // Get folders and documents to display based on current navigation
-  const getCurrentDisplayItems = useCallback(() => {
+  const getCurrentDisplayItems = useMemo(() => {
     if (searchQuery) {
       // If a search query is active, display search results (documents only)
       return {
         folders: [], // No folders in search results view
-        documents: enhanceDocumentsWithStore(searchResults),
+        documents: filterDocuments(searchResults),
       };
     }
 
+    // NEW: Only show folders when filter is 'all', otherwise show documents only
+    const shouldShowFolders = documentFilter === 'all';
+
     if (isInFolderView && currentFolderId) {
-      // Show documents in current folder + subfolders of current folder
-      const currentFolderDocs = folderContents[currentFolderId] || [];
-      const currentFolderSubfolders = folderTree.find(f => f.id === currentFolderId)?.children || [];
+      // Show documents in current folder + subfolders of current folder (if filter allows)
+      const currentFolderSubfolders = shouldShowFolders ? 
+        (folderTree.find(f => f.id === currentFolderId)?.children || []) : 
+        [];
       
       return {
         folders: currentFolderSubfolders,
-        documents: enhanceDocumentsWithStore(currentFolderDocs)
+        documents: filterDocuments(folderContents[currentFolderId] || [])
       };
     } else {
-      // Show root level folders and documents
-      const rootLevelDocs = fetchedDocs ? fetchedDocs.filter(doc => !doc.folder_id) : [];
+      // Show root level folders and documents (folders only if filter is 'all')
       return {
-        folders: folderTree,
-        documents: sortDocuments(enhanceDocumentsWithStore(rootLevelDocs), sortKey, sortDirection)
+        folders: shouldShowFolders ? folderTree : [],
+        documents: filterDocuments(fetchedDocs ? fetchedDocs.filter(doc => !doc.folder_id) : [])
       };
     }
   }, [
+    searchQuery,
+    searchResults,
     isInFolderView, 
     currentFolderId, 
-    folderContents, 
-    folderTree, 
-    fetchedDocs, 
-    sortKey, 
-    sortDirection, 
-    sortDocuments,
-    searchQuery, // Added dependency
-    searchResults, // Added dependency
-    enhanceDocumentsWithStore, // Critical dependency for store enhancement
+    folderTree,
+    folderContents,
+    fetchedDocs,
+    documentFilter,
+    filterDocuments,
   ]);
 
   // Get all folder IDs for drag and drop context
@@ -968,23 +995,28 @@ const DocumentCardGrid: React.FC = () => {
       // If a search query is active, display search results (documents only)
       return {
         folders: [], // No folders in search results view
-        documents: processedSearchResults,
+        documents: filterDocuments(processedSearchResults),
       };
     }
 
+    // NEW: Only show folders when filter is 'all', otherwise show documents only
+    const shouldShowFolders = documentFilter === 'all';
+
     if (isInFolderView && currentFolderId) {
-      // Show documents in current folder + subfolders of current folder
-      const currentFolderSubfolders = folderTree.find(f => f.id === currentFolderId)?.children || [];
+      // Show documents in current folder + subfolders of current folder (if filter allows)
+      const currentFolderSubfolders = shouldShowFolders ? 
+        (folderTree.find(f => f.id === currentFolderId)?.children || []) : 
+        [];
       
       return {
         folders: currentFolderSubfolders,
-        documents: processedFolderContents
+        documents: filterDocuments(processedFolderContents)
       };
     } else {
-      // Show root level folders and documents
+      // Show root level folders and documents (folders only if filter is 'all')
       return {
-        folders: folderTree,
-        documents: processedRootDocuments
+        folders: shouldShowFolders ? folderTree : [],
+        documents: filterDocuments(processedRootDocuments)
       };
     }
   }, [
@@ -995,11 +1027,13 @@ const DocumentCardGrid: React.FC = () => {
     folderTree,
     processedFolderContents,
     processedRootDocuments,
+    filterDocuments,
+    documentFilter,
   ]);
 
   // ADD: Combine folders and documents for virtualization
   const allItems = useMemo(() => {
-    const items: Array<(MappedDocumentCardData & { itemType: 'document' }) | (Folder & { itemType: 'folder' }) > = [];
+    const items: Array<(ExtendedMappedDocumentCardData & { itemType: 'document' }) | (Folder & { itemType: 'folder' }) > = [];
     // Ensure currentDisplayItems.folders and currentDisplayItems.documents are always arrays
     (currentDisplayItems.folders || []).forEach(folder => {
       items.push({ ...folder, id: `folder-${folder.id}`, itemType: 'folder' });
@@ -1145,6 +1179,22 @@ const DocumentCardGrid: React.FC = () => {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const { openMobileSidebar } = useModalStore();
   const [loadingDocumentId, setLoadingDocumentId] = useState<string | null>(null);
+
+  // Helper function to get current filter display info
+  const getCurrentFilterInfo = () => {
+    switch (documentFilter) {
+      case 'all':
+        return { label: 'All Documents', icon: FileText };
+      case 'my-documents':
+        return { label: 'My Documents', icon: Home };
+      case 'shared-with-me':
+        return { label: 'Shared with Me', icon: Users };
+      case 'shared-with-others':
+        return { label: 'Shared with Others', icon: UserPlus };
+      default:
+        return { label: 'All Documents', icon: FileText };
+    }
+  };
 
   // Function to render the main content of the grid (items, loading, errors, empty states)
   const renderGridContent = () => {
@@ -1330,15 +1380,21 @@ const DocumentCardGrid: React.FC = () => {
                           <DocumentCard
                             key={item.id} // DocumentCard already has a key, but outer div needs one too
                             id={item.id}
-                            title={(item as MappedDocumentCardData).title}
-                            lastUpdated={(item as MappedDocumentCardData).lastUpdated}
-                            snippet={(item as MappedDocumentCardData).snippet}
-                            is_starred={(item as MappedDocumentCardData).is_starred}
+                            title={(item as ExtendedMappedDocumentCardData).title}
+                            lastUpdated={(item as ExtendedMappedDocumentCardData).lastUpdated}
+                            snippet={(item as ExtendedMappedDocumentCardData).snippet}
+                            is_starred={(item as ExtendedMappedDocumentCardData).is_starred}
                             isSelected={selectedItemIds.has(item.id)}
                             onToggleSelect={() => toggleSelectItem(item.id)}
                             onToggleStar={handleToggleStarGridItem}
                             isLoading={loadingDocumentId === item.id}
                             onClick={() => setLoadingDocumentId(item.id)}
+                            is_shared_with_others={(item as ExtendedMappedDocumentCardData).is_shared_with_others}
+                            // NEW: Shared document props
+                            access_type={(item as ExtendedMappedDocumentCardData).access_type === 'shared' ? 'shared' : 'private'}
+                            permission_level={(item as ExtendedMappedDocumentCardData).permission_level}
+                            owner_email={(item as ExtendedMappedDocumentCardData).owner_email}
+                            showOwnerInfo={true}
                           />
                         )}
                       </div>
@@ -1362,8 +1418,8 @@ const DocumentCardGrid: React.FC = () => {
 
     return (
       <div 
-        className="text-white" // Further simplified: only text color
-        style={{ backgroundColor: 'rgba(0, 100, 255, 0.25)', minWidth: '180px', minHeight: '100px' }} // Kept direct RGBA bg
+        className="text-white rounded-lg" // Added rounded corners
+        style={{ backgroundColor: 'rgba(199, 149, 83, 0.25)', minWidth: '180px', minHeight: '100px' }} // Changed to title hover color with transparency
       >
         {draggedItems.length === 1 && draggedItems[0].type === 'document' && (
           <FileTextIcon size={28} className="mb-1" />
@@ -1424,12 +1480,60 @@ const DocumentCardGrid: React.FC = () => {
             </Button>
           )}
         </div>
+        
+        {/* Connection Status Indicator */}
+        <ConnectionStatusIndicator className="ml-2" />
       </div>
 
-      {/* Sorting Controls & New Folder Button */}
-      <div className="p-4 flex items-center justify-between gap-x-2 border-b border-[--border-color]" role="toolbar" aria-label="Document sorting controls">
-        {/* Left Group: Sort Dropdown */}
+      {/* Sorting Controls, Filter Controls & New Folder Button */}
+      <div className="p-4 flex items-center justify-between gap-x-2 border-b border-[--border-color]" role="toolbar" aria-label="Document controls">
+        {/* Left Group: Filter and Sort Dropdowns */}
         <div className="flex items-center gap-x-2">
+          {/* Document Filter Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="flex items-center gap-x-1">
+                <Filter className="h-4 w-4" />
+                {getCurrentFilterInfo().label}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent 
+              align="start"
+              className="bg-gray-50 dark:bg-gray-800 border-input text-[var(--text-color)] shadow-md"
+            >
+              <DropdownMenuItem 
+                onClick={() => setDocumentFilter('all')}
+                className="flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
+              >
+                <FileText className="w-4 h-4" />
+                All Documents
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => setDocumentFilter('my-documents')}
+                className="flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
+              >
+                <Home className="w-4 h-4" />
+                My Documents
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => setDocumentFilter('shared-with-me')}
+                className="flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
+              >
+                <Users className="w-4 h-4" />
+                Shared with Me
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => setDocumentFilter('shared-with-others')}
+                className="flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
+              >
+                <UserPlus className="w-4 h-4" />
+                Shared with Others
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Sort Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="flex items-center gap-x-1">
@@ -1437,19 +1541,28 @@ const DocumentCardGrid: React.FC = () => {
                 <ChevronDown className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={() => handleSortKeyChange('lastUpdated')}
+            <DropdownMenuContent 
+              align="start"
+              className="bg-gray-50 dark:bg-gray-800 border-input text-[var(--text-color)] shadow-md"
+            >
+              <DropdownMenuItem 
+                onClick={() => handleSortKeyChange('lastUpdated')}
                 aria-pressed={sortKey === 'lastUpdated'}
+                className="hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
               >
                 Last Updated
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleSortKeyChange('title')}
+              <DropdownMenuItem 
+                onClick={() => handleSortKeyChange('title')}
                 aria-pressed={sortKey === 'title'}
+                className="hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
               >
                 Title
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleSortKeyChange('is_starred')}
+              <DropdownMenuItem 
+                onClick={() => handleSortKeyChange('is_starred')}
                 aria-pressed={sortKey === 'is_starred'}
+                className="hover:bg-gray-200 dark:hover:bg-gray-700 focus:bg-gray-200 dark:focus:bg-gray-700 text-[var(--text-color)]"
               >
                 Starred
               </DropdownMenuItem>
@@ -1472,14 +1585,14 @@ const DocumentCardGrid: React.FC = () => {
             variant="default"
             size="sm"
             onClick={handleCreateFolder}
-            className="flex items-center" // Removed gap-2 as parent div now has gap-x-2
+            className="flex items-center"
           >
-            <FolderPlus className="w-4 h-4 mr-1.5" /> {/* Added explicit margin for icon */}
+            <FolderPlus className="w-4 h-4 mr-1.5" />
             New
           </Button>
         </div>
         <div id="sort-help" className="sr-only">
-          Choose how to sort the document list. Current sort: {sortKey} in {sortDirection === 'asc' ? 'ascending' : 'descending'} order.
+          Choose how to filter and sort the document list. Current filter: {getCurrentFilterInfo().label}. Current sort: {sortKey} in {sortDirection === 'asc' ? 'ascending' : 'descending'} order.
         </div>
       </div>
 

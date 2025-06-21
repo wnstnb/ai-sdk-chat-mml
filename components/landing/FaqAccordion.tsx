@@ -43,8 +43,8 @@ const items = [
   },
   {
     id: "7",
-    title: "Do notes have to be in a folder?",
-    content: "No, notes don't need to be in a folder. If you don't want to put it in a folder but want regular access to it, you can also star it and access it via the Quick Access button to the left of the title.",
+    title: "Do all notes need to be in a folder?",
+    content: "No, notes don't need to be in a folder. Organize your notes however works best for you, and let the AI help you find what you need instantly.",
   },
   {
     id: "8",

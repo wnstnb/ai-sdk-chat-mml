@@ -23,6 +23,15 @@ export interface Document {
   created_at: string; // timestamp with time zone
   updated_at: string; // timestamp with time zone
   is_starred: boolean; // Added for Quick Access feature
+  sharing_info?: { permission_count: number } | null; // Added for sharing indicator using shared docs function
+}
+
+// Extended document interface for API responses that include sharing information
+export interface DocumentWithSharingInfo extends Document {
+  access_type: 'owned' | 'shared';
+  permission_level?: string;
+  owner_id: string;
+  owner_email?: string;
 }
 
 export interface Message {

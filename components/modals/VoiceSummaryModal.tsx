@@ -1,6 +1,7 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { useModalStore } from '@/stores/useModalStore';
-import { X, Mic, Square as StopIcon, FileText as NotesIcon, ChevronDown, Eraser, BotMessageSquare, FilePlus2 } from 'lucide-react';
+import { X, Mic, Square as StopIcon, FileText as NotesIcon, ChevronDown, Eraser, BotMessageSquare, FilePlus2, Minimize2, Maximize2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +23,8 @@ import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import CustomAudioVisualizer from '@/components/editor/CustomAudioVisualizer';
+import RecordingStatusOverlay from '@/components/ui/RecordingStatusOverlay';
+import { useRecordingTimer } from '@/hooks/useRecordingTimer';
 import type { AudioTimeDomainData } from '@/lib/hooks/editor/useChatInteractions';
 import { debounce } from '@/lib/utils/debounce';
 import { useRouter } from 'next/navigation';
@@ -90,6 +93,9 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
   const [targetDocument, setTargetDocument] = React.useState<TargetDocumentType>('new'); // State for target selection
   const [isCreatingNewDocument, setIsCreatingNewDocument] = React.useState<boolean>(false);
   const [recordingStartTime, setRecordingStartTime] = React.useState<string | null>(null);
+  
+  // Use shared recording timer hook
+  const { formattedTime } = useRecordingTimer(isRecordingFromStore, recordingStartTime);
 
   // --- NEW: State for WebSocket configuration ---
   const [websocketUrl, setWebsocketUrl] = React.useState<string | null>(null);
@@ -97,6 +103,41 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
   const [isFetchingConfig, setIsFetchingConfig] = React.useState<boolean>(false);
   const [configError, setConfigError] = React.useState<string | null>(null);
   // --- END NEW STATE ---
+
+  // --- NEW: Minimization state ---
+  const [isMinimized, setIsMinimized] = React.useState<boolean>(false);
+  // --- END MINIMIZATION STATE ---
+
+  // --- NEW: Chat input container reference for positioning ---
+  const [chatInputContainer, setChatInputContainer] = React.useState<HTMLElement | null>(null);
+  
+  React.useEffect(() => {
+    const findChatInputContainer = () => {
+      // Look for the chat input container when chat is collapsed/pinned
+      // This is the container with relative positioning that we can attach to
+      const container = document.querySelector('.pt-4.z-10.bg-\\[--editor-bg\\].flex-shrink-0.w-full.relative') as HTMLElement ||
+                       document.querySelector('[class*="pt-4"][class*="z-10"][class*="relative"]') as HTMLElement;
+      
+      setChatInputContainer(container);
+    };
+
+    // Check initially
+    findChatInputContainer();
+
+    // Set up observer to watch for changes in the layout
+    const observer = new MutationObserver(findChatInputContainer);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class']
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+  // --- END CHAT INPUT CONTAINER DETECTION ---
 
   const toggleVoiceSummaryRecording = useModalStore(state => state.toggleVoiceSummaryRecording);
   const setVoiceSummaryTranscription = useModalStore(state => state.setVoiceSummaryTranscription);
@@ -134,6 +175,8 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
   React.useEffect(() => {
     isRecordingRef.current = isRecordingFromStore;
   }, [isRecordingFromStore]);
+
+  // Timer is now handled by the useRecordingTimer hook
 
   // --- NEW: Function to fetch WebSocket configuration ---
   const fetchWebsocketConfig = React.useCallback(async (): Promise<{ websocketUrl: string; websocketAuthToken: string } | null> => {
@@ -185,6 +228,8 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
     () => debounce((text: string) => setVoiceSummaryTranscription(text), 100),
     [setVoiceSummaryTranscription]
   );
+
+  // Timer formatting is now handled by the useRecordingTimer hook
 
   // Memoized helper functions
   const stopAudioCapture = React.useCallback(() => {
@@ -246,8 +291,35 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
   }, [stopAudioCapture, disconnectWebSocket]);
   
   // Enhanced close handler
+  // --- NEW: Minimize/Maximize handlers ---
+  const handleMinimize = React.useCallback(() => {
+    setIsMinimized(true);
+    // Announce to screen readers
+    const statusDiv = document.getElementById('voice-summary-status');
+    if (statusDiv) {
+      statusDiv.textContent = 'Voice summary minimized to floating widget.';
+    }
+    console.log("[VoiceSummaryModal] Modal minimized to floating widget");
+  }, []);
+
+  const handleMaximize = React.useCallback(() => {
+    console.log("[VoiceSummaryModal] handleMaximize called");
+    setIsMinimized(false);
+    // Announce to screen readers
+    const statusDiv = document.getElementById('voice-summary-status');
+    if (statusDiv) {
+      statusDiv.textContent = 'Voice summary expanded to full modal.';
+    }
+    // Return focus to mic button when maximizing
+    setTimeout(() => {
+      micButtonRef.current?.focus();
+    }, 100);
+    console.log("[VoiceSummaryModal] Modal maximized from floating widget");
+  }, []);
+  // --- END MINIMIZE/MAXIMIZE HANDLERS ---
+
   const handleCloseModal = React.useCallback(() => {
-    console.log("[VoiceSummaryModal handleCloseModal] Called. Current isRecording state (ref):", isRecordingRef.current);
+    console.log("[VoiceSummaryModal handleCloseModal] Called from floating widget. Current isRecording state (ref):", isRecordingRef.current);
     
     // Always attempt to stop recording and cleanup, regardless of the initial ref state.
     // handleStopRecordingAndCleanup is designed to be safe to call even if not actively recording.
@@ -255,34 +327,61 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
 
     const hasTranscription = finalizedTranscriptContent.current && finalizedTranscriptContent.current.trim() !== '';
     const hasNotes = !!generatedNotes;
-    const hasUnhandledContent = hasTranscription || hasNotes;
-    console.log("[VoiceSummaryModal handleCloseModal] Post-cleanup. HasTranscription:", hasTranscription, "HasNotes:", hasNotes);
+    const wasRecording = isRecordingRef.current; // Store the recording state before cleanup
+    const hasUnhandledContent = hasTranscription || hasNotes || wasRecording; // Include active recording as "content"
+    console.log("[VoiceSummaryModal handleCloseModal] Post-cleanup. HasTranscription:", hasTranscription, "HasNotes:", hasNotes, "WasRecording:", wasRecording);
 
-    if (hasUnhandledContent && !isRecordingRef.current) { // Check ref *after* cleanup attempt
-      if (window.confirm('You have unsaved content. Discard this content and close?')) {
-        console.log("[VoiceSummaryModal handleCloseModal] Confirmed discard unsaved content.");
+    if (hasUnhandledContent) { // Remove the !isRecordingRef.current condition
+      const confirmMessage = wasRecording 
+        ? 'You have an active recording. Stop recording and discard content?' 
+        : 'You have unsaved content. Discard this content and close?';
+        
+      if (window.confirm(confirmMessage)) {
+        console.log("[VoiceSummaryModal handleCloseModal] Confirmed discard content.");
         clearModalContent(); 
+        setIsMinimized(false); // Reset minimized state
         onClose();
       } else {
         // User chose not to discard, so modal remains open. 
-        // If recording was stopped, it remains stopped.
+        // Since handleStopRecordingAndCleanup() was already called, we need to update UI state
+        if (wasRecording) {
+          console.log("[VoiceSummaryModal handleCloseModal] User cancelled, updating UI to reflect stopped recording.");
+          // Only toggle if currently recording (to set to false)
+          if (isRecordingFromStore) {
+            toggleVoiceSummaryRecording(); // This will set isRecording to false
+          }
+          // The recording was already stopped by handleStopRecordingAndCleanup, just update UI
+        }
         return; 
       }
     } else {
-      // If there was no unhandled content, or if recording was active and stopped (user implicitly agreed by closing),
-      // or if user confirmed discard.
-      console.log("[VoiceSummaryModal handleCloseModal] No unhandled content or confirmed discard. Closing and clearing.");
+      // If there was no unhandled content
+      console.log("[VoiceSummaryModal handleCloseModal] No unhandled content. Closing and clearing.");
       clearModalContent(); 
+      setIsMinimized(false); // Reset minimized state
       onClose();
     }
   }, [generatedNotes, handleStopRecordingAndCleanup, clearModalContent, onClose]);
 
   React.useEffect(() => {
     if (isOpen) {
-      micButtonRef.current?.focus();
+      // Focus appropriate element based on minimized state
+      if (!isMinimized) {
+        micButtonRef.current?.focus();
+      }
+      
       const handleKeyDown = (event: KeyboardEvent) => {
         if (event.key === 'Escape') {
           handleCloseModal();
+        }
+        // NEW: Keyboard shortcut for minimize/maximize (Alt+M)
+        if (event.altKey && event.key === 'm') {
+          event.preventDefault();
+          if (isMinimized) {
+            handleMaximize();
+          } else {
+            handleMinimize();
+          }
         }
       };
       document.addEventListener('keydown', handleKeyDown as EventListener);
@@ -293,7 +392,7 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
       handleStopRecordingAndCleanup(); 
       // clearModalContent(); // Content clearing is now primarily handled by handleCloseModal or explicitly by user.
     }
-  }, [isOpen, handleCloseModal, handleStopRecordingAndCleanup]);
+  }, [isOpen, isMinimized, handleCloseModal, handleStopRecordingAndCleanup, handleMinimize, handleMaximize]);
 
   React.useEffect(() => {
     const statusDiv = document.getElementById('voice-summary-status');
@@ -628,6 +727,8 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
       analyserNodeRef.current.fftSize = 2048; // Example FFT size
       const bufferLength = analyserNodeRef.current.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
+      // Initialize with "silent" audio data (128 is the center value for silent audio)
+      dataArray.fill(128);
       setAnalyserData(dataArray); // Initialize state with correct size
 
       const workletBlob = new Blob([audioProcessorWorkletCode], { type: 'application/javascript' });
@@ -871,41 +972,26 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
     const actionInProgress = currentAction === 'summary' ? 'Generating summary...' : 'Prettifying transcript...';
 
     try {
-      await toast.promise(
-        async () => {
-          let result: { notes?: string | null; error?: string | null; } = { error: "Unknown action" };
-          if (currentAction === 'summary') {
-            result = await generateNotesFromTranscript(cleanedFinalizedContent, recordingStartTime || undefined);
-          } else if (currentAction === 'prettify') {
-            result = await prettifyTranscript(cleanedFinalizedContent, recordingStartTime || undefined);
-          }
+      let result: { notes?: string | null; error?: string | null; } = { error: "Unknown action" };
+      if (currentAction === 'summary') {
+        result = await generateNotesFromTranscript(cleanedFinalizedContent, recordingStartTime || undefined);
+      } else if (currentAction === 'prettify') {
+        result = await prettifyTranscript(cleanedFinalizedContent, recordingStartTime || undefined);
+      }
 
-          if (result.error) {
-            throw new Error(result.error);
-          } else if (result.notes) {
-            setGeneratedNotes(result.notes);
-            setActiveTab('notes');
-            return `${actionNoun} generated successfully!`;
-          } else {
-            throw new Error(`${actionNoun} generation returned no content.`);
-          }
-        },
-        {
-          loading: actionInProgress,
-          success: (message) => message,
-          error: (err) => {
-            setNotesError(err.message);
-            setGeneratedNotes(null);
-            // actionVerb and actionNoun are available here from the outer scope
-            return `Failed to ${actionVerb} transcript: ${err.message}`;
-          },
-        }
-      );
-    } catch (error: any) { // Catch errors from the promise setup itself or unhandled rejections
+      if (result.error) {
+        setNotesError(result.error);
+        setGeneratedNotes(null);
+      } else if (result.notes) {
+        setGeneratedNotes(result.notes);
+        setActiveTab('notes');
+      } else {
+        setNotesError(`${actionNoun} generation returned no content.`);
+        setGeneratedNotes(null);
+      }
+    } catch (error: any) {
       console.error(`Unexpected error during ${currentAction} process:`, error);
       setNotesError(`An unexpected error occurred: ${error.message}`);
-      // actionVerb is available here
-      toast.error(`An unexpected error occurred while trying to ${actionVerb} the transcript.`);
       setGeneratedNotes(null);
     } finally {
       setIsGeneratingNotes(false);
@@ -926,16 +1012,16 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
     const editor = editorRef.current;
 
     try {
-      let blocksToInsert: PartialBlock[] = await editor.tryParseMarkdownToBlocks(content);
-
-      if (blocksToInsert.length === 0 && content.trim() !== '') {
-        blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: content, styles: {} }] }];
+      // Use improved preprocessing for consistent block creation
+      const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+      const preprocessingResult = await preprocessAIContent(content, editor);
+      
+      if (!preprocessingResult.success || preprocessingResult.blocks.length === 0) {
+        toast.info("No content to insert or preprocessing failed.");
+        return;
       }
       
-      if (blocksToInsert.length === 0) {
-          toast.info("No content to insert.");
-          return;
-      }
+      const blocksToInsert = preprocessingResult.blocks;
 
       const { block: currentBlock } = editor.getTextCursorPosition();
       let referenceBlockId: string | undefined = currentBlock?.id;
@@ -1002,17 +1088,23 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
 
     if (editorRef?.current) {
       try {
-        blocksToInsert = await editorRef.current.tryParseMarkdownToBlocks(contentToSave);
-        if (blocksToInsert.length === 0 && contentToSave.trim() !== '') {
+        // Use improved preprocessing for consistent block creation
+        const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+        const preprocessingResult = await preprocessAIContent(contentToSave, editorRef.current);
+        
+        if (preprocessingResult.success && preprocessingResult.blocks.length > 0) {
+          blocksToInsert = preprocessingResult.blocks;
+        } else {
+          // Fallback for failed preprocessing
           blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
         }
       } catch (parseError) {
-        console.error("[VoiceSummaryModal] Error parsing markdown to blocks with editor, falling back to simple paragraph:", parseError);
+        console.error("[VoiceSummaryModal] Error preprocessing content, falling back to simple paragraph:", parseError);
         toast.info("Could not fully parse content for new document; formatting will be simplified.");
         blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
       }
     } else {
-      console.warn("[VoiceSummaryModal] Editor instance not available for tryParseMarkdownToBlocks. Creating document with content in a single paragraph. Advanced formatting may be lost.");
+      console.warn("[VoiceSummaryModal] Editor instance not available for preprocessing. Creating document with content in a single paragraph. Advanced formatting may be lost.");
       // No toast here, proceed with simplified blocks if on /launch
       blocksToInsert = [{ type: 'paragraph', content: [{ type: 'text', text: contentToSave, styles: {} }] }];
     }
@@ -1067,9 +1159,102 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
   const transcriptionAvailable = transcription && transcription !== initialTranscriptionPlaceholder && !!finalizedTranscriptContent.current.trim();
   const notesAvailable = !!generatedNotes;
 
+  // --- NEW: Floating Widget Component ---
+
+
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { handleCloseModal(); } }}>
+    <>
+      {/* Always render status div for screen readers */}
       <div className="sr-only" aria-live="polite" id="voice-summary-status"></div>
+      
+      {/* Render floating widget when minimized (no backdrop) */}
+      {isMinimized && (() => {
+        const floatingWidget = (
+          <div 
+            className={`${chatInputContainer ? 'absolute bottom-full left-0 right-0 mb-2' : 'fixed bottom-4 left-1/2 transform -translate-x-1/2'} bg-white/95 backdrop-blur-sm border border-gray-200 rounded-xl shadow-lg p-3 flex items-center gap-3 transition-all duration-300`}
+            style={{ 
+              zIndex: chatInputContainer ? 40 : 1000, 
+              pointerEvents: 'auto',
+              ...(chatInputContainer ? {
+                marginLeft: 'auto',
+                marginRight: 'auto',
+                width: 'fit-content'
+              } : {})
+            }}
+            role="dialog"
+            aria-expanded="false"
+            aria-controls="voiceSummaryModalTitle"
+            aria-label={isRecordingRef.current ? "Voice summary recording in progress - expand to view details" : "Voice summary - expand to view details"}
+          >
+            {/* Audio visualizer */}
+            <div className="w-20 h-8 rounded-md overflow-hidden" style={{ pointerEvents: 'none' }}>
+              <CustomAudioVisualizer 
+                audioTimeDomainData={analyserData} 
+                barWidth={3} 
+                barGap={1} 
+                sensitivity={2} 
+              />
+            </div>
+
+            {/* Record/Stop button */}
+            <Button
+              onClick={() => {
+                console.log("FLOATING_WIDGET: Record button clicked");
+                handleRecordToggle();
+              }}
+              aria-label={isRecordingRef.current ? 'Stop recording' : 'Start recording'}
+              variant="outline"
+              size="sm"
+              className={`w-8 h-8 p-0 rounded-full transition-colors ${
+                isRecordingRef.current 
+                  ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' 
+                  : 'bg-slate-700 hover:bg-slate-600 text-white'
+              }`}
+              style={{ pointerEvents: 'auto' }}
+            >
+              {isRecordingRef.current ? <StopIcon size={14} style={{ pointerEvents: 'none' }} /> : <Mic size={14} style={{ pointerEvents: 'none' }} />}
+            </Button>
+
+            {/* Expand button */}
+            <Button
+              onClick={() => {
+                console.log("FLOATING_WIDGET: Expand button clicked");
+                handleMaximize();
+              }}
+              aria-label="Expand voice summary to full modal"
+              variant="outline"
+              size="sm"
+              className="w-8 h-8 p-0 rounded-full"
+              style={{ pointerEvents: 'auto' }}
+            >
+              <Maximize2 size={14} style={{ pointerEvents: 'none' }} />
+            </Button>
+
+            {/* Close button */}
+            <Button
+              onClick={() => {
+                console.log("FLOATING_WIDGET: Close button clicked");
+                handleCloseModal();
+              }}
+              aria-label="Close voice summary"
+              variant="outline"
+              size="sm"
+              className="w-8 h-8 p-0 rounded-full"
+              style={{ pointerEvents: 'auto' }}
+            >
+              <X size={14} style={{ pointerEvents: 'none' }} />
+            </Button>
+          </div>
+        );
+
+        // If we have a chat input container, render the widget as a portal inside it
+        // Otherwise, render it normally at the document root
+        return chatInputContainer ? createPortal(floatingWidget, chatInputContainer) : floatingWidget;
+      })()}
+      
+      {/* Only render Dialog when NOT minimized */}
+      {!isMinimized && (
+        <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { handleCloseModal(); } }}>
       <DialogContent 
         className="bg-[var(--editor-bg)] text-[--text-color] p-6 w-full max-w-lg flex flex-col max-h-[90vh]"
         style={{ zIndex: 1050 }}
@@ -1078,22 +1263,49 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
           if ((e.target as HTMLElement).closest('[data-sonner-toast]')) {
             e.preventDefault();
           }
+          // Note: When NOT minimized, we want normal click-outside behavior to trigger handleCloseModal
         }}
         onInteractOutside={(e) => {
           // Allow interaction with toasts
           if ((e.target as HTMLElement).closest('[data-sonner-toast]')) {
             e.preventDefault();
           }
+          // Note: When NOT minimized, we want normal click-outside behavior to trigger handleCloseModal
         }}
       >
+        {/* Minimize button positioned right next to the built-in close button */}
+        <button
+          onClick={handleMinimize}
+          aria-label="Minimize voice summary to floating widget"
+          className="absolute top-4 right-12 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground z-10"
+        >
+          <Minimize2 className="h-4 w-4" />
+          <span className="sr-only">Minimize</span>
+        </button>
+        
         <DialogHeader className="mb-4">
           <DialogTitle id="voiceSummaryModalTitle" className="text-xl font-semibold text-center">Voice Summary</DialogTitle>
         </DialogHeader>
         
         {/* Audio Visualizer - Placed above tabs for visibility during recording */}
         {isRecordingRef.current && (
-          <div className="my-3 h-16 w-full bg-gray-800 rounded-md overflow-hidden">
-            <CustomAudioVisualizer audioTimeDomainData={analyserData} barColor='#4A90E2' barWidth={3} barGap={2} sensitivity={3} />
+          <div className="my-3 h-10 w-full rounded-md overflow-hidden relative">
+            {/* Audio Visualizer - Aligned with ChatInputUI design */}
+            <div className="w-full h-full px-3">
+              <CustomAudioVisualizer 
+                audioTimeDomainData={analyserData} 
+                barWidth={5} 
+                barGap={2} 
+                sensitivity={2} 
+              />
+            </div>
+
+            {/* Recording Status Overlay - Using shared component */}
+            <RecordingStatusOverlay
+              isRecording={isRecordingRef.current}
+              formattedTime={formattedTime()}
+              timerAriaLabel={`Recording duration: ${formattedTime()}`}
+            />
           </div>
         )}
 
@@ -1116,7 +1328,7 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
             ref={notesTabContentRef}
             className="flex-grow overflow-y-auto mt-2 border border-[--border-color] rounded p-3 bg-[--input-bg] min-h-[150px] max-w-full text-sm"
           >
-            {isGeneratingNotes && !toast.loading ? ( // Show placeholder only if not handled by toast
+            {isGeneratingNotes ? (
               <p className="text-sm text-[--muted-text-color] animate-pulse">
                 {notesAction === 'summary' ? 'Generating summary...' : 'Prettifying transcript...'}
               </p>
@@ -1175,7 +1387,6 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
                 setGeneratedNotes(null);
                 setNotesError(null);
                 setRecordingStartTime(null);
-                toast.info("Transcription and notes cleared.");
               }}
               disabled={isRecordingRef.current || (!transcriptionAvailable && !notesAvailable)}
               variant="outline"
@@ -1312,5 +1523,7 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
         </div>
       </DialogContent>
     </Dialog>
+      )}
+    </>
   );
 };

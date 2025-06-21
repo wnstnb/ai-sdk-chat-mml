@@ -68,6 +68,9 @@ import type {
     MessageWithSignedUrl,
 } from '@/types/supabase'; // Supabase data types
 
+// Supabase client for auth
+import { supabase } from '@/lib/supabase/client';
+
 // Utils
 import {
     getInlineContentText,
@@ -101,6 +104,7 @@ import {
 import { useFollowUpStore } from '@/lib/stores/followUpStore';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore'; // Import preference store
 import { useModalStore } from '@/stores/useModalStore'; // Corrected Path
+import { useAuthStore } from '@/lib/stores/useAuthStore';
 
 
 // --- NEW: Import the hooks ---
@@ -114,6 +118,8 @@ import { useChatPane } from '@/lib/hooks/editor/useChatPane';
 import { useFileUpload } from '@/lib/hooks/editor/useFileUpload'; // Corrected Path
 // --- NEW: Import the useChatInteractions hook ---
 import { useChatInteractions } from '@/lib/hooks/editor/useChatInteractions';
+// --- NEW: Import document permissions hook ---
+import { useDocumentPermissions } from '@/hooks/useDocumentPermissions';
 import { ChatInputArea } from '@/components/editor/ChatInputArea'; // Import the new component
 import { ChatMessagesList } from '@/components/editor/ChatMessagesList'; // Import the new component
 import { ChatPaneWrapper } from '@/components/editor/ChatPaneWrapper'; // Import the new wrapper
@@ -126,6 +132,8 @@ import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import { VersionHistoryModal } from '@/components/editor/VersionHistoryModal';
 // --- NEW: Import DocumentReplacementConfirmationModal ---
 import DocumentReplacementConfirmationModal from '@/components/modals/DocumentReplacementConfirmationModal';
+// --- NEW: Import ShareDocumentModal ---
+import { ShareDocumentModal } from '@/components/modals/ShareDocumentModal';
 // --- Use standard aiToast utility for proper positioning ---
 import { aiToast } from '@/lib/utils/aiToast';
 // REMOVED: SearchModal import for now, will be re-added at a higher level
@@ -142,6 +150,7 @@ import { useClientChatOperationStore } from '@/lib/stores/useClientChatOperation
 import { BlockStatus } from '@/app/lib/clientChatOperationState';
 import { AIToolState, AudioState, FileUploadState } from '@/app/lib/clientChatOperationState';
 import { AttachedToastProvider } from '@/contexts/AttachedToastContext';
+import { CollaborationProvider, useCollaborationContext } from '@/contexts/CollaborationContext';
 
 // Dynamically import BlockNoteEditorComponent with SSR disabled
 const BlockNoteEditorComponent = dynamic(
@@ -165,14 +174,24 @@ const MOBILE_BREAKPOINT_QUERY = '(max-width: 768px)'; // Corresponds to Tailwind
 // Define the BlockNote schema
 const schema = BlockNoteSchema.create();
 
-// --- Main Editor Page Component ---
-export default function EditorPage() {
+// --- Inner component that uses CollaborationContext ---
+function EditorPageContent() {
     // --- Top-Level Hooks (React, Next.js) ---
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
     const pathname = usePathname();
-    const documentId = params?.documentId as string; 
+    const documentId = params?.documentId as string;
+    
+    // Get collaboration context and auth state
+    const { 
+        initializeCollaboration, 
+        activeUsers, 
+        isConnected: isCollaborationConnected, 
+        connectionState,
+        refreshConnection 
+    } = useCollaborationContext();
+    const { user } = useAuthStore(); 
     
     // --- Refs --- (Declare refs early if needed by custom hooks)
     const editorRef = useRef<BlockNoteEditor<typeof schema.blockSchema>>(null);
@@ -234,6 +253,10 @@ export default function EditorPage() {
     const [formElement, setFormElement] = useState<HTMLFormElement | null>(null);
     // --- NEW: State for Mini-Pane ---
     const [isMiniPaneOpen, setIsMiniPaneOpen] = useState(false);
+    // --- NEW: State for tracking unread messages in mini pane ---
+    const [unreadMiniPaneCount, setUnreadMiniPaneCount] = useState(0);
+    // --- NEW: Ref to track the last seen message count ---
+    const lastSeenMessageCountRef = useRef(0);
     // --- ADDED: State for document star status ---
     const [currentDocIsStarred, setCurrentDocIsStarred] = useState(false);
     // --- NEW: State for current theme ---
@@ -282,6 +305,21 @@ export default function EditorPage() {
     // --- Custom Hooks --- (Order is important!)
     const { documentData, initialEditorContent, isLoadingDocument, error: documentError } = useDocument(documentId);
     
+    // --- NEW: Get document permissions ---
+    const { canEdit, canView, userPermission, isLoading: permissionsLoading } = useDocumentPermissions(documentId);
+    
+    // Initialize collaboration when document and user are available
+    useEffect(() => {
+        if (documentData && user?.id) {
+            initializeCollaboration(
+                documentId,
+                user.id,
+                user.user_metadata?.name || user.email || 'Anonymous User',
+                undefined // Let it generate a color
+            );
+        }
+    }, [documentData, user, documentId, initializeCollaboration]);
+    
     // --- ADDED: Initialize diff tracking when document loads ---
     useEffect(() => {
         if (documentData?.content) {
@@ -300,7 +338,7 @@ export default function EditorPage() {
     const isMobile = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
 
     // Added for Live Summaries
-    const { openVoiceSummaryModal, setEditorRef, setBlockStatusFunction } = useModalStore(); // Get setEditorRef
+    const { openVoiceSummaryModal, setEditorRef, setBlockStatusFunction, isShareDocumentModalOpen, closeShareDocumentModal } = useModalStore(); // Get setEditorRef and ShareDocumentModal state
     const { currentTitle, isEditingTitle, newTitleValue, isInferringTitle, handleEditTitleClick, handleCancelEditTitle, handleSaveTitle, handleTitleInputKeyDown, handleInferTitle, setNewTitleValue } = useTitleManagement({
         documentId,
         initialName: documentData?.name || '',
@@ -321,7 +359,15 @@ export default function EditorPage() {
     
     // Debug: Image upload state (removed due to infinite loop)
     
-    const { isLoadingMessages, initialMessages } = useInitialChatMessages({
+    const { 
+        isLoadingMessages, 
+        initialMessages, 
+        displayedMessages, 
+        setDisplayedMessages,
+        canLoadMore, 
+        isLoadingMore, 
+        loadMoreMessages 
+    } = useInitialChatMessages({
         documentId,
         setPageError
     });
@@ -455,8 +501,10 @@ export default function EditorPage() {
         isTranscribing,
         micPermissionError,
         handleMicrophoneClick,
-        handleStopRecording, 
+        handleStopRecording,
+        handleCancelRecording, // Cancel recording without sending
         audioTimeDomainData, // <<< NEW: Exposed audio data for visualization
+        recordingDuration, // NEW: Recording timer duration
         // --- END NEW AUDIO PROPS ---
         // --- NEW TAGGED DOCUMENTS PROPS ---
         taggedDocuments,
@@ -488,12 +536,21 @@ export default function EditorPage() {
     // Create aliases for missing functions expected by components
     const startRecording = handleMicrophoneClick;
     const stopRecording = handleStopRecording;
+    const onCancelRecording = handleCancelRecording; // Cancel recording without sending
     const orchestratorHandleFileUploadStart = handleFileUpload;
     const orchestratorCancelFileUpload = cancelFileUpload;
     const orchestratorPendingFile = pendingFile;
     const orchestratorIsFileUploadInProgress = isFileUploadInProgress;
     const orchestratorIsChatInputBusy = isChatInputBusy;
     const orchestratorCurrentOperationStatusText = currentOperationStatusText;
+    
+    // --- NEW: Silence detection callback ---
+    const handleSilenceDetected = useCallback(() => {
+        console.log('[EditorPage] Silence detected, triggering auto-stop');
+        if (isRecording) {
+            handleStopRecording(); // This will stop recording and trigger transcription
+        }
+    }, [isRecording, handleStopRecording]);
     
     const { followUpContext, setFollowUpContext } = useFollowUpStore();
 
@@ -564,26 +621,50 @@ export default function EditorPage() {
         }
     };
 
+    // --- Helper function to get auth headers ---
+    const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
+        try {
+            console.log('[Auth Headers] Getting session for auto-save...');
+            const { data: { session } } = await supabase.auth.getSession();
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json'
+            };
+            if (session?.access_token) {
+                console.log('[Auth Headers] Adding Authorization header to auto-save request');
+                headers['Authorization'] = `Bearer ${session.access_token}`;
+            } else {
+                console.warn('[Auth Headers] No access token found in session');
+            }
+            return headers;
+        } catch (error) {
+            console.error('[Auth Headers] Failed to get session:', error);
+            return { 'Content-Type': 'application/json' };
+        }
+    }, []);
+
     // --- Callback Hooks (Defined BEFORE Early Returns) ---
     const triggerSaveDocument = useCallback(async (content: string, docId: string) => {
-        console.log(`[Autosave] Triggering save for document ${docId}`);
+        console.log(`[Autosave] triggerSaveDocument called for document ${docId}`);
         try {
+            console.log('[Autosave] Getting auth headers...');
+            const headers = await getAuthHeaders();
+            console.log('[Autosave] Making fetch request with headers:', Object.keys(headers));
             const response = await fetch(`/api/documents/${docId}/content`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ content: JSON.parse(content) }),
             });
             if (!response.ok) {
                 const errData = await response.json().catch(() => ({}));
                 throw new Error(errData.error?.message || `Autosave failed (${response.status})`);
             }
-            console.log(`[Autosave] Document ${docId} saved successfully.`);
+            console.log(`[Autosave] Document ${docId} saved successfully via triggerSaveDocument.`);
             return true;
         } catch (err: any) {
-            console.error(`[Autosave] Failed to save document ${docId}:`, err);
+            console.error(`[Autosave] triggerSaveDocument failed for document ${docId}:`, err);
             throw err;
         }
-    }, []); 
+    }, [getAuthHeaders]); 
 
     // --- NEW: Callback ref for the form ---
     const formCallbackRef = useCallback((node: HTMLFormElement | null) => {
@@ -701,9 +782,10 @@ export default function EditorPage() {
             if (!localData) return false;
 
             const { content } = JSON.parse(localData);
+            const headers = await getAuthHeaders();
             const response = await fetch(`/api/documents/${documentId}/content`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ content }),
             });
 
@@ -724,7 +806,7 @@ export default function EditorPage() {
             console.error('[Promote Save] Failed to promote local save to server:', error);
             return false;
         }
-    }, [documentId]);
+    }, [documentId, getAuthHeaders]);
 
     const getAutosaveDelay = useCallback((batchContext: typeof autosaveBatchContext) => {
         const currentTime = Date.now();
@@ -749,6 +831,7 @@ export default function EditorPage() {
     const handleEditorChange = useCallback((editor: BlockNoteEditorType) => {
         console.log('[handleEditorChange] CALLED - document length:', editor.document.length);
         console.log('[handleEditorChange] Current batch context:', autosaveBatchContext);
+        console.log('[handleEditorChange] User permission:', userPermission, 'canEdit:', canEdit);
         setEditorRef(editorRef as React.RefObject<BlockNoteEditor<any> | null>);
 
         const editorContent = editor.document;
@@ -756,6 +839,19 @@ export default function EditorPage() {
             isContentLoadedRef.current = true;
             latestEditorBlocksRef.current = editorContent;
             latestEditorContentRef.current = JSON.stringify(editorContent);
+            return;
+        }
+
+        // PERMISSION CHECK: Only allow autosave for users with edit permissions
+        if (!canEdit) {
+            console.log('[handleEditorChange] Skipping autosave - user does not have edit permissions');
+            // Still update the refs to track content for collaboration, but don't trigger save
+            latestEditorBlocksRef.current = editorContent;
+            try {
+                latestEditorContentRef.current = JSON.stringify(editorContent);
+            } catch (stringifyError) {
+                console.error("[handleEditorChange] Failed to stringify editor content:", stringifyError);
+            }
             return;
         }
         
@@ -871,9 +967,12 @@ export default function EditorPage() {
             }
             
             try {
+                console.log('[Autosave Timer] Getting auth headers for direct fetch...');
+                const headers = await getAuthHeaders();
+                console.log('[Autosave Timer] Making direct fetch with headers:', Object.keys(headers));
                 const response = await fetch(`/api/documents/${documentId}/content`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify({ content: jsonContent, searchable_content: markdownContent }), 
                 });
                 if (!response.ok) {
@@ -913,7 +1012,7 @@ export default function EditorPage() {
             }
         }, delay);
         setAutosaveTimerId(newTimerId);
-    }, [documentId, autosaveTimerId, revertStatusTimerId, setEditorRef, autosaveBatchContext, getAutosaveDelay]);
+    }, [documentId, autosaveTimerId, revertStatusTimerId, setEditorRef, autosaveBatchContext, getAutosaveDelay, canEdit, userPermission, getAuthHeaders]);
 
     // Effect to set editorRef object in the global store - Reinstated and Corrected
     useEffect(() => {
@@ -977,9 +1076,10 @@ export default function EditorPage() {
                 }
             }
 
+            const headers = await getAuthHeaders();
             const response = await fetch(`/api/documents/${documentId}/manual-save`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ 
                     content: currentEditorContentJSON, 
                     searchable_content: searchableMarkdownContent 
@@ -997,7 +1097,7 @@ export default function EditorPage() {
             latestEditorBlocksRef.current = currentEditorContentJSON;
             latestEditorContentRef.current = JSON.stringify(currentEditorContentJSON);
             
-            toast.success('Document saved manually!');
+            console.log('Document saved manually!');
             setAutosaveStatus('saved'); // Reflects that the document is now in a saved state
             
             // Update document's last updated time in UI if available from response (e.g. for optimistic update)
@@ -1021,7 +1121,7 @@ export default function EditorPage() {
         } finally {
             setIsSaving(false);
         }
-    }, [documentId, editorRef, isSaving, autosaveTimerId, revertStatusTimerId, setAutosaveStatus, setIsSaving, setPageError]);
+    }, [documentId, editorRef, isSaving, autosaveTimerId, revertStatusTimerId, setAutosaveStatus, setIsSaving, setPageError, getAuthHeaders]);
 
     const handleNewDocument = useCallback(() => {
         router.push('/launch');
@@ -1129,14 +1229,18 @@ export default function EditorPage() {
                 totalInserted: number;
             } = { success: [], failed: [], totalInserted: 0 };
             
-            // Parse markdown content once for reuse
-            let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(markdownContent);
-            if (blocksToInsert.length === 0 && markdownContent.trim() !== '') {
-                blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: markdownContent, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
-            } else if (blocksToInsert.length === 0) {
-                toast.error("No content to insert.");
+            // Parse markdown content using our improved preprocessing utility
+            const { preprocessAIContent, createPreprocessingSummary } = await import('@/lib/utils/contentPreprocessing');
+            const preprocessingResult = await preprocessAIContent(markdownContent, editor);
+            
+            console.log('[addContent] ' + createPreprocessingSummary(preprocessingResult));
+            
+            if (!preprocessingResult.success || preprocessingResult.blocks.length === 0) {
+                toast.error("No content to insert or preprocessing failed.");
                 return;
             }
+            
+            const blocksToInsert = preprocessingResult.blocks;
             
             // Process each target block ID
             for (let i = 0; i < targetBlockIds.length; i++) {
@@ -1370,9 +1474,12 @@ export default function EditorPage() {
                 children: [] 
               };
             } else {
-              const parsedBlocks = await editor.tryParseMarkdownToBlocks(currentMarkdown);
-              if (parsedBlocks && parsedBlocks.length > 0) {
-                const { id: parsedId, ...restOfParsedBlock } = parsedBlocks[0];
+              // Use improved preprocessing for consistent block creation
+              const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+              const preprocessingResult = await preprocessAIContent(currentMarkdown, editor);
+              
+              if (preprocessingResult.success && preprocessingResult.blocks.length > 0) {
+                const { id: parsedId, ...restOfParsedBlock } = preprocessingResult.blocks[0];
                 blockDefinitionToUpdate = { ...restOfParsedBlock };
 
                 if (listTypes.includes(blockDefinitionToUpdate.type as string)) {
@@ -1834,23 +1941,26 @@ export default function EditorPage() {
                  return;
             }
 
-            // Parse the new markdown content into BlockNote blocks
-            let newBlocks: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(newTableMarkdown);
+            // Parse the new markdown content using our improved preprocessing utility
+            const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+            const preprocessingResult = await preprocessAIContent(newTableMarkdown, editor);
             
             // Handle potential empty result from parsing (e.g., AI returns empty string)
-            if (newBlocks.length === 0 && newTableMarkdown.trim() === '') {
+            if ((!preprocessingResult.success || preprocessingResult.blocks.length === 0) && newTableMarkdown.trim() === '') {
                 // If the AI intended to empty the table, remove the original block
                 editor.removeBlocks([tableBlockId]);
                 toast.success(`Table block ${tableBlockId} removed as replacement was empty.`);
                 handleEditorChange(editor);
                 return;
-            } else if (newBlocks.length === 0) {
+            } else if (!preprocessingResult.success || preprocessingResult.blocks.length === 0) {
                  // If parsing failed but markdown wasn't empty, treat as error
                  console.warn(`Failed to parse new table markdown for ${tableBlockId}. Markdown: ${newTableMarkdown}`);
                  // Keep the original table or revert? For now, just show error.
                  toast.error(`Failed to parse the updated table structure. Original table retained.`);
                  return;
             }
+            
+            const newBlocks = preprocessingResult.blocks;
             
             // Ensure the block still exists before replacing
              if (!editor.getBlock(tableBlockId)) {
@@ -1924,17 +2034,18 @@ export default function EditorPage() {
             const previousBlockIds = previousBlocks.map(block => block.id);
             console.log(`[ServerSide-ClientTool][replaceAllContent] Replacing ${previousBlockIds.length} blocks`);
             
-            // Parse the new markdown content
-            let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(newMarkdownContent);
-            if (blocksToInsert.length === 0 && newMarkdownContent.trim() !== '') {
-                blocksToInsert.push({ 
-                    type: 'paragraph', 
-                    content: [{ type: 'text', text: newMarkdownContent, styles: {} }] 
-                } as PartialBlock<typeof schema.blockSchema>);
-            } else if (blocksToInsert.length === 0) {
-                toast.error("No content to replace with.");
+            // Parse the new markdown content using our improved preprocessing utility
+            const { preprocessAIContent, createPreprocessingSummary } = await import('@/lib/utils/contentPreprocessing');
+            const preprocessingResult = await preprocessAIContent(newMarkdownContent, editor);
+            
+            console.log('[replaceAllContent] ' + createPreprocessingSummary(preprocessingResult));
+            
+            if (!preprocessingResult.success || preprocessingResult.blocks.length === 0) {
+                toast.error("No content to replace with or preprocessing failed.");
                 return;
             }
+            
+            const blocksToInsert = preprocessingResult.blocks;
             
              // Replace all document content using explicit transaction grouping
              // This ensures the entire replacement operation is grouped as a single undo/redo operation
@@ -2372,6 +2483,8 @@ export default function EditorPage() {
                             localStorage.removeItem(`tuon-editor-draft-${documentId}`);
                         }
                     } else {
+                        // Note: Cannot use async/await in beforeunload, so we'll try to get headers synchronously
+                        // This is a fallback - the main auto-save should handle auth properly
                         fetch(url, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
@@ -2398,6 +2511,8 @@ export default function EditorPage() {
                             const blob = new Blob([payload], { type: 'application/json' });
                             navigator.sendBeacon(url, blob);
                          } else {
+                            // Note: Cannot use async/await in beforeunload, so this is a fallback without auth
+                            // The main auto-save system should handle authenticated saves properly
                             fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true })
                                 .catch(err => console.warn('[beforeunload] fetch keepalive error:', err));
                         }
@@ -2505,9 +2620,10 @@ export default function EditorPage() {
                              }
                             
                             try {
+                                const headers = await getAuthHeaders();
                                 const response = await fetch(`/api/documents/${documentId}/content`, {
                                     method: 'PUT',
-                                    headers: { 'Content-Type': 'application/json' },
+                                    headers,
                                     body: JSON.stringify({ content: jsonContent, searchable_content: markdownContent }), 
                                 });
                                 if (!response.ok) {
@@ -2543,7 +2659,7 @@ export default function EditorPage() {
                 }
             }
         }
-    }, [isProcessingClientTools, isAiLoading, autosaveBatchContext, endAIToolsBatch, autosaveTimerId, getAutosaveDelay, documentId]);
+    }, [isProcessingClientTools, isAiLoading, autosaveBatchContext, endAIToolsBatch, autosaveTimerId, getAutosaveDelay, documentId, getAuthHeaders]);
     
     useEffect(() => { /* Effect for Embedding generation */
         return () => {
@@ -2629,11 +2745,16 @@ export default function EditorPage() {
         }
 
         try {
-            let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(content);
-             if (blocksToInsert.length === 0 && content.trim() !== '') {
-                 blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: content, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
-             }
-            else if (blocksToInsert.length === 0) return;
+            // Use improved preprocessing for consistent block creation
+            const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+            const preprocessingResult = await preprocessAIContent(content, editor);
+            
+            if (!preprocessingResult.success || preprocessingResult.blocks.length === 0) {
+                console.log('[handleSendToEditor] No content to insert or preprocessing failed');
+                return;
+            }
+            
+            const blocksToInsert = preprocessingResult.blocks;
             const { block: currentBlock } = editor.getTextCursorPosition();
             let referenceBlockId: string | undefined = currentBlock?.id;
             if (!referenceBlockId) { referenceBlockId = editor.document[editor.document.length - 1]?.id; }
@@ -2697,8 +2818,98 @@ export default function EditorPage() {
         }
     };
 
+    // --- NEW: Effect to initialize the assistant message count reference on first load ---
+    useEffect(() => {
+        if (messages && lastSeenMessageCountRef.current === 0) {
+            // On initial load, count only assistant messages and set the ref without incrementing unread count
+            const assistantMessageCount = messages.filter(msg => msg.role === 'assistant').length;
+            lastSeenMessageCountRef.current = assistantMessageCount;
+        }
+    }, [messages]);
+
+    // --- NEW: Effect to track new assistant messages for mini pane indicator ---
+    useEffect(() => {
+        if (!messages) return;
+        
+        // Count only assistant messages
+        const currentAssistantMessageCount = messages.filter(msg => msg.role === 'assistant').length;
+        
+        // If we have more assistant messages than we last saw (and it's not the initial load)
+        if (currentAssistantMessageCount > lastSeenMessageCountRef.current && lastSeenMessageCountRef.current >= 0) {
+            const newAssistantMessagesCount = currentAssistantMessageCount - lastSeenMessageCountRef.current;
+            
+            // Only increment unread count if mini pane is closed
+            if (!isMiniPaneOpen) {
+                setUnreadMiniPaneCount(prev => prev + newAssistantMessagesCount);
+            }
+            
+            // Update the last seen count
+            lastSeenMessageCountRef.current = currentAssistantMessageCount;
+        }
+        
+        // If mini pane is open, reset unread count
+        if (isMiniPaneOpen) {
+            setUnreadMiniPaneCount(0);
+        }
+    }, [messages, isMiniPaneOpen]);
+
+    // --- CRITICAL FIX: Sync useChat messages with displayedMessages for optimistic updates ---
+    useEffect(() => {
+        if (!messages || !displayedMessages) return;
+        
+        // Create maps for efficient lookup
+        const displayedMessagesMap = new Map(displayedMessages.map(msg => [msg.id, msg]));
+        const currentMessagesMap = new Map(messages.map(msg => [msg.id, msg]));
+        
+        // Find new messages that exist in `messages` but not in `displayedMessages`
+        const newMessages = messages.filter(msg => !displayedMessagesMap.has(msg.id));
+        
+        // Find existing messages that have been updated (content changed)
+        const updatedMessages = messages.filter(msg => {
+            const existingMsg = displayedMessagesMap.get(msg.id);
+            if (!existingMsg) return false; // This is a new message, handled above
+            
+            // Compare content to detect updates (e.g., streaming responses)
+            const currentContent = JSON.stringify(msg.content);
+            const existingContent = JSON.stringify(existingMsg.content);
+            return currentContent !== existingContent;
+        });
+        
+        if (newMessages.length > 0 || updatedMessages.length > 0) {
+            console.log(`[Chat Sync] Found ${newMessages.length} new messages and ${updatedMessages.length} updated messages to sync`, {
+                newMessages: newMessages.map(m => ({ id: m.id, role: m.role })),
+                updatedMessages: updatedMessages.map(m => ({ id: m.id, role: m.role, contentLength: typeof m.content === 'string' ? m.content.length : 'complex' }))
+            });
+            
+            // Update displayedMessages with both new and updated messages
+            setDisplayedMessages(prev => {
+                if (!prev) return prev;
+                
+                // Start with existing messages, but replace any that have been updated
+                let updatedList = prev.map(msg => {
+                    const updatedMsg = currentMessagesMap.get(msg.id);
+                    return updatedMsg || msg; // Use updated version if available, otherwise keep existing
+                });
+                
+                // Append any completely new messages
+                updatedList = [...updatedList, ...newMessages];
+                
+                return updatedList;
+            });
+        }
+    }, [messages, displayedMessages, setDisplayedMessages]);
+
     // --- NEW: Handler for Mini-Pane Toggle ---
-    const handleToggleMiniPane = () => setIsMiniPaneOpen(prev => !prev);
+    const handleToggleMiniPane = () => {
+        setIsMiniPaneOpen(prev => {
+            const newState = !prev;
+            // Clear unread count when opening the mini pane
+            if (newState) {
+                setUnreadMiniPaneCount(0);
+            }
+            return newState;
+        });
+    };
 
     // --- NEW: Desktop Pane Resize Handlers ---
     const handleDesktopResizePointerMove = useCallback((event: globalThis.PointerEvent) => { // Explicitly use globalThis.PointerEvent
@@ -2776,11 +2987,12 @@ export default function EditorPage() {
                 // Short delay to ensure editor is fully rendered and ready after pane switch
                 setTimeout(async () => {
                     try {
-                        let blocksToInsert: PartialBlock<typeof schema.blockSchema>[] = await editor.tryParseMarkdownToBlocks(pendingContentForEditor);
-                        if (blocksToInsert.length === 0 && pendingContentForEditor.trim() !== '') {
-                            blocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: pendingContentForEditor, styles: {} }] } as PartialBlock<typeof schema.blockSchema>);
-                        }
-                        if (blocksToInsert.length > 0) {
+                        // Use improved preprocessing for consistent block creation
+                        const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+                        const preprocessingResult = await preprocessAIContent(pendingContentForEditor, editor);
+                        
+                        if (preprocessingResult.success && preprocessingResult.blocks.length > 0) {
+                            const blocksToInsert = preprocessingResult.blocks;
                             const { block: currentBlock } = editor.getTextCursorPosition();
                             let referenceBlockId: string | undefined = currentBlock?.id;
                             if (!referenceBlockId && editor.document.length > 0) {
@@ -3129,14 +3341,67 @@ export default function EditorPage() {
     }, [chatPanePreviousWidth, handleChatPaneWidthChange]);
     // --- END NEW ---
 
+    // --- EARLY RETURNS FOR LOADING AND PERMISSION STATES ---
+    
+    // Show loading while document or permissions are loading
+    if (isLoadingDocument || permissionsLoading) {
+        return (
+            <div className="flex items-center justify-center h-screen w-screen bg-[--bg-color]">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
+                    <p className="text-sm text-gray-500">Loading document...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Show error if document failed to load
+    if (documentError) {
+        return (
+            <div className="flex items-center justify-center h-screen w-screen bg-[--bg-color]">
+                <div className="text-center max-w-md mx-auto p-6">
+                    <div className="text-red-500 text-xl mb-4">⚠️</div>
+                    <h1 className="text-xl font-semibold text-[--text-color] mb-2">Failed to Load Document</h1>
+                    <p className="text-sm text-[--muted-text-color] mb-4">{documentError}</p>
+                    <button 
+                        onClick={() => router.push('/dashboard')}
+                        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                    >
+                        Return to Dashboard
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // Show access denied if user doesn't have view permissions
+    if (!canView) {
+        return (
+            <div className="flex items-center justify-center h-screen w-screen bg-[--bg-color]">
+                <div className="text-center max-w-md mx-auto p-6">
+                    <div className="text-orange-500 text-xl mb-4">🔒</div>
+                    <h1 className="text-xl font-semibold text-[--text-color] mb-2">Access Denied</h1>
+                    <p className="text-sm text-[--muted-text-color] mb-4">
+                        You don&apos;t have permission to view this document.
+                    </p>
+                    <button 
+                        onClick={() => router.push('/dashboard')}
+                        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                    >
+                        Return to Dashboard
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     // Main Render
     return (
-        <AttachedToastProvider>
-            <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden relative" 
-                onDragOver={handleDragOver} 
-                onDragLeave={handleDragLeave} 
-                onDrop={handleDrop}
-            >
+        <div className="flex flex-row w-full h-full bg-[--bg-color] overflow-hidden relative" 
+            onDragOver={handleDragOver} 
+            onDragLeave={handleDragLeave} 
+            onDrop={handleDrop}
+        >
             {isDragging && <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-50 pointer-events-none"><p className="text-blue-800 dark:text-blue-200 font-semibold text-lg p-4 bg-white/80 dark:bg-black/80 rounded-lg shadow-lg">Drop files to attach</p></div>}
 
 
@@ -3161,14 +3426,13 @@ export default function EditorPage() {
                                     isInferringTitle={isInferringTitle}
                                     handleInferTitle={handleInferTitle}
                                     editorRef={editorRef}
-                                    autosaveStatus={autosaveStatus}
-                                    handleSaveContent={handleSaveContent}
-                                    isSaving={isSaving}
-                                    onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
-                                    batchContext={autosaveBatchContext}
-                                    localSaveStatus={localSaveStatus}
                                     isDocumentStarred={currentDocIsStarred}
                                     onToggleDocumentStar={handleToggleCurrentDocumentStar}
+                                    activeUsers={activeUsers}
+                                    currentUserId={user?.id}
+                                    isCollaborationConnected={isCollaborationConnected}
+                                    connectionState={connectionState}
+                                    onRetryConnection={refreshConnection}
                                 />
                                 {pageError && !pageError.startsWith("Chat Error:") && (
                                     <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -3210,6 +3474,8 @@ export default function EditorPage() {
                                         startRecording={startRecording}
                                         stopRecording={stopRecording}
                                         audioTimeDomainData={audioTimeDomainData}
+                                        recordingDuration={recordingDuration}
+                                        onSilenceDetected={handleSilenceDetected}
                                         clearPreview={clearPreview}
                                         taggedDocuments={taggedDocuments}
                                         setTaggedDocuments={setTaggedDocuments}
@@ -3217,12 +3483,25 @@ export default function EditorPage() {
                                         onToggleMiniPane={handleToggleMiniPane}
                                         isMainChatCollapsed={true} // For mobile, editor implies main chat is hidden
                                         miniPaneToggleRef={miniPaneToggleRef}
+                                        unreadMiniPaneCount={unreadMiniPaneCount}
                                         // Mini pane content props
                                         miniPaneMessages={messages}
+                                        miniPaneDisplayedMessages={displayedMessages} // NEW: Use paginated messages for display
                                         miniPaneIsLoadingMessages={isLoadingMessages}
                                         miniPaneIsAiLoading={isAiLoading}
                                         miniPaneMessagesEndRef={messagesEndRef}
+                                        // NEW: Mini-Pane Load More functionality props
+                                        miniPaneCanLoadMore={canLoadMore}
+                                        miniPaneIsLoadingMore={isLoadingMore}
+                                        miniPaneLoadMoreMessages={loadMoreMessages}
                                         currentTheme={currentTheme} // Pass down the theme
+                                        // Props for EditorBottomActionBar
+                                        autosaveStatus={autosaveStatus}
+                                        handleSaveContent={handleSaveContent}
+                                        isSaving={isSaving}
+                                        onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
+                                        batchContext={autosaveBatchContext}
+                                        localSaveStatus={localSaveStatus}
                                     />
                                 </div>
                             </div>
@@ -3243,8 +3522,13 @@ export default function EditorPage() {
                              <ChatPaneWrapper
                                 isChatCollapsed={false} // Chat is visible in the drawer, so not collapsed
                                 chatMessages={messages}
+                                displayedMessages={displayedMessages} // NEW: Use paginated messages for display
                                 isLoadingMessages={isLoadingMessages}
                                 isChatLoading={isAiLoading || isProcessingClientTools} // MODIFIED HERE
+                                // NEW: Load More functionality props
+                                canLoadMore={canLoadMore}
+                                isLoadingMore={isLoadingMore}
+                                loadMoreMessages={loadMoreMessages}
                                 handleSendToEditor={handleSendToEditor}
                                 messagesEndRef={messagesEndRef}
                                 messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
@@ -3277,7 +3561,10 @@ export default function EditorPage() {
                                 micPermissionError={micPermissionError}
                                 startRecording={startRecording}
                                 stopRecording={stopRecording}
+                                onCancelRecording={onCancelRecording}
                                 audioTimeDomainData={audioTimeDomainData}
+                                recordingDuration={recordingDuration}
+                                onSilenceDetected={handleSilenceDetected}
                                 clearPreview={clearPreview}
                                 isMiniPaneOpen={isMiniPaneOpen}
                                 onToggleMiniPane={handleToggleMiniPane}
@@ -3318,14 +3605,13 @@ export default function EditorPage() {
                             isInferringTitle={isInferringTitle}
                             handleInferTitle={handleInferTitle}
                             editorRef={editorRef}
-                            autosaveStatus={autosaveStatus}
-                            handleSaveContent={handleSaveContent}
-                            isSaving={isSaving}
-                            onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
-                            batchContext={autosaveBatchContext}
-                            localSaveStatus={localSaveStatus}
                             isDocumentStarred={currentDocIsStarred}
                             onToggleDocumentStar={handleToggleCurrentDocumentStar}
+                            activeUsers={activeUsers}
+                            currentUserId={user?.id}
+                            isCollaborationConnected={isCollaborationConnected}
+                            connectionState={connectionState}
+                            onRetryConnection={refreshConnection}
                          />
                         {pageError && !pageError.startsWith("Chat Error:") && (
                             <div className="mt-4 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-200 text-sm">Error: {pageError}</div>
@@ -3366,7 +3652,10 @@ export default function EditorPage() {
                                 micPermissionError={micPermissionError}
                                 startRecording={startRecording}
                                 stopRecording={stopRecording}
+                                onCancelRecording={onCancelRecording}
                                 audioTimeDomainData={audioTimeDomainData}
+                                recordingDuration={recordingDuration}
+                                onSilenceDetected={handleSilenceDetected}
                                 clearPreview={clearPreview}
                                 taggedDocuments={taggedDocuments}
                                 setTaggedDocuments={setTaggedDocuments}
@@ -3374,12 +3663,25 @@ export default function EditorPage() {
                                 onToggleMiniPane={handleToggleMiniPane}
                                 isMainChatCollapsed={isChatPaneCollapsed} // Main chat is collapsed when pane is collapsed
                                 miniPaneToggleRef={miniPaneToggleRef} // Pass the ref down
+                                unreadMiniPaneCount={unreadMiniPaneCount}
                                 // Mini pane content props
                                 miniPaneMessages={messages}
+                                miniPaneDisplayedMessages={displayedMessages} // NEW: Use paginated messages for display
                                 miniPaneIsLoadingMessages={isLoadingMessages}
                                 miniPaneIsAiLoading={isAiLoading}
                                 miniPaneMessagesEndRef={messagesEndRef}
+                                // NEW: Mini-Pane Load More functionality props
+                                miniPaneCanLoadMore={canLoadMore}
+                                miniPaneIsLoadingMore={isLoadingMore}
+                                miniPaneLoadMoreMessages={loadMoreMessages}
                                 currentTheme={currentTheme} // Pass down the theme
+                                // Props for EditorBottomActionBar
+                                autosaveStatus={autosaveStatus}
+                                handleSaveContent={handleSaveContent}
+                                isSaving={isSaving}
+                                onOpenHistory={() => setIsVersionHistoryModalOpen(true)}
+                                batchContext={autosaveBatchContext}
+                                localSaveStatus={localSaveStatus}
                             />
                         </div>
                     </div>
@@ -3437,8 +3739,13 @@ export default function EditorPage() {
                                 <ChatPaneWrapper
                                     isChatCollapsed={isChatPaneCollapsed} // Pass the correct state
                                     chatMessages={messages}
+                                    displayedMessages={displayedMessages} // NEW: Use paginated messages for display
                                     isLoadingMessages={isLoadingMessages}
                                     isChatLoading={isAiLoading || isProcessingClientTools} // MODIFIED HERE
+                                    // NEW: Load More functionality props
+                                    canLoadMore={canLoadMore}
+                                    isLoadingMore={isLoadingMore}
+                                    loadMoreMessages={loadMoreMessages}
                                     handleSendToEditor={handleSendToEditor}
                                     messagesEndRef={messagesEndRef}
                                     messageLoadBatchSize={MESSAGE_LOAD_BATCH_SIZE}
@@ -3470,7 +3777,10 @@ export default function EditorPage() {
                                     micPermissionError={micPermissionError}
                                     startRecording={startRecording}
                                     stopRecording={stopRecording}
+                                    onCancelRecording={onCancelRecording}
                                     audioTimeDomainData={audioTimeDomainData}
+                                    recordingDuration={recordingDuration}
+                                    onSilenceDetected={handleSilenceDetected}
                                     clearPreview={clearPreview}
                                     isMiniPaneOpen={isMiniPaneOpen}
                                     onToggleMiniPane={handleToggleMiniPane}
@@ -3511,6 +3821,16 @@ export default function EditorPage() {
             )}
             {/* --- END NEW --- */}
 
+            {/* --- NEW: Share Document Modal --- */}
+            {isShareDocumentModalOpen && documentId && (
+                <ShareDocumentModal
+                    documentId={documentId}
+                    isOpen={isShareDocumentModalOpen}
+                    onClose={closeShareDocumentModal}
+                />
+            )}
+            {/* --- END NEW --- */}
+
             {/* --- NEW: Document Replacement Confirmation Modal --- */}
             <DocumentReplacementConfirmationModal
                 isOpen={documentReplacementConfirmation.isOpen}
@@ -3520,6 +3840,16 @@ export default function EditorPage() {
             />
             {/* --- END NEW --- */}
         </div>
+    );
+}
+
+// --- Main Editor Page Component ---
+export default function EditorPage() {
+    return (
+        <AttachedToastProvider>
+            <CollaborationProvider>
+                <EditorPageContent />
+            </CollaborationProvider>
         </AttachedToastProvider>
     );
 } 

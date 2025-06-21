@@ -17,7 +17,9 @@ export interface ModalState {
   isVoiceSummaryModalOpen: boolean;
   isMobileSidebarOpen: boolean;
   isPDFModalOpen: boolean;
+  isShareDocumentModalOpen: boolean;
   voiceSummary: VoiceSummaryState;
+  isVoiceSummaryActive: boolean; // NEW: tracks if voice summary is active (prevents multiple instances)
   editorRef: React.RefObject<BlockNoteEditor<any> | null> | null;
   setBlockStatus: ((blockId: string, status: any, action?: 'insert' | 'update' | 'delete', message?: string) => void) | null;
 
@@ -33,10 +35,13 @@ export interface ModalState {
   closePreferencesModal: () => void;
   openVoiceSummaryModal: () => void;
   closeVoiceSummaryModal: () => void;
+  setVoiceSummaryActive: (active: boolean) => void; // NEW: manage voice summary active state
   openMobileSidebar: () => void;
   closeMobileSidebar: () => void;
   openPDFModal: () => void;
   closePDFModal: () => void;
+  openShareDocumentModal: () => void;
+  closeShareDocumentModal: () => void;
 
   setVoiceSummaryTranscription: (transcription: string) => void;
   setVoiceSummaryLegacySummary: (summary: string) => void;
@@ -63,7 +68,9 @@ export const useModalStore = create<ModalState>()(
       isVoiceSummaryModalOpen: false,
       isMobileSidebarOpen: false,
       isPDFModalOpen: false,
+      isShareDocumentModalOpen: false,
       voiceSummary: initialVoiceSummaryState,
+      isVoiceSummaryActive: false, // NEW: initialize voice summary active state
       editorRef: null,
       setBlockStatus: null,
 
@@ -78,12 +85,15 @@ export const useModalStore = create<ModalState>()(
       closeNewDocumentModal: () => set({ isNewDocumentModalOpen: false }),
       openPreferencesModal: () => set({ isPreferencesModalOpen: true }),
       closePreferencesModal: () => set({ isPreferencesModalOpen: false }),
-      openVoiceSummaryModal: () => set({ isVoiceSummaryModalOpen: true }),
-      closeVoiceSummaryModal: () => set({ isVoiceSummaryModalOpen: false, voiceSummary: initialVoiceSummaryState }),
+      openVoiceSummaryModal: () => set({ isVoiceSummaryModalOpen: true, isVoiceSummaryActive: true }),
+      closeVoiceSummaryModal: () => set({ isVoiceSummaryModalOpen: false, voiceSummary: initialVoiceSummaryState, isVoiceSummaryActive: false }),
+      setVoiceSummaryActive: (active) => set({ isVoiceSummaryActive: active }), // NEW: manage voice summary active state
       openMobileSidebar: () => set({ isMobileSidebarOpen: true }),
       closeMobileSidebar: () => set({ isMobileSidebarOpen: false }),
       openPDFModal: () => set({ isPDFModalOpen: true }),
       closePDFModal: () => set({ isPDFModalOpen: false }),
+      openShareDocumentModal: () => set({ isShareDocumentModalOpen: true }),
+      closeShareDocumentModal: () => set({ isShareDocumentModalOpen: false }),
 
       setVoiceSummaryTranscription: (transcription) =>
         set((state) => ({

@@ -128,41 +128,10 @@ class BrowserFixManager {
     return fix.browsers.includes(browserName) || fix.browsers.includes('all');
   }
 
-  // Safari backdrop-filter fallback
+  // Safari backdrop-filter fallback (now unused since glass effects removed)
   private applySafariBackdropFilterFix = (): void => {
-    if (!supportsFeature('cssBackdropFilter')) {
-      const style = document.createElement('style');
-      style.textContent = `
-        .highlight-overlay:not([data-backdrop-filter-supported]) {
-          background-color: rgba(255, 255, 255, 0.85) !important;
-          backdrop-filter: none !important;
-        }
-        
-        .highlight-overlay.dark:not([data-backdrop-filter-supported]) {
-          background-color: rgba(0, 0, 0, 0.85) !important;
-        }
-      `;
-      document.head.appendChild(style);
-      
-      // Mark elements that don't support backdrop-filter
-      const observer = new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-          mutation.addedNodes.forEach((node) => {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              const element = node as Element;
-              const overlays = element.querySelectorAll('.highlight-overlay');
-              overlays.forEach((overlay) => {
-                if (!supportsFeature('cssBackdropFilter')) {
-                  overlay.setAttribute('data-backdrop-filter-supported', 'false');
-                }
-              });
-            }
-          });
-        });
-      });
-      
-      observer.observe(document.body, { childList: true, subtree: true });
-    }
+    // Glass effects have been removed, so no backdrop-filter fallback needed
+    console.log('[BrowserFixes] Backdrop-filter fallback skipped - glass effects removed');
   };
 
   // Firefox CSS containment polyfill

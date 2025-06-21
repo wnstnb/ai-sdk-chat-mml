@@ -179,6 +179,30 @@ const FeaturesCarouselSection = forwardRef<HTMLDivElement, FeaturesCarouselSecti
         </div>
   ],
     },
+    {
+      previewImageSrc: "/multiplayer-1.png",
+      title: "Collaborate<br />in Real-Time",
+      caption: "Work together seamlessly with live multiplayer editing.",
+      // category: "Collaboration",
+      content: [
+        <div key="section-multiplayer-1">
+          <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
+            <strong>Collaboration shouldn&apos;t mean constant back-and-forth or version conflicts.</strong> See changes as they happen, work on the same document simultaneously, and maintain your flow while building ideas together. Everyone stays on the same page.
+          </p>
+          <div className="flex justify-center mt-4">
+            <img src="/multiplayer-1.png" alt="Real-time Collaboration" className="w-full h-full object-cover rounded-xl max-w-xl" />
+          </div>
+        </div>,
+        <div key="section-multiplayer-2">
+          <p className="text-lg leading-relaxed text-neutral-700 dark:text-neutral-200 text-left">
+            <strong>Bring anyone on the platform into your workspace instantly.</strong> With granular permissions, you stay in complete control of your notes and documents. Choose who can view, edit, or comment, ensuring your work remains secure while enabling seamless collaboration with teammates, clients, or collaborators.
+          </p>
+          <div className="flex justify-center mt-4">
+            <img src="/multiplayer-2.png" alt="Multiplayer AI Collaboration" className="w-full h-full object-cover rounded-xl max-w-xl" />
+          </div>
+        </div>
+      ],
+    },
   ];
 
   // const items = cards.map((card, idx) => (

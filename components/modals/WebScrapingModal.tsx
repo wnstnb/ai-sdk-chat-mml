@@ -187,12 +187,16 @@ export const WebScrapingModal: React.FC<WebScrapingModalProps> = ({
         }
 
         try {
-          // Use the determined editorForParsing instance
-          let parsedContentBlocks: PartialBlock[] = await editorForParsing.tryParseMarkdownToBlocks(result.content);
-          if (parsedContentBlocks.length === 0 && result.content.trim() !== '') {
-            parsedContentBlocks = [{ type: 'paragraph', content: [{ type: 'text', text: result.content.trim(), styles: {} }] }];
+          // Use improved preprocessing for consistent block creation
+          const { preprocessAIContent } = await import('@/lib/utils/contentPreprocessing');
+          const preprocessingResult = await preprocessAIContent(result.content, editorForParsing);
+          
+          if (preprocessingResult.success && preprocessingResult.blocks.length > 0) {
+            allBlocksToInsert.push(...preprocessingResult.blocks);
+          } else {
+            // Fallback for failed preprocessing
+            allBlocksToInsert.push({ type: 'paragraph', content: [{ type: 'text', text: result.content.trim(), styles: {} }] });
           }
-          allBlocksToInsert.push(...parsedContentBlocks);
         } catch (parseError) {
           console.error(`Error parsing Markdown for ${result.url}:`, parseError);
           allBlocksToInsert.push({

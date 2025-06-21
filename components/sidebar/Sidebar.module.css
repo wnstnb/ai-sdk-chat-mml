@@ -510,9 +510,10 @@ html[data-theme="dark"] .toggleButtonLogo {
 /* ADDED: Styles for Quick Access Section */
 .quickAccessSection {
   width: 100%;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-color);
-  flex-shrink: 0; /* This section itself shouldn't shrink if its content is small */
+  flex-grow: 1; /* Take up all available space */
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* Essential for flex items with overflow */
 }
 
 /* ADDED: New inner container for flex layout */
@@ -528,8 +529,24 @@ html[data-theme="dark"] .toggleButtonLogo {
   flex-grow: 1;
   overflow-y: auto; /* Enable vertical scroll for this section only */
   min-height: 0; /* Essential for flex-grow and overflow-y to work correctly */
-  /* Consider adding some padding if .quickAccessSection itself doesn't have it */
   padding-bottom: 12px; /* Space before the footer */
+  display: flex;
+  flex-direction: column;
+  /* Add a prominent separator styling that extends the full width */
+  border-top: 1px solid var(--border-color);
+  margin-top: 16px;
+  padding-top: 16px;
+  /* Optional: Add a subtle background gradient to distinguish the area */
+  background: linear-gradient(
+    to bottom,
+    rgba(var(--text-color-rgb, 255, 255, 255), 0.02) 0%,
+    transparent 15%
+  );
+  /* Ensure the divider extends to the edges */
+  margin-left: -12px;
+  margin-right: -12px;
+  padding-left: 12px;
+  padding-right: 12px;
 }
 
 /* Action Buttons */

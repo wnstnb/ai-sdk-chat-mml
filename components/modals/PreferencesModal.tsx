@@ -6,6 +6,7 @@ import { SunIcon, MoonIcon } from '@heroicons/react/24/outline';
 import { usePreferenceStore } from '@/lib/stores/preferenceStore';
 import { ModelSelector } from '@/components/ModelSelector';
 import { AIInteractionPreferences } from '@/components/modals/AIInteractionPreferences';
+import UsernameManager from '@/components/modals/UsernameManager';
 import { supabase } from '@/lib/supabase/client';
 
 interface PreferencesModalProps {
@@ -116,7 +117,7 @@ const PreferencesModal: React.FC<PreferencesModalProps> = ({ isOpen, onClose }) 
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-75 backdrop-blur-md flex items-center justify-center z-50 p-4 transition-opacity duration-300 ease-in-out"
+      className="fixed inset-0 bg-black bg-opacity-75 backdrop-blur-md flex items-center justify-center z-[1050] p-4 transition-opacity duration-300 ease-in-out"
       onClick={onClose}
     >
       <div
@@ -212,6 +213,9 @@ const PreferencesModal: React.FC<PreferencesModalProps> = ({ isOpen, onClose }) 
                       </button>
                     </div>
                   </div>
+
+                  {/* Username Section */}
+                  <UsernameManager />
 
                   {/* Default Model Section */}
                   <div className="space-y-2">
