@@ -1171,7 +1171,7 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
       {isMinimized && (() => {
         const floatingWidget = (
           <div 
-            className={`${chatInputContainer ? 'absolute bottom-full left-0 right-0 mb-2' : 'fixed bottom-4 left-1/2 transform -translate-x-1/2'} bg-white/95 backdrop-blur-sm border border-gray-200 rounded-xl shadow-lg p-3 flex items-center gap-3 transition-all duration-300`}
+            className={`${chatInputContainer ? 'absolute bottom-full left-0 right-0 mb-2' : 'fixed bottom-4 left-1/2 transform -translate-x-1/2'} bg-[var(--editor-bg)]/95 backdrop-blur-sm border border-[--border-color] rounded-xl shadow-lg p-3 flex items-center gap-3 transition-all duration-300`}
             style={{ 
               zIndex: chatInputContainer ? 40 : 1000, 
               pointerEvents: 'auto',
@@ -1192,7 +1192,7 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
                 audioTimeDomainData={analyserData} 
                 barWidth={3} 
                 barGap={1} 
-                sensitivity={2} 
+                sensitivity={8} 
               />
             </div>
 
@@ -1203,12 +1203,12 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
                 handleRecordToggle();
               }}
               aria-label={isRecordingRef.current ? 'Stop recording' : 'Start recording'}
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className={`w-8 h-8 p-0 rounded-full transition-colors ${
+              className={`w-8 h-8 p-0 rounded-full transition-colors border ${
                 isRecordingRef.current 
-                  ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' 
-                  : 'bg-slate-700 hover:bg-slate-600 text-white'
+                  ? '!bg-red-500 hover:!bg-red-600 !text-white !border-red-500 animate-pulse' 
+                  : '!bg-slate-700 hover:!bg-slate-600 !text-white !border-slate-600'
               }`}
               style={{ pointerEvents: 'auto' }}
             >
@@ -1296,7 +1296,7 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
                 audioTimeDomainData={analyserData} 
                 barWidth={5} 
                 barGap={2} 
-                sensitivity={2} 
+                sensitivity={6} 
               />
             </div>
 
@@ -1513,9 +1513,9 @@ export const VoiceSummaryModal: React.FC<VoiceSummaryModalProps> = ({ isOpen, on
               ref={micButtonRef}
               onClick={handleRecordToggle}
               aria-label={isRecordingRef.current ? 'Stop recording' : 'Start recording'}
-              variant="outline" // Making it outline to be less prominent than main action
+              variant="ghost" // Making it ghost to avoid conflicts with custom styling
               size="sm" // h-9. For square, use w-9 too.
-              className={`flex items-center justify-center w-9 p-0 rounded-full transition-colors ${isRecordingRef.current ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
+              className={`flex items-center justify-center w-9 p-0 rounded-full transition-colors border ${isRecordingRef.current ? '!bg-red-500 hover:!bg-red-600 !text-white !border-red-500 animate-pulse' : '!bg-slate-700 hover:!bg-slate-600 !text-white !border-slate-600'}`}
             >
               {isRecordingRef.current ? <StopIcon size={18} /> : <Mic size={18} />}
             </Button>
