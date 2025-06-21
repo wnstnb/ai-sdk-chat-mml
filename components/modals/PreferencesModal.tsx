@@ -117,7 +117,7 @@ const PreferencesModal: React.FC<PreferencesModalProps> = ({ isOpen, onClose }) 
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-75 backdrop-blur-md flex items-center justify-center z-50 p-4 transition-opacity duration-300 ease-in-out"
+      className="fixed inset-0 bg-black bg-opacity-75 backdrop-blur-md flex items-center justify-center z-[1050] p-4 transition-opacity duration-300 ease-in-out"
       onClick={onClose}
     >
       <div

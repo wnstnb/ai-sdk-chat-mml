@@ -468,7 +468,7 @@ export default function LandingPageContent() {
                   variants={contentVariants}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  Upload and extract PDFs. Transcribe live audio. Save and summarize web pages. Multiplayer out-of-the-box. Track every version of your notes.<br />All in one place.
+                  Summarize and scrape PDFs and webpages. Transcribe live audio into meaningful notes. Collaborate with others. Track the best version of your notes.<br />All in one place.
 
                 </motion.p>
                 <motion.div 
